@@ -18,11 +18,11 @@ class _PromoCarouselState extends State<PromoCarousel> {
   static const List<_Promo> _promos = [
     _Promo(
       titleTop: 'Extra Bachat',
-      titleMiddle: 'Sirf ',
-      titleAccent: 'App',
-      titleTail: ' Par!',
-      cta: 'Download Now',
-      code: 'TM28APP',
+      titleMiddle: 'On Every ',
+      titleAccent: 'Refill',
+      titleTail: '!',
+      cta: 'Order Now',
+      code: 'SHIELD28',
       percent: '28%',
       background: AppColors.creamTint,
     ),

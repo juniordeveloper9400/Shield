@@ -44,3 +44,13 @@ env
 
 # Coverage
 coverage/
+
+# Android
+android/local.properties
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/key.properties
+*.jks
+*.keystore

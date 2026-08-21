@@ -1,8 +1,16 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
+import '../../money.dart';
+import '../auth/auth_service.dart';
 import '../cart/cart_screen.dart';
+import '../location/address_form_screen.dart';
+import '../patients/manage_patients_screen.dart';
+import '../refer/refer_earn_screen.dart';
+import '../registration/registration_flow.dart';
+import '../registration/registration_service.dart';
 import '../wallet/wallet_screen.dart';
+import '../wallet/wallet_service.dart';
 
 /// Profile summary plus the account menu.
 class AccountScreen extends StatelessWidget {
@@ -16,14 +24,23 @@ class AccountScreen extends StatelessWidget {
         backgroundColor: AppColors.white,
         surfaceTintColor: AppColors.white,
         elevation: 0,
-        automaticallyImplyLeading: false,
-        title: const Text(
-          'Account',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textDark,
-          ),
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/logos/shield_logo.png',
+              height: 26,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 10),
+            const Text(
+              'Account',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark,
+              ),
+            ),
+          ],
         ),
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
@@ -34,28 +51,50 @@ class AccountScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           const _ProfileCard(),
+          // Carries its own spacing and hides itself once registered, so the
+          // list below does not have to know whether it is there.
+          const _RegisterBanner(),
           const SizedBox(height: 18),
           _MenuGroup(
             items: [
               _MenuItem(
+                icon: Icons.badge_outlined,
+                label: 'Registration details',
+                onTap: () => RegistrationFlow.show(
+                  context,
+                  isEditing: RegistrationService.instance.isRegistered,
+                ),
+              ),
+              _MenuItem(
                 icon: Icons.account_balance_wallet_outlined,
                 label: 'My Wallet',
-                trailing: '₹3,472',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const WalletScreen()),
-                ),
+                trailing: '₹${formatRupees(WalletService.instance.balance)}',
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const WalletScreen())),
               ),
               _MenuItem(
                 icon: Icons.shopping_cart_outlined,
                 label: 'My Cart',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const CartScreen()),
-                ),
+                onTap: () => Navigator.of(
+                  context,
+                ).push(MaterialPageRoute(builder: (_) => const CartScreen())),
               ),
               _MenuItem(
                 icon: Icons.location_on_outlined,
-                label: 'Saved Addresses',
-                onTap: () {},
+                label: 'Manage addresses',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const AddressFormScreen()),
+                ),
+              ),
+              _MenuItem(
+                icon: Icons.groups_outlined,
+                label: 'Manage patients',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ManagePatientsScreen(),
+                  ),
+                ),
               ),
               _MenuItem(
                 icon: Icons.description_outlined,
@@ -70,7 +109,9 @@ class AccountScreen extends StatelessWidget {
               _MenuItem(
                 icon: Icons.card_giftcard_rounded,
                 label: 'Refer & Earn',
-                onTap: () {},
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ReferEarnScreen()),
+                ),
               ),
               _MenuItem(
                 icon: Icons.headset_mic_outlined,
@@ -91,7 +132,8 @@ class AccountScreen extends StatelessWidget {
                 icon: Icons.logout_rounded,
                 label: 'Log out',
                 isDestructive: true,
-                onTap: () {},
+                // The gate swaps back to the login screen on sign-out.
+                onTap: AuthService.instance.logOut,
               ),
             ],
           ),
@@ -106,6 +148,17 @@ class _ProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Listens so completing the form fills the store line in without the tab
+    // having to be left and come back.
+    return ListenableBuilder(
+      listenable: RegistrationService.instance,
+      builder: (context, _) => _build(context),
+    );
+  }
+
+  Widget _build(BuildContext context) {
+    final user = AuthService.instance.currentUser.value;
+    final store = RegistrationService.instance.profile?.store;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -123,9 +176,10 @@ class _ProfileCard extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
-            child: const Text(
-              'RN',
-              style: TextStyle(
+            // Initials of whoever signed in, not a fixed monogram.
+            child: Text(
+              user?.initials ?? '?',
+              style: const TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
                 color: AppColors.brandBlue,
@@ -133,28 +187,65 @@ class _ProfileCard extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 14),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Reads the session rather than a fixed name, so a member who
+                // signs up sees their own details here.
                 Text(
-                  'Rahul Nair',
-                  style: TextStyle(
+                  user?.name ?? 'Guest',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textDark,
                   ),
                 ),
-                SizedBox(height: 3),
+                const SizedBox(height: 3),
                 Text(
-                  '+91 90000 00002',
-                  style: TextStyle(fontSize: 14, color: AppColors.textMuted),
+                  user?.displayPhone ?? '—',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textMuted,
+                  ),
                 ),
+                if (store != null) ...[
+                  const SizedBox(height: 5),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.storefront_rounded,
+                        size: 14,
+                        color: AppColors.brandGreenDeep,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          store.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.brandGreenDark,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
           OutlinedButton(
-            onPressed: () {},
+            onPressed: () => RegistrationFlow.show(
+              context,
+              isEditing: RegistrationService.instance.isRegistered,
+            ),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.brandBlue,
               side: const BorderSide(color: AppColors.brandBlue),
@@ -170,6 +261,99 @@ class _ProfileCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Account-side prompt to finish registering.
+///
+/// Unlike the home card this one survives a skip: the account page is where
+/// someone goes looking for their details, and hiding the way in there would
+/// leave the reward unreachable for the rest of the session.
+class _RegisterBanner extends StatelessWidget {
+  const _RegisterBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: RegistrationService.instance,
+      builder: (context, _) {
+        if (RegistrationService.instance.isRegistered) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 14),
+          child: Material(
+            color: AppColors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => RegistrationFlow.show(context),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [AppColors.offerTint, AppColors.greenTint],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
+                ),
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.stars_rounded,
+                        size: 22,
+                        color: AppColors.brandGreenDeep,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Complete your registration',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Add your details, pick your store, earn '
+                            '${RegistrationService.rewardPoints} points',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              height: 1.3,
+                              color: AppColors.textBody,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 24,
+                      color: AppColors.textMuted,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

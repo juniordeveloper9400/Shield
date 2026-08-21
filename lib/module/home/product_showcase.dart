@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
+import '../../widgets/app_image.dart';
+import '../cart/cart_service.dart';
 
 /// A titled, horizontally scrolling row of product cards.
 ///
@@ -78,7 +80,9 @@ class ProductShowcase extends StatelessWidget {
             ),
           ),
           SizedBox(
-            height: 262,
+            // Square artwork (the card's full width) plus the details block
+            // below it.
+            height: _ProductCard.width + _ProductCard.detailsExtent,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -95,6 +99,11 @@ class ProductShowcase extends StatelessWidget {
 }
 
 class _ProductCard extends StatelessWidget {
+  static const double width = 162;
+
+  /// Height reserved below the artwork for the name, pack, pricing and ADD.
+  static const double detailsExtent = 140;
+
   final Product product;
 
   const _ProductCard({required this.product});
@@ -102,7 +111,10 @@ class _ProductCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 162,
+      width: width,
+      // Clipped so a product image carrying its own fill cannot square off the
+      // card's rounded corners now that the thumbnail panel is gone.
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(12),
@@ -113,16 +125,24 @@ class _ProductCard extends StatelessWidget {
         children: [
           Stack(
             children: [
-              Container(
-                height: 104,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: product.tint,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(11),
+              // No background of its own: the product sits directly on the
+              // card's pure white surface. Square to match the artwork, which
+              // a shorter box was letterboxing down to its own height.
+              AspectRatio(
+                aspectRatio: 1,
+                child: Padding(
+                  padding: product.image != null
+                      ? const EdgeInsets.all(6)
+                      : EdgeInsets.zero,
+                  child: Center(
+                    child: AppImage(
+                      image: product.image,
+                      fallbackIcon: product.icon,
+                      iconSize: 56,
+                      fit: BoxFit.contain,
+                    ),
                   ),
                 ),
-                child: Icon(product.icon, size: 46, color: AppColors.brandBlue),
               ),
               if (product.discountLabel != null)
                 Positioned(
@@ -151,7 +171,7 @@ class _ProductCard extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -206,7 +226,27 @@ class _ProductCard extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton(
-                      onPressed: () {},
+                      // Open to everyone: the cart is built up freely and the
+                      // account is only required at checkout.
+                      onPressed: () {
+                        CartService.instance.add(
+                          name: product.name,
+                          pack: product.pack,
+                          // Fixtures carry formatted prices, so strip the
+                          // grouping separator before parsing.
+                          price:
+                              double.tryParse(
+                                product.price.replaceAll(',', ''),
+                              ) ??
+                              0,
+                        );
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${product.name} added to cart'),
+                            duration: const Duration(milliseconds: 1200),
+                          ),
+                        );
+                      },
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.brandBlue,
                         side: const BorderSide(color: AppColors.brandBlue),
@@ -244,7 +284,7 @@ class Product {
   final String mrp;
   final String? discountLabel;
   final IconData icon;
-  final Color tint;
+  final String? image;
 
   const Product({
     required this.name,
@@ -252,7 +292,7 @@ class Product {
     required this.price,
     required this.mrp,
     required this.icon,
-    required this.tint,
+    this.image,
     this.discountLabel,
   });
 }
@@ -269,7 +309,7 @@ class ProductCatalogue {
       mrp: '649',
       discountLabel: '31% OFF',
       icon: Icons.shield_outlined,
-      tint: AppColors.pageTint,
+      image: 'assets/products/shield_immunity.png',
     ),
     Product(
       name: 'Omega-3 Fish Oil',
@@ -278,7 +318,7 @@ class ProductCatalogue {
       mrp: '520',
       discountLabel: '25% OFF',
       icon: Icons.set_meal_outlined,
-      tint: AppColors.greenTint,
+      image: 'assets/products/omega3_fish_oil.png',
     ),
     Product(
       name: 'Vitamin D3 60K',
@@ -287,7 +327,7 @@ class ProductCatalogue {
       mrp: '175',
       discountLabel: '27% OFF',
       icon: Icons.wb_sunny_outlined,
-      tint: AppColors.creamTint,
+      image: 'assets/products/vitamin_d3.png',
     ),
     Product(
       name: 'Digital BP Monitor',
@@ -296,7 +336,7 @@ class ProductCatalogue {
       mrp: '2,499',
       discountLabel: '30% OFF',
       icon: Icons.monitor_heart_outlined,
-      tint: AppColors.offerTint,
+      image: 'assets/products/bp_monitor.png',
     ),
   ];
 
@@ -307,7 +347,7 @@ class ProductCatalogue {
       price: '32',
       mrp: '35',
       icon: Icons.medication_outlined,
-      tint: AppColors.pageTint,
+      image: 'assets/products/dolo_650.png',
     ),
     Product(
       name: 'Shelcal 500 Calcium',
@@ -316,7 +356,7 @@ class ProductCatalogue {
       mrp: '145',
       discountLabel: '19% OFF',
       icon: Icons.emoji_food_beverage_outlined,
-      tint: AppColors.greenTint,
+      image: 'assets/products/shelcal_500.png',
     ),
     Product(
       name: 'Zincovit Multivitamin',
@@ -325,7 +365,7 @@ class ProductCatalogue {
       mrp: '132',
       discountLabel: '20% OFF',
       icon: Icons.medication_liquid_outlined,
-      tint: AppColors.offerTint,
+      image: 'assets/products/zincovit.png',
     ),
     Product(
       name: 'Volini Pain Relief Gel',
@@ -334,7 +374,7 @@ class ProductCatalogue {
       mrp: '195',
       discountLabel: '24% OFF',
       icon: Icons.healing_outlined,
-      tint: AppColors.creamTint,
+      image: 'assets/products/volini_gel.png',
     ),
   ];
 
@@ -346,7 +386,7 @@ class ProductCatalogue {
       mrp: '1,399',
       discountLabel: '36% OFF',
       icon: Icons.receipt_long_outlined,
-      tint: AppColors.offerTint,
+      image: 'assets/products/accuchek_strips.png',
     ),
     Product(
       name: 'Protein Powder Chocolate',
@@ -355,7 +395,7 @@ class ProductCatalogue {
       mrp: '3,200',
       discountLabel: '38% OFF',
       icon: Icons.fitness_center_rounded,
-      tint: AppColors.greenTint,
+      image: 'assets/products/protein_powder.png',
     ),
     Product(
       name: 'Digital Thermometer',
@@ -364,7 +404,6 @@ class ProductCatalogue {
       mrp: '349',
       discountLabel: '43% OFF',
       icon: Icons.thermostat_rounded,
-      tint: AppColors.pageTint,
     ),
     Product(
       name: 'Hand Sanitizer 500ml',
@@ -373,7 +412,136 @@ class ProductCatalogue {
       mrp: '260',
       discountLabel: '42% OFF',
       icon: Icons.clean_hands_outlined,
-      tint: AppColors.creamTint,
+    ),
+  ];
+
+  static const List<Product> vitamins = [
+    Product(
+      name: 'Zincovit Multivitamin',
+      pack: 'Strip of 15 tablets',
+      price: '106',
+      mrp: '132',
+      discountLabel: '20% OFF',
+      icon: Icons.medication_liquid_outlined,
+      image: 'assets/products/zincovit.png',
+    ),
+    Product(
+      name: 'Vitamin D3 60K',
+      pack: 'Strip of 4 sachets',
+      price: '128',
+      mrp: '175',
+      discountLabel: '27% OFF',
+      icon: Icons.wb_sunny_outlined,
+      image: 'assets/products/vitamin_d3.png',
+    ),
+    Product(
+      name: 'Omega-3 Fish Oil',
+      pack: 'Bottle of 30 capsules',
+      price: '389',
+      mrp: '520',
+      discountLabel: '25% OFF',
+      icon: Icons.set_meal_outlined,
+      image: 'assets/products/omega3_fish_oil.png',
+    ),
+    Product(
+      name: 'Shelcal 500 Calcium',
+      pack: 'Strip of 15 tablets',
+      price: '118',
+      mrp: '145',
+      discountLabel: '19% OFF',
+      icon: Icons.emoji_food_beverage_outlined,
+      image: 'assets/products/shelcal_500.png',
+    ),
+    Product(
+      name: 'Protein Powder Chocolate',
+      pack: 'Jar of 1kg',
+      price: '1,999',
+      mrp: '3,200',
+      discountLabel: '38% OFF',
+      icon: Icons.fitness_center_rounded,
+      image: 'assets/products/protein_powder.png',
+    ),
+    Product(
+      name: 'SHIELD Immunity Plus',
+      pack: 'Bottle of 60 tablets',
+      price: '449',
+      mrp: '649',
+      discountLabel: '31% OFF',
+      icon: Icons.shield_outlined,
+      image: 'assets/products/shield_immunity.png',
+    ),
+  ];
+
+  static const List<Product> diabetesCare = [
+    Product(
+      name: 'Accu-Chek Test Strips',
+      pack: 'Box of 50 strips',
+      price: '899',
+      mrp: '1,399',
+      discountLabel: '36% OFF',
+      icon: Icons.receipt_long_outlined,
+      image: 'assets/products/accuchek_strips.png',
+    ),
+    Product(
+      name: 'Digital BP Monitor',
+      pack: '1 device',
+      price: '1,749',
+      mrp: '2,499',
+      discountLabel: '30% OFF',
+      icon: Icons.monitor_heart_outlined,
+      image: 'assets/products/bp_monitor.png',
+    ),
+    Product(
+      name: 'Sugar Free Natura',
+      pack: 'Jar of 500 pellets',
+      price: '199',
+      mrp: '260',
+      discountLabel: '23% OFF',
+      icon: Icons.coffee_outlined,
+    ),
+    Product(
+      name: 'Diabetic Foot Cream',
+      pack: 'Tube of 50g',
+      price: '245',
+      mrp: '340',
+      discountLabel: '27% OFF',
+      icon: Icons.healing_outlined,
+    ),
+  ];
+
+  static const List<Product> healthConditions = [
+    Product(
+      name: 'Dolo 650mg Tablet',
+      pack: 'Strip of 15 tablets',
+      price: '32',
+      mrp: '35',
+      icon: Icons.medication_outlined,
+      image: 'assets/products/dolo_650.png',
+    ),
+    Product(
+      name: 'Volini Pain Relief Gel',
+      pack: 'Tube of 30g',
+      price: '148',
+      mrp: '195',
+      discountLabel: '24% OFF',
+      icon: Icons.healing_outlined,
+      image: 'assets/products/volini_gel.png',
+    ),
+    Product(
+      name: 'Digene Acidity Relief',
+      pack: 'Bottle of 200ml',
+      price: '138',
+      mrp: '175',
+      discountLabel: '21% OFF',
+      icon: Icons.local_dining_outlined,
+    ),
+    Product(
+      name: 'Refresh Tears Eye Drops',
+      pack: 'Bottle of 10ml',
+      price: '128',
+      mrp: '160',
+      discountLabel: '20% OFF',
+      icon: Icons.remove_red_eye_outlined,
     ),
   ];
 }

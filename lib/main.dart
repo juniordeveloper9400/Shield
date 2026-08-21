@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/app_shell.dart';
+import 'screens/root_screen.dart';
 import 'theme/app_colors.dart';
 
 void main() {
@@ -24,7 +24,7 @@ class ShieldApp extends StatelessWidget {
         ),
         splashFactory: InkRipple.splashFactory,
       ),
-      home: const AppShell(),
+      home: const RootScreen(),
     );
   }
 }

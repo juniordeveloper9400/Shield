@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
+import '../auth/auth_flow.dart';
+import '../registration/registration_flow.dart';
+import 'cart_service.dart';
 
 /// Cart with quantity stepping, live bill totals, and an empty state.
 class CartScreen extends StatefulWidget {
@@ -11,28 +14,50 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  final List<_CartLine> _lines = [
-    _CartLine('Dolo 650mg Tablet', 'Strip of 15 tablets', 32.5, 2),
-    _CartLine('Shelcal 500 Calcium', 'Strip of 15 tablets', 118.0, 1),
-    _CartLine('Zincovit Multivitamin', 'Strip of 15 tablets', 106.0, 1),
-  ];
+  // The cart lives in CartService so this screen and the badge on the cart
+  // icon are reading the same list.
+  CartService get _cart => CartService.instance;
 
-  double get _subtotal =>
-      _lines.fold(0, (sum, line) => sum + line.price * line.qty);
+  List<CartLine> get _lines => _cart.lines;
 
-  double get _discount => _subtotal * 0.26;
+  double get _subtotal => _cart.subtotal;
 
-  double get _payable => _subtotal - _discount + (_subtotal > 0 ? 40 : 0);
+  double get _discount => _cart.discount;
 
-  void _changeQty(int index, int delta) {
-    setState(() {
-      final next = _lines[index].qty + delta;
-      if (next <= 0) {
-        _lines.removeAt(index);
-      } else {
-        _lines[index].qty = next;
-      }
+  double get _payable => _cart.payable;
+
+  void _changeQty(int index, int delta) => _cart.changeQty(index, delta);
+
+  /// Payment is where the profile earns its keep — an order needs somewhere to
+  /// go and a branch to pack it — so registration is offered here. An account
+  /// is required; registration is not, and skipping still reaches checkout.
+  void _checkout() {
+    AuthFlow.guard(context, () {
+      RegistrationFlow.offerThen(
+        context,
+        () => ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Proceeding to checkout'))),
+      );
     });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _cart.addListener(_onCartChanged);
+  }
+
+  @override
+  void dispose() {
+    _cart.removeListener(_onCartChanged);
+    super.dispose();
+  }
+
+  void _onCartChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -132,7 +157,7 @@ class _CartScreenState extends State<CartScreen> {
               const SizedBox(width: 16),
               Expanded(
                 child: FilledButton(
-                  onPressed: () {},
+                  onPressed: _checkout,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.brandBlue,
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -142,7 +167,10 @@ class _CartScreenState extends State<CartScreen> {
                   ),
                   child: const Text(
                     'Proceed to checkout',
-                    style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -155,7 +183,7 @@ class _CartScreenState extends State<CartScreen> {
 }
 
 class _CartRow extends StatelessWidget {
-  final _CartLine line;
+  final CartLine line;
   final VoidCallback onIncrement;
   final VoidCallback onDecrement;
 
@@ -207,11 +235,15 @@ class _CartRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '₹${(line.price * line.qty).toStringAsFixed(2)}',
-                  style: const TextStyle(
-                    fontSize: 15,
+                  line.isPriced
+                      ? '₹${(line.price * line.qty).toStringAsFixed(2)}'
+                      : 'Priced after review',
+                  style: TextStyle(
+                    fontSize: line.isPriced ? 15 : 13.5,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
+                    color: line.isPriced
+                        ? AppColors.textDark
+                        : AppColors.textMuted,
                   ),
                 ),
               ],
@@ -326,13 +358,19 @@ class _BillSummary extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          _BillRow(label: 'Item total', value: '₹${subtotal.toStringAsFixed(2)}'),
+          _BillRow(
+            label: 'Item total',
+            value: '₹${subtotal.toStringAsFixed(2)}',
+          ),
           _BillRow(
             label: 'SHIELD discount (26%)',
             value: '-₹${discount.toStringAsFixed(2)}',
             valueColor: AppColors.brandGreenDark,
           ),
-          _BillRow(label: 'Delivery fee', value: '₹${delivery.toStringAsFixed(2)}'),
+          _BillRow(
+            label: 'Delivery fee',
+            value: '₹${delivery.toStringAsFixed(2)}',
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 10),
             child: Divider(height: 1, color: AppColors.border),
@@ -426,13 +464,4 @@ class _EmptyCart extends StatelessWidget {
       ),
     );
   }
-}
-
-class _CartLine {
-  final String name;
-  final String pack;
-  final double price;
-  int qty;
-
-  _CartLine(this.name, this.pack, this.price, this.qty);
 }

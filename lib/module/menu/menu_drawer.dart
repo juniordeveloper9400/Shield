@@ -1,21 +1,28 @@
 import 'package:flutter/material.dart';
 
+import '../../money.dart';
+import '../../screens/app_tabs.dart';
 import '../../theme/app_colors.dart';
+import '../auth/auth_service.dart';
+import '../cart/cart_screen.dart';
+import '../appointment/clinics_screen.dart';
+import '../categories/categories_screen.dart';
+import '../orders/orders_screen.dart';
+import '../registration/registration_service.dart';
+import '../refer/refer_earn_screen.dart';
+import '../wallet/wallet_screen.dart';
+import '../wallet/wallet_service.dart';
 
-/// Slide-in navigation menu opened from the header hamburger.
+/// Full-screen navigation menu opened from the header hamburger.
 ///
-/// Mirrors the reference layout: a titled bar with a close affordance, a
-/// tinted account strip, the browse links, and a shaded account group pinned
-/// to the end of the list.
+/// Takes over the whole viewport: a titled bar with a close affordance, a
+/// tinted account strip, an at-a-glance dashboard, the browse links, and a
+/// shaded account group pinned to the end of the list.
 class MenuDrawer extends StatelessWidget {
   /// Switches the shell to one of the bottom-navigation destinations.
   final ValueChanged<int> onSelectTab;
 
   const MenuDrawer({super.key, required this.onSelectTab});
-
-  static const int _categoriesTab = 1;
-  static const int _ordersTab = 2;
-  static const int _accountTab = 3;
 
   static const List<String> _browseLinks = [
     'Medicines',
@@ -37,46 +44,72 @@ class MenuDrawer extends StatelessWidget {
     onSelectTab(tab);
   }
 
+  void _push(BuildContext context, Widget screen) {
+    final navigator = Navigator.of(context);
+    navigator.pop();
+    navigator.push(MaterialPageRoute(builder: (_) => screen));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Drawer(
       backgroundColor: AppColors.white,
-      width: MediaQuery.sizeOf(context).width * 0.86,
+      // Full-bleed: the menu takes over the whole screen rather than sliding
+      // partway across it.
+      width: MediaQuery.sizeOf(context).width,
       shape: const RoundedRectangleBorder(),
       child: SafeArea(
         bottom: false,
         child: Column(
           children: [
             _MenuHeader(onClose: () => Navigator.of(context).pop()),
-            const _AccountStrip(phone: '9400525063'),
+            // The signed-in number, not a fixed one: the gate guarantees a
+            // session exists by the time this drawer can be opened.
+            _AccountStrip(user: AuthService.instance.currentUser.value),
             Expanded(
               child: ListView(
                 padding: EdgeInsets.zero,
                 children: [
+                  _DashboardPanel(
+                    onOpenWallet: () => _push(context, const WalletScreen()),
+                    onOpenCart: () => _push(context, const CartScreen()),
+                    onOpenOrders: () => _push(context, const OrdersScreen()),
+                    onOpenRewards: () => _go(context, AppTab.account.index),
+                  ),
+                  // Categories is no longer a tab, so the browse links push
+                  // it as a route rather than switching to a destination that
+                  // is not in the bar.
                   for (final label in _browseLinks)
                     _MenuRow(
                       label: label,
-                      onTap: () => _go(context, _categoriesTab),
+                      onTap: () => _push(context, const CategoriesScreen()),
                     ),
                   Container(
                     color: const Color(0xFFF3F4F6),
                     child: Column(
                       children: [
+                        // Clinics lost its tab in the same pass; this is the
+                        // way in now.
+                        _MenuRow(
+                          label: 'Clinics & hospitals',
+                          transparent: true,
+                          onTap: () => _push(context, const ClinicsScreen()),
+                        ),
                         _MenuRow(
                           label: 'Refer & earn',
                           transparent: true,
-                          onTap: () => Navigator.of(context).pop(),
+                          onTap: () => _push(context, const ReferEarnScreen()),
                         ),
                         _MenuRow(
                           label: 'My orders',
                           transparent: true,
-                          onTap: () => _go(context, _ordersTab),
+                          onTap: () => _push(context, const OrdersScreen()),
                         ),
                         _MenuRow(
                           label: 'Account',
                           transparent: true,
                           showDivider: false,
-                          onTap: () => _go(context, _accountTab),
+                          onTap: () => _go(context, AppTab.account.index),
                         ),
                       ],
                     ),
@@ -106,6 +139,12 @@ class _MenuHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 16, 14, 16),
       child: Row(
         children: [
+          Image.asset(
+            'assets/logos/shield_logo.png',
+            height: 28,
+            fit: BoxFit.contain,
+          ),
+          const SizedBox(width: 10),
           const Expanded(
             child: Text(
               'Menu',
@@ -142,9 +181,9 @@ class _MenuHeader extends StatelessWidget {
 }
 
 class _AccountStrip extends StatelessWidget {
-  final String phone;
+  final AuthUser? user;
 
-  const _AccountStrip({required this.phone});
+  const _AccountStrip({required this.user});
 
   @override
   Widget build(BuildContext context) {
@@ -163,7 +202,7 @@ class _AccountStrip extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            phone,
+            user?.phone ?? '—',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -217,9 +256,7 @@ class _MenuRow extends StatelessWidget {
         child: Container(
           decoration: showDivider
               ? const BoxDecoration(
-                  border: Border(
-                    bottom: BorderSide(color: AppColors.border),
-                  ),
+                  border: Border(bottom: BorderSide(color: AppColors.border)),
                 )
               : null,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 17),
@@ -242,6 +279,178 @@ class _MenuRow extends StatelessWidget {
                 Icons.chevron_right_rounded,
                 size: 24,
                 color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// At-a-glance account summary shown at the top of the full-screen menu.
+class _DashboardPanel extends StatelessWidget {
+  final VoidCallback onOpenWallet;
+  final VoidCallback onOpenCart;
+  final VoidCallback onOpenOrders;
+  final VoidCallback onOpenRewards;
+
+  const _DashboardPanel({
+    required this.onOpenWallet,
+    required this.onOpenCart,
+    required this.onOpenOrders,
+    required this.onOpenRewards,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      color: AppColors.pageTint,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Dashboard',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              // Two per row on phones, four across once there is room.
+              final columns = constraints.maxWidth >= 520 ? 4 : 2;
+              const gap = 10.0;
+              final tileWidth =
+                  (constraints.maxWidth - gap * (columns - 1)) / columns;
+
+              return Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: [
+                  SizedBox(
+                    width: tileWidth,
+                    child: _StatTile(
+                      icon: Icons.account_balance_wallet_outlined,
+                      label: 'Wallet balance',
+                      value: '₹${formatRupees(WalletService.instance.balance)}',
+                      accent: AppColors.brandBlue,
+                      onTap: onOpenWallet,
+                    ),
+                  ),
+                  SizedBox(
+                    width: tileWidth,
+                    child: _StatTile(
+                      icon: Icons.collections_bookmark_outlined,
+                      label: 'Active orders',
+                      value: '2',
+                      accent: AppColors.brandGreenDeep,
+                      onTap: onOpenOrders,
+                    ),
+                  ),
+                  SizedBox(
+                    width: tileWidth,
+                    child: _StatTile(
+                      icon: Icons.shopping_cart_outlined,
+                      label: 'Cart items',
+                      value: '4',
+                      accent: AppColors.brandBlue,
+                      onTap: onOpenCart,
+                    ),
+                  ),
+                  SizedBox(
+                    width: tileWidth,
+                    child: _StatTile(
+                      icon: Icons.card_giftcard_rounded,
+                      label: 'Reward points',
+                      // The live balance: registering credits it, and a
+                      // promise the dashboard contradicted would not be one.
+                      value: formatRupees(RegistrationService.instance.points),
+                      accent: AppColors.brandGreenDeep,
+                      onTap: onOpenRewards,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color accent;
+  final VoidCallback onTap;
+
+  const _StatTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.accent,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 19, color: accent),
+                  const Spacer(),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: AppColors.textMuted,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  value,
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.textMuted,
+                ),
               ),
             ],
           ),

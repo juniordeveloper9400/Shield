@@ -45,7 +45,6 @@ class OrdersScreen extends StatelessWidget {
         backgroundColor: AppColors.white,
         surfaceTintColor: AppColors.white,
         elevation: 0,
-        automaticallyImplyLeading: false,
         title: const Text(
           'My Orders',
           style: TextStyle(

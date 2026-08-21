@@ -10,11 +10,18 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  share_plus: ^13.3.0
+  image_picker: ^1.2.3
+  # Opens the platform dialer for the call-to-order number.
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
+  # Used only by tool/whiten_product_backgrounds.dart, never by the app.
+  image: ^4.5.4
 
 flutter:
   uses-material-design: true
@@ -22,3 +29,18 @@ flutter:
   assets:
     - assets/logos/
     - assets/avatars/
+    - assets/products/
+    - assets/categories/
+    - assets/banners/
+
+# Launcher icon generation: `dart run flutter_launcher_icons`.
+# The mark is 4500x4500 with no padding of its own, so the adaptive icon gets
+# a white background and the foreground is inset to survive the circular mask.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/logos/shield_mark.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/logos/shield_mark.png
+  adaptive_icon_foreground_inset: 22
+  remove_alpha_ios: true

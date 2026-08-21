@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../screens/app_tabs.dart';
 import '../theme/app_colors.dart';
 
-/// Bottom navigation with a top active-indicator bar, icon-above-label stack,
-/// and blue/slate active-inactive treatment.
+/// Bottom navigation with a top active-indicator line and an icon-above-label
+/// stack. Every destination is a glyph — no brand mark stands in for one.
+///
+/// The selected destination is marked by weight and colour alone — a brand
+/// blue, bold label against muted, regular ones. There is no wash, glow or
+/// tinted panel behind it: light spilling under five tabs muddies the white
+/// bar, and the type is doing the job on its own.
+///
+/// Destinations come from [AppTab] so order stays consistent with the shell.
 class ShieldBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -14,36 +22,25 @@ class ShieldBottomNav extends StatelessWidget {
     required this.onTap,
   });
 
-  static const double _barHeight = 64;
-  static const double _indicatorWidth = 34;
+  static const double _barHeight = 70;
   static const double _indicatorHeight = 3;
 
-  static const List<_NavItem> items = [
-    _NavItem(
-      label: 'Home',
-      icon: Icons.home_outlined,
-      activeIcon: Icons.home_rounded,
-    ),
-    _NavItem(
-      label: 'Categories',
-      icon: Icons.grid_view_outlined,
-      activeIcon: Icons.grid_view_rounded,
-    ),
-    _NavItem(
-      label: 'Orders',
-      icon: Icons.collections_bookmark_outlined,
-      activeIcon: Icons.collections_bookmark_rounded,
-    ),
-    _NavItem(
-      label: 'Account',
-      icon: Icons.person_outline_rounded,
-      activeIcon: Icons.person_rounded,
-    ),
-  ];
+  /// Short solid line marking the active tab.
+  static const Color activeLine = AppColors.brandBlue;
+
+  /// Standard indicator width — deliberately much narrower than a tab, so the
+  /// line reads as a marker rather than an edge.
+  static const double indicatorWidth = 32;
+
+  /// Height of the icon row, taken from [AppTab.iconSize] so a change there
+  /// cannot silently clip the glyphs.
+  static const double _iconSlot = AppTab.iconSize;
 
   @override
   Widget build(BuildContext context) {
     return Material(
+      // Plain white bar throughout: only the active tab carries colour, and
+      // it carries it in the ink rather than behind it.
       color: AppColors.white,
       child: Container(
         decoration: const BoxDecoration(
@@ -55,13 +52,12 @@ class ShieldBottomNav extends StatelessWidget {
             height: _barHeight,
             child: Row(
               children: [
-                for (var index = 0; index < items.length; index++)
+                for (final tab in AppTab.values)
                   Expanded(
                     child: _buildItem(
                       context,
-                      item: items[index],
-                      index: index,
-                      isSelected: index == currentIndex,
+                      tab: tab,
+                      isSelected: tab.index == currentIndex,
                     ),
                   ),
               ],
@@ -74,54 +70,80 @@ class ShieldBottomNav extends StatelessWidget {
 
   Widget _buildItem(
     BuildContext context, {
-    required _NavItem item,
-    required int index,
+    required AppTab tab,
     required bool isSelected,
   }) {
-    final color = isSelected ? AppColors.brandBlue : AppColors.textBody;
+    // Matches the indicator: a green icon under a blue line would clash. The
+    // unselected slate is the muted one, not the body one, so the gap to the
+    // brand blue is wide enough to read at a glance.
+    final color = isSelected ? AppColors.brandBlue : AppColors.textMuted;
 
     return Semantics(
       button: true,
       selected: isSelected,
-      label: item.label,
+      label: tab.label,
       child: InkWell(
-        onTap: () => onTap(index),
-        splashColor: AppColors.brandBlue.withValues(alpha: 0.06),
-        highlightColor: AppColors.brandBlue.withValues(alpha: 0.04),
+        onTap: () => onTap(tab.index),
         child: Column(
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOut,
+            // Fixed height whether or not it is drawn, so selecting a tab
+            // never shifts the row.
+            SizedBox(
               height: _indicatorHeight,
-              width: _indicatorWidth,
-              decoration: BoxDecoration(
-                color: isSelected ? AppColors.brandBlue : AppColors.transparent,
-                borderRadius: const BorderRadius.vertical(
-                  bottom: Radius.circular(_indicatorHeight),
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  height: _indicatorHeight,
+                  width: indicatorWidth,
+                  decoration: BoxDecoration(
+                    color: isSelected ? activeLine : AppColors.transparent,
+                    borderRadius: const BorderRadius.vertical(
+                      bottom: Radius.circular(_indicatorHeight),
+                    ),
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 9),
-            Icon(
-              isSelected ? item.activeIcon : item.icon,
-              size: 24,
-              color: color,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              item.label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              // Clamped so large system text scaling cannot overflow the bar.
-              textScaler: TextScaler.linear(
-                MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.3),
+            const SizedBox(height: 7),
+            SizedBox(
+              height: _iconSlot,
+              child: Center(
+                child: Icon(
+                  isSelected ? tab.activeIcon : tab.icon,
+                  size: AppTab.iconSize,
+                  color: color,
+                ),
               ),
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.1,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                color: color,
+            ),
+            const SizedBox(height: 3),
+            // With six destinations a long label such as "Appointment"
+            // cannot fit at full size on a narrow phone, so it scales down
+            // rather than ellipsing into something unreadable.
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    tab.label,
+                    maxLines: 1,
+                    textScaler: TextScaler.linear(
+                      MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.2),
+                    ),
+                    // Two steps apart, not one: at 11px a single step is
+                    // not enough to tell the selected tab from its
+                    // neighbours without comparing them side by side.
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.1,
+                      fontWeight: isSelected
+                          ? FontWeight.w800
+                          : FontWeight.w500,
+                      color: color,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -129,16 +151,4 @@ class ShieldBottomNav extends StatelessWidget {
       ),
     );
   }
-}
-
-class _NavItem {
-  final String label;
-  final IconData icon;
-  final IconData activeIcon;
-
-  const _NavItem({
-    required this.label,
-    required this.icon,
-    required this.activeIcon,
-  });
 }

@@ -1,0 +1,1023 @@
+import 'package:flutter/material.dart';
+
+import '../../theme/app_colors.dart';
+import '../../widgets/app_image.dart';
+import '../cart/cart_screen.dart';
+import '../cart/cart_service.dart';
+import '../home/product_showcase.dart';
+import 'category_catalogue.dart';
+import 'listing_catalogue.dart';
+
+/// Product listing for one category group.
+///
+/// Opens on the sub-category that was tapped, with a chip rail for switching
+/// between the rest of the group and an "All" chip covering every item.
+class CategoryListingScreen extends StatefulWidget {
+  final CategoryGroup group;
+  final SubCategory? initial;
+
+  const CategoryListingScreen({super.key, required this.group, this.initial});
+
+  @override
+  State<CategoryListingScreen> createState() => _CategoryListingScreenState();
+}
+
+class _CategoryListingScreenState extends State<CategoryListingScreen> {
+  /// Null means the "All" chip.
+  SubCategory? _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initial;
+  }
+
+  List<Product> get _products {
+    final selected = _selected;
+    return selected == null
+        ? ListingCatalogue.forGroup(widget.group)
+        : ListingCatalogue.forSubCategory(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final products = _products;
+    final deals = ListingCatalogue.topDeals(products);
+
+    return Scaffold(
+      backgroundColor: AppColors.white,
+      appBar: AppBar(
+        backgroundColor: AppColors.white,
+        surfaceTintColor: AppColors.white,
+        elevation: 0,
+        titleSpacing: 0,
+        title: Text(
+          widget.group.title,
+          style: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textDark,
+          ),
+        ),
+        actions: [
+          _CircleAction(icon: Icons.search_rounded, onTap: () {}),
+          const SizedBox(width: 10),
+          _CartAction(
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const CartScreen())),
+          ),
+          const SizedBox(width: 12),
+        ],
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, color: AppColors.border),
+        ),
+      ),
+      body: Stack(
+        children: [
+          CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: _ListingBanner(group: widget.group)),
+              SliverToBoxAdapter(
+                child: _ChipRail(
+                  group: widget.group,
+                  selected: _selected,
+                  onSelect: (item) => setState(() => _selected = item),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(_gridPad, 14, _gridPad, 8),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: _gridGap,
+                    // A square of artwork plus a fixed block for the details,
+                    // rather than one ratio for the whole tile. The details
+                    // need the same height at every width, so a ratio starves
+                    // them on a narrow phone and leaves a band of dead space
+                    // on a wide one — which is what was shrinking the image.
+                    mainAxisExtent:
+                        _gridColumnWidth(context) + ProductTile.detailsExtent,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => ProductTile(product: products[index]),
+                    childCount: products.length,
+                  ),
+                ),
+              ),
+              if (deals.isNotEmpty)
+                SliverToBoxAdapter(child: _TopDealsPanel(deals: deals)),
+              // Clears the floating cart bar so the last row stays reachable.
+              const SliverToBoxAdapter(child: SizedBox(height: 96)),
+            ],
+          ),
+          const Positioned(right: 0, top: 8, child: _FilterPill()),
+          const Positioned(left: 0, right: 0, bottom: 0, child: CartBar()),
+        ],
+      ),
+    );
+  }
+}
+
+class _CircleAction extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _CircleAction({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.white,
+      shape: const CircleBorder(
+        side: BorderSide(color: AppColors.searchBorder),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: Icon(icon, size: 21, color: AppColors.textDark),
+        ),
+      ),
+    );
+  }
+}
+
+/// Cart circle with the live item count.
+class _CartAction extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CartAction({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: CartService.instance,
+      builder: (context, _) {
+        final count = CartService.instance.itemCount;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            _CircleAction(icon: Icons.shopping_cart_outlined, onTap: onTap),
+            if (count > 0)
+              Positioned(
+                top: -4,
+                right: -4,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                    vertical: 2,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFD93A2B),
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(
+                    minWidth: 18,
+                    minHeight: 18,
+                  ),
+                  child: Text(
+                    count > 99 ? '99+' : '$count',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.white,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ListingBanner extends StatelessWidget {
+  final CategoryGroup group;
+
+  const _ListingBanner({required this.group});
+
+  @override
+  Widget build(BuildContext context) {
+    if (group.bannerImage != null) {
+      final isNetwork = AppImage.isNetwork(group.bannerImage);
+      return Container(
+        margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+        height: 152,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.textDark.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: isNetwork
+            ? Image.network(
+                group.bannerImage!,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: 152,
+                errorBuilder: (_, _, _) => _buildGradientBanner(),
+              )
+            : Image.asset(
+                group.bannerImage!,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: 152,
+                errorBuilder: (_, _, _) => _buildGradientBanner(),
+              ),
+      );
+    }
+
+    return _buildGradientBanner();
+  }
+
+  Widget _buildGradientBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      height: 152,
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [AppColors.brandBlue, AppColors.brandNavy],
+        ),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Positioned(
+            right: -16,
+            bottom: -20,
+            child: Icon(
+              group.icon,
+              size: 150,
+              color: AppColors.white.withValues(alpha: 0.10),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.brandGreen,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Up to 20% off',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  group.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Trusted brands, delivered to your door',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    height: 1.3,
+                    color: Color(0xFFC9D8F0),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Circular sub-category chips with an underline under the active one.
+class _ChipRail extends StatelessWidget {
+  final CategoryGroup group;
+  final SubCategory? selected;
+  final ValueChanged<SubCategory?> onSelect;
+
+  const _ChipRail({
+    required this.group,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: SizedBox(
+        height: 128,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          itemCount: group.items.length + 1,
+          separatorBuilder: (_, _) => const SizedBox(width: 6),
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return _RailChip(
+                label: 'All',
+                icon: group.icon,
+                image: group.image,
+                isSelected: selected == null,
+                onTap: () => onSelect(null),
+              );
+            }
+            final item = group.items[index - 1];
+            return _RailChip(
+              label: item.label,
+              icon: item.icon,
+              image: item.image,
+              isSelected: selected?.label == item.label,
+              onTap: () => onSelect(item),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _RailChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final String? image;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _RailChip({
+    required this.label,
+    required this.icon,
+    required this.image,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 92,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.offerTint : AppColors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: isSelected ? AppColors.offerTint : AppColors.border,
+                ),
+              ),
+              padding: const EdgeInsets.all(8),
+              child: AppImage(
+                image: image,
+                fallbackIcon: icon,
+                iconSize: 26,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Expanded(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.2,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ),
+            // Underline marks the active chip, as in the reference.
+            Container(
+              height: 3,
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.brandBlue : AppColors.transparent,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(3),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Horizontal padding either side of the product grid.
+const double _gridPad = 12;
+
+/// Gap between the grid's two columns.
+const double _gridGap = 12;
+
+/// Width of one grid column at this viewport.
+double _gridColumnWidth(BuildContext context) =>
+    (MediaQuery.sizeOf(context).width - _gridPad * 2 - _gridGap) / 2;
+
+/// Grid tile: discount flag, artwork, name, pricing, and the cart control.
+class ProductTile extends StatelessWidget {
+  /// Height reserved below the artwork for the name, pack, pricing and cart
+  /// control. Fixed, because that stack is the same height at every tile
+  /// width — the grid adds it to the square artwork to size the whole tile.
+  static const double detailsExtent = 138;
+
+  final Product product;
+
+  const ProductTile({super.key, required this.product});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Square, because the product artwork is square: contained in a
+          // wider-than-tall box it was limited by the short side and sat with
+          // a gutter down either edge, which is what made it read as small.
+          AspectRatio(
+            aspectRatio: 1,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: AppImage(
+                      image: product.image,
+                      fallbackIcon: product.icon,
+                      iconSize: 56,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+                if (product.discountLabel != null)
+                  _DiscountFlag(label: product.discountLabel!),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.2,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    product.pack,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const Spacer(),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        '₹${product.price}',
+                        style: const TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          '₹${product.mrp}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  CartControl(product: product),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscountFlag extends StatelessWidget {
+  final String label;
+
+  const _DiscountFlag({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 5, 10, 6),
+      decoration: const BoxDecoration(
+        color: AppColors.brandGreenDark,
+        borderRadius: BorderRadius.only(bottomRight: Radius.circular(12)),
+      ),
+      child: Text(
+        label.replaceAll(' OFF', '\nOFF'),
+        style: const TextStyle(
+          fontSize: 11,
+          height: 1.15,
+          fontWeight: FontWeight.w800,
+          color: AppColors.white,
+        ),
+      ),
+    );
+  }
+}
+
+/// ADD until the product is in the cart, a quantity stepper afterwards.
+class CartControl extends StatelessWidget {
+  final Product product;
+
+  const CartControl({super.key, required this.product});
+
+  double get _price => double.tryParse(product.price.replaceAll(',', '')) ?? 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: CartService.instance,
+      builder: (context, _) {
+        final cart = CartService.instance;
+        final index = cart.lines.indexWhere(
+          (line) => line.name == product.name,
+        );
+
+        if (index < 0) {
+          return SizedBox(
+            width: double.infinity,
+            height: 38,
+            child: OutlinedButton(
+              onPressed: () => cart.add(
+                name: product.name,
+                pack: product.pack,
+                price: _price,
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.brandBlue,
+                side: const BorderSide(color: AppColors.brandBlue),
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text(
+                'ADD',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          );
+        }
+
+        return SizedBox(
+          height: 38,
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 38,
+                  decoration: BoxDecoration(
+                    borderRadius: const BorderRadius.horizontal(
+                      left: Radius.circular(8),
+                    ),
+                    border: Border.all(color: AppColors.brandBlue),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    '${cart.lines[index].qty}',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.brandBlue,
+                    ),
+                  ),
+                ),
+              ),
+              Material(
+                color: AppColors.brandBlue,
+                borderRadius: const BorderRadius.horizontal(
+                  right: Radius.circular(8),
+                ),
+                child: InkWell(
+                  onTap: () => cart.changeQty(index, 1),
+                  child: const SizedBox(
+                    width: 42,
+                    height: 38,
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 22,
+                      color: AppColors.white,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// "Top deals": a featured product with a thumbnail rail to switch between
+/// the rest of the discounted stock.
+class _TopDealsPanel extends StatefulWidget {
+  final List<Product> deals;
+
+  const _TopDealsPanel({required this.deals});
+
+  @override
+  State<_TopDealsPanel> createState() => _TopDealsPanelState();
+}
+
+class _TopDealsPanelState extends State<_TopDealsPanel> {
+  int _featured = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    // A shorter list after a chip change can leave the old index dangling.
+    final featured = widget.deals[_featured.clamp(0, widget.deals.length - 1)];
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      decoration: BoxDecoration(
+        color: AppColors.offerTint,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Top deals',
+            style: TextStyle(
+              fontSize: 21,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _FeaturedDeal(product: featured),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 66,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: widget.deals.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final deal = widget.deals[index];
+                final isActive = deal.name == featured.name;
+                return InkWell(
+                  onTap: () => setState(() => _featured = index),
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isActive
+                            ? AppColors.brandBlue
+                            : AppColors.border,
+                        width: isActive ? 1.8 : 1,
+                      ),
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    child: AppImage(
+                      image: deal.image,
+                      fallbackIcon: deal.icon,
+                      iconSize: 24,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FeaturedDeal extends StatelessWidget {
+  final Product product;
+
+  const _FeaturedDeal({required this.product});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            // Wider and less padded than it was, so the square artwork is
+            // limited by the row's height rather than by its own box.
+            width: 124,
+            height: 132,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: AppImage(
+                      image: product.image,
+                      fallbackIcon: product.icon,
+                      iconSize: 46,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+                if (product.discountLabel != null)
+                  _DiscountFlag(label: product.discountLabel!),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 12, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      height: 1.3,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              '₹${product.mrp}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: AppColors.textMuted,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                            Text(
+                              '₹${product.price}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 108,
+                        child: CartControl(product: product),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterPill extends StatelessWidget {
+  const _FilterPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.white,
+      elevation: 3,
+      shadowColor: AppColors.textDark.withValues(alpha: 0.2),
+      borderRadius: const BorderRadius.horizontal(left: Radius.circular(30)),
+      child: InkWell(
+        onTap: () {},
+        borderRadius: const BorderRadius.horizontal(left: Radius.circular(30)),
+        child: const Padding(
+          padding: EdgeInsets.fromLTRB(18, 12, 20, 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.filter_alt_outlined,
+                size: 19,
+                color: AppColors.textDark,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Filter',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textDark,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Sticky total bar, shown only once something is in the cart.
+class CartBar extends StatelessWidget {
+  const CartBar({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: CartService.instance,
+      builder: (context, _) {
+        final cart = CartService.instance;
+        if (cart.itemCount == 0) {
+          return const SizedBox.shrink();
+        }
+
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Material(
+              color: AppColors.brandBlue,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(10),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppColors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: const Icon(
+                        Icons.shopping_cart_outlined,
+                        size: 21,
+                        color: AppColors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '₹${cart.subtotal.toStringAsFixed(2)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.white,
+                            ),
+                          ),
+                          Text(
+                            '${cart.itemCount} '
+                            '${cart.itemCount == 1 ? 'item' : 'items'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFFDCE7F7),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const CartScreen()),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.white,
+                        foregroundColor: AppColors.brandBlue,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text(
+                        'View cart',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
