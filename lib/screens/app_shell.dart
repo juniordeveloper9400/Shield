@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../module/account/account_screen.dart';
-import '../module/approvals/approvals_screen.dart';
-import '../module/dietitian/dietitian_screen.dart';
-import '../module/labtest/lab_section.dart';
+import '../module/appointment/clinics_screen.dart';
+import '../module/health/health_section.dart';
 import '../module/menu/menu_drawer.dart';
+import '../module/orders/orders_screen.dart';
 import '../module/registration/register_bar.dart';
 import '../widgets/bottom_nav.dart';
 import 'app_tabs.dart';
@@ -22,15 +22,26 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   // Opens on Home, which now leads the bar.
   int _index = AppTab.home.index;
-  LabSubTab _labSubTab = LabSubTab.labsTests;
+  HealthSubTab _healthSubTab = HealthSubTab.labsTests;
 
-  bool get _inLabSection => _index == AppTab.labTest.index;
+  bool get _inHealthSection => _index == AppTab.lab.index;
+
+  /// Switches destination, and — when the caller names a sub-tab — lands on a
+  /// specific page inside the health section rather than its default one.
+  void _selectTab(int index, {HealthSubTab? subTab}) {
+    setState(() {
+      _index = index;
+      if (subTab != null) {
+        _healthSubTab = subTab;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: MenuDrawer(
-        onSelectTab: (index) => setState(() => _index = index),
+        onSelectTab: _selectTab,
       ),
       // IndexedStack keeps each tab's scroll position alive across switches.
       // Order must match AppTab.values.
@@ -38,24 +49,25 @@ class _AppShellState extends State<AppShell> {
         index: _index,
         children: [
           const HomeScreen(),
-          LabSection(
-            active: _labSubTab,
-            onSelectSubTab: (tab) => setState(() => _labSubTab = tab),
+          HealthSection(
+            active: _healthSubTab,
+            onSelectSubTab: (tab) => setState(() => _healthSubTab = tab),
           ),
-          const DietitianScreen(),
-          const ApprovalsScreen(),
+          const ClinicsScreen(),
+          const OrdersScreen(),
           const AccountScreen(),
         ],
       ),
-      // The lab section takes over the bottom bar with its own sub-navigation.
-      bottomNavigationBar: _inLabSection
-          ? LabBottomBar(
-              active: _labSubTab,
-              onSelectSubTab: (tab) => setState(() => _labSubTab = tab),
+      // The health section takes over the bottom bar with its own
+      // sub-navigation.
+      bottomNavigationBar: _inHealthSection
+          ? HealthBottomBar(
+              active: _healthSubTab,
+              onSelectSubTab: (tab) => setState(() => _healthSubTab = tab),
               onExitToHome: () => setState(() {
                 _index = AppTab.home.index;
                 // Reset so re-entering the section starts at its landing page.
-                _labSubTab = LabSubTab.labsTests;
+                _healthSubTab = HealthSubTab.labsTests;
               }),
             )
           : Column(

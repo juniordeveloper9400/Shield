@@ -38,12 +38,10 @@ class CategoryGroup {
   /// Promotional banner artwork displayed at the top of the group's listing.
   final String? bannerImage;
 
-  /// Fill behind the chip on the home strip.
-  final Color chipTint;
-
-  /// Fill behind this group's panel on the Categories tab. The reference gives
-  /// each group its own pastel, which is what separates one panel from the
-  /// next without needing a rule between them.
+  /// Fill behind this group's panel on the Categories tab, and behind its chip
+  /// on the home strip — one pastel per group, selected or not. The reference
+  /// gives each group its own, which is what separates one panel from the next
+  /// without needing a rule between them.
   final Color panelTint;
 
   final List<SubCategory> items;
@@ -52,7 +50,6 @@ class CategoryGroup {
     required this.title,
     required this.tabLabel,
     required this.icon,
-    required this.chipTint,
     required this.panelTint,
     required this.items,
     this.image,
@@ -79,7 +76,6 @@ class CategoryCatalogue {
       icon: Icons.spa_outlined,
       image: 'assets/categories/bundle_personalcare_tab.png',
       bannerImage: 'assets/banners/skincare_banner.jpg',
-      chipTint: AppColors.chipBlueTint,
       panelTint: AppColors.panelGreen,
       items: [
         SubCategory(
@@ -120,7 +116,6 @@ class CategoryCatalogue {
       tabLabel: 'Health\nConditions',
       icon: Icons.monitor_heart_outlined,
       image: 'assets/categories/bundle_health_tab.png',
-      chipTint: AppColors.chipPinkTint,
       panelTint: AppColors.panelCream,
       items: [
         SubCategory(
@@ -160,7 +155,6 @@ class CategoryCatalogue {
       tabLabel: 'Vitamins &\nSupplements',
       icon: Icons.medication_outlined,
       image: 'assets/categories/bundle_vitamins.png',
-      chipTint: AppColors.chipCreamTint,
       panelTint: AppColors.panelBlue,
       items: [
         SubCategory(
@@ -201,7 +195,6 @@ class CategoryCatalogue {
       tabLabel: 'Diabetes\nCare',
       icon: Icons.bloodtype_outlined,
       image: 'assets/categories/bundle_diabetes.png',
-      chipTint: AppColors.chipGreenTint,
       panelTint: AppColors.panelPink,
       items: [
         SubCategory(
@@ -242,7 +235,6 @@ class CategoryCatalogue {
       title: 'Surgicals',
       tabLabel: 'Surgicals',
       icon: Icons.medical_services_outlined,
-      chipTint: AppColors.chipSlateTint,
       panelTint: AppColors.panelSlate,
       // No photography exists for this group yet, so every card falls back to
       // its icon. The catalogue records that explicitly rather than pointing
@@ -260,7 +252,6 @@ class CategoryCatalogue {
       title: 'Lab Tests',
       tabLabel: 'Lab\nTests',
       icon: Icons.biotech_outlined,
-      chipTint: AppColors.chipBlueTint,
       panelTint: AppColors.pageTint,
       items: [
         SubCategory(

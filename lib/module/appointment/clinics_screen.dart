@@ -5,7 +5,7 @@ import '../location/location_sheet.dart';
 import 'clinic.dart';
 import 'clinic_detail_screen.dart';
 
-/// Directory of clinics and hospitals, shown by the Appointment destination.
+/// Directory of clinics and hospitals, shown by the Appointments destination.
 class ClinicsScreen extends StatefulWidget {
   const ClinicsScreen({super.key});
 
@@ -45,9 +45,34 @@ class _ClinicsScreenState extends State<ClinicsScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.pageTint,
+      // The same head every other tab wears: white, dark title, a hairline
+      // under it. This screen used to carry a green curved banner of its own,
+      // which made Appointments look like a different app from Dietitian and
+      // the wallet sitting either side of it.
+      appBar: AppBar(
+        backgroundColor: AppColors.white,
+        surfaceTintColor: AppColors.white,
+        elevation: 0,
+        title: const Text(
+          'Clinics & Hospitals',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textDark,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(42),
+          child: Column(
+            children: [
+              _AreaPicker(area: _area, onChangeArea: _chooseArea),
+              const Divider(height: 1, color: AppColors.border),
+            ],
+          ),
+        ),
+      ),
       body: Column(
         children: [
-          _CurvedHeader(area: _area, onChangeArea: _chooseArea),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: _SearchField(
@@ -87,116 +112,56 @@ class _ClinicsScreenState extends State<ClinicsScreen> {
   }
 }
 
-/// Rounded brand header used across the clinic screens.
-class _CurvedHeader extends StatelessWidget {
+/// Which area the list is showing, and the way to change it.
+///
+/// It used to be the second line of a banner. Without the banner it needs a
+/// home of its own, and under the title is where it was — the difference is
+/// that it is now dark text on white like every other control on the screen.
+class _AreaPicker extends StatelessWidget {
   final String area;
   final VoidCallback onChangeArea;
 
-  const _CurvedHeader({required this.area, required this.onChangeArea});
+  const _AreaPicker({required this.area, required this.onChangeArea});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.brandBlue, AppColors.brandNavy],
-        ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(26)),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 16, 20),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const _CircleBack(),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Clinics & Hospitals',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    InkWell(
-                      onTap: onChangeArea,
-                      borderRadius: BorderRadius.circular(6),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.location_on_outlined,
-                              size: 16,
-                              color: Color(0xFFDCE7F7),
-                            ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                area,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.white,
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              size: 18,
-                              color: AppColors.white,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 16, 8),
+        child: InkWell(
+          onTap: onChangeArea,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.location_on_outlined,
+                  size: 17,
+                  color: AppColors.brandBlue,
                 ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CircleBack extends StatelessWidget {
-  const _CircleBack();
-
-  @override
-  Widget build(BuildContext context) {
-    final navigator = Navigator.of(context);
-
-    return Material(
-      color: AppColors.transparent,
-      shape: const CircleBorder(side: BorderSide(color: Color(0x66FFFFFF))),
-      child: InkWell(
-        // No-op when this is a root tab with nothing to pop.
-        onTap: navigator.canPop() ? navigator.pop : null,
-        customBorder: const CircleBorder(),
-        child: const SizedBox(
-          width: 38,
-          height: 38,
-          child: Icon(
-            Icons.chevron_left_rounded,
-            size: 26,
-            color: AppColors.white,
+                const SizedBox(width: 5),
+                Flexible(
+                  child: Text(
+                    area,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.brandBlue,
+                    ),
+                  ),
+                ),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 19,
+                  color: AppColors.brandBlue,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -371,7 +336,7 @@ class _FavouriteButton extends StatelessWidget {
       selected: isFavourite,
       label: isFavourite ? 'Remove from saved' : 'Save clinic',
       child: Material(
-        color: isFavourite ? AppColors.brandGreenDeep : AppColors.greenTint,
+        color: isFavourite ? AppColors.brandBlue : AppColors.chipBlueTint,
         shape: const CircleBorder(),
         child: InkWell(
           onTap: onTap,
@@ -382,7 +347,7 @@ class _FavouriteButton extends StatelessWidget {
             child: Icon(
               isFavourite ? Icons.favorite_rounded : Icons.favorite_border,
               size: 21,
-              color: isFavourite ? AppColors.white : AppColors.brandGreenDeep,
+              color: isFavourite ? AppColors.white : AppColors.brandBlue,
             ),
           ),
         ),

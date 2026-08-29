@@ -22,6 +22,36 @@ String formatDate(DateTime date) {
   return '$day ${_months[date.month - 1]} ${date.year}';
 }
 
+/// `10 Sep` — a date with the year left off.
+///
+/// For dates inside the year they are read in, where printing 2026 on every
+/// one of them is four characters of noise on a panel that has none to spare.
+/// Anything that could be in another year uses [formatDate].
+String formatDayMonth(DateTime date) {
+  final day = date.day.toString().padLeft(2, '0');
+  return '$day ${_months[date.month - 1]}';
+}
+
+/// Reads back a date [formatDate] wrote — `16 Aug 2026` — or null if the text
+/// is not in that shape.
+///
+/// The order book stores the placed-on date as the string the list prints,
+/// and the tracker has to do date arithmetic on it to promise a delivery
+/// window. Rather than change what the book stores, it is parsed back here.
+DateTime? parseDate(String text) {
+  final parts = text.trim().split(RegExp(r'\s+'));
+  if (parts.length != 3) {
+    return null;
+  }
+  final day = int.tryParse(parts[0]);
+  final month = _months.indexOf(parts[1]) + 1;
+  final year = int.tryParse(parts[2]);
+  if (day == null || month < 1 || year == null) {
+    return null;
+  }
+  return DateTime(year, month, day);
+}
+
 /// Whole years between [dob] and [asOf], defaulting to today.
 ///
 /// Counts the birthday, not the year difference: someone born in December is
@@ -35,4 +65,14 @@ int ageInYears(DateTime dob, {DateTime? asOf}) {
     years--;
   }
   return years < 0 ? 0 : years;
+}
+
+/// `31 yrs` — how an age derived from a date of birth is printed.
+///
+/// Shared so the patient row, the patient form and the registration form all
+/// say the same thing; `1 yr` rather than `1 yrs` because an infant is the one
+/// case where the plural is read closely.
+String ageLabel(DateTime dob, {DateTime? asOf}) {
+  final years = ageInYears(dob, asOf: asOf);
+  return '$years ${years == 1 ? 'yr' : 'yrs'}';
 }

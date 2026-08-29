@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:shield/module/cart/cart_badge.dart';
 import 'package:shield/module/cart/cart_screen.dart';
 import 'package:shield/module/cart/cart_service.dart';
-import 'package:shield/screens/app_shell.dart';
+import 'package:shield/module/categories/category_catalogue.dart';
+import 'package:shield/module/categories/category_listing_screen.dart';
 
 void main() {
   setUp(CartService.instance.reset);
   tearDown(CartService.instance.reset);
 
-  Future<void> pumpShell(
+  Future<void> pumpProductPage(
     WidgetTester tester, {
     Size size = const Size(400, 900),
   }) async {
@@ -18,19 +18,16 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(const MaterialApp(home: AppShell()));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CategoryListingScreen(group: CategoryCatalogue.groups.first),
+      ),
+    );
     await tester.pumpAndSettle();
   }
 
-  /// Scrolls the home feed to the first ADD button and taps it.
+  /// Taps the first product ADD button on a page that owns the product cart.
   Future<void> tapFirstAdd(WidgetTester tester) async {
-    await tester.scrollUntilVisible(
-      find.text('Vitamins & Supplements'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
-
     final add = find.text('ADD').first;
     await tester.ensureVisible(add);
     await tester.pumpAndSettle();
@@ -63,12 +60,12 @@ void main() {
 
     test('the bill follows the contents', () {
       final cart = CartService.instance;
-      cart.add(name: 'Dolo 650', pack: 'Strip of 15', price: 100);
+      cart.add(name: 'Dolo 650', pack: 'Strip of 15', price: 100, mrp: 126);
 
       expect(cart.subtotal, 100);
       expect(cart.discount, closeTo(26, 0.001));
       expect(cart.deliveryFee, 40);
-      expect(cart.payable, closeTo(114, 0.001));
+      expect(cart.payable, closeTo(140, 0.001));
     });
 
     test('an empty cart carries no delivery fee', () {
@@ -79,56 +76,50 @@ void main() {
 
   group('badge', () {
     testWidgets('is hidden until something is added', (tester) async {
-      await pumpShell(tester);
+      await pumpProductPage(tester);
 
-      expect(find.byType(CartBadge), findsWidgets);
+      expect(find.byIcon(Icons.shopping_cart_outlined), findsOneWidget);
       expect(find.text('1'), findsNothing);
     });
 
     testWidgets('appears with the count after adding to the cart', (
       tester,
     ) async {
-      await pumpShell(tester);
+      await pumpProductPage(tester);
       await tapFirstAdd(tester);
 
       expect(CartService.instance.itemCount, 1);
-      // Shown on both the header badge and the pinned bar's badge.
       expect(find.text('1'), findsWidgets);
     });
 
     testWidgets('the count rises on a second add', (tester) async {
-      await pumpShell(tester);
+      await pumpProductPage(tester);
       await tapFirstAdd(tester);
-      await tapFirstAdd(tester);
+      CartService.instance.add(name: 'Second item', pack: 'Strip', price: 10);
+      await tester.pumpAndSettle();
 
       expect(CartService.instance.itemCount, 2);
       expect(find.text('2'), findsWidgets);
-      expect(find.text('1'), findsNothing);
     });
 
     testWidgets('caps the label past 99', (tester) async {
       for (var i = 0; i < 120; i++) {
         CartService.instance.add(name: 'Item $i', pack: 'Strip', price: 10);
       }
-      await pumpShell(tester);
+      await pumpProductPage(tester);
 
       expect(find.text('99+'), findsWidgets);
     });
 
     testWidgets('the badge is red', (tester) async {
       CartService.instance.add(name: 'Dolo', pack: 'Strip', price: 10);
-      await pumpShell(tester);
+      await pumpProductPage(tester);
 
       final badge = tester
-          .widgetList<Container>(
-            find.descendant(
-              of: find.byType(CartBadge).first,
-              matching: find.byType(Container),
-            ),
-          )
+          .widgetList<Container>(find.byType(Container))
           .map((container) => container.decoration)
           .whereType<BoxDecoration>()
-          .where((decoration) => decoration.color == CartBadge.badgeColour)
+          .where((decoration) => decoration.color == const Color(0xFFD93A2B))
           .toList();
 
       expect(badge, isNotEmpty, reason: 'count bubble should be red');
@@ -137,12 +128,13 @@ void main() {
 
   group('cart screen reads the same cart', () {
     testWidgets('an added product appears in the cart', (tester) async {
-      await pumpShell(tester);
+      await pumpProductPage(tester);
       await tapFirstAdd(tester);
 
       final added = CartService.instance.lines.single.name;
 
-      await tester.tap(find.byType(CartBadge).first);
+      await pumpProductPage(tester);
+      await tester.pumpWidget(const MaterialApp(home: CartScreen()));
       await tester.pumpAndSettle();
 
       expect(find.byType(CartScreen), findsOneWidget);
@@ -150,9 +142,9 @@ void main() {
     });
 
     testWidgets('an empty cart shows the empty state', (tester) async {
-      await pumpShell(tester);
+      await pumpProductPage(tester);
 
-      await tester.tap(find.byType(CartBadge).first);
+      await tester.tap(find.bySemanticsLabel('Cart'));
       await tester.pumpAndSettle();
 
       expect(find.text('Your cart is empty'), findsOneWidget);

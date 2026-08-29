@@ -4,16 +4,34 @@ import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import 'category_catalogue.dart';
 
-/// The white sub-category card: caption, offer line, and the product artwork
-/// filling whatever is left.
+/// A sub-category card: caption, offer line, and the product artwork filling
+/// whatever is left.
 ///
 /// Shared by the home "Shop by categories" strip and the Categories tab, so a
-/// change to one is a change to both.
+/// change to one is a change to both. [background] defaults to white for the
+/// Categories tab; the home strip passes its group's pastel so the panel and
+/// its cards read as one flat block of colour.
 class CategoryCard extends StatelessWidget {
   final SubCategory item;
   final VoidCallback? onTap;
 
-  const CategoryCard({super.key, required this.item, this.onTap});
+  /// Fill behind the card. White unless the caller wants the card to disappear
+  /// into a tinted panel.
+  final Color background;
+
+  /// Outline around the card. Null on the Categories tab, where white cards on
+  /// a tinted panel already separate themselves. The home strip passes white:
+  /// its cards share the panel's fill, so without a ring the grid would read
+  /// as one sheet rather than a set of products.
+  final Color? borderColor;
+
+  const CategoryCard({
+    super.key,
+    required this.item,
+    this.onTap,
+    this.background = AppColors.white,
+    this.borderColor,
+  });
 
   /// Taller than wide: the two text lines take a fixed slice off the top, so
   /// every extra pixel of height goes to the artwork.
@@ -22,8 +40,13 @@ class CategoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(10),
+      color: background,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: borderColor == null
+            ? BorderSide.none
+            : BorderSide(color: borderColor!, width: 3),
+      ),
       child: InkWell(
         onTap: onTap ?? () {},
         borderRadius: BorderRadius.circular(10),

@@ -117,7 +117,7 @@ class ShieldBottomNav extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 3),
-            // With six destinations a long label such as "Appointment"
+            // With five destinations a long label such as "Appointments"
             // cannot fit at full size on a narrow phone, so it scales down
             // rather than ellipsing into something unreadable.
             Expanded(

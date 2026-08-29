@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
-import '../cart/cart_service.dart';
+import '../location/address_book.dart';
+import '../location/address_form_screen.dart';
+import 'pharmacy_desk.dart';
+import 'prescription_cart_badge.dart';
+import 'prescription_cart_service.dart';
 import 'prescription_copy.dart';
 import 'prescription_detail_card.dart';
 import 'prescription_form.dart';
@@ -13,11 +17,21 @@ import 'prescription_record.dart';
 /// With nothing uploaded the screen is the upload form: pick from camera or
 /// gallery, review the file against the stated rules, say who it is for, how
 /// much to dispense, and whether it repeats. Once something has been uploaded
-/// the same screen becomes the list of prescriptions, each one a form for the
-/// medicines on it — because from that point on the question is no longer
-/// "how do I upload this" but "what is on it, and do I want it".
+/// the same screen becomes the list of prescriptions, each one showing what
+/// the pharmacy read on it — because from that point on the question is no
+/// longer "how do I upload this" but "what is on it, and do I want it".
 class UploadPrescriptionScreen extends StatefulWidget {
-  const UploadPrescriptionScreen({super.key});
+  const UploadPrescriptionScreen({super.key, this.initialForm});
+
+  /// The form the screen opens with.
+  ///
+  /// Injectable because choosing a file otherwise runs through the platform
+  /// image picker, which no widget test can drive — so the half of Proceed
+  /// that matters, the half where it becomes enabled, had never once been
+  /// exercised. That is how it came to be permanently grey.
+  ///
+  /// The screen takes ownership and disposes it like one of its own.
+  final PrescriptionFormController? initialForm;
 
   /// Cap from the on-screen guidance.
   static const int maxBytes = kPrescriptionMaxBytes;
@@ -33,7 +47,8 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
   /// The inline form, shown only while the book is empty. Replaced rather than
   /// reused after a submission, so a second prescription never opens with the
   /// first one's file and patient already filled in.
-  PrescriptionFormController _form = PrescriptionFormController();
+  late PrescriptionFormController _form =
+      widget.initialForm ?? PrescriptionFormController();
 
   /// Screen-local, and deliberately not remembered between visits: a member
   /// who switches once to read the steps should not find the whole flow in a
@@ -68,19 +83,28 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
       _form = PrescriptionFormController();
       spent.dispose();
     });
-    _say('${record.patient.name} · ${record.supplyLabel}');
+    _sendForReview(record);
   }
 
   Future<void> _addAnother() async {
     final record = await PrescriptionFormSheet.show(context, copy: _copy);
     if (record != null && mounted) {
-      _say('${record.patient.name} · ${record.supplyLabel}');
+      _sendForReview(record);
     }
+  }
+
+  /// Hands the upload to the counter. The card is already on screen showing
+  /// that it is being read, and fills itself in when the answer arrives.
+  void _sendForReview(PrescriptionRecord record) {
+    _say('${record.patient.name} · ${record.supplyLabel}');
+    PharmacyDesk.review(record);
   }
 
   void _delete(PrescriptionRecord record) {
     final index = _book.indexOf(record.id);
     _book.remove(record.id);
+    // The basket cannot go on holding a prescription that no longer exists.
+    PrescriptionCartService.instance.remove(record.id);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
@@ -88,40 +112,38 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
           content: Text(_copy.prescriptionRemoved),
           action: SnackBarAction(
             label: _copy.undo,
-            // Deleting a card takes every medicine typed onto it with it, so
-            // the way back is offered rather than a confirmation asked for.
-            onPressed: () => _book.insert(index, record),
+            // Deleting a card takes the pharmacy's whole reading of it with
+            // it, so the way back is offered rather than a confirmation
+            // asked for.
+            onPressed: () {
+              _book.insert(index, record);
+              if (record.inCart) {
+                PrescriptionCartService.instance.add(record);
+              }
+            },
           ),
         ),
       );
   }
 
+  /// Sends the whole prescription to the prescription basket.
+  ///
+  /// One prescription, one order. This used to break the record into a
+  /// product line per medicine and push them into the medicine cart, which
+  /// lost the prescription: six lines off one paper looked exactly like six
+  /// things picked off a shelf, and nothing in the cart could be traced back
+  /// to the number the counter files it under.
   void _addToCart(PrescriptionRecord record) {
-    final lines = record.dispensable;
-    for (final medicine in lines) {
-      CartService.instance.add(
-        name: medicine.name.trim(),
-        pack:
-            '${_copy.intake} ${medicine.intake.code} · '
-            '${record.days} ${_copy.total.toLowerCase()}',
-        price: 0,
-        qty: medicine.intake.totalFor(record.days),
-      );
-    }
+    PrescriptionCartService.instance.add(record);
     record.inCart = true;
     _book.touch();
-    _say('${lines.length} · ${_copy.sentToCart}');
+    _say('${record.number} · ${_copy.sentToCart}');
   }
 
   void _say(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  void _onChanged() {
-    setState(() {});
-    _book.touch();
   }
 
   @override
@@ -142,6 +164,13 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
             color: AppColors.textDark,
           ),
         ),
+        // The basket this screen fills, on the screen that fills it. Sending
+        // a prescription to the counter is otherwise a tap with nowhere
+        // visible to land.
+        actions: const [
+          PrescriptionCartBadge(),
+          SizedBox(width: 12),
+        ],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
           child: Divider(height: 1, color: AppColors.border),
@@ -224,12 +253,15 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
               key: ValueKey(record.id),
               record: record,
               copy: _copy,
-              onChanged: _onChanged,
               onDelete: () => _delete(record),
               onAddToCart: () => _addToCart(record),
             ),
           ),
-        const SizedBox(height: 6),
+        // Once something is uploaded the next question is where it goes, so
+        // the delivery address sits with the prescriptions rather than being
+        // asked for only at the very end.
+        _DeliveryDetailsCard(copy: _copy),
+        const SizedBox(height: 16),
         _PharmacistCallCard(copy: _copy),
       ],
     );
@@ -541,6 +573,189 @@ class _PharmacistCallCard extends StatelessWidget {
   }
 }
 
+/// Where a confirmed prescription order is sent.
+///
+/// Shown only once something has been uploaded — before that the screen is
+/// still the upload form, and an address asked for there would be a field with
+/// no order behind it. It reads the shared [AddressBook], so an address saved
+/// here, at checkout, or from the location sheet is the same one everywhere.
+class _DeliveryDetailsCard extends StatelessWidget {
+  final PrescriptionCopy copy;
+
+  const _DeliveryDetailsCard({required this.copy});
+
+  Future<void> _edit(BuildContext context) {
+    return Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AddressFormScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AddressBook.instance,
+      builder: (context, _) {
+        final address = AddressBook.instance.deliverTo;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.local_shipping_outlined,
+                    size: 20,
+                    color: AppColors.brandBlue,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      copy.deliveryDetails,
+                      style: const TextStyle(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                  if (address != null)
+                    TextButton(
+                      onPressed: () => _edit(context),
+                      style: TextButton.styleFrom(
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: Text(
+                        copy.changeAddress,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.brandBlue,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Text(
+                copy.deliveryDetailsIntro,
+                style: const TextStyle(
+                  fontSize: 13,
+                  height: 1.35,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (address == null)
+                OutlinedButton.icon(
+                  onPressed: () => _edit(context),
+                  icon: const Icon(Icons.add_location_alt_outlined, size: 20),
+                  label: Text(copy.addDeliveryAddress),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.brandBlue,
+                    side: const BorderSide(
+                      color: AppColors.brandBlue,
+                      width: 1.4,
+                    ),
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                )
+              else
+                _AddressSummary(address: address),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AddressSummary extends StatelessWidget {
+  final Address address;
+
+  const _AddressSummary({required this.address});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.pageTint,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 3,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.offerTint,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  address.label.label,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.brandBlue,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  address.receiver,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            address.summary,
+            style: const TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: AppColors.textBody,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            address.phone,
+            style: const TextStyle(fontSize: 13, color: AppColors.textMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The one action bar at the foot of the screen: Proceed while the form is
 /// being filled in, "Add new prescription" once the list has taken over.
 class _BottomBar extends StatelessWidget {
@@ -565,7 +780,23 @@ class _BottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bar = Container(
+    final trigger = listenable;
+    if (trigger == null) {
+      return _bar();
+    }
+    // Built inside the builder, not before it.
+    //
+    // This used to construct the bar once and hand that same widget back from
+    // the builder on every notification. [enabled] was therefore read exactly
+    // once — as the screen opened, with the form empty — and the disabled
+    // button it produced was what every later rebuild returned. Proceed stayed
+    // grey however much of the form was filled in, and no amount of notifying
+    // from the controller could have changed it.
+    return ListenableBuilder(listenable: trigger, builder: (_, _) => _bar());
+  }
+
+  Widget _bar() {
+    return Container(
       decoration: const BoxDecoration(
         color: AppColors.white,
         border: Border(top: BorderSide(color: AppColors.border)),
@@ -578,12 +809,6 @@ class _BottomBar extends StatelessWidget {
         ),
       ),
     );
-
-    final trigger = listenable;
-    if (trigger == null) {
-      return bar;
-    }
-    return ListenableBuilder(listenable: trigger, builder: (_, _) => bar);
   }
 
   Widget _button() {
@@ -608,9 +833,7 @@ class _BottomBar extends StatelessWidget {
           side: const BorderSide(color: AppColors.brandBlue, width: 1.4),
           backgroundColor: AppColors.offerTint,
           padding: const EdgeInsets.symmetric(vertical: 15),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
     }

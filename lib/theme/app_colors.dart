@@ -42,9 +42,10 @@ class AppColors {
   static const Color chipSlateTint = Color(0xFFF1F3F7);
 
   // ---- Privilege cards ----
-  // One hue per card, so the five are told apart at a glance rather than by
-  // reading the amounts. Each accent is dark enough to carry text on its tint,
-  // and each pair is distinct from the four category pastels above.
+  // One hue per card, so the three are told apart at a glance rather than by
+  // reading the amounts. Each accent is dark enough to carry text on its tint
+  // and white text on itself, and each pair is distinct from the category
+  // pastels above.
   static const Color silverAccent = Color(0xFF6E7A8A);
   static const Color silverTint = Color(0xFFEFF1F5);
 
@@ -54,11 +55,69 @@ class AppColors {
   static const Color platinumAccent = Color(0xFF2F6E73);
   static const Color platinumTint = Color(0xFFE2F0F0);
 
-  static const Color titaniumAccent = Color(0xFF5A4A96);
-  static const Color titaniumTint = Color(0xFFECE7F8);
+  // ---- Reward points ----
+  // The coin the points balance is struck on. Its own gold rather than the
+  // Gold card's above: a coin sitting in the home header in the Gold Shield's
+  // colour would read as a plan the member holds, which is a different thing
+  // from a points balance entirely.
+  static const Color coinFace = Color(0xFFF3C144);
+  static const Color coinShine = Color(0xFFFFE7A6);
+  static const Color coinEdge = Color(0xFFC08E1C);
 
-  static const Color diamondAccent = Color(0xFF1D7FA8);
-  static const Color diamondTint = Color(0xFFE0F1F8);
+  /// The brightest point of the struck face and the lit side of the star —
+  /// what gives the disc its dome.
+  static const Color coinHighlight = Color(0xFFFFF7DA);
+
+  /// The shaded quarter of the milled rim, opposite the light.
+  static const Color coinDeep = Color(0xFF9A6B12);
+
+  /// What is struck into the face. Dark enough to be read on [coinFace] at
+  /// the 13px the header coin is drawn at.
+  static const Color coinInk = Color(0xFF6E4A0C);
+
+  // ---- Referral ladder ----
+  // One hue per rung, running cool to warm so a glance up the ladder reads as
+  // a climb. Deliberately not the privilege card colours: a level is earned by
+  // bringing people in, a card is bought, and sharing a palette said the two
+  // were the same ladder. Each accent carries white text; each tint carries
+  // its own accent.
+  static const Color levelStarter = Color(0xFF3F7FB5);
+  static const Color levelStarterTint = Color(0xFFE7F0F8);
+
+  static const Color levelRiser = Color(0xFF2F8F7A);
+  static const Color levelRiserTint = Color(0xFFE3F2EE);
+
+  static const Color levelAchiever = Color(0xFF6E8C2B);
+  static const Color levelAchieverTint = Color(0xFFEFF4E1);
+
+  static const Color levelChampion = Color(0xFFC4761B);
+  static const Color levelChampionTint = Color(0xFFFBF0E0);
+
+  static const Color levelLegend = Color(0xFF9A4C8E);
+  static const Color levelLegendTint = Color(0xFFF6EAF4);
+
+  // ---- Wallet panel ----
+  // Flat [brandBlue] — the same blue the top-up button under the panel is
+  // filled with, so the card and the one control on the screen read as one
+  // piece rather than as a card and a button that happen to sit together.
+  //
+  // Flat rather than a gradient: the point is that it matches something
+  // sitting right beside it, and a panel that darkens across its own face
+  // stops matching anything halfway along.
+  //
+  // It carries white type, like the button does.
+  static const Color walletPanel = brandBlue;
+
+  /// The shadow that lifts the panel off the page.
+  static const Color walletShadow = Color(0xFF16305C);
+
+  // ---- Plan status ----
+  // Whether a plan's instalment has come due this month. Both are lifted well
+  // clear of the app's own green and red, because they sit on the blue panel
+  // and have to be read on it — and because a plan that has not come round
+  // yet is waiting rather than wrong.
+  static const Color planActive = Color(0xFFB6E05A);
+  static const Color planWaiting = Color(0xFFF9A8A5);
 
   // ---- Surfaces ----
   static const Color white = Color(0xFFFFFFFF);

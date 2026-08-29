@@ -5,18 +5,12 @@ import '../cart/cart_badge.dart';
 import '../location/address_book.dart';
 import '../location/location_sheet.dart';
 import '../wallet/wallet_screen.dart';
+import 'points_badge.dart';
 
-/// Top app chrome: menu, wordmark, the wallet and cart actions, and the
-/// delivery location selector beneath them.
-///
-/// This is the only cart in the app's chrome. The home screen pins this header,
-/// so it stays on screen while the feed scrolls.
+/// Top app chrome: menu, wordmark, cart, account balances, and the delivery
+/// location selector beneath them.
 class HomeHeader extends StatefulWidget {
-  /// The home screen draws the cart itself, at a fixed position, so it can
-  /// hold still while everything else here collapses away. It passes false.
-  final bool showCart;
-
-  const HomeHeader({super.key, this.showCart = true});
+  const HomeHeader({super.key});
 
   /// Height of the action row. Fixed so that a cart drawn outside this
   /// widget can be centred against the wallet without guessing at font metrics.
@@ -67,20 +61,35 @@ class _HomeHeaderState extends State<HomeHeader> {
                 height: 26,
                 fit: BoxFit.contain,
               ),
-              // The wordmark that used to fill this slot was also what pinned
-              // the trailing actions right; a Spacer now does that job.
-              const Spacer(),
-              _CircleAction(
-                icon: Icons.account_balance_wallet_outlined,
-                tooltip: 'Wallet',
-                onTap: () => Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (_) => const WalletScreen())),
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Points, wallet and cart sit together because they
+                        // are the three account figures a member checks most.
+                        // Cart is kept on the outer edge, wallet centred.
+                        const PointsBadge(),
+                        const SizedBox(width: 8),
+                        _CircleAction(
+                          icon: Icons.account_balance_wallet_outlined,
+                          tooltip: 'Wallet',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const WalletScreen(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const CartBadge(),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-              if (widget.showCart) ...[
-                const SizedBox(width: 10),
-                const CartBadge(),
-              ],
             ],
           ),
         ),

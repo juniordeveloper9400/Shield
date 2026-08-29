@@ -54,6 +54,13 @@ class Registration {
   /// `04 Sep 1994` — the form's display format, and the one the picker fills.
   String get dobLabel => dates.formatDate(dob);
 
+  /// Whole years today, derived rather than stored — an age written down once
+  /// is wrong from the next birthday onwards.
+  int get age => dates.ageInYears(dob);
+
+  /// `31 yrs` — what the form's date field prints beside the date.
+  String get ageLabel => dates.ageLabel(dob);
+
   /// Full postal line, in the order an envelope reads.
   String get addressLine => '$address, $place, $state - $pincode';
 

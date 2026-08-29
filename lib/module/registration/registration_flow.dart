@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'registration_screen.dart';
@@ -28,16 +30,16 @@ class RegistrationFlow {
   /// because they would not give an email is not a trade-off worth making.
   static Future<void> offerThen(
     BuildContext context,
-    VoidCallback action,
+    FutureOr<void> Function() action,
   ) async {
     if (!RegistrationService.instance.shouldPrompt) {
-      action();
+      await action();
       return;
     }
 
     await show(context);
     if (context.mounted) {
-      action();
+      await action();
     }
   }
 }

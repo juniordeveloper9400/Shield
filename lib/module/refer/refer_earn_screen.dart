@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../money.dart';
 import '../../theme/app_colors.dart';
+import '../privilege/privilege_tier.dart';
 import 'journey_map.dart';
 import 'referral_level.dart';
+import 'reward_graph.dart';
 
 /// Refer & earn: current standing, the shareable code, and the level ladder
 /// drawn as a journey map.
@@ -22,6 +25,7 @@ class ReferEarnScreen extends StatelessWidget {
     const levels = ReferralLadder.levels;
     final cleared = progress.currentLevel(levels);
     final next = progress.nextLevel(levels);
+    final standing = ReferralLadder.standingFor(progress);
 
     return Scaffold(
       backgroundColor: AppColors.pageTint,
@@ -54,10 +58,15 @@ class ReferEarnScreen extends StatelessWidget {
               totalLevels: levels.length,
             ),
           ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _PlanCommissionCard(progress: progress),
+          ),
           const SizedBox(height: 14),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: _CodeCard(code: referralCode),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: _CodeCard(code: referralCode, accent: standing.accent),
           ),
           const SizedBox(height: 24),
           const Padding(
@@ -86,6 +95,357 @@ class ReferEarnScreen extends StatelessWidget {
   }
 }
 
+/// The second way the programme pays: a share of every privilege plan taken
+/// out by somebody who was invited.
+///
+/// It sits directly under the standing card because it is the answer to the
+/// question the "Plans activated" figure up there raises — those activations
+/// are worth something, and this says what — and a rule that explains a
+/// figure has to be within reach of it.
+///
+/// Folded to its headline until asked. What the commission pays is three
+/// bands and a paragraph, and printed open it pushed the invite code and the
+/// whole ladder below the fold. The rate is the part worth seeing every
+/// visit; the arithmetic behind it is worth reading once.
+///
+/// The ladder and this are deliberately separate. Rungs clear on referrals
+/// alone, so bringing in somebody who never buys a plan still climbs; the
+/// commission is what makes the ones who do buy worth more.
+class _PlanCommissionCard extends StatefulWidget {
+  final ReferralProgress progress;
+
+  const _PlanCommissionCard({required this.progress});
+
+  @override
+  State<_PlanCommissionCard> createState() => _PlanCommissionCardState();
+}
+
+class _PlanCommissionCardState extends State<_PlanCommissionCard> {
+  bool _expanded = false;
+
+  void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
+  Widget build(BuildContext context) {
+    const accent = AppColors.brandGreenDeep;
+    final percent = ReferralLadder.planCommissionPercent;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: DecoratedBox(
+        // Green through blue, the same pair the home screen's refer card is
+        // washed in — the two surfaces that pay you should look related.
+        // Pale, because the three bands inside are drawn in their own cards'
+        // colours and a deep ground would swallow silver whole.
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [AppColors.greenTint, AppColors.offerTint],
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: accent.withValues(alpha: 0.35)),
+        ),
+        child: Material(
+          color: AppColors.transparent,
+          child: InkWell(
+            key: const ValueKey('commission-card'),
+            // The whole card is the switch. A 28px arrow is a small thing to
+            // ask a thumb to find, and the arrow is a marker of state rather
+            // than the only way to change it.
+            onTap: _toggle,
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: accent,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: const Icon(
+                          Icons.percent_rounded,
+                          size: 20,
+                          color: AppColors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '$percent% on every plan they activate',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                height: 1.25,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            const Text(
+                              'Paid on top of your level points',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                color: AppColors.textBody,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _CommissionArrow(expanded: _expanded, accent: accent),
+                    ],
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    alignment: Alignment.topCenter,
+                    child: _expanded
+                        ? _CommissionDetail(
+                            progress: widget.progress,
+                            percent: percent,
+                          )
+                        : const SizedBox(width: double.infinity),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// What the rate comes to: the rule in words, the three bands, and where the
+/// member stands on it. Hidden behind the arrow.
+class _CommissionDetail extends StatelessWidget {
+  final ReferralProgress progress;
+  final int percent;
+
+  const _CommissionDetail({required this.progress, required this.percent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 13),
+        Divider(
+          height: 1,
+          color: AppColors.brandGreenDeep.withValues(alpha: 0.22),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'When someone you invited activates a privilege plan, $percent% of '
+          'what they load comes back to you as Sahakar money.',
+          style: const TextStyle(
+            fontSize: 13,
+            height: 1.4,
+            color: AppColors.textBody,
+          ),
+        ),
+        const SizedBox(height: 12),
+        // The three bands sit on white rather than straight on the wash. Each
+        // figure is drawn in its own card's colour, and silver's slate grey
+        // does not carry enough contrast against a tint to be read at this
+        // size — on white it does.
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: AppColors.brandGreenDeep.withValues(alpha: 0.18),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(11, 10, 11, 3),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // What that comes to on each of the three cards, worked out from
+              // the programme's own amounts rather than written down, so the
+              // figures cannot drift from what the privilege screen is selling.
+              for (final tier in PrivilegeProgramme.tiers)
+                _CommissionRow(tier: tier),
+            ],
+          ),
+        ),
+        const SizedBox(height: 11),
+        _CommissionStanding(progress: progress),
+      ],
+    );
+  }
+}
+
+/// The fold-out marker on the commission card: an arrow that turns over when
+/// the figures behind it are showing.
+class _CommissionArrow extends StatelessWidget {
+  final bool expanded;
+  final Color accent;
+
+  const _CommissionArrow({required this.expanded, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: expanded
+          ? 'Hide what the commission pays'
+          : 'Show what the commission pays',
+      child: Container(
+        key: const ValueKey('commission-arrow'),
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: AppColors.white.withValues(alpha: 0.7),
+          shape: BoxShape.circle,
+          border: Border.all(color: accent.withValues(alpha: 0.5)),
+        ),
+        alignment: Alignment.center,
+        child: AnimatedRotation(
+          turns: expanded ? 0.5 : 0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 20,
+            color: accent,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One card's band: what it can be loaded with, and what that pays back.
+class _CommissionRow extends StatelessWidget {
+  final PrivilegeTier tier;
+
+  const _CommissionRow({required this.tier});
+
+  @override
+  Widget build(BuildContext context) {
+    // The band's ends, not every load on it. Platinum has five amounts and
+    // listing all of them would turn a rule into a price list.
+    final low = ReferralLadder.planCommissionOn(tier.lowest);
+    final high = ReferralLadder.planCommissionOn(tier.highest);
+    final range = low == high
+        ? '₹${formatRupees(low)}'
+        : '₹${formatRupees(low)} – ₹${formatRupees(high)}';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: tier.accent,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              tier.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textBody,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            range,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: tier.accent,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Where the member stands on it: how many of the people they invited have
+/// taken a plan out, and what that has paid.
+///
+/// The figure comes with the count rather than being worked out from it. Two
+/// activations pay anywhere between ₹400 and ₹4,000 depending on which cards
+/// were bought, so a total multiplied out of the count would be the app
+/// inventing a number — see [ReferralProgress.sahakarMoney].
+class _CommissionStanding extends StatelessWidget {
+  final ReferralProgress progress;
+
+  const _CommissionStanding({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    final activated = progress.plansActivated;
+    final none = activated == 0;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Icon(
+          none ? Icons.hourglass_empty_rounded : Icons.check_circle_rounded,
+          size: 16,
+          color: none ? AppColors.textMuted : AppColors.brandGreenDeep,
+        ),
+        const SizedBox(width: 7),
+        Expanded(
+          child: Text(
+            none
+                ? 'None of your invites has activated a plan yet'
+                : '$activated of your ${progress.directReferrals} invites '
+                      'activated a plan',
+            style: TextStyle(
+              fontSize: 12.5,
+              height: 1.3,
+              fontWeight: none ? FontWeight.w500 : FontWeight.w700,
+              color: none ? AppColors.textMuted : AppColors.textDark,
+            ),
+          ),
+        ),
+        if (!none) ...[
+          const SizedBox(width: 8),
+          // The running total of Sahakar money, which is what this whole card
+          // is describing the source of.
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.brandGreenDeep,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              progress.sahakarMoneyLabel,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: AppColors.white,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _StandingCard extends StatelessWidget {
   final int cleared;
   final ReferralLevel? next;
@@ -102,20 +462,17 @@ class _StandingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final nextLevel = next;
-    final fraction = nextLevel == null
-        ? 1.0
-        : progress.progressTowards(nextLevel);
+    final standing = ReferralLadder.standingFor(progress);
+    final accent = standing.accent;
 
     return Container(
+      key: const ValueKey('standing-card'),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.brandBlue, AppColors.brandNavy],
-        ),
+        color: AppColors.brandBlueDeep,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.brandBlue.withValues(alpha: 0.24)),
       ),
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -124,7 +481,7 @@ class _StandingCard extends StatelessWidget {
               const Expanded(
                 child: Text(
                   'Current level',
-                  style: TextStyle(fontSize: 13.5, color: Color(0xFFC9D8F0)),
+                  style: TextStyle(fontSize: 13, color: Color(0xFFE6EBF3)),
                 ),
               ),
               Container(
@@ -133,67 +490,106 @@ class _StandingCard extends StatelessWidget {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: AppColors.brandGreen,
+                  color: AppColors.white.withValues(alpha: 0.9),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   '$cleared of $totalLevels',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
+                    color: _deepen(accent),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 14),
           Text(
-            cleared == 0
-                ? 'Not started'
-                : 'Level $cleared · ${ReferralLadder.levels[cleared - 1].title}',
-            maxLines: 1,
+            cleared == 0 ? 'Not started' : 'Level $cleared - ${standing.name}',
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              fontSize: 26,
+              fontSize: 22,
+              height: 1.12,
               fontWeight: FontWeight.w800,
               color: AppColors.white,
             ),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _Metric(value: '${progress.directReferrals}', label: 'Referred'),
-              _Metric(value: '${progress.effectiveCards}', label: 'Privilege'),
-              const _Metric(value: '₹300', label: 'Earned'),
-            ],
-          ),
+          const SizedBox(height: 12),
+          _MetricGrid(progress: progress),
+          const SizedBox(height: 14),
+          // The four figures above say how far the member has come; the graph
+          // says where that leaves them on a ladder of five, and how much
+          // steeper the paying gets from here. Neither reads as the other.
+          RewardGraph(levels: ReferralLadder.levels, progress: progress),
           if (nextLevel != null) ...[
-            const SizedBox(height: 16),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: LinearProgressIndicator(
-                value: fraction,
-                minHeight: 8,
-                backgroundColor: const Color(0x33FFFFFF),
-                valueColor: const AlwaysStoppedAnimation(AppColors.brandGreen),
-              ),
-            ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               'Refer '
-              '${(nextLevel.directRequired - progress.directReferrals).clamp(0, 99)}'
+              '${(nextLevel.referralsRequired - progress.directReferrals).clamp(0, 99)}'
               ' more to reach Level ${nextLevel.level} and earn '
-              '${nextLevel.reward}',
+              '${nextLevel.pointsLabel}',
               style: const TextStyle(
-                fontSize: 13,
-                height: 1.35,
-                color: Color(0xFFDCE7F7),
+                fontSize: 12.5,
+                height: 1.3,
+                color: Color(0xFFE6EBF3),
               ),
             ),
           ],
         ],
       ),
+    );
+  }
+
+  static Color _deepen(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    return hsl
+        .withLightness((hsl.lightness * 0.48).clamp(0.0, 1.0))
+        .withSaturation((hsl.saturation * 1.05).clamp(0.0, 1.0))
+        .toColor();
+  }
+}
+
+class _MetricGrid extends StatelessWidget {
+  final ReferralProgress progress;
+
+  const _MetricGrid({required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      runSpacing: 10,
+      children: [
+        SizedBox(
+          width: MediaQuery.sizeOf(context).width / 2 - 32,
+          child: _Metric(
+            value: '${progress.directReferrals}',
+            label: 'Referred',
+          ),
+        ),
+        SizedBox(
+          width: MediaQuery.sizeOf(context).width / 2 - 32,
+          child: _Metric(
+            value: '${progress.plansActivated}',
+            label: 'Plans activated',
+          ),
+        ),
+        SizedBox(
+          width: MediaQuery.sizeOf(context).width / 2 - 32,
+          child: _Metric(
+            value: ReferralLadder.pointsEarnedLabel(progress),
+            label: 'Points',
+          ),
+        ),
+        SizedBox(
+          width: MediaQuery.sizeOf(context).width / 2 - 32,
+          child: _Metric(
+            value: progress.sahakarMoneyLabel,
+            label: 'Sahakar money earned',
+          ),
+        ),
+      ],
     );
   }
 }
@@ -206,39 +602,41 @@ class _Metric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              maxLines: 1,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: AppColors.white,
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            value,
+            maxLines: 1,
+            style: const TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppColors.white,
             ),
           ),
-          Text(
+        ),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
             label,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12, color: Color(0xFFC9D8F0)),
+            style: const TextStyle(fontSize: 12, color: Color(0xFFE6EBF3)),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
 class _CodeCard extends StatelessWidget {
   final String code;
+  final Color accent;
 
-  const _CodeCard({required this.code});
+  const _CodeCard({required this.code, required this.accent});
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +666,7 @@ class _CodeCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.pageTint,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.brandGreen, width: 1.3),
+                    border: Border.all(color: accent, width: 1.3),
                   ),
                   child: Text(
                     code,

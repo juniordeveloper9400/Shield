@@ -1,98 +1,110 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../theme/app_colors.dart';
 
-/// Customer video review item model.
+/// One clip in the reel.
+///
+/// [name] is what the card and the player header are labelled with; it is
+/// taken from what the clip is of, because that is all this file can honestly
+/// know about it. [subtitle] is the line set over the video in the player and
+/// is null where there is nothing to add — a clip of a shop does not need a
+/// caption telling the viewer it is a shop.
 class CustomerReviewItem {
   final String id;
   final String name;
-  final String fullName;
-  final String location;
-  final String avatar;
-  final int rating;
-  final String subtitle;
-  final String fullReview;
+
+  /// The clip itself: an asset video, drawn on the card and played full
+  /// screen.
+  final String video;
+
+  /// Optional line over the video in the story player.
+  final String? subtitle;
+
+  /// How long the story runs when the video will not play.
+  ///
+  /// The real length comes from the file. This is only what the progress bar
+  /// falls back to when there is no video to read a length off — a broken
+  /// asset, or a test with no platform to decode it.
   final Duration duration;
 
   const CustomerReviewItem({
     required this.id,
     required this.name,
-    required this.fullName,
-    required this.location,
-    required this.avatar,
-    required this.rating,
-    required this.subtitle,
-    required this.fullReview,
+    required this.video,
+    this.subtitle,
     this.duration = const Duration(seconds: 8),
   });
 }
 
-/// "What our customers have to say" — interactive customer video review reel
-/// section displayed directly under the offer banner.
+/// "What our customers have to say" — the customer video reel under the offer
+/// banner, and the full-screen story player it opens into.
 class CustomerReviews extends StatelessWidget {
   const CustomerReviews({super.key});
 
+  /// The clips, in the order they run.
+  ///
+  /// Plain lowercase filenames with no spaces, because an asset path is a
+  /// URI. Both batches of clips have arrived with spaces in their names and
+  /// both times nothing played until they were renamed; keep any new clip to
+  /// this shape.
+  ///
+  /// The names below are taken from the filenames, which is the only thing
+  /// this file knows about what is in each clip. Anything more — who is
+  /// speaking, what they say — has to come from whoever shot them.
+  /// The clips, in the order they run: the shops first, then what goes on
+  /// inside them.
+  ///
+  /// Plain lowercase filenames with no spaces, because an asset path is a
+  /// URI. Every batch of clips has arrived with spaces in their names and
+  /// every time nothing played until they were renamed; keep any new clip to
+  /// this shape.
+  ///
+  /// The names below are taken from the filenames, which is the only thing
+  /// this file knows about what is in each clip. Anything more — who is
+  /// speaking, what they say — has to come from whoever shot them.
   static const List<CustomerReviewItem> reviews = [
     CustomerReviewItem(
-      id: 'jai',
-      name: 'Jai',
-      fullName: 'Jai Sharma',
-      location: 'Kolkata, WB',
-      avatar: 'assets/avatars/avatar_1.png',
-      rating: 5,
-      subtitle:
-          'basically main belong\nKolkata se karta hoon\n\nSHIELD se regular medicines order karta hoon, delivery always super fast!',
-      fullReview:
-          'Ordered my monthly medicines and saved almost half the price. Delivery reached in two days and everything was sealed properly with batch verification.',
+      id: 'melattur',
+      name: 'Melattur',
+      video: 'assets/reviews/melattur_store.mp4',
     ),
     CustomerReviewItem(
-      id: 'srishti',
-      name: 'Srishti',
-      fullName: 'Srishti Menon',
-      location: 'Mumbai, MH',
-      avatar: 'assets/avatars/avatar_2.png',
-      rating: 5,
-      subtitle:
-          'Maine supplements order kiye the.\nQuality and packaging both are top notch!',
-      fullReview:
-          'Great range of wellness supplements and genuine medicines. Customer support responded within minutes when I needed to update my delivery address.',
+      id: 'makkaraparamba',
+      name: 'Makkaraparamba',
+      video: 'assets/reviews/makkaraparamba_store.mp4',
     ),
     CustomerReviewItem(
-      id: 'anil',
-      name: 'Anil',
-      fullName: 'Anil Kapoor',
-      location: 'Delhi, DL',
-      avatar: 'assets/avatars/avatar_3.png',
-      rating: 5,
-      subtitle:
-          'My regular BP medicines arrive right on time.\nSaved over ₹1,200 every month!',
-      fullReview:
-          'The branded substitute suggestion saved me ₹1,200 on my regular BP medication. Same composition, same effect, much lower cost.',
+      id: 'tirur',
+      name: 'Tirur',
+      video: 'assets/reviews/tirur_store.mp4',
     ),
     CustomerReviewItem(
-      id: 'anjali',
-      name: 'Anjali',
-      fullName: 'Anjali Sharma',
-      location: 'Bengaluru, KA',
-      avatar: 'assets/avatars/avatar_4.png',
-      rating: 5,
-      subtitle:
-          'Prescription upload karna bahut simple tha.\nPharmacist ne call karke confirm kiya!',
-      fullReview:
-          'Uploading the prescription was seamless and the verified pharmacist called to double-check dosage before dispatch. Very reassuring service.',
+      id: 'tirurangadi',
+      name: 'Tirurangadi',
+      video: 'assets/reviews/tirurangadi_store.mp4',
     ),
     CustomerReviewItem(
-      id: 'vandana',
-      name: 'Vandana',
-      fullName: 'Vandana Joshi',
-      location: 'Pune, MH',
-      avatar: 'assets/avatars/avatar_5.png',
-      rating: 5,
-      subtitle:
-          'Cashback and refill reminders really help.\nReliable and trustworthy service!',
-      fullReview:
-          'Wallet cashback actually works. I have been using SHIELD for six months now and the monthly savings genuinely add up.',
+      id: 'heart',
+      name: 'From the heart',
+      video: 'assets/reviews/customer_review_from_heart.mp4',
+    ),
+    CustomerReviewItem(
+      id: 'smart_clinic',
+      name: 'Smart clinic',
+      video: 'assets/reviews/smart_clinic.mp4',
+    ),
+    CustomerReviewItem(
+      id: 'preventive',
+      name: 'Preventive health',
+      video: 'assets/reviews/preventive_health.mp4',
+    ),
+    CustomerReviewItem(
+      id: 'serum',
+      name: 'The serum secret',
+      video: 'assets/reviews/the_serum_secret.mp4',
     ),
   ];
 
@@ -156,17 +168,84 @@ class CustomerReviews extends StatelessWidget {
   }
 }
 
-/// Video Review Thumbnail Card matching Screenshot 1.
-class _VideoReviewThumbnailCard extends StatelessWidget {
+/// One card in the reel: a still frame lifted out of the clip.
+///
+/// The row reads as a row of photographs and plays nothing. Eleven clips all
+/// running at once is a wall of movement nobody asked for and eleven decoders
+/// on the home feed; the story player is where these actually play, and it
+/// opens because someone chose to open it.
+///
+/// The still comes out of the clip rather than out of a poster image because
+/// there are no poster images — the frame is decoded once, held, and the
+/// player is left paused on it.
+class _VideoReviewThumbnailCard extends StatefulWidget {
   final CustomerReviewItem review;
   final VoidCallback onTap;
 
   const _VideoReviewThumbnailCard({required this.review, required this.onTap});
 
   @override
+  State<_VideoReviewThumbnailCard> createState() =>
+      _VideoReviewThumbnailCardState();
+}
+
+class _VideoReviewThumbnailCardState extends State<_VideoReviewThumbnailCard> {
+  VideoPlayerController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  /// How far into a clip the still is taken from.
+  ///
+  /// Not the very first frame: clips routinely open on black or on a fade,
+  /// and a row of black rectangles is a worse thumbnail than no thumbnail.
+  /// A moment in, there is a face.
+  static const Duration _posterFrame = Duration(milliseconds: 600);
+
+  /// Built and torn down with the card, which the horizontal list does as
+  /// cards scroll in and out — so only the clips on screen hold a decoder,
+  /// and each holds it only long enough to paint one frame.
+  Future<void> _load() async {
+    final controller = VideoPlayerController.asset(widget.review.video);
+    try {
+      await controller.initialize();
+      await controller.setVolume(0);
+      // Seeking is what forces a frame to be decoded and shown. Left paused
+      // there, the card is a photograph.
+      final length = controller.value.duration;
+      await controller.seekTo(
+        length > _posterFrame ? _posterFrame : Duration.zero,
+      );
+    } catch (error) {
+      // A clip that will not decode leaves the card on its placeholder rather
+      // than taking the feed down with it — but it says so on the console,
+      // because a reel that silently shows placeholders gives nobody anything
+      // to go on.
+      debugPrint('SHIELD: review clip failed — ${widget.review.video}: $error');
+      await controller.dispose();
+      return;
+    }
+
+    if (!mounted) {
+      await controller.dispose();
+      return;
+    }
+    setState(() => _controller = controller);
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap,
       child: Container(
         width: 142,
         decoration: BoxDecoration(
@@ -184,21 +263,7 @@ class _VideoReviewThumbnailCard extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Portrait photo of customer
-              Image.asset(
-                review.avatar,
-                fit: BoxFit.cover,
-                alignment: Alignment.topCenter,
-                errorBuilder: (_, _, _) => Container(
-                  color: AppColors.bannerTop,
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.person_rounded,
-                    size: 48,
-                    color: AppColors.brandBlue,
-                  ),
-                ),
-              ),
+              _ReviewVideoSurface(controller: _controller),
 
               // Gradient overlay from top (dark for name) to bottom
               DecoratedBox(
@@ -216,13 +281,13 @@ class _VideoReviewThumbnailCard extends StatelessWidget {
                 ),
               ),
 
-              // Reviewer First Name on Top Left (as in Screenshot 1)
+              // Reviewer first name, top left.
               Positioned(
                 top: 12,
                 left: 12,
                 right: 12,
                 child: Text(
-                  review.name,
+                  widget.review.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -247,7 +312,52 @@ class _VideoReviewThumbnailCard extends StatelessWidget {
   }
 }
 
-/// Fullscreen Story / Customer Video Review Player matching Screenshot 2.
+/// A clip drawn to fill its box, or the placeholder that stands in until it
+/// can be.
+///
+/// Cover rather than contain: these are portrait clips in a portrait card and
+/// letterboxing them would leave bars down a row that is meant to read as one
+/// continuous strip of faces.
+class _ReviewVideoSurface extends StatelessWidget {
+  final VideoPlayerController? controller;
+
+  /// What fills the box until the clip can. A flat colour and nothing else:
+  /// a camcorder icon that shows for a moment and then vanishes announces the
+  /// wait instead of covering it, and in the player — which opens black and
+  /// fades the clip up — there is nothing to cover in the first place.
+  final Color placeholder;
+
+  const _ReviewVideoSurface({
+    required this.controller,
+    this.placeholder = AppColors.bannerTop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final player = controller;
+    if (player == null || !player.value.isInitialized) {
+      return ColoredBox(color: placeholder);
+    }
+
+    return FittedBox(
+      fit: BoxFit.cover,
+      clipBehavior: Clip.hardEdge,
+      child: SizedBox(
+        width: player.value.size.width,
+        height: player.value.size.height,
+        child: VideoPlayer(player),
+      ),
+    );
+  }
+}
+
+/// The full-screen story player: one review at a time, with sound.
+///
+/// Progress, the scrubber and the clock all read the clip's own position when
+/// there is a clip playing. When there is not — an asset that will not decode,
+/// or a widget test with no platform behind it — an animation of the review's
+/// stated [CustomerReviewItem.duration] drives them instead, so the story
+/// still advances and the controls still mean something.
 class CustomerStoryPlayerModal extends StatefulWidget {
   final List<CustomerReviewItem> reviews;
   final int initialIndex;
@@ -269,8 +379,12 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
   late AnimationController _animController;
   bool _isPlaying = true;
   bool _isMuted = false;
-  Timer? _ticker;
-  double _currentSeconds = 0.0;
+
+  VideoPlayerController? _video;
+
+  /// Bumped every time a story starts, so a clip that finishes loading after
+  /// the customer has already tapped past it knows it is no longer wanted.
+  int _loadToken = 0;
 
   @override
   void initState() {
@@ -282,35 +396,142 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
     );
 
     _animController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
+      // Only the fallback finishes this way; a clip finishes on its own
+      // position, and running both would skip a story.
+      if (status == AnimationStatus.completed && !_hasVideo) {
         _onStoryFinished();
       }
     });
 
     _animController.addListener(() {
-      setState(() {
-        _currentSeconds =
-            _animController.value *
-            widget.reviews[_currentIndex].duration.inSeconds;
-      });
+      if (!_hasVideo) {
+        setState(() {});
+      }
     });
 
     _startCurrentStory();
   }
 
-  void _startCurrentStory() {
+  bool get _hasVideo => _video?.value.isInitialized ?? false;
+
+  /// How far through the story is, 0 to 1 — from the clip where there is one.
+  double get _progress {
+    final player = _video;
+    if (player != null && player.value.isInitialized) {
+      final total = player.value.duration.inMilliseconds;
+      if (total > 0) {
+        return (player.value.position.inMilliseconds / total).clamp(0.0, 1.0);
+      }
+    }
+    return _animController.value.clamp(0.0, 1.0);
+  }
+
+  Duration get _position {
+    final player = _video;
+    if (player != null && player.value.isInitialized) {
+      return player.value.position;
+    }
+    return widget.reviews[_currentIndex].duration * _animController.value;
+  }
+
+  Future<void> _startCurrentStory() async {
+    final token = ++_loadToken;
+
+    final previous = _video;
+    _video = null;
+    previous?.removeListener(_onVideoTick);
+    unawaited(previous?.dispose());
+
+    // The fallback runs from the first frame, and is stopped below if the
+    // clip turns out to be playable.
     _animController.duration = widget.reviews[_currentIndex].duration;
     _animController.reset();
     if (_isPlaying) {
       _animController.forward();
     }
+    if (mounted) {
+      setState(() {});
+    }
+
+    final controller = VideoPlayerController.asset(
+      widget.reviews[_currentIndex].video,
+    );
+    try {
+      await controller.initialize();
+    } catch (error) {
+      debugPrint(
+        'SHIELD: review clip failed — '
+        '${widget.reviews[_currentIndex].video}: $error',
+      );
+      await controller.dispose();
+      return;
+    }
+
+    if (!mounted || token != _loadToken) {
+      await controller.dispose();
+      return;
+    }
+
+    _animController.stop();
+    await controller.setVolume(_isMuted ? 0 : 1);
+    controller.addListener(_onVideoTick);
+    if (_isPlaying) {
+      await _playOrFallBackToMuted(controller);
+    }
+
+    if (!mounted || token != _loadToken) {
+      controller.removeListener(_onVideoTick);
+      await controller.dispose();
+      return;
+    }
+    setState(() => _video = controller);
+  }
+
+  /// Starts [controller], dropping to silent playback if sound is refused.
+  ///
+  /// A browser will not let a page start an unmuted video unless it is sure a
+  /// person asked for it, and the tap that opened this player is a moment
+  /// behind us by the time the clip has finished loading. Refused, the review
+  /// would sit frozen on its first frame — so it plays silently instead, and
+  /// the mute button, which is a tap of its own, turns the sound on.
+  Future<void> _playOrFallBackToMuted(VideoPlayerController controller) async {
+    try {
+      await controller.play();
+      return;
+    } catch (_) {
+      // Fall through and try again without sound.
+    }
+
+    try {
+      await controller.setVolume(0);
+      await controller.play();
+      if (mounted) {
+        setState(() => _isMuted = true);
+      }
+    } catch (_) {
+      // Nothing more to try: the controls are still live, and the fallback
+      // progress bar keeps the story moving.
+    }
+  }
+
+  void _onVideoTick() {
+    final player = _video;
+    if (player == null || !mounted) {
+      return;
+    }
+    final value = player.value;
+    if (value.isInitialized &&
+        value.duration > Duration.zero &&
+        value.position >= value.duration) {
+      _onStoryFinished();
+      return;
+    }
+    setState(() {});
   }
 
   void _onStoryFinished() {
     if (_currentIndex < widget.reviews.length - 1) {
-      setState(() {
-        _currentIndex++;
-      });
+      setState(() => _currentIndex++);
       _startCurrentStory();
     } else {
       Navigator.of(context).pop();
@@ -318,21 +539,19 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
   }
 
   void _goToPrevious() {
-    if (_animController.value > 0.25 || _currentIndex == 0) {
+    // A quarter of the way in, the tap means "start this one again" rather
+    // than "go back", which is how every story player behaves.
+    if (_progress > 0.25 || _currentIndex == 0) {
       _startCurrentStory();
     } else {
-      setState(() {
-        _currentIndex--;
-      });
+      setState(() => _currentIndex--);
       _startCurrentStory();
     }
   }
 
   void _goToNext() {
     if (_currentIndex < widget.reviews.length - 1) {
-      setState(() {
-        _currentIndex++;
-      });
+      setState(() => _currentIndex++);
       _startCurrentStory();
     } else {
       Navigator.of(context).pop();
@@ -343,39 +562,57 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
     setState(() {
       _isPlaying = !_isPlaying;
       if (_isPlaying) {
-        _animController.forward();
+        _resume();
       } else {
-        _animController.stop();
+        _pause();
       }
     });
+  }
+
+  void _pause() {
+    _animController.stop();
+    unawaited(_video?.pause());
+  }
+
+  void _resume() {
+    final player = _video;
+    if (player != null && player.value.isInitialized) {
+      unawaited(_playOrFallBackToMuted(player));
+    } else {
+      _animController.forward();
+    }
   }
 
   void _toggleMute() {
     setState(() {
       _isMuted = !_isMuted;
+      unawaited(_video?.setVolume(_isMuted ? 0 : 1));
     });
   }
 
   void _seekTo(double value) {
+    final fraction = value.clamp(0.0, 1.0);
     setState(() {
-      _animController.value = value.clamp(0.0, 1.0);
-      _currentSeconds =
-          _animController.value *
-          widget.reviews[_currentIndex].duration.inSeconds;
+      _animController.value = fraction;
+      final player = _video;
+      if (player != null && player.value.isInitialized) {
+        unawaited(player.seekTo(player.value.duration * fraction));
+      }
     });
   }
 
   @override
   void dispose() {
-    _ticker?.cancel();
+    _video?.removeListener(_onVideoTick);
+    _video?.dispose();
     _animController.dispose();
     super.dispose();
   }
 
-  String _formatTime(double seconds) {
-    final int s = seconds.floor();
-    final int mins = s ~/ 60;
-    final int remSecs = s % 60;
+  String _formatTime(Duration position) {
+    final seconds = position.inSeconds;
+    final mins = seconds ~/ 60;
+    final remSecs = seconds % 60;
     return '${mins.toString().padLeft(2, '0')}:${remSecs.toString().padLeft(2, '0')}';
   }
 
@@ -396,22 +633,11 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Main Video Content / Visual Frame
+              // The clip itself.
               Center(
-                child: Image.asset(
-                  currentReview.avatar,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  errorBuilder: (_, _, _) => Container(
-                    color: Colors.black87,
-                    alignment: Alignment.center,
-                    child: const Icon(
-                      Icons.person_rounded,
-                      size: 80,
-                      color: Colors.white54,
-                    ),
-                  ),
+                child: _ReviewVideoSurface(
+                  controller: _video,
+                  placeholder: Colors.black,
                 ),
               ),
 
@@ -443,10 +669,10 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                         behavior: HitTestBehavior.translucent,
                         onTap: _goToPrevious,
                         onLongPressStart: (_) {
-                          if (_isPlaying) _animController.stop();
+                          if (_isPlaying) _pause();
                         },
                         onLongPressEnd: (_) {
-                          if (_isPlaying) _animController.forward();
+                          if (_isPlaying) _resume();
                         },
                         child: const SizedBox.expand(),
                       ),
@@ -457,10 +683,10 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                         behavior: HitTestBehavior.translucent,
                         onTap: _goToNext,
                         onLongPressStart: (_) {
-                          if (_isPlaying) _animController.stop();
+                          if (_isPlaying) _pause();
                         },
                         onLongPressEnd: (_) {
-                          if (_isPlaying) _animController.forward();
+                          if (_isPlaying) _resume();
                         },
                         child: const SizedBox.expand(),
                       ),
@@ -469,31 +695,32 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                 ),
               ),
 
-              // Subtitles / Captions in center-bottom matching Screenshot 2
-              Positioned(
-                left: 24,
-                right: 24,
-                bottom: 96,
-                child: IgnorePointer(
-                  child: Text(
-                    currentReview.subtitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w700,
-                      height: 1.35,
-                      color: Colors.white,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black87,
-                          blurRadius: 10,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
+              // Subtitles / captions, centre-bottom.
+              if (currentReview.subtitle != null)
+                Positioned(
+                  left: 24,
+                  right: 24,
+                  bottom: 96,
+                  child: IgnorePointer(
+                    child: Text(
+                      currentReview.subtitle!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            color: Colors.black87,
+                            blurRadius: 10,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
 
               // Top Section: Story Progress Indicators & Header Row
               Positioned(
@@ -520,7 +747,7 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                                 if (index < _currentIndex) {
                                   fillFraction = 1.0;
                                 } else if (index == _currentIndex) {
-                                  fillFraction = _animController.value;
+                                  fillFraction = _progress;
                                 }
                                 return Align(
                                   alignment: Alignment.centerLeft,
@@ -543,16 +770,19 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                     // Header Row: Reviewer name on left, Close icon on right
                     Row(
                       children: [
-                        Text(
-                          currentReview.name,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                            letterSpacing: -0.2,
+                        Expanded(
+                          child: Text(
+                            currentReview.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: -0.2,
+                            ),
                           ),
                         ),
-                        const Spacer(),
                         IconButton(
                           icon: const Icon(
                             Icons.close_rounded,
@@ -567,7 +797,7 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                 ),
               ),
 
-              // Bottom Control Bar matching Screenshot 2 (Play/Pause, Slider, Time, Audio)
+              // Bottom control bar: play/pause, scrubber, clock, mute.
               Positioned(
                 left: 16,
                 right: 16,
@@ -583,7 +813,6 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                   ),
                   child: Row(
                     children: [
-                      // Play / Pause Button
                       IconButton(
                         icon: Icon(
                           _isPlaying
@@ -595,7 +824,6 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                         onPressed: _togglePlayPause,
                       ),
 
-                      // Timeline scrubber
                       Expanded(
                         child: SliderTheme(
                           data: SliderTheme.of(context).copyWith(
@@ -611,23 +839,22 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                             thumbColor: Colors.white,
                           ),
                           child: Slider(
-                            value: _animController.value.clamp(0.0, 1.0),
+                            value: _progress,
                             onChanged: (val) {
-                              _animController.stop();
+                              _pause();
                               _seekTo(val);
                             },
                             onChangeEnd: (val) {
                               if (_isPlaying) {
-                                _animController.forward();
+                                _resume();
                               }
                             },
                           ),
                         ),
                       ),
 
-                      // Time Display (e.g. 00:02)
                       Text(
-                        _formatTime(_currentSeconds),
+                        _formatTime(_position),
                         style: const TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -636,7 +863,6 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
                       ),
                       const SizedBox(width: 8),
 
-                      // Mute / Unmute Button
                       IconButton(
                         icon: Icon(
                           _isMuted

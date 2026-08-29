@@ -191,6 +191,18 @@ class PrescriptionRecord {
     this.inCart = false,
   }) : medicines = medicines ?? <PrescriptionMedicine>[];
 
+  /// "RX-0004" — the prescription's number, as it is quoted at the counter
+  /// and printed in the basket.
+  ///
+  /// Built from [id] rather than stored beside it, so the two can never name
+  /// different prescriptions. The id is the internal handle ("rx4"); this is
+  /// the same thing in the form a member can read out over a phone, padded so
+  /// a list of them lines up.
+  String get number {
+    final digits = id.replaceAll(RegExp(r'[^0-9]'), '');
+    return 'RX-${digits.padLeft(4, '0')}';
+  }
+
   bool get isRecurring => recurring != null;
 
   /// Uploaded, but not yet read at the counter. Nothing can be ordered
@@ -216,8 +228,10 @@ class PrescriptionRecord {
   bool get canOrder => dispensable.isNotEmpty && days > 0;
 
   /// Total units across every complete line — what the pharmacist counts out.
-  int get totalUnits =>
-      dispensable.fold(0, (sum, medicine) => sum + medicine.intake.totalFor(days));
+  int get totalUnits => dispensable.fold(
+    0,
+    (sum, medicine) => sum + medicine.intake.totalFor(days),
+  );
 }
 
 /// The prescriptions on the account.

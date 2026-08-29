@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
+import '../cart/cart_bar.dart';
+import '../cart/cart_control.dart';
 import '../cart/cart_screen.dart';
 import '../cart/cart_service.dart';
 import '../home/product_showcase.dart';
+import '../search/search_screen.dart';
 import 'category_catalogue.dart';
 import 'listing_catalogue.dart';
+import 'listing_filter.dart';
 
 /// Product listing for one category group.
 ///
@@ -26,17 +30,36 @@ class _CategoryListingScreenState extends State<CategoryListingScreen> {
   /// Null means the "All" chip.
   SubCategory? _selected;
 
+  /// The filter sheet's applied state. Starts as the do-nothing filter.
+  ListingFilter _filter = ListingFilter.none;
+
   @override
   void initState() {
     super.initState();
     _selected = widget.initial;
   }
 
-  List<Product> get _products {
-    final selected = _selected;
-    return selected == null
-        ? ListingCatalogue.forGroup(widget.group)
-        : ListingCatalogue.forSubCategory(selected);
+  /// What the grid shows: the chip rail's selection with the filter sheet's
+  /// sub-category and brand picks applied on top.
+  List<Product> get _products =>
+      _filter.resolve(widget.group, chip: _selected);
+
+  Future<void> _openFilter() async {
+    final result = await showListingFilterSheet(
+      context,
+      group: widget.group,
+      current: _filter,
+    );
+    if (result != null) {
+      setState(() {
+        _filter = result;
+        // Once the sheet drives the sub-category, the single-pick chip rail
+        // steps back to "All" so the two selections can't contradict.
+        if (result.subCategories.isNotEmpty) {
+          _selected = null;
+        }
+      });
+    }
   }
 
   @override
@@ -60,7 +83,12 @@ class _CategoryListingScreenState extends State<CategoryListingScreen> {
           ),
         ),
         actions: [
-          _CircleAction(icon: Icons.search_rounded, onTap: () {}),
+          _CircleAction(
+            icon: Icons.search_rounded,
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SearchScreen())),
+          ),
           const SizedBox(width: 10),
           _CartAction(
             onTap: () => Navigator.of(
@@ -79,41 +107,68 @@ class _CategoryListingScreenState extends State<CategoryListingScreen> {
           CustomScrollView(
             slivers: [
               SliverToBoxAdapter(child: _ListingBanner(group: widget.group)),
-              SliverToBoxAdapter(
-                child: _ChipRail(
-                  group: widget.group,
-                  selected: _selected,
-                  onSelect: (item) => setState(() => _selected = item),
+              // Chip rail + filter strip: pinned, so switching sub-category or
+              // opening the filter stays one reach away however far the grid
+              // has scrolled.
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _StickyHeader(
+                  child: Column(
+                    children: [
+                      _ChipRail(
+                        group: widget.group,
+                        selected: _selected,
+                        onSelect: (item) => setState(() {
+                          _selected = item;
+                          // A tap on the rail takes back the sub-category pick
+                          // from the filter sheet; brand picks are left alone.
+                          _filter = _filter.copyWith(subCategories: const {});
+                        }),
+                      ),
+                      _FilterRow(
+                        resultCount: products.length,
+                        onTap: _openFilter,
+                        activeCount: _filter.count,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(_gridPad, 14, _gridPad, 8),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: _gridGap,
-                    // A square of artwork plus a fixed block for the details,
-                    // rather than one ratio for the whole tile. The details
-                    // need the same height at every width, so a ratio starves
-                    // them on a narrow phone and leaves a band of dead space
-                    // on a wide one — which is what was shrinking the image.
-                    mainAxisExtent:
-                        _gridColumnWidth(context) + ProductTile.detailsExtent,
+              if (products.isEmpty)
+                SliverToBoxAdapter(
+                  child: _NoMatches(
+                    onClear: () =>
+                        setState(() => _filter = ListingFilter.none),
                   ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => ProductTile(product: products[index]),
-                    childCount: products.length,
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(_gridPad, 14, _gridPad, 8),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 12,
+                      crossAxisSpacing: _gridGap,
+                      // A square of artwork plus a fixed block for the details,
+                      // rather than one ratio for the whole tile. The details
+                      // need the same height at every width, so a ratio starves
+                      // them on a narrow phone and leaves a band of dead space
+                      // on a wide one — which is what was shrinking the image.
+                      mainAxisExtent:
+                          _gridColumnWidth(context) + ProductTile.detailsExtent,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => ProductTile(product: products[index]),
+                      childCount: products.length,
+                    ),
                   ),
                 ),
-              ),
               if (deals.isNotEmpty)
                 SliverToBoxAdapter(child: _TopDealsPanel(deals: deals)),
               // Clears the floating cart bar so the last row stays reachable.
               const SliverToBoxAdapter(child: SizedBox(height: 96)),
             ],
           ),
-          const Positioned(right: 0, top: 8, child: _FilterPill()),
           const Positioned(left: 0, right: 0, bottom: 0, child: CartBar()),
         ],
       ),
@@ -159,39 +214,43 @@ class _CartAction extends StatelessWidget {
       listenable: CartService.instance,
       builder: (context, _) {
         final count = CartService.instance.itemCount;
-        return Stack(
-          clipBehavior: Clip.none,
-          children: [
-            _CircleAction(icon: Icons.shopping_cart_outlined, onTap: onTap),
-            if (count > 0)
-              Positioned(
-                top: -4,
-                right: -4,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 2,
-                  ),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFD93A2B),
-                    shape: BoxShape.circle,
-                  ),
-                  constraints: const BoxConstraints(
-                    minWidth: 18,
-                    minHeight: 18,
-                  ),
-                  child: Text(
-                    count > 99 ? '99+' : '$count',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.white,
+        return Semantics(
+          button: true,
+          label: count == 0 ? 'Cart' : 'Cart · $count items',
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _CircleAction(icon: Icons.shopping_cart_outlined, onTap: onTap),
+              if (count > 0)
+                Positioned(
+                  top: -4,
+                  right: -4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFD93A2B),
+                      shape: BoxShape.circle,
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 18,
+                      minHeight: 18,
+                    ),
+                    child: Text(
+                      count > 99 ? '99+' : '$count',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.white,
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -445,6 +504,10 @@ class _RailChip extends StatelessWidget {
   }
 }
 
+/// Height of the pinned strip carrying the chip rail (129) and the filter
+/// bar (52).
+const double _stickyHeaderExtent = 181;
+
 /// Horizontal padding either side of the product grid.
 const double _gridPad = 12;
 
@@ -557,7 +620,13 @@ class ProductTile extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  CartControl(product: product),
+                  CartControl(
+                    name: product.name,
+                    pack: product.pack,
+                    price: product.price,
+                    mrp: product.mrp,
+                    image: product.image,
+                  ),
                 ],
               ),
             ),
@@ -594,103 +663,6 @@ class _DiscountFlag extends StatelessWidget {
   }
 }
 
-/// ADD until the product is in the cart, a quantity stepper afterwards.
-class CartControl extends StatelessWidget {
-  final Product product;
-
-  const CartControl({super.key, required this.product});
-
-  double get _price => double.tryParse(product.price.replaceAll(',', '')) ?? 0;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: CartService.instance,
-      builder: (context, _) {
-        final cart = CartService.instance;
-        final index = cart.lines.indexWhere(
-          (line) => line.name == product.name,
-        );
-
-        if (index < 0) {
-          return SizedBox(
-            width: double.infinity,
-            height: 38,
-            child: OutlinedButton(
-              onPressed: () => cart.add(
-                name: product.name,
-                pack: product.pack,
-                price: _price,
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.brandBlue,
-                side: const BorderSide(color: AppColors.brandBlue),
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: const Text(
-                'ADD',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ),
-          );
-        }
-
-        return SizedBox(
-          height: 38,
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 38,
-                  decoration: BoxDecoration(
-                    borderRadius: const BorderRadius.horizontal(
-                      left: Radius.circular(8),
-                    ),
-                    border: Border.all(color: AppColors.brandBlue),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '${cart.lines[index].qty}',
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.brandBlue,
-                    ),
-                  ),
-                ),
-              ),
-              Material(
-                color: AppColors.brandBlue,
-                borderRadius: const BorderRadius.horizontal(
-                  right: Radius.circular(8),
-                ),
-                child: InkWell(
-                  onTap: () => cart.changeQty(index, 1),
-                  child: const SizedBox(
-                    width: 42,
-                    height: 38,
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 22,
-                      color: AppColors.white,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
 
 /// "Top deals": a featured product with a thumbnail rail to switch between
 /// the rest of the discounted stock.
@@ -866,7 +838,13 @@ class _FeaturedDeal extends StatelessWidget {
                       const SizedBox(width: 8),
                       SizedBox(
                         width: 108,
-                        child: CartControl(product: product),
+                        child: CartControl(
+                          name: product.name,
+                          pack: product.pack,
+                          price: product.price,
+                          mrp: product.mrp,
+                          image: product.image,
+                        ),
                       ),
                     ],
                   ),
@@ -880,36 +858,122 @@ class _FeaturedDeal extends StatelessWidget {
   }
 }
 
-class _FilterPill extends StatelessWidget {
-  const _FilterPill();
+/// The strip that sits between the chip rail and the grid: how many products
+/// are in view on the left, the "Filter" affordance on the right.
+class _FilterRow extends StatelessWidget {
+  final int resultCount;
+  final VoidCallback onTap;
+  final int activeCount;
+
+  const _FilterRow({
+    required this.resultCount,
+    required this.onTap,
+    required this.activeCount,
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Fixed height, because it is half of the pinned header's declared extent.
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: _gridPad),
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        border: Border(bottom: BorderSide(color: AppColors.border)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              resultCount == 1 ? '1 product' : '$resultCount products',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ),
+          _FilterPill(onTap: onTap, activeCount: activeCount),
+        ],
+      ),
+    );
+  }
+}
+
+/// Pins the chip rail and filter bar to the top of the listing while the grid
+/// scrolls beneath them.
+class _StickyHeader extends SliverPersistentHeaderDelegate {
+  final Widget child;
+
+  const _StickyHeader({required this.child});
+
+  @override
+  double get minExtent => _stickyHeaderExtent;
+
+  @override
+  double get maxExtent => _stickyHeaderExtent;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Material(
       color: AppColors.white,
-      elevation: 3,
-      shadowColor: AppColors.textDark.withValues(alpha: 0.2),
-      borderRadius: const BorderRadius.horizontal(left: Radius.circular(30)),
+      elevation: overlapsContent ? 3 : 0,
+      shadowColor: AppColors.textDark.withValues(alpha: 0.15),
+      child: SizedBox(height: _stickyHeaderExtent, child: child),
+    );
+  }
+
+  // The child closes over the current selection and filter, so it is a fresh
+  // widget on every rebuild.
+  @override
+  bool shouldRebuild(_StickyHeader oldDelegate) => true;
+}
+
+/// "Filter" affordance. Carries a count badge once the sheet has narrowed the
+/// listing, so an active filter is visible without opening it.
+class _FilterPill extends StatelessWidget {
+  final VoidCallback onTap;
+  final int activeCount;
+
+  const _FilterPill({required this.onTap, required this.activeCount});
+
+  @override
+  Widget build(BuildContext context) {
+    final active = activeCount > 0;
+
+    return Material(
+      color: active ? AppColors.brandBlue : AppColors.white,
+      borderRadius: BorderRadius.circular(30),
       child: InkWell(
-        onTap: () {},
-        borderRadius: const BorderRadius.horizontal(left: Radius.circular(30)),
-        child: const Padding(
-          padding: EdgeInsets.fromLTRB(18, 12, 20, 12),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(30),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(
+              color: active ? AppColors.brandBlue : AppColors.searchBorder,
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 9, 18, 9),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.filter_alt_outlined,
-                size: 19,
-                color: AppColors.textDark,
+                size: 18,
+                color: active ? AppColors.white : AppColors.textDark,
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Text(
-                'Filter',
+                active ? 'Filter · $activeCount' : 'Filter',
                 style: TextStyle(
-                  fontSize: 15,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.w600,
-                  color: AppColors.textDark,
+                  color: active ? AppColors.white : AppColors.textDark,
                 ),
               ),
             ],
@@ -920,104 +984,53 @@ class _FilterPill extends StatelessWidget {
   }
 }
 
-/// Sticky total bar, shown only once something is in the cart.
-class CartBar extends StatelessWidget {
-  const CartBar({super.key});
+/// Shown in place of the grid when the filter leaves nothing to list.
+class _NoMatches extends StatelessWidget {
+  final VoidCallback onClear;
+
+  const _NoMatches({required this.onClear});
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: CartService.instance,
-      builder: (context, _) {
-        final cart = CartService.instance;
-        if (cart.itemCount == 0) {
-          return const SizedBox.shrink();
-        }
-
-        return SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Material(
-              color: AppColors.brandBlue,
-              borderRadius: BorderRadius.circular(12),
-              child: Padding(
-                padding: const EdgeInsets.all(10),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: AppColors.white.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      child: const Icon(
-                        Icons.shopping_cart_outlined,
-                        size: 21,
-                        color: AppColors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '₹${cart.subtotal.toStringAsFixed(2)}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.white,
-                            ),
-                          ),
-                          Text(
-                            '${cart.itemCount} '
-                            '${cart.itemCount == 1 ? 'item' : 'items'}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFFDCE7F7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    FilledButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const CartScreen()),
-                      ),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.white,
-                        foregroundColor: AppColors.brandBlue,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 18,
-                          vertical: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text(
-                        'View cart',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(32, 64, 32, 64),
+      child: Column(
+        children: [
+          const Icon(
+            Icons.filter_alt_off_outlined,
+            size: 44,
+            color: AppColors.textMuted,
+          ),
+          const SizedBox(height: 14),
+          const Text(
+            'No products match your filters',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
             ),
           ),
-        );
-      },
+          const SizedBox(height: 6),
+          const Text(
+            'Try removing a sub-category or brand.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 18),
+          OutlinedButton(
+            onPressed: onClear,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.brandBlue,
+              side: const BorderSide(color: AppColors.brandBlue),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('Clear filters'),
+          ),
+        ],
+      ),
     );
   }
 }

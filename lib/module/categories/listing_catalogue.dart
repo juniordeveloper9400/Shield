@@ -969,4 +969,148 @@ class ListingCatalogue {
       ..sort((a, b) => percent(b).compareTo(percent(a)));
     return ranked.take(5).toList();
   }
+
+  /// The brand behind each curated product, powering the filter sheet's
+  /// "Brands" facet. Anything not listed here — the generated stand-ins
+  /// included — is the SHIELD house brand, so every product filters under
+  /// exactly one brand.
+  static const Map<String, String> _brandByProduct = {
+    // Skin Care
+    'Skinshine Spf 30 Sunscreen Lotion 100ml': 'Skinshine',
+    'Soft Soles Cream 30gm': 'Dr. Foot',
+    'Cetaphil Pro Oil Control Spf 30 Moisturizing Lotion 120ml': 'Cetaphil',
+    'UV Doux Sunscreen Gel 60gm': 'UV Doux',
+    'SunShade Ultra Matte Spf 50': 'SunShade',
+    'Moisture Lock Body Lotion 300ml': 'Nivea',
+    'Hydrating Hyaluronic Acid Serum 30ml': 'Minimalist',
+    'Brightening Vitamin C Face Wash 100ml': 'Minimalist',
+    // Hair Care
+    'Anti-Hairfall Shampoo 340ml': 'Dove',
+    'Rosemary Hair Growth Oil 100ml': 'WOW',
+    'Ketoconazole Anti-Dandruff Shampoo': 'Nizral',
+    'Keratin Repair Conditioner 200ml': "L'Oreal Paris",
+    'Biotin Hair Strengthening Serum 50ml': 'WOW',
+    'Onion & Black Seed Hair Mask 200g': 'Mamaearth',
+    // Oral Care
+    'Sensitive Relief Toothpaste 150gm': 'Sensodyne',
+    'Antiseptic Mouthwash 500ml': 'Listerine',
+    'Soft Bristle Toothbrush Pack of 3': 'Oral-B',
+    'Dental Floss Picks 50 Count': 'Oral-B',
+    'Teeth Whitening Foam Rinse 100ml': 'Colgate',
+    'Herbal Clove & Neem Toothpaste 200g': 'Dabur',
+    // Bath & Body
+    'Deep Moisture Body Wash 500ml': 'Dove',
+    'Exfoliating Arabica Coffee Scrub 200g': 'mCaffeine',
+    'Shea Butter Nourishing Bar Soap (Pack of 3)': 'Pears',
+    'Cocoa Butter Intensive Body Lotion 400ml': 'Nivea',
+    'Refreshing Tea Tree Shower Gel 250ml': 'Himalaya',
+    'Calming Lavender Bath Salts 300g': 'Khadi Natural',
+    // Men Grooming
+    'Activated Charcoal Men\'s Face Wash 100ml': 'Beardo',
+    'Beard Growth Oil & Softener 50ml': 'Beardo',
+    'All-in-One 3-in-1 Body & Hair Wash 300ml': 'The Man Company',
+    'Cooling Shave Gel with Aloe Vera 150ml': 'Gillette',
+    'Matte Finish Hair Styling Clay 85g': 'The Man Company',
+    'Anti-Pollution Men\'s Sunscreen Spf 50': 'Nivea Men',
+    // Feminine Care
+    'Organic Cotton Ultra-Thin Pads (Pack of 30)': 'Whisper',
+    'Gentle Intimate Hygiene Wash 100ml': 'Pee Safe',
+    'Medical Grade Reusable Menstrual Cup': 'Sirona',
+    'Breathable Everyday Panty Liners 40s': 'Stayfree',
+    'Soothing Cramp Relief Warm Patches (Pack of 5)': 'Sirona',
+    // Multivitamins
+    'Zincovit Multivitamin Tablets': 'Zincovit',
+    'Daily Men Vitality Multivitamin Complex': 'Centrum',
+    'Women Complete Daily Multivitamin + Minerals': 'Centrum',
+    'Kids Chewable Multivitamin Gummies': 'HealthKart',
+    'Senior 50+ Vitality Multivitamin Tablets': 'Revital',
+    // Vitamin D
+    'Vitamin D3 60K Chewable Tablets': 'Uprise',
+    'Vitamin D3 + K2 Bone & Heart Support': 'Carbamide Forte',
+    'High Potency D3 2000 IU Daily Tablets': 'HealthKart',
+    'Vitamin D3 Pediatric Drops 15ml': 'Calcirol',
+    // Protein Powder
+    '100% Whey Protein Isolate Chocolate 1kg': 'MuscleBlaze',
+    'Plant-Based Organic Protein Vanilla 1kg': 'Plix',
+    'Lean Muscle Mass Gainer Powder 2kg': 'MuscleBlaze',
+    'Daily Protein Blend Unflavoured 500g': 'HealthKart',
+    // Omega & Fish Oil
+    'Triple Strength Omega-3 Fish Oil 1000mg': 'HealthKart',
+    'Wild Alaskan Salmon Oil EPA/DHA 60s': 'Neuherbs',
+    'Flaxseed Oil 1000mg Vegetarian Omega-3': 'Carbamide Forte',
+    'Deep Sea Krill Oil Phospholipids 30s': 'Neuherbs',
+    // Calcium
+    'Shelcal 500 Calcium + D3 15 Tablets': 'Shelcal',
+    'Calcium Citrate Malate + Magnesium Complex': 'Carbamide Forte',
+    'Coral Calcium Complex with Trace Minerals': 'HealthKart',
+    'Chewable Calcium D3 for Kids (Pack of 30)': 'Cipcal',
+    // Immunity
+    'SHIELD Immunity Plus Tablets 60s': 'SHIELD',
+    'Vitamin C 1000mg + Zinc Effervescent 20s': 'HealthKart',
+    'Pure Chyawanprash Herbal Booster 1kg': 'Dabur',
+    'Giloy Tulsi Neem Immunity Drops 30ml': 'Zandu',
+    'Sambucus Black Elderberry Extract Capsules': 'Carbamide Forte',
+    // Bone and Joint Care
+    'Joint Pain Relief Roll-On 50ml': 'Volini',
+    'Glucosamine Chondroitin Joint Support 60s': 'HealthKart',
+    'Hydrolyzed Collagen Peptides Powder 200g': 'MuscleBlaze',
+    'Ortho Knee Support Elastic Sleeve': 'Tynor',
+    // Digestive Care
+    'Digene Acidity Relief Liquid 200ml': 'Digene',
+    'Probiotic 30 Billion CFU Capsules': 'HealthKart',
+    'Pure Isabgol Psyllium Husk 100g': 'Dabur',
+    'Digestive Enzyme Herbal Tablets 60s': 'Himalaya',
+    // Eye Care
+    'Refresh Tears Lubricant Eye Drops 10ml': 'Refresh',
+    'Lutein & Zeaxanthin Blue Light Shield 30s': 'HealthKart',
+    'Cooling Cucumber Soothing Eye Gel 30g': 'Himalaya',
+    // Pain Relief
+    'Volini Pain Relief Gel 30g': 'Volini',
+    'Moov Fast Pain Relief Spray 80g': 'Moov',
+    'Dolo 650mg Paracetamol Tablets': 'Dolo',
+    'Reusable Hot & Cold Gel Pack for Pain': 'Tynor',
+    // Glucometers
+    'Accu-Chek Active Glucometer Machine Kit': 'Accu-Chek',
+    'OneTouch Select Plus Simple Monitor': 'OneTouch',
+    'Contour Plus Blood Glucose Monitor': 'Contour',
+    // Test Strips
+    'Accu-Chek Active Test Strips 50 Count': 'Accu-Chek',
+    'OneTouch Select Plus Test Strips 50s': 'OneTouch',
+    'Contour Plus Blood Glucose Strips 25s': 'Contour',
+    // Sugar Substitutes
+    'Sugar Free Natura Sweetener Pellets 500s': 'Sugar Free',
+    'Natural Stevia Sweetener Drops 50ml': 'Zevic',
+    'Zero Calorie Erythritol Natural Sugar Jar 500g': 'So Sweet',
+    // Diabetic Food
+    'Low GI Diabetic Flour Multigrain 1kg': 'Diabliss',
+    'Diabetic Nutrition Protein Drink Mix 400g': 'Protinex',
+    'Sugar-Free High Fiber Oats Cookies 200g': 'RiteBite',
+    // Foot Care
+    'Diabetic Foot Cream for Hydration & Repair': 'Dr. Foot',
+    'Intensive Cracked Heel Repair Balm 50g': 'Scholl',
+    'Gel Padded Diabetic Comfort Socks': 'Tynor',
+    // Insulin Support
+    'Insulin Pen Needles 31G Ultra Fine (Pack of 100)': 'BD',
+    'Insulin Cooling Travel Case & Gel Packs': 'Dia-Safe',
+    'Alpha Lipoic Acid Diabetic Nerve Support 60s': 'Carbamide Forte',
+  };
+
+  /// The brand a product filters under. Falls back to the house brand so the
+  /// "Brands" facet always accounts for every product in the listing.
+  static String brandOf(Product product) =>
+      _brandByProduct[product.name] ?? 'SHIELD';
+
+  /// Distinct brands present across [group], alphabetically — the "Brands"
+  /// facet's options.
+  static List<String> brandsFor(CategoryGroup group) {
+    final seen = <String>{
+      for (final product in forGroup(group)) brandOf(product),
+    };
+    return seen.toList()..sort();
+  }
+
+  /// The group's sub-category labels, in catalogue order — the "Sub-categories"
+  /// facet's options.
+  static List<String> subCategoryLabels(CategoryGroup group) =>
+      [for (final item in group.items) item.label];
 }

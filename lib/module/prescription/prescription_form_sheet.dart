@@ -113,7 +113,11 @@ class _PrescriptionFormSheetState extends State<PrescriptionFormSheet> {
                 ],
               ),
             ),
-            _SubmitBar(form: _form, label: copy.addPrescription, onSubmit: _submit),
+            _SubmitBar(
+              form: _form,
+              label: copy.addPrescription,
+              onSubmit: _submit,
+            ),
           ],
         ),
       ),

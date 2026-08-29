@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/module/cart/cart_badge.dart';
+import 'package:shield/module/cart/cart_screen.dart';
 import 'package:shield/module/home/brand_quote.dart';
 import 'package:shield/module/home/category_section.dart';
-import 'package:shield/module/home/home_footer.dart';
+import 'package:shield/module/home/customer_reviews.dart';
 import 'package:shield/module/home/home_header.dart';
+import 'package:shield/module/home/points_badge.dart';
+import 'package:shield/module/refer/refer_earn_screen.dart';
+import 'package:shield/module/registration/registration_service.dart';
+import 'package:shield/module/rewards/rewards_screen.dart';
+import 'package:shield/money.dart';
 import 'package:shield/module/home/home_hero_banner.dart';
-import 'package:shield/module/home/how_it_works.dart';
+import 'package:shield/module/home/product_collection_screen.dart';
 import 'package:shield/module/home/product_showcase.dart';
 import 'package:shield/module/home/prescription_card.dart';
 import 'package:shield/theme/app_colors.dart';
@@ -32,45 +39,56 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// How opaque a widget is drawn, read off the Opacity wrapping it.
+  double opacityOf(WidgetTester tester, Finder finder) => tester
+      .widget<Opacity>(
+        find.ancestor(of: finder, matching: find.byType(Opacity)).first,
+      )
+      .opacity;
+
+  /// The width the collapsing cart actually takes from the search field,
+  /// which its Align shrinks to nothing while the header still carries one.
+  double collapsedCartWidth(WidgetTester tester) => tester.getSize(
+    find.ancestor(of: find.byKey(pinnedCartKey), matching: find.byType(Align)).first,
+  ).width;
+
   testWidgets('home renders every section without overflow', (tester) async {
-    await pumpHome(tester, const Size(400, 7000));
+    await pumpHome(tester, const Size(400, 8000));
 
     expect(find.byType(HomeHeroBanner), findsOneWidget);
     expect(find.text('Shop by categories'), findsOneWidget);
-    expect(find.text('New Product Arrivals'), findsOneWidget);
     expect(find.text('Popular Items'), findsOneWidget);
-    expect(find.text("Deals You'll Love"), findsOneWidget);
+    expect(find.text('Deals You Love'), findsOneWidget);
+    expect(find.text('Wellness & Supplements'), findsOneWidget);
     expect(find.text('What our customers have to say'), findsOneWidget);
   });
 
   testWidgets('review avatars and product cards are laid out', (tester) async {
-    await pumpHome(tester, const Size(400, 7000));
+    await pumpHome(tester, const Size(400, 8000));
 
-    expect(find.text('Jai'), findsOneWidget);
-    expect(find.text('SHIELD Immunity Plus'), findsOneWidget);
+    expect(find.text(CustomerReviews.reviews.first.name), findsOneWidget);
+    expect(find.text('SHIELD Immunity Plus'), findsWidgets);
     expect(find.text('ADD'), findsWidgets);
   });
 
   testWidgets('narrow viewport still lays out product cards', (tester) async {
-    await pumpHome(tester, const Size(320, 7000));
+    await pumpHome(tester, const Size(320, 8000));
 
-    expect(find.text('New Product Arrivals'), findsOneWidget);
-    expect(find.byType(ProductShowcase), findsNWidgets(6));
+    expect(find.text('Popular Items'), findsOneWidget);
+    expect(find.text('Deals You Love'), findsOneWidget);
+    expect(find.text('Wellness & Supplements'), findsOneWidget);
+    expect(find.byType(ProductShowcase), findsNWidgets(3));
   });
 
-  testWidgets('exactly one cart icon exists, beside the wallet', (
-    tester,
-  ) async {
-    const width = 400.0;
-    await pumpHome(tester, const Size(width, 1200));
+  testWidgets('home shows the cart icon beside the wallet', (tester) async {
+    await pumpHome(tester, const Size(400, 1200));
 
-    // Still only one on the whole screen.
-    final cart = find.byIcon(Icons.shopping_cart_outlined);
+    final cart = find.descendant(
+      of: find.byType(HomeHeader),
+      matching: find.byType(CartBadge),
+    );
     expect(cart, findsOneWidget);
 
-    // The cart is drawn by the collapsing chrome rather than by the header, so
-    // that it can hold still while the header fades away beneath it. It must
-    // still read as part of that row.
     final wallet = find.descendant(
       of: find.byType(HomeHeader),
       matching: find.byIcon(Icons.account_balance_wallet_outlined),
@@ -80,50 +98,191 @@ void main() {
     final cartCentre = tester.getCenter(cart);
     final walletCentre = tester.getCenter(wallet);
 
-    // Immediately to the wallet's right, on the same row.
-    expect(cartCentre.dx, greaterThan(walletCentre.dx));
-    expect(cartCentre.dx - walletCentre.dx, lessThan(80));
+    expect(cartCentre.dx, lessThan(walletCentre.dx));
     expect((cartCentre.dy - walletCentre.dy).abs(), lessThan(1.0));
-
-    // Cart is the trailing action, so it sits at the right edge.
-    expect(width - tester.getTopRight(cart).dx, lessThan(24));
   });
 
-  testWidgets('the cart is not beside the search field', (tester) async {
+  group('the points coin', () {
+    setUp(RegistrationService.instance.reset);
+    tearDown(RegistrationService.instance.reset);
+
+    testWidgets('rides in the header beside the wallet', (tester) async {
+      await pumpHome(tester, const Size(400, 1200));
+
+      final coin = find.descendant(
+        of: find.byType(HomeHeader),
+        matching: find.byType(PointsBadge),
+      );
+      expect(coin, findsOneWidget);
+
+      // The opening balance, printed where a member can see it without
+      // opening the menu — which is the whole reason it is here.
+      expect(
+        find.text(formatRupees(RegistrationService.openingPoints)),
+        findsOneWidget,
+      );
+
+      // On the same row as the wallet, with the cart between them: the three
+      // figures the account carries, read in one glance.
+      final wallet = find.descendant(
+        of: find.byType(HomeHeader),
+        matching: find.byIcon(Icons.account_balance_wallet_outlined),
+      );
+      final cart = find.descendant(
+        of: find.byType(HomeHeader),
+        matching: find.byType(CartBadge),
+      );
+      final coinCentre = tester.getCenter(coin);
+      final cartCentre = tester.getCenter(cart);
+      final walletCentre = tester.getCenter(wallet);
+
+      expect(coinCentre.dx, lessThan(cartCentre.dx));
+      expect(cartCentre.dx, lessThan(walletCentre.dx));
+      expect((coinCentre.dy - walletCentre.dy).abs(), lessThan(1.0));
+    });
+
+    testWidgets('lays out on the narrowest phone', (tester) async {
+      await pumpHome(tester, const Size(320, 1200));
+
+      expect(find.byType(PointsBadge), findsOneWidget);
+      // The coin gives way before the wallet does, so both are still there.
+      expect(
+        find.descendant(
+          of: find.byType(HomeHeader),
+          matching: find.byIcon(Icons.account_balance_wallet_outlined),
+        ),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('follows the balance rather than printing it once', (
+      tester,
+    ) async {
+      await pumpHome(tester, const Size(400, 1200));
+
+      const opening = RegistrationService.openingPoints;
+      expect(find.text(formatRupees(opening)), findsOneWidget);
+
+      // Registering credits the reward, and the coin has to be seen to move.
+      RegistrationService.instance.save(
+        Registration(
+          name: 'Asha Nair',
+          phone: '9000012345',
+          email: 'asha@example.com',
+          gender: Gender.female,
+          dob: DateTime(1994, 9, 4),
+          address: '12/A Palm Grove',
+          place: 'Perinthalmanna',
+          pincode: '679322',
+          state: 'Kerala',
+          storeId: 'SHD-MEL',
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text(formatRupees(opening)), findsNothing);
+      expect(
+        find.text(formatRupees(opening + RegistrationService.rewardPoints)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('opens the rewards screen', (tester) async {
+      await pumpHome(tester, const Size(400, 1200));
+
+      await tester.tap(find.byType(PointsBadge));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RewardsScreen), findsOneWidget);
+      expect(find.text('GET INSTANT COINS'), findsOneWidget);
+    });
+
+    testWidgets('rewards screen hands off to the refer journey', (tester) async {
+      await pumpHome(tester, const Size(400, 1600));
+
+      await tester.tap(find.byType(PointsBadge));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Refer & Earn'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ReferEarnScreen), findsOneWidget);
+    });
+  });
+
+  testWidgets('expanded, the cart is in the header row, not beside the search', (
+    tester,
+  ) async {
     await pumpHome(tester, const Size(400, 1200));
 
-    final searchCentre = tester.getCenter(find.byType(TextField)).dy;
-    final cartCentre = tester
-        .getCenter(find.byIcon(Icons.shopping_cart_outlined))
-        .dy;
+    expect(find.byType(TextField), findsOneWidget);
 
-    expect(
-      cartCentre,
-      lessThan(searchCentre - 20),
-      reason: 'the cart belongs on the header row, above the search',
+    // The header's own cart sits a row above the search field.
+    final headerCart = find.descendant(
+      of: find.byType(HomeHeader),
+      matching: find.byType(CartBadge),
     );
+    expect(headerCart, findsOneWidget);
+    expect(
+      tester.getBottomLeft(headerCart).dy,
+      lessThan(tester.getTopLeft(find.byType(TextField)).dy),
+    );
+
+    // The pinned one is in the tree but drawn away to nothing, so the search
+    // field still runs the full width between the screen's margins.
+    expect(opacityOf(tester, find.byKey(pinnedCartKey)), 0);
+    expect(collapsedCartWidth(tester), 0);
+    expect(tester.getSize(find.byType(TextField)).width, 400 - 16 * 2);
   });
 
-  testWidgets('scrolling collapses the chrome to the search and the cart', (
+  testWidgets('scrolled, a cart rides the search field', (tester) async {
+    await pumpHome(tester, const Size(400, 900));
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+
+    final cart = find.byKey(pinnedCartKey);
+    final search = find.byType(TextField);
+
+    // Fully drawn now that the header carrying the other one has gone.
+    expect(opacityOf(tester, cart), 1);
+    expect(collapsedCartWidth(tester), greaterThan(0));
+
+    // Beside the search field rather than above it, and level with it.
+    expect(
+      tester.getTopLeft(cart).dx,
+      greaterThan(tester.getTopRight(search).dx - 1),
+    );
+    expect(
+      tester.getCenter(cart).dy,
+      closeTo(tester.getCenter(search).dy, 0.5),
+    );
+
+    // Right up against the screen's margin, so the pair reads as one bar.
+    expect(tester.getTopRight(cart).dx, 400 - 16);
+
+    // And it opens the products basket.
+    await tester.tap(cart);
+    await tester.pumpAndSettle();
+    expect(find.byType(CartScreen), findsOneWidget);
+  });
+
+  testWidgets('scrolling collapses the chrome to the search field', (
     tester,
   ) async {
     await pumpHome(tester, const Size(400, 900));
 
     expect(find.byType(SliverPersistentHeader), findsOneWidget);
 
-    final cart = find.byIcon(Icons.shopping_cart_outlined);
-    final cartBefore = tester.getCenter(cart);
     final searchBefore = tester.getCenter(find.byType(TextField)).dy;
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
     await tester.pumpAndSettle();
 
-    // The search field and the cart are the two survivors.
+    // The search field is the survivor, and the pinned cart rides with it.
     expect(find.byType(TextField), findsOneWidget);
-    expect(cart, findsOneWidget);
-
-    // And the cart has not shifted by so much as a pixel.
-    expect(tester.getCenter(cart), cartBefore);
+    expect(find.byKey(pinnedCartKey), findsOneWidget);
 
     // The rest of the header has faded out...
     final opacity = tester.widget<Opacity>(
@@ -145,7 +304,6 @@ void main() {
       tester.getTopLeft(find.byType(TextField)).dy - chromeTop,
       greaterThanOrEqualTo(8.0),
     );
-    expect(tester.getTopLeft(cart).dy - chromeTop, greaterThanOrEqualTo(8.0));
   });
 
   testWidgets('refer & earn card sits in the top section', (tester) async {
@@ -248,18 +406,43 @@ void main() {
     expect(white, findsWidgets);
   });
 
+  testWidgets('"View all" opens the showcase\'s own products in a grid', (
+    tester,
+  ) async {
+    await pumpHome(tester, const Size(400, 9000));
+
+    // The "View all" belonging to "Deals You Love".
+    final viewAll = find.descendant(
+      of: find.ancestor(
+        of: find.text('Deals You Love'),
+        matching: find.byType(ProductShowcase),
+      ),
+      matching: find.text('View all'),
+    );
+    await tester.ensureVisible(viewAll);
+    await tester.tap(viewAll);
+    await tester.pumpAndSettle();
+
+    // Lands on the collection screen carrying that row's title and every one
+    // of its products — including ones further along than the feed showed.
+    expect(find.byType(ProductCollectionScreen), findsOneWidget);
+    expect(find.text('Deals You Love'), findsOneWidget);
+    expect(
+      find.text('${ProductCatalogue.dealsYouLove.length} items'),
+      findsOneWidget,
+    );
+    expect(find.text('Soft Soles Foot Cream'), findsOneWidget);
+  });
+
   testWidgets('the feed carries every requested bottom section', (
     tester,
   ) async {
-    await pumpHome(tester, const Size(400, 7000));
+    await pumpHome(tester, const Size(400, 8000));
 
     for (final title in const [
-      'Vitamins & Supplements',
       'Popular Items',
-      'Diabetes Care',
-      'Health Conditions',
-      "Deals You'll Love",
-      'New Product Arrivals',
+      'Deals You Love',
+      'Wellness & Supplements',
       'Health Articles',
       'Ratings & Reviews',
     ]) {
@@ -321,28 +504,21 @@ void main() {
     );
   });
 
-  testWidgets('the brand claim signs the feed off, above the footer', (
-    tester,
-  ) async {
-    // Taller than the rest of these cases need: the sign-off and the footer
-    // are the last two blocks, and a sliver list does not build what is far
-    // below the viewport.
+  testWidgets('the brand claim signs the feed off', (tester) async {
     await pumpHome(tester, const Size(400, 8000));
 
     expect(find.text(BrandQuote.quote), findsOneWidget);
 
-    final howItWorks = tester.getTopLeft(find.byType(HowItWorksSection)).dy;
     final quote = tester.getTopLeft(find.byType(BrandQuote)).dy;
-    final footer = tester.getTopLeft(find.byType(HomeFooter)).dy;
     final categories = tester.getTopLeft(find.byType(CategorySection)).dy;
 
+    // It is the last thing in the feed now: "Why shop with SHIELD", "How
+    // SHIELD works" and the footer used to sit under it and no longer do.
     expect(
       quote,
       greaterThan(categories),
       reason: 'it closes the feed rather than interrupting it',
     );
-    expect(quote, greaterThan(howItWorks));
-    expect(quote, lessThan(footer));
   });
 
   testWidgets('the sign-off carries the three social discs', (tester) async {
@@ -358,29 +534,6 @@ void main() {
     expect(
       tester.widgetList<SocialIcon>(discs).map((disc) => disc.network),
       SocialNetwork.values,
-    );
-  });
-
-  testWidgets('the footer does not repeat the social links', (tester) async {
-    await pumpHome(tester, const Size(400, 8000));
-
-    for (final network in SocialNetwork.values) {
-      expect(
-        find.descendant(
-          of: find.byType(HomeFooter),
-          matching: find.text(network.label),
-        ),
-        findsNothing,
-        reason: '${network.label} belongs to the sign-off above the footer',
-      );
-    }
-    // The footer keeps everything else it had.
-    expect(
-      find.descendant(
-        of: find.byType(HomeFooter),
-        matching: find.text('Need a hand?'),
-      ),
-      findsOneWidget,
     );
   });
 }

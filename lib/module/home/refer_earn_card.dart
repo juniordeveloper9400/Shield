@@ -71,7 +71,7 @@ class ReferEarnCard extends StatelessWidget {
                           ),
                           SizedBox(height: 2),
                           Text(
-                            'Climb levels, unlock cash rewards',
+                            'Climb levels, unlock reward points',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -116,8 +116,8 @@ class ReferEarnCard extends StatelessWidget {
                     if (next != null)
                       Text(
                         'Refer '
-                        '${(next.directRequired - progress.directReferrals).clamp(0, 99)}'
-                        ' more for ${next.reward}',
+                        '${(next.referralsRequired - progress.directReferrals).clamp(0, 99)}'
+                        ' more for ${next.pointsLabel}',
                         style: const TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,

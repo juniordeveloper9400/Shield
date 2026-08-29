@@ -454,7 +454,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(LoginScreen), findsOneWidget);
-      expect(find.textContaining('Proceeding to checkout'), findsNothing);
+      expect(find.text('Payment checkout'), findsNothing);
     });
 
     testWidgets('signing in there continues the checkout', (tester) async {
@@ -467,7 +467,7 @@ void main() {
 
       expect(find.byType(LoginScreen), findsNothing);
       expect(AuthService.instance.isSignedIn, isTrue);
-      expect(find.textContaining('Proceeding to checkout'), findsOneWidget);
+      expect(find.text('Payment checkout'), findsOneWidget);
     });
 
     testWidgets('a signed-in checkout never stops', (tester) async {
@@ -475,10 +475,10 @@ void main() {
       await pumpCart(tester);
 
       await tester.tap(find.text('Proceed to checkout'));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.byType(LoginScreen), findsNothing);
-      expect(find.textContaining('Proceeding to checkout'), findsOneWidget);
+      expect(find.text('Payment checkout'), findsOneWidget);
     });
   });
 }

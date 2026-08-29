@@ -6,34 +6,26 @@ import 'package:flutter/material.dart';
 /// bottom bar, and the menu drawer all resolve positions through it, so
 /// inserting or removing a destination cannot leave a hardcoded index
 /// pointing at the wrong screen.
-///
-/// Home leads the bar rather than sitting in the middle of it, and every tab
-/// is drawn as a glyph — the brand mark is on the header, and a logo in a
-/// navigation bar is a destination nobody can name.
-///
-/// Categories, Clinics and Orders are not tabs. They are pushed as routes
-/// from the home feed and the menu drawer, which is where a member goes
-/// looking for them.
 enum AppTab {
   home(
     label: 'Home',
     icon: Icons.home_outlined,
     activeIcon: Icons.home_rounded,
   ),
-  labTest(
+  lab(
     label: 'Lab',
     icon: Icons.biotech_outlined,
     activeIcon: Icons.biotech_rounded,
   ),
-  dietitian(
-    label: 'Dietitian',
-    icon: Icons.restaurant_menu_outlined,
-    activeIcon: Icons.restaurant_menu_rounded,
+  appointments(
+    label: 'Appointments',
+    icon: Icons.calendar_month_outlined,
+    activeIcon: Icons.calendar_month_rounded,
   ),
-  approvals(
-    label: 'Approvals',
-    icon: Icons.fact_check_outlined,
-    activeIcon: Icons.fact_check_rounded,
+  orders(
+    label: 'My Orders',
+    icon: Icons.receipt_long_outlined,
+    activeIcon: Icons.receipt_long_rounded,
   ),
   account(
     label: 'Account',
@@ -55,3 +47,4 @@ enum AppTab {
     required this.activeIcon,
   });
 }
+

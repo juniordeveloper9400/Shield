@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 
 import 'package:shield/module/categories/categories_screen.dart';
 import 'package:shield/module/categories/category_card.dart';
@@ -45,6 +48,44 @@ void main() {
             reason: '${group.title} / ${item.label} has no image',
           );
         }
+      }
+    });
+
+    test('category artwork has transparent card backgrounds', () {
+      final paths = {
+        for (final group in CategoryCatalogue.shoppable) ...[
+          if (group.image != null) group.image!,
+          for (final item in group.items)
+            if (item.image != null) item.image!,
+        ],
+      };
+
+      for (final path in paths) {
+        final decoded = img.decodePng(File(path).readAsBytesSync());
+        expect(decoded, isNotNull, reason: path);
+        final image = decoded!.convert(numChannels: 4);
+        var transparentBorder = 0;
+
+        void sample(int x, int y) {
+          if (image.getPixel(x, y).a == 0) {
+            transparentBorder++;
+          }
+        }
+
+        for (var x = 0; x < image.width; x++) {
+          sample(x, 0);
+          sample(x, image.height - 1);
+        }
+        for (var y = 0; y < image.height; y++) {
+          sample(0, y);
+          sample(image.width - 1, y);
+        }
+
+        expect(
+          transparentBorder,
+          greaterThan(0),
+          reason: '$path should let the card colour show through',
+        );
       }
     });
 
@@ -170,8 +211,13 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Personal Care is the chip the strip opens on.
-      expect(find.text('Skin Care'), findsOneWidget);
+      // Vitamins & Supplements is the chip the strip opens on: its
+      // sub-categories are the wellness products the feed shows underneath.
+      expect(find.text('Multivitamins'), findsOneWidget);
+      expect(find.text('Immunity'), findsOneWidget);
+      expect(find.text('Protein Powder'), findsOneWidget);
+      // And not Personal Care's, which is what it used to open on.
+      expect(find.text('Skin Care'), findsNothing);
       expect(find.byType(CategoryCard), findsNWidgets(6));
     });
 

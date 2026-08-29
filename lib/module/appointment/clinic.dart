@@ -7,14 +7,31 @@ class Doctor {
   final String name;
   final String speciality;
   final String fee;
-  final String avatar;
 
   const Doctor({
     required this.name,
     required this.speciality,
     required this.fee,
-    required this.avatar,
   });
+
+  /// Lettermark shown in place of a photograph, the way [Clinic] shows one in
+  /// place of a logo.
+  ///
+  /// A stock face beside a named, bookable doctor would be a picture of
+  /// somebody else, so the tile carries their initials until the clinic
+  /// supplies a photograph of its own.
+  String get initials {
+    final words = name
+        .replaceFirst(RegExp(r'^Dr\.?\s*', caseSensitive: false), '')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+    if (words.isEmpty) {
+      return '?';
+    }
+    return words.take(2).map((word) => word[0].toUpperCase()).join();
+  }
 }
 
 /// A clinic or hospital.
@@ -55,7 +72,6 @@ class ClinicDirectory {
     name: 'Dr. Ansar',
     speciality: 'Dermatology',
     fee: '400',
-    avatar: 'assets/avatars/avatar_1.png',
   );
 
   static const Clinic meiodia = Clinic(
@@ -69,7 +85,7 @@ class ClinicDirectory {
         'treatment plans built around each patient after an initial '
         'assessment.',
     initials: 'ME',
-    tint: AppColors.greenTint,
+    tint: AppColors.chipBlueTint,
     isVerified: true,
     specialities: ['Dermatology'],
     doctors: [drAnsar],

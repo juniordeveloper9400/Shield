@@ -228,6 +228,18 @@ class _PatientCard extends StatelessWidget {
                         color: AppColors.textMuted,
                       ),
                     ),
+                    if (patient.address.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        patient.address,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../theme/app_colors.dart';
+import '../../widgets/age_badge.dart';
 import '../../widgets/labelled_field.dart';
 import '../auth/auth_service.dart';
 import 'registration_service.dart';
@@ -354,11 +355,9 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           icon: Icons.cake_outlined,
           readOnly: true,
           onTap: _pickDob,
-          suffix: const Icon(
-            Icons.calendar_month_rounded,
-            size: 19,
-            color: AppColors.textMuted,
-          ),
+          // The age rides in the field itself: it is derived from the date the
+          // moment one is picked, never asked for as a second answer.
+          suffix: DobFieldSuffix(dob: _dob),
         ),
         if (_submitted && _dob == null)
           const _FieldError('Date of birth is required'),

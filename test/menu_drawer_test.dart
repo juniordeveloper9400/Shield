@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/menu/menu_drawer.dart';
+import 'package:shield/module/wallet/wallet_screen.dart';
 import 'package:shield/screens/app_shell.dart';
 
 void main() {
@@ -37,14 +38,20 @@ void main() {
     expect(find.text('Add more user details >'), findsOneWidget);
     expect(find.text('Medicines'), findsOneWidget);
 
-    // The dashboard panel pushes the tail of the link list past the fold, so
-    // the later entries have to be scrolled to before they are built.
+    // The dashboard panel and the investment call-out push the tail of the
+    // link list past the fold, so the later entries have to be scrolled to
+    // before they are built.
     await tester.scrollUntilVisible(
       find.text('Health Library'),
       160,
       scrollable: find.byType(Scrollable).last,
     );
     expect(find.text('Health Library'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Refer & earn'),
+      160,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('Refer & earn'), findsOneWidget);
   });
 
@@ -116,7 +123,15 @@ void main() {
 
     expect(find.text('Dashboard'), findsOneWidget);
     expect(find.text('Wallet balance'), findsOneWidget);
-    expect(find.text('₹3,472'), findsOneWidget);
+    // Empty until a privilege plan opens the wallet. The dashboard reads the
+    // live balance, so with no plan activated there is nothing in it.
+    //
+    // Scoped to the drawer: the home feed behind it carries an earnings
+    // section whose plan-bonus tile also reads ₹0 before a plan is activated.
+    expect(
+      find.descendant(of: find.byType(Drawer), matching: find.text('₹0')),
+      findsOneWidget,
+    );
     expect(find.text('Active orders'), findsOneWidget);
     expect(find.text('Cart items'), findsOneWidget);
     expect(find.text('Reward points'), findsOneWidget);
@@ -130,6 +145,29 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Menu'), findsNothing);
-    expect(find.text('Available balance'), findsOneWidget);
+    // Reached by type rather than by the balance heading: with no privilege
+    // card activated the wallet opens closed, and says so instead.
+    expect(find.byType(WalletScreen), findsOneWidget);
+    expect(find.text('Wallet locked'), findsOneWidget);
+  });
+
+  testWidgets('investment plan row sits under the dashboard and opens', (
+    tester,
+  ) async {
+    await pumpShell(tester);
+    await openMenu(tester);
+
+    // The call-out row is visible without scrolling, right below the panel.
+    expect(find.text('Investment Plan'), findsOneWidget);
+    expect(
+      find.text('100% assured ROI on every unit share'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Investment Plan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Menu'), findsNothing);
+    expect(find.text('The Investment Plan'), findsOneWidget);
   });
 }

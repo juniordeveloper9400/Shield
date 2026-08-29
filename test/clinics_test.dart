@@ -19,23 +19,9 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// Clinics is no longer a tab. The way in is the menu drawer, and its row
-  /// sits past the fold of that list.
+  /// Appointments is a bottom tab, and it opens the clinic directory.
   Future<void> openAppointment(WidgetTester tester) async {
-    await tester.tap(find.byIcon(Icons.menu_rounded));
-    await tester.pumpAndSettle();
-
-    final row = find.descendant(
-      of: find.byType(Drawer),
-      matching: find.text('Clinics & hospitals'),
-    );
-    await tester.scrollUntilVisible(
-      row,
-      120,
-      scrollable: find.byType(Scrollable).last,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(row);
+    await tester.tap(find.text('Appointments'));
     await tester.pumpAndSettle();
   }
 
@@ -73,7 +59,7 @@ void main() {
   });
 
   group('clinics list', () {
-    testWidgets('the drawer reaches the directory', (tester) async {
+    testWidgets('the bottom bar reaches the directory', (tester) async {
       await pumpShell(tester);
       await openAppointment(tester);
 

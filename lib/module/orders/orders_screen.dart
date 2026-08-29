@@ -1,41 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
+import 'order_track_screen.dart';
+import 'purchase_service.dart';
 
-/// Order history reached from the Orders tab.
+/// Order history, the Orders destination in the bottom bar.
 class OrdersScreen extends StatelessWidget {
   const OrdersScreen({super.key});
 
-  static const List<_Order> _orders = [
-    _Order(
-      id: 'SHD-100482',
-      placedOn: '16 Aug 2026',
-      itemCount: 4,
-      total: '₹1,248',
-      status: _OrderStatus.delivered,
-    ),
-    _Order(
-      id: 'SHD-100461',
-      placedOn: '12 Aug 2026',
-      itemCount: 2,
-      total: '₹640',
-      status: _OrderStatus.outForDelivery,
-    ),
-    _Order(
-      id: 'SHD-100433',
-      placedOn: '04 Aug 2026',
-      itemCount: 7,
-      total: '₹2,115',
-      status: _OrderStatus.processing,
-    ),
-    _Order(
-      id: 'SHD-100398',
-      placedOn: '27 Jul 2026',
-      itemCount: 1,
-      total: '₹289',
-      status: _OrderStatus.cancelled,
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +17,8 @@ class OrdersScreen extends StatelessWidget {
         backgroundColor: AppColors.white,
         surfaceTintColor: AppColors.white,
         elevation: 0,
+        // A destination, not a pushed route: nothing to go back to.
+        automaticallyImplyLeading: false,
         title: const Text(
           'My Orders',
           style: TextStyle(
@@ -58,20 +32,31 @@ class OrdersScreen extends StatelessWidget {
           child: Divider(height: 1, color: AppColors.border),
         ),
       ),
-      body: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        itemCount: _orders.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 12),
-        itemBuilder: (context, index) => _OrderCard(order: _orders[index]),
+      // Read off the ledger the earnings card sums, so a list of four orders
+      // and a total of a different four cannot happen.
+      body: ListenableBuilder(
+        listenable: PurchaseService.instance,
+        builder: (context, _) {
+          final orders = PurchaseService.instance.purchases;
+          return ListView.separated(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            itemCount: orders.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (context, index) => _OrderCard(order: orders[index]),
+          );
+        },
       ),
     );
   }
 }
 
 class _OrderCard extends StatelessWidget {
-  final _Order order;
+  final Purchase order;
 
   const _OrderCard({required this.order});
+
+  /// A prescription order carries no figure until the counter has priced it.
+  bool get _priced => order.mrpTotal > 0 || order.paidTotal > 0;
 
   @override
   Widget build(BuildContext context) {
@@ -111,31 +96,62 @@ class _OrderCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              Text(
-                order.total,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
+              // The bill, with what the order earned under it rather than
+              // beside it — the reorder button takes most of the row, and a
+              // second figure on the same line runs it off the card.
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _priced ? order.paidLabel : 'Price on confirmation',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: _priced ? 17 : 14,
+                        fontWeight: FontWeight.w800,
+                        color: _priced
+                            ? AppColors.textDark
+                            : AppColors.textMuted,
+                      ),
+                    ),
+                    if (order.status.counts && order.saved > 0)
+                      Text(
+                        'Saved ${order.savedLabel}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.brandGreenDark,
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              const Spacer(),
-              OutlinedButton(
-                onPressed: () {},
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => OrderTrackScreen(order: order),
+                  ),
+                ),
+                icon: const Icon(Icons.local_shipping_outlined, size: 18),
+                label: const Text(
+                  'Track order',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.brandBlue,
                   side: const BorderSide(color: AppColors.brandBlue),
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
+                    horizontal: 14,
                     vertical: 10,
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
-                ),
-                child: const Text(
-                  'View details',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
@@ -147,7 +163,7 @@ class _OrderCard extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  final _OrderStatus status;
+  final OrderStatus status;
 
   const _StatusChip({required this.status});
 
@@ -171,31 +187,4 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-enum _OrderStatus {
-  delivered('Delivered', AppColors.greenTint, AppColors.brandGreenDark),
-  outForDelivery('Out for delivery', AppColors.offerTint, AppColors.brandBlue),
-  processing('Processing', Color(0xFFFDF3E0), Color(0xFFB4761A)),
-  cancelled('Cancelled', Color(0xFFFBEBEB), Color(0xFFB4322F));
 
-  final String label;
-  final Color background;
-  final Color foreground;
-
-  const _OrderStatus(this.label, this.background, this.foreground);
-}
-
-class _Order {
-  final String id;
-  final String placedOn;
-  final int itemCount;
-  final String total;
-  final _OrderStatus status;
-
-  const _Order({
-    required this.id,
-    required this.placedOn,
-    required this.itemCount,
-    required this.total,
-    required this.status,
-  });
-}

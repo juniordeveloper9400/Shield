@@ -78,6 +78,13 @@ class PrescriptionCopy {
   final String newPrescription;
   final String addPrescription;
   final String addNewPrescription;
+
+  // ---- Delivery details ----
+  final String deliveryDetails;
+  final String deliveryDetailsIntro;
+  final String noDeliveryAddress;
+  final String addDeliveryAddress;
+  final String changeAddress;
   final String patientRow;
   final String doctorRow;
   final String doctorHint;
@@ -87,9 +94,9 @@ class PrescriptionCopy {
   final String product;
   final String intake;
   final String total;
-  final String medicineHint;
-  final String addMedicine;
   final String intakeHelp;
+  final String awaitingReview;
+  final String awaitingReviewDetail;
 
   /// Morning, afternoon, night — in that order, because an intake code is
   /// read left to right and the labels have to line up with the digits.
@@ -138,6 +145,11 @@ class PrescriptionCopy {
     required this.newPrescription,
     required this.addPrescription,
     required this.addNewPrescription,
+    required this.deliveryDetails,
+    required this.deliveryDetailsIntro,
+    required this.noDeliveryAddress,
+    required this.addDeliveryAddress,
+    required this.changeAddress,
     required this.patientRow,
     required this.doctorRow,
     required this.doctorHint,
@@ -145,9 +157,9 @@ class PrescriptionCopy {
     required this.product,
     required this.intake,
     required this.total,
-    required this.medicineHint,
-    required this.addMedicine,
     required this.intakeHelp,
+    required this.awaitingReview,
+    required this.awaitingReviewDetail,
     required this.intakeSlots,
     required this.intakeNotSet,
     required this.units,
@@ -228,11 +240,18 @@ class PrescriptionCopy {
     dueBeforeFrom: 'The due date must come after the from date.',
     yourPrescriptions: 'Your prescriptions',
     yourPrescriptionsIntro:
-        'Fill in the medicines and how they are taken, then send them to the '
-        'cart. Our pharmacist checks every line before it is dispensed.',
+        'These are the medicines our pharmacist read on each prescription. '
+        'Check them against your paper, then send them to the cart.',
     newPrescription: 'New prescription',
     addPrescription: 'Add prescription',
     addNewPrescription: 'Add new prescription',
+    deliveryDetails: 'Delivery details',
+    deliveryDetailsIntro:
+        'Where the pharmacist sends the order once you confirm it on the '
+        'call.',
+    noDeliveryAddress: 'No delivery address yet',
+    addDeliveryAddress: 'Add delivery address',
+    changeAddress: 'Change',
     patientRow: 'Patient',
     doctorRow: 'Doctor',
     doctorHint: "Doctor's name",
@@ -240,11 +259,13 @@ class PrescriptionCopy {
     product: 'Product',
     intake: 'Intake',
     total: 'Total',
-    medicineHint: 'Medicine name',
-    addMedicine: 'Add medicine',
     intakeHelp:
         'Three digits — morning, afternoon, night. 101 is one in the morning '
         'and one at night; 110 is morning and afternoon; 001 is night only.',
+    awaitingReview: 'Our pharmacist is reading this prescription',
+    awaitingReviewDetail:
+        'The medicines and the intake will appear here once the '
+        'counter has checked it, usually within a few minutes.',
     intakeSlots: ['Morning', 'Afternoon', 'Night'],
     intakeNotSet: 'Not set',
     units: 'units',
@@ -325,12 +346,17 @@ class PrescriptionCopy {
     dueBeforeFrom: 'അവസാന തീയതി ആരംഭ തീയതിക്ക് ശേഷമായിരിക്കണം.',
     yourPrescriptions: 'നിങ്ങളുടെ കുറിപ്പടികൾ',
     yourPrescriptionsIntro:
-        'മരുന്നുകളും അവ എങ്ങനെ കഴിക്കണമെന്നും ചേർത്ത ശേഷം കാർട്ടിലേക്ക് '
-        'അയയ്ക്കുക. നൽകുന്നതിനുമുമ്പ് ഞങ്ങളുടെ ഫാർമസിസ്റ്റ് ഓരോ വരിയും '
-        'പരിശോധിക്കും.',
+        'ഓരോ കുറിപ്പടിയിലും ഞങ്ങളുടെ ഫാർമസിസ്റ്റ് വായിച്ചെടുത്ത മരുന്നുകളാണ് '
+        'ഇവ. നിങ്ങളുടെ കടലാസുമായി ഒത്തുനോക്കിയ ശേഷം കാർട്ടിലേക്ക് അയയ്ക്കുക.',
     newPrescription: 'പുതിയ കുറിപ്പടി',
     addPrescription: 'കുറിപ്പടി ചേർക്കുക',
     addNewPrescription: 'പുതിയ കുറിപ്പടി ചേർക്കുക',
+    deliveryDetails: 'ഡെലിവറി വിവരങ്ങൾ',
+    deliveryDetailsIntro:
+        'കോളിൽ ഓർഡർ സ്ഥിരീകരിച്ച ശേഷം ഫാർമസിസ്റ്റ് അത് അയയ്ക്കുന്ന വിലാസം.',
+    noDeliveryAddress: 'ഇതുവരെ ഡെലിവറി വിലാസം ഇല്ല',
+    addDeliveryAddress: 'ഡെലിവറി വിലാസം ചേർക്കുക',
+    changeAddress: 'മാറ്റുക',
     patientRow: 'രോഗി',
     doctorRow: 'ഡോക്ടർ',
     doctorHint: 'ഡോക്ടറുടെ പേര്',
@@ -338,12 +364,14 @@ class PrescriptionCopy {
     product: 'മരുന്ന്',
     intake: 'അളവ്',
     total: 'ആകെ',
-    medicineHint: 'മരുന്നിന്റെ പേര്',
-    addMedicine: 'മരുന്ന് ചേർക്കുക',
     intakeHelp:
         'മൂന്ന് അക്കങ്ങൾ — രാവിലെ, ഉച്ചയ്ക്ക്, രാത്രി. 101 എന്നാൽ രാവിലെ '
         'ഒന്നും രാത്രി ഒന്നും; 110 എന്നാൽ രാവിലെയും ഉച്ചയ്ക്കും; 001 '
         'എന്നാൽ രാത്രി മാത്രം.',
+    awaitingReview: 'ഞങ്ങളുടെ ഫാർമസിസ്റ്റ് ഈ കുറിപ്പടി വായിക്കുന്നു',
+    awaitingReviewDetail:
+        'കൗണ്ടറിൽ പരിശോധിച്ചതിനുശേഷം മരുന്നുകളും അളവും ഇവിടെ കാണാം; '
+        'സാധാരണയായി കുറച്ചു മിനിറ്റുകൾക്കുള്ളിൽ.',
     intakeSlots: ['രാവിലെ', 'ഉച്ചയ്ക്ക്', 'രാത്രി'],
     intakeNotSet: 'നൽകിയിട്ടില്ല',
     units: 'എണ്ണം',

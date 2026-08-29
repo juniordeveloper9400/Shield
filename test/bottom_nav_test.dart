@@ -29,23 +29,22 @@ void main() {
       expect(AppTab.values.map((t) => t.label).toList(), [
         'Home',
         'Lab',
-        'Dietitian',
-        'Approvals',
+        'Appointments',
+        'My Orders',
         'Account',
       ]);
 
       expect(AppTab.home.index, 0, reason: 'Home leads rather than centres');
 
       for (final absent in const [
-        'Orders',
+        'Dietitian',
         'Categories',
-        'Appointment',
         'Clinics',
       ]) {
         expect(
           AppTab.values.any((t) => t.label == absent),
           isFalse,
-          reason: '$absent is reached as a route, not a tab',
+          reason: '$absent is not a tab of its own',
         );
       }
     });
@@ -80,26 +79,28 @@ void main() {
     );
   });
 
-  testWidgets('the two new destinations open from the bar', (tester) async {
+  testWidgets('Orders and Appointments open from the bar', (tester) async {
     await pumpShell(tester);
 
     await tester.tap(
       find.descendant(
         of: find.byType(ShieldBottomNav),
-        matching: find.text('Dietitian'),
+        matching: find.text('My Orders'),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Talk to a dietitian'), findsOneWidget);
+    expect(find.byType(OrdersScreen), findsOneWidget);
+    expect(find.text('SHD-100482'), findsOneWidget);
 
     await tester.tap(
       find.descendant(
         of: find.byType(ShieldBottomNav),
-        matching: find.text('Approvals'),
+        matching: find.text('Appointments'),
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('need your approval'), findsOneWidget);
+    expect(find.text('Clinics & Hospitals'), findsOneWidget);
+    expect(find.text('Meiodia Aesthetic Clinic'), findsOneWidget);
   });
 
   testWidgets('shell opens on Home', (tester) async {
@@ -114,7 +115,6 @@ void main() {
     for (final tab in AppTab.values) {
       expect(find.text(tab.label), findsWidgets, reason: tab.label);
     }
-    expect(find.text('Orders'), findsNothing);
   });
 
   testWidgets('the home tab shows the shield mark, not a glyph', (
@@ -141,19 +141,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Collect sample from'), findsOneWidget);
 
-    // The lab section swaps in its own bar, so the main tabs are gone until
+    // The health section swaps in its own bar, so the main tabs are gone until
     // its Home item returns us to the shell.
-    expect(find.text('Approvals'), findsNothing);
+    expect(find.text('Appointments'), findsNothing);
     await tester.tap(find.text('Home'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Approvals'), findsOneWidget);
+    expect(find.text('Appointments'), findsOneWidget);
     expect(find.byType(HomeHeroBanner), findsOneWidget);
   });
 
-  testWidgets('account still resolves after orders was removed', (
-    tester,
-  ) async {
+  testWidgets('account still resolves at the end of the bar', (tester) async {
     await pumpShell(tester);
 
     await tester.tap(find.text('Account'));
@@ -161,7 +159,7 @@ void main() {
     expect(find.text('Rahul Nair'), findsOneWidget);
   });
 
-  testWidgets('orders is reachable from the drawer as a pushed route', (
+  testWidgets('the drawer switches to Orders rather than stacking it', (
     tester,
   ) async {
     await pumpShell(tester);
@@ -184,8 +182,10 @@ void main() {
 
     expect(find.byType(OrdersScreen), findsOneWidget);
     expect(find.text('SHD-100482'), findsOneWidget);
-    // Pushed, so it must offer a way back.
-    expect(find.byType(BackButton), findsOneWidget);
+    // A destination, not a pushed route: no back arrow, and the main bar is
+    // still underneath it.
+    expect(find.byType(BackButton), findsNothing);
+    expect(find.byType(ShieldBottomNav), findsOneWidget);
   });
 
   testWidgets('five tabs fit a narrow phone', (tester) async {

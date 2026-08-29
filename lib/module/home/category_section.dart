@@ -24,7 +24,14 @@ class CategorySection extends StatefulWidget {
 class _CategorySectionState extends State<CategorySection> {
   /// The group the strip opens on, resolved by name so reordering the rail
   /// cannot silently change which one is selected first.
-  static const String _initialGroup = 'Personal Care';
+  ///
+  /// Wellness, because the strip below it sells wellness. Its six
+  /// sub-categories are the six products in that strip — Multivitamins,
+  /// Vitamin D, Protein Powder, Omega & Fish Oil, Calcium and Immunity —
+  /// so what the reader taps into is what they have just been shown.
+  /// Opening on Personal Care put skin, hair and oral care above a row of
+  /// supplements, which answered a question nobody had asked.
+  static const String _initialGroup = 'Vitamins & Supplements';
 
   late int _selected = _groups.indexWhere(
     (group) => group.title == _initialGroup,
@@ -129,6 +136,13 @@ class _CategorySectionState extends State<CategorySection> {
                       for (final item in active.items)
                         CategoryCard(
                           item: item,
+                          // The panel's own pastel, so the block reads as one
+                          // flat wash of colour rather than white tiles on a
+                          // tint...
+                          background: active.panelTint,
+                          // ...with a white ring drawn back in so each product
+                          // still reads as its own card within that wash.
+                          borderColor: AppColors.white,
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => CategoryListingScreen(
@@ -142,7 +156,14 @@ class _CategorySectionState extends State<CategorySection> {
                   ),
                 ),
                 TextButton(
-                  onPressed: () {},
+                  // Opens the group's listing on its "All" tab — no initial
+                  // sub-category — since this link stands for the whole group,
+                  // not any one card above it.
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => CategoryListingScreen(group: active),
+                    ),
+                  ),
                   child: Text(
                     '${active.viewAllLabel}  »',
                     maxLines: 1,
@@ -183,7 +204,11 @@ class _CategoryPill extends StatelessWidget {
     return SizedBox(
       width: width,
       child: Material(
-        color: isSelected ? AppColors.white : group.chipTint,
+        // The group's own pastel, the same fill whether the chip is selected
+        // or not: selecting it must not recolour it. The blue outline and bold
+        // label are what mark it as chosen, and this is also the panel's fill,
+        // so the active chip runs straight into the panel below it.
+        color: group.panelTint,
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: onTap,

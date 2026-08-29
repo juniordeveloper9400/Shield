@@ -246,15 +246,18 @@ class _AwaitingReview extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(
-            width: 17,
-            height: 17,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.2,
+          // A still icon rather than a spinner: this waits on a person at a
+          // counter, not on a request in flight, and a spinner would promise
+          // an answer in the next second for minutes on end.
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(
+              Icons.hourglass_top_rounded,
+              size: 18,
               color: AppColors.brandBlue,
             ),
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,11 +318,7 @@ class _ColumnHeadings extends StatelessWidget {
           const SizedBox(width: 6),
           SizedBox(
             width: PrescriptionDetailCard.totalWidth,
-            child: Text(
-              copy.total,
-              textAlign: TextAlign.right,
-              style: _style,
-            ),
+            child: Text(copy.total, textAlign: TextAlign.right, style: _style),
           ),
         ],
       ),
@@ -369,7 +368,9 @@ class _MedicineRow extends StatelessWidget {
                   // The pack and the code spelled out: between them they say
                   // what arrives and when it is taken, which is what a member
                   // checks this card against the paper for.
-                  medicine.pack.isEmpty ? spelled : '${medicine.pack} · $spelled',
+                  medicine.pack.isEmpty
+                      ? spelled
+                      : '${medicine.pack} · $spelled',
                   style: const TextStyle(
                     fontSize: 12,
                     height: 1.35,
@@ -383,10 +384,7 @@ class _MedicineRow extends StatelessWidget {
             width: PrescriptionDetailCard.intakeWidth,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.offerTint,
                   borderRadius: BorderRadius.circular(6),
@@ -526,9 +524,7 @@ class _Actions extends StatelessWidget {
             child: FilledButton.icon(
               // Nothing to send while the counter is still reading it, and
               // nothing to send twice once the lines are in the cart.
-              onPressed: record.canOrder && !record.inCart
-                  ? onAddToCart
-                  : null,
+              onPressed: record.canOrder && !record.inCart ? onAddToCart : null,
               icon: const Icon(Icons.add_shopping_cart_rounded, size: 18),
               label: Text(
                 record.inCart ? copy.inCart : copy.addToCart,

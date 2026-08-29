@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'auth_service.dart';
@@ -26,15 +28,18 @@ class AuthFlow {
 
   /// Runs [action] when signed in, otherwise opens the login screen first and
   /// only proceeds if the member completed it.
-  static Future<void> guard(BuildContext context, VoidCallback action) async {
+  static Future<void> guard(
+    BuildContext context,
+    FutureOr<void> Function() action,
+  ) async {
     if (AuthService.instance.isSignedIn) {
-      action();
+      await action();
       return;
     }
 
     final signedIn = await show(context);
     if (signedIn && context.mounted) {
-      action();
+      await action();
     }
   }
 }

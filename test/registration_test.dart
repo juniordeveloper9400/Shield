@@ -9,8 +9,11 @@ import 'package:shield/module/registration/register_bar.dart';
 import 'package:shield/module/registration/registration_screen.dart';
 import 'package:shield/module/registration/registration_service.dart';
 import 'package:shield/module/registration/shield_store.dart';
+import 'package:shield/dates.dart';
 import 'package:shield/screens/app_shell.dart';
+import 'package:shield/widgets/age_badge.dart';
 import 'package:shield/widgets/bottom_nav.dart';
+import 'package:shield/widgets/labelled_field.dart';
 
 void main() {
   setUp(() {
@@ -68,14 +71,14 @@ void main() {
 
   Future<void> completeForm(
     WidgetTester tester, {
-    String pincode = '679322',
+    String pincode = '679326',
   }) async {
     await fill(tester, 'you@example.com', 'asha@example.com');
     await tester.tap(find.text('Female'));
     await tester.pumpAndSettle();
     await pickDob(tester);
     await fill(tester, 'House / flat, street', '12/A Palm Grove');
-    await fill(tester, 'Town or locality', 'Perinthalmanna');
+    await fill(tester, 'Town or locality', 'Melattur');
     await fill(tester, '6-digit pincode', pincode);
     await pickState(tester, 'Kerala');
   }
@@ -86,25 +89,67 @@ void main() {
   }
 
   group('the store directory', () {
-    test('the nearest branch comes off the pincode region', () {
-      expect(StoreDirectory.suggestFor('679322')?.id, 'SHD-PTM');
-      expect(StoreDirectory.suggestFor('676121')?.id, 'SHD-MJR');
-      expect(StoreDirectory.suggestFor('400079')?.id, 'SHD-BOM');
-      expect(StoreDirectory.suggestFor('560038')?.id, 'SHD-BLR');
-    });
-
-    test('a Kerala pincode ranks the Kerala branches above the rest', () {
-      final ranked = StoreDirectory.nearest('679322');
-
-      expect(ranked.first.id, 'SHD-PTM');
+    test('every published branch is a SHIELD branch', () {
       expect(
-        ranked.take(4).map((store) => store.state),
-        everyElement('Kerala'),
-        reason: 'shared leading digits mean the same postal region',
+        StoreDirectory.all.map((store) => store.area),
+        [
+          'Melattur',
+          'Makkaraparamba',
+          'Tirur',
+          'Karinkallathani',
+          'Manjery',
+          'Alanallur',
+          'Tirurangadi',
+          'Kunnumpuram',
+          'Kondotty',
+          'Areekode',
+        ],
+        reason:
+            'the list is the shops that exist, in the order SHIELD lists '
+            'them',
       );
-      expect(ranked.last.state, isNot('Kerala'));
-      expect(ranked.length, StoreDirectory.all.length);
+      // No two members can be assigned the same branch under two codes.
+      expect(
+        StoreDirectory.all.map((store) => store.id).toSet(),
+        hasLength(StoreDirectory.all.length),
+      );
+      // Every branch is in Kerala, and all but Alanallur in Malappuram.
+      expect(
+        StoreDirectory.all.map((store) => store.state),
+        everyElement('Kerala'),
+      );
+      expect(StoreDirectory.byId('SHD-ALN')?.city, 'Palakkad');
     });
+
+    test('the nearest branch comes off the pincode region', () {
+      // A branch's own pincode picks that branch.
+      expect(StoreDirectory.suggestFor('679326')?.id, 'SHD-MEL');
+      expect(StoreDirectory.suggestFor('676121')?.id, 'SHD-MJR');
+      expect(StoreDirectory.suggestFor('673639')?.id, 'SHD-ARK');
+      // And a code near one, but not on it, picks the closest.
+      expect(StoreDirectory.suggestFor('679322')?.id, 'SHD-KKT');
+    });
+
+    test(
+      'the branches nearest a code rank above the ones across the district',
+      () {
+        final ranked = StoreDirectory.nearest('679326');
+
+        expect(ranked.first.id, 'SHD-MEL');
+        // Melattur and Karinkallathani share five leading digits; everything
+        // else in Malappuram shares two, and so comes after both.
+        expect(ranked[1].id, 'SHD-KKT');
+        expect(
+          ranked.take(2).map((store) => store.pincode),
+          everyElement(startsWith('67932')),
+        );
+        expect(
+          ranked.skip(2).map((store) => store.pincode),
+          everyElement(isNot(startsWith('67932'))),
+        );
+        expect(ranked.length, StoreDirectory.all.length);
+      },
+    );
 
     test('an incomplete pincode assigns nothing', () {
       expect(StoreDirectory.suggestFor(''), isNull);
@@ -115,14 +160,14 @@ void main() {
     });
 
     test('stores are looked up by id', () {
-      expect(StoreDirectory.byId('SHD-KOC')?.city, 'Ernakulam');
+      expect(StoreDirectory.byId('SHD-TIR')?.area, 'Tirur');
       expect(StoreDirectory.byId('SHD-NOPE'), isNull);
       expect(StoreDirectory.byId(null), isNull);
     });
   });
 
   group('the registration service', () {
-    Registration sample({String storeId = 'SHD-PTM'}) => Registration(
+    Registration sample({String storeId = 'SHD-MEL'}) => Registration(
       name: 'Asha Nair',
       phone: '9000012345',
       email: 'asha@example.com',
@@ -172,8 +217,10 @@ void main() {
     test('a profile names its store and reads back as an address', () {
       final registration = sample();
 
-      expect(registration.store?.name, 'SHIELD Pharmacy Perinthalmanna');
+      expect(registration.store?.name, 'SHIELD Pharmacy Melattur');
       expect(registration.dobLabel, '04 Sep 1994');
+      expect(registration.age, ageInYears(DateTime(1994, 9, 4)));
+      expect(registration.ageLabel, ageLabel(DateTime(1994, 9, 4)));
       expect(
         registration.addressLine,
         '12/A Palm Grove, Perinthalmanna, Kerala - 679322',
@@ -195,6 +242,64 @@ void main() {
       expect(find.text('Pincode'), findsOneWidget);
       expect(find.text('State'), findsOneWidget);
       expect(find.text('Your SHIELD store'), findsOneWidget);
+    });
+
+    testWidgets(
+      'the date field works the age out as soon as a date is picked',
+      (tester) async {
+        await pumpForm(tester);
+
+        // Nothing to derive an age from yet.
+        expect(find.byType(AgeBadge), findsNothing);
+
+        await pickDob(tester);
+
+        // The picker opens 25 years back, so that is what the field reports.
+        expect(find.byType(AgeBadge), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(AgeBadge),
+            matching: find.text('25 yrs'),
+          ),
+          findsOneWidget,
+        );
+        // In the date field itself, not somewhere else on the form.
+        expect(
+          find.descendant(
+            of: find.widgetWithText(LabelledField, 'Date of birth'),
+            matching: find.byType(AgeBadge),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('editing opens with the age already worked out', (
+      tester,
+    ) async {
+      RegistrationService.instance.save(
+        Registration(
+          name: 'Asha Nair',
+          phone: '9000012345',
+          email: 'asha@example.com',
+          gender: Gender.female,
+          dob: DateTime(1994, 9, 4),
+          address: '12/A Palm Grove',
+          place: 'Perinthalmanna',
+          pincode: '679322',
+          state: 'Kerala',
+          storeId: 'SHD-MEL',
+        ),
+      );
+      await pumpForm(tester, isEditing: true);
+
+      expect(
+        find.descendant(
+          of: find.byType(AgeBadge),
+          matching: find.text(ageLabel(DateTime(1994, 9, 4))),
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('the verified number is carried over and locked', (
@@ -268,27 +373,28 @@ void main() {
         reason: 'an incomplete pincode must not assign a branch',
       );
 
-      await fill(tester, '6-digit pincode', '679322');
+      await fill(tester, '6-digit pincode', '679326');
 
-      expect(find.text('SHIELD Pharmacy Perinthalmanna'), findsOneWidget);
+      expect(find.text('SHIELD Pharmacy Melattur'), findsOneWidget);
       expect(find.text('Nearest'), findsOneWidget);
-      expect(find.textContaining('Nearest to 679322'), findsOneWidget);
+      expect(find.textContaining('Nearest to 679326'), findsOneWidget);
     });
 
     testWidgets('every branch is reachable behind the short list', (
       tester,
     ) async {
       await pumpForm(tester);
-      await fill(tester, '6-digit pincode', '679322');
+      await fill(tester, '6-digit pincode', '679326');
 
-      expect(find.text('SHIELD Pharmacy Mumbai'), findsNothing);
+      // Areekode is the far end of the district, and so off the short list.
+      expect(find.text('SHIELD Pharmacy Areekode'), findsNothing);
 
       await tester.tap(
         find.text('Show all ${StoreDirectory.all.length} stores'),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('SHIELD Pharmacy Mumbai'), findsOneWidget);
+      expect(find.text('SHIELD Pharmacy Areekode'), findsOneWidget);
     });
 
     testWidgets('a completed form registers and assigns the store', (
@@ -306,10 +412,10 @@ void main() {
       expect(profile.phone, '9000012345');
       expect(profile.email, 'asha@example.com');
       expect(profile.gender, Gender.female);
-      expect(profile.place, 'Perinthalmanna');
-      expect(profile.pincode, '679322');
+      expect(profile.place, 'Melattur');
+      expect(profile.pincode, '679326');
       expect(profile.state, 'Kerala');
-      expect(profile.storeId, 'SHD-PTM');
+      expect(profile.storeId, 'SHD-MEL');
       expect(
         service.points,
         RegistrationService.openingPoints + RegistrationService.rewardPoints,
@@ -322,16 +428,16 @@ void main() {
       await pumpForm(tester);
       await completeForm(tester);
 
-      await tester.tap(find.text('SHIELD Pharmacy Manjeri'));
+      await tester.tap(find.text('SHIELD Pharmacy Alanallur'));
       await tester.pumpAndSettle();
 
       // Re-ranking the list must not move a choice the member made.
-      await fill(tester, '6-digit pincode', '673004');
+      await fill(tester, '6-digit pincode', '676101');
       await submit(tester);
 
       final profile = RegistrationService.instance.profile!;
-      expect(profile.storeId, 'SHD-MJR');
-      expect(profile.pincode, '673004');
+      expect(profile.storeId, 'SHD-ALN');
+      expect(profile.pincode, '676101');
     });
 
     testWidgets('close leaves without registering and stands the prompt down', (
@@ -374,7 +480,7 @@ void main() {
         find.widgetWithText(TextFormField, 'you@example.com'),
       );
       expect(email.controller?.text, 'asha@example.com');
-      expect(find.text('SHIELD Pharmacy Perinthalmanna'), findsWidgets);
+      expect(find.text('SHIELD Pharmacy Melattur'), findsWidgets);
     });
   });
 
@@ -443,7 +549,7 @@ void main() {
           place: 'Perinthalmanna',
           pincode: '679322',
           state: 'Kerala',
-          storeId: 'SHD-PTM',
+          storeId: 'SHD-MEL',
         ),
       );
       await pumpBar(tester);
@@ -509,7 +615,7 @@ void main() {
       await submit(tester);
 
       expect(find.text('Complete your registration'), findsNothing);
-      expect(find.text('SHIELD Pharmacy Perinthalmanna'), findsOneWidget);
+      expect(find.text('SHIELD Pharmacy Melattur'), findsOneWidget);
     });
   });
 
@@ -536,7 +642,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(RegistrationScreen), findsOneWidget);
-      expect(find.textContaining('Proceeding to checkout'), findsNothing);
+      expect(find.text('Payment checkout'), findsNothing);
     });
 
     testWidgets('skipping still reaches checkout', (tester) async {
@@ -550,7 +656,7 @@ void main() {
       expect(find.byType(RegistrationScreen), findsNothing);
       expect(RegistrationService.instance.isRegistered, isFalse);
       expect(
-        find.textContaining('Proceeding to checkout'),
+        find.text('Payment checkout'),
         findsOneWidget,
         reason: 'declining to register is not a reason to refuse the money',
       );
@@ -567,11 +673,7 @@ void main() {
       expect(RegistrationService.instance.isRegistered, isTrue);
       expect(find.textContaining('Registered ·'), findsOneWidget);
 
-      // Both messages are true, so both are said: the checkout confirmation
-      // is queued behind the registration one rather than replacing it.
-      await tester.pump(const Duration(seconds: 5));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Proceeding to checkout'), findsOneWidget);
+      expect(find.text('Payment checkout'), findsOneWidget);
     });
 
     testWidgets('a registered member is taken straight to payment', (
@@ -588,7 +690,7 @@ void main() {
           place: 'Perinthalmanna',
           pincode: '679322',
           state: 'Kerala',
-          storeId: 'SHD-PTM',
+          storeId: 'SHD-MEL',
         ),
       );
       await pumpCart(tester);
@@ -597,7 +699,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(RegistrationScreen), findsNothing);
-      expect(find.textContaining('Proceeding to checkout'), findsOneWidget);
+      expect(find.text('Payment checkout'), findsOneWidget);
     });
   });
 }

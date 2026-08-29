@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/age_badge.dart';
 import '../auth/auth_service.dart';
 import 'patient_book.dart';
 
@@ -48,6 +49,9 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
   late final TextEditingController _phone = TextEditingController(
     text: widget.existing?.phone ?? '',
   );
+  late final TextEditingController _address = TextEditingController(
+    text: widget.existing?.address ?? '',
+  );
 
   /// Filled by the picker only — see the field below.
   late final TextEditingController _dobText = TextEditingController(
@@ -71,6 +75,7 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
   void dispose() {
     _name.dispose();
     _phone.dispose();
+    _address.dispose();
     _dobText.dispose();
     _abha.dispose();
     super.dispose();
@@ -119,6 +124,7 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
         ? book.add(
             name: _name.text,
             phone: _phone.text,
+            address: _address.text,
             dob: dob,
             gender: _gender,
             abhaId: abha,
@@ -127,6 +133,7 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
         : existing.copyWith(
             name: _name.text.trim(),
             phone: _phone.text.trim(),
+            address: _address.text.trim(),
             dob: dob,
             gender: _gender,
             abhaId: abha,
@@ -208,6 +215,23 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: TextFormField(
+                    controller: _address,
+                    textCapitalization: TextCapitalization.sentences,
+                    keyboardType: TextInputType.streetAddress,
+                    minLines: 2,
+                    maxLines: 3,
+                    decoration: _decoration(
+                      'Address',
+                      hint: 'House, street, area, city',
+                    ),
+                    validator: (value) =>
+                        (value ?? '').trim().isEmpty ? 'Required' : null,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: TextFormField(
                     controller: _dobText,
                     // Read-only and opening the picker: a typed date invites
                     // every format under the sun, and the age is derived from
@@ -217,11 +241,9 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
                     decoration: _decoration(
                       'Date of birth',
                       hint: 'Select a date',
-                      suffix: const Icon(
-                        Icons.calendar_month_rounded,
-                        size: 19,
-                        color: AppColors.textMuted,
-                      ),
+                      // The age rides in the field itself: it is derived from
+                      // the date the moment one is picked, never asked for.
+                      suffix: DobFieldSuffix(dob: _dob),
                       error: _submitted && _dob == null
                           ? 'Select a date of birth'
                           : null,

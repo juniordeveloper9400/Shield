@@ -6,7 +6,6 @@ import '../../theme/app_colors.dart';
 class Testimonial {
   final String name;
   final String location;
-  final String avatar;
   final String posted;
   final int rating;
   final String body;
@@ -14,11 +13,27 @@ class Testimonial {
   const Testimonial({
     required this.name,
     required this.location,
-    required this.avatar,
     required this.posted,
     required this.rating,
     required this.body,
   });
+
+  /// One or two letters for the disc beside the review.
+  ///
+  /// Initials rather than a photograph: a stock face next to a written review
+  /// implies the review came with a picture of the person who left it, and
+  /// none of these did.
+  String get initials {
+    final words = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((word) => word.isNotEmpty)
+        .toList();
+    if (words.isEmpty) {
+      return '?';
+    }
+    return words.take(2).map((word) => word[0].toUpperCase()).join();
+  }
 }
 
 /// "What our customers have to say" — an aggregate rating with the star
@@ -36,7 +51,6 @@ class CustomerTestimonials extends StatelessWidget {
     Testimonial(
       name: 'Anjali Sharma',
       location: 'Mumbai',
-      avatar: 'assets/avatars/avatar_1.png',
       posted: '2 weeks ago',
       rating: 5,
       body:
@@ -46,7 +60,6 @@ class CustomerTestimonials extends StatelessWidget {
     Testimonial(
       name: 'Prakash Menon',
       location: 'Kochi',
-      avatar: 'assets/avatars/avatar_2.png',
       posted: '1 month ago',
       rating: 5,
       body:
@@ -56,7 +69,6 @@ class CustomerTestimonials extends StatelessWidget {
     Testimonial(
       name: 'Ritu Kapoor',
       location: 'Delhi',
-      avatar: 'assets/avatars/avatar_3.png',
       posted: '1 month ago',
       rating: 4,
       body:
@@ -66,7 +78,6 @@ class CustomerTestimonials extends StatelessWidget {
     Testimonial(
       name: 'Suresh Nair',
       location: 'Bengaluru',
-      avatar: 'assets/avatars/avatar_4.png',
       posted: '2 months ago',
       rating: 5,
       body:
@@ -76,7 +87,6 @@ class CustomerTestimonials extends StatelessWidget {
     Testimonial(
       name: 'Vandana Joshi',
       location: 'Pune',
-      avatar: 'assets/avatars/avatar_5.png',
       posted: '3 months ago',
       rating: 5,
       body:
@@ -258,14 +268,7 @@ class _TestimonialCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                ClipOval(
-                  child: Image.asset(
-                    testimonial.avatar,
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                  ),
-                ),
+                _InitialsDisc(initials: testimonial.initials),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -355,6 +358,34 @@ class _Stars extends StatelessWidget {
             color: const Color(0xFFF5A623),
           ),
       ],
+    );
+  }
+}
+
+/// The reviewer's initials, in the brand's blue.
+class _InitialsDisc extends StatelessWidget {
+  final String initials;
+
+  const _InitialsDisc({required this.initials});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 40,
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: AppColors.categoryPanel,
+      ),
+      child: Text(
+        initials,
+        style: const TextStyle(
+          fontSize: 15,
+          fontWeight: FontWeight.w800,
+          color: AppColors.brandBlue,
+        ),
+      ),
     );
   }
 }

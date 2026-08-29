@@ -9,6 +9,7 @@ import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/patients/patient_form_sheet.dart';
 import 'package:shield/module/patients/patient_picker.dart';
 import 'package:shield/module/prescription/upload_prescription_screen.dart';
+import 'package:shield/widgets/age_badge.dart';
 
 void main() {
   setUp(PatientBook.instance.reset);
@@ -42,6 +43,7 @@ void main() {
     return PatientBook.instance.add(
       name: name,
       phone: '9000012345',
+      address: '12 Lake View Road, Kochi',
       dob: dobFor(age),
       gender: PatientGender.female,
       abhaId: abhaId,
@@ -83,12 +85,14 @@ void main() {
       final saved = PatientBook.instance.add(
         name: '  Ravi  ',
         phone: ' 9000012345 ',
+        address: '  45 Market Road, Kochi  ',
         dob: dobFor(8),
         gender: PatientGender.male,
         relation: PatientRelation.child,
       );
       expect(saved.name, 'Ravi');
       expect(saved.phone, '9000012345');
+      expect(saved.address, '45 Market Road, Kochi');
     });
 
     test('the age is derived from the date, not stored', () {
@@ -107,6 +111,11 @@ void main() {
       // The birthday counts: still 29 the day before the thirtieth.
       expect(ageInYears(born, asOf: DateTime(2024, 9, 3)), 29);
       expect(ageInYears(born, asOf: DateTime(2024, 9, 4)), 30);
+
+      // The wording the form and the row both use, singular for an infant.
+      expect(ageLabel(born, asOf: DateTime(2024, 9, 4)), '30 yrs');
+      expect(ageLabel(born, asOf: DateTime(1995, 9, 4)), '1 yr');
+      expect(ageLabel(born, asOf: DateTime(1995, 9, 3)), '0 yrs');
     });
 
     test('an ABHA number is stored as digits and shown in groups', () {
@@ -173,6 +182,7 @@ void main() {
 
       await fill(tester, 'Full name', 'Asha Nair');
       await fill(tester, 'Mobile number', '9000012345');
+      await fill(tester, 'Address', '12 Lake View Road, Kochi');
       await pickDob(tester);
       await tester.tap(find.text('Female'));
       await tester.pumpAndSettle();
@@ -185,6 +195,7 @@ void main() {
       final saved = PatientBook.instance.patients.single;
       expect(saved.name, 'Asha Nair');
       expect(saved.phone, '9000012345');
+      expect(saved.address, '12 Lake View Road, Kochi');
       expect(saved.abhaId, '12345678901234');
       expect(saved.gender, PatientGender.female);
       expect(saved.relation, PatientRelation.spouse);
@@ -197,6 +208,59 @@ void main() {
         find.text('+91 9000012345 · ABHA 12-3456-7890-1234'),
         findsOneWidget,
       );
+      expect(find.text('12 Lake View Road, Kochi'), findsOneWidget);
+    });
+
+    testWidgets(
+      'the date field works the age out as soon as a date is picked',
+      (tester) async {
+        await pump(tester, const ManagePatientsScreen());
+
+        await tester.tap(find.text('Add patient'));
+        await tester.pumpAndSettle();
+
+        // Nothing to derive an age from yet.
+        expect(find.byType(AgeBadge), findsNothing);
+
+        await pickDob(tester);
+
+        // The picker opens 25 years back, so that is what the field reports.
+        expect(find.byType(AgeBadge), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(AgeBadge),
+            matching: find.text('25 yrs'),
+          ),
+          findsOneWidget,
+        );
+        // In the date field itself, not somewhere else on the sheet.
+        expect(
+          find.descendant(
+            of: find.widgetWithText(TextFormField, 'Date of birth'),
+            matching: find.byType(AgeBadge),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('editing opens with the age already worked out', (
+      tester,
+    ) async {
+      final saved = seed(name: 'Asha', age: 32);
+      await pump(tester, const ManagePatientsScreen());
+
+      await tester.tap(find.byTooltip('Edit Asha'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byType(AgeBadge),
+          matching: find.text(ageLabel(saved.dob)),
+        ),
+        findsOneWidget,
+      );
+      expect(ageLabel(saved.dob), '32 yrs');
     });
 
     testWidgets('the form asks in the order it was specified', (tester) async {
@@ -208,6 +272,7 @@ void main() {
       const order = [
         'Full name',
         'Mobile number',
+        'Address',
         'Date of birth',
         'Gender',
         'ABHA ID',
@@ -251,6 +316,7 @@ void main() {
       await tester.pumpAndSettle();
       await fill(tester, 'Full name', 'Asha');
       await fill(tester, 'Mobile number', '9000012345');
+      await fill(tester, 'Address', '12 Lake View Road, Kochi');
       await pickDob(tester);
       await fill(tester, 'ABHA ID', '1234');
       await tester.tap(find.text('Save patient'));
@@ -274,7 +340,7 @@ void main() {
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Required'), findsOneWidget);
+      expect(find.text('Required'), findsNWidgets(2));
       expect(find.text('Mobile number is required'), findsOneWidget);
       expect(find.text('Select a date of birth'), findsOneWidget);
       expect(PatientBook.instance.isEmpty, isTrue);
@@ -287,6 +353,7 @@ void main() {
       await tester.pumpAndSettle();
       await fill(tester, 'Full name', 'Asha');
       await fill(tester, 'Mobile number', '12345');
+      await fill(tester, 'Address', '12 Lake View Road, Kochi');
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
 
@@ -314,14 +381,28 @@ void main() {
             ?.text,
         '9000012345',
       );
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.widgetWithText(TextFormField, 'Address'),
+            )
+            .controller
+            ?.text,
+        '12 Lake View Road, Kochi',
+      );
 
       await fill(tester, 'Full name', 'Asha Nair');
+      await fill(tester, 'Address', '34 New Street, Kochi');
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
 
       // Still one record, not a duplicate, and the date rode through the edit.
       expect(PatientBook.instance.length, 1);
       expect(PatientBook.instance.byId(saved.id)?.name, 'Asha Nair');
+      expect(
+        PatientBook.instance.byId(saved.id)?.address,
+        '34 New Street, Kochi',
+      );
       expect(PatientBook.instance.byId(saved.id)?.age, 32);
     });
 
@@ -402,6 +483,7 @@ void main() {
 
       await fill(tester, 'Full name', 'Ravi');
       await fill(tester, 'Mobile number', '9000012345');
+      await fill(tester, 'Address', '7 Temple Road, Kochi');
       await pickDob(tester);
       await tester.tap(find.text('Child'));
       await tester.pumpAndSettle();

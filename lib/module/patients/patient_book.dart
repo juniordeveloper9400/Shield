@@ -35,6 +35,9 @@ class Patient {
   /// is why it is asked for even when the account holder is the patient.
   final String phone;
 
+  /// Delivery and visit address for this patient.
+  final String address;
+
   /// Held as a date rather than a number of years, because an age recorded
   /// once is wrong from the next birthday onwards — and a lab range is read
   /// against the age on the day of the test, not the day of the entry.
@@ -52,6 +55,7 @@ class Patient {
     required this.id,
     required this.name,
     required this.phone,
+    this.address = '',
     required this.dob,
     required this.gender,
     required this.relation,
@@ -62,7 +66,10 @@ class Patient {
   int get age => ageInYears(dob);
 
   /// "32 yrs · Female · Spouse" — the line every list row shows.
-  String get summary => '$age yrs · ${gender.label} · ${relation.label}';
+  String get summary => '$ageLine · ${gender.label} · ${relation.label}';
+
+  /// "32 yrs" — the same wording the form's date field prints back.
+  String get ageLine => ageLabel(dob);
 
   String get dobLabel => formatDate(dob);
 
@@ -90,6 +97,7 @@ class Patient {
   Patient copyWith({
     String? name,
     String? phone,
+    String? address,
     DateTime? dob,
     PatientGender? gender,
     String? abhaId,
@@ -99,6 +107,7 @@ class Patient {
       id: id,
       name: name ?? this.name,
       phone: phone ?? this.phone,
+      address: address ?? this.address,
       dob: dob ?? this.dob,
       gender: gender ?? this.gender,
       abhaId: abhaId ?? this.abhaId,
@@ -143,6 +152,7 @@ class PatientBook extends ChangeNotifier {
   Patient add({
     required String name,
     required String phone,
+    String address = '',
     required DateTime dob,
     required PatientGender gender,
     required PatientRelation relation,
@@ -152,6 +162,7 @@ class PatientBook extends ChangeNotifier {
       id: 'p${_nextId++}',
       name: name.trim(),
       phone: phone.trim(),
+      address: address.trim(),
       dob: dob,
       gender: gender,
       // Stored as digits so a number typed with or without its grouping

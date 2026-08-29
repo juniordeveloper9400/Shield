@@ -21,7 +21,7 @@ class CategoriesScreen extends StatelessWidget {
         backgroundColor: AppColors.white,
         surfaceTintColor: AppColors.white,
         elevation: 0,
-        automaticallyImplyLeading: false,
+        // Always a pushed route now, never a tab — so it keeps its back button.
         title: const Text(
           'Categories',
           style: TextStyle(

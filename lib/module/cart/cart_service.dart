@@ -5,16 +5,26 @@ class CartLine {
   final String name;
   final String pack;
   final double price;
+  final double mrp;
+
+  /// Artwork for the product, carried from wherever it was added so the cart
+  /// shows the same picture the shelf did. Null for lines with no image —
+  /// prescription medicines, or fixtures — which fall back to an icon.
+  String? image;
   int qty;
 
   CartLine({
     required this.name,
     required this.pack,
     required this.price,
+    double? mrp,
+    this.image,
     this.qty = 1,
-  });
+  }) : mrp = mrp ?? price;
 
   double get lineTotal => price * qty;
+
+  double get lineMrpTotal => mrp * qty;
 
   /// False for a line that came off a prescription: the pharmacist prices it
   /// once the medicines are confirmed, and a made-up ₹0.00 would read as free.
@@ -28,6 +38,10 @@ class CartService extends ChangeNotifier {
 
   static final CartService instance = CartService._();
 
+  /// The most of any one item a cart line may hold. The quantity picker offers
+  /// up to this, and [setQty] / [changeQty] cap at it.
+  static const int maxLineQty = 20;
+
   final List<CartLine> _lines = [];
 
   List<CartLine> get lines => List.unmodifiable(_lines);
@@ -39,11 +53,18 @@ class CartService extends ChangeNotifier {
 
   double get subtotal => _lines.fold(0, (sum, line) => sum + line.lineTotal);
 
-  double get discount => subtotal * 0.26;
+  double get mrpTotal => _lines.fold(0, (sum, line) => sum + line.lineMrpTotal);
+
+  double get discount => (mrpTotal - subtotal).clamp(0, double.infinity);
 
   double get deliveryFee => _lines.isEmpty ? 0 : 40;
 
-  double get payable => subtotal - discount + deliveryFee;
+  double get payable => subtotal + deliveryFee;
+
+  int quantityFor(String name) {
+    final index = _lines.indexWhere((line) => line.name == name);
+    return index < 0 ? 0 : _lines[index].qty;
+  }
 
   /// Adds [qty] units, merging into the existing line when the product is
   /// already in the cart rather than creating a duplicate row.
@@ -54,6 +75,8 @@ class CartService extends ChangeNotifier {
     required String name,
     required String pack,
     required double price,
+    double? mrp,
+    String? image,
     int qty = 1,
   }) {
     if (qty <= 0) {
@@ -62,8 +85,19 @@ class CartService extends ChangeNotifier {
     final existing = _lines.indexWhere((line) => line.name == name);
     if (existing >= 0) {
       _lines[existing].qty += qty;
+      // Fill in the picture if the line was first added without one.
+      _lines[existing].image ??= image;
     } else {
-      _lines.add(CartLine(name: name, pack: pack, price: price, qty: qty));
+      _lines.add(
+        CartLine(
+          name: name,
+          pack: pack,
+          price: price,
+          mrp: mrp,
+          image: image,
+          qty: qty,
+        ),
+      );
     }
     notifyListeners();
   }
@@ -77,7 +111,22 @@ class CartService extends ChangeNotifier {
     if (next <= 0) {
       _lines.removeAt(index);
     } else {
-      _lines[index].qty = next;
+      _lines[index].qty = next.clamp(1, maxLineQty);
+    }
+    notifyListeners();
+  }
+
+  /// Sets a line's exact quantity, removing it when [qty] is zero and capping
+  /// at [maxLineQty].
+  void setQty(String name, int qty) {
+    final index = _lines.indexWhere((line) => line.name == name);
+    if (index < 0) {
+      return;
+    }
+    if (qty <= 0) {
+      _lines.removeAt(index);
+    } else {
+      _lines[index].qty = qty.clamp(1, maxLineQty);
     }
     notifyListeners();
   }

@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import '../../money.dart';
 import '../../screens/app_tabs.dart';
 import '../../theme/app_colors.dart';
+import '../agent/agent_portal_screen.dart';
+import '../agent/agent_service.dart';
 import '../auth/auth_service.dart';
 import '../cart/cart_screen.dart';
-import '../appointment/clinics_screen.dart';
 import '../categories/categories_screen.dart';
-import '../orders/orders_screen.dart';
+import '../health/health_section.dart';
+import '../investment/investment_plan_screen.dart';
 import '../registration/registration_service.dart';
 import '../refer/refer_earn_screen.dart';
 import '../wallet/wallet_screen.dart';
@@ -19,8 +21,9 @@ import '../wallet/wallet_service.dart';
 /// tinted account strip, an at-a-glance dashboard, the browse links, and a
 /// shaded account group pinned to the end of the list.
 class MenuDrawer extends StatelessWidget {
-  /// Switches the shell to one of the bottom-navigation destinations.
-  final ValueChanged<int> onSelectTab;
+  /// Switches the shell to one of the bottom-navigation destinations, and —
+  /// for the health destination — to a named page inside it.
+  final void Function(int index, {HealthSubTab? subTab}) onSelectTab;
 
   const MenuDrawer({super.key, required this.onSelectTab});
 
@@ -39,9 +42,9 @@ class MenuDrawer extends StatelessWidget {
     'Health Library',
   ];
 
-  void _go(BuildContext context, int tab) {
+  void _go(BuildContext context, int tab, {HealthSubTab? subTab}) {
     Navigator.of(context).pop();
-    onSelectTab(tab);
+    onSelectTab(tab, subTab: subTab);
   }
 
   void _push(BuildContext context, Widget screen) {
@@ -52,6 +55,10 @@ class MenuDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final agent = AgentService.instance.agentForPhone(
+      AuthService.instance.currentUser.value?.phone,
+    );
+
     return Drawer(
       backgroundColor: AppColors.white,
       // Full-bleed: the menu takes over the whole screen rather than sliding
@@ -73,8 +80,15 @@ class MenuDrawer extends StatelessWidget {
                   _DashboardPanel(
                     onOpenWallet: () => _push(context, const WalletScreen()),
                     onOpenCart: () => _push(context, const CartScreen()),
-                    onOpenOrders: () => _push(context, const OrdersScreen()),
+                    onOpenOrders: () => _go(context, AppTab.orders.index),
                     onOpenRewards: () => _go(context, AppTab.account.index),
+                  ),
+                  // Sits directly under the dashboard: its own call-out row
+                  // rather than one of the plain browse links, since it opens
+                  // a full feature screen and not a category listing.
+                  _InvestmentPlanRow(
+                    onTap: () =>
+                        _push(context, const InvestmentPlanScreen()),
                   ),
                   // Categories is no longer a tab, so the browse links push
                   // it as a route rather than switching to a destination that
@@ -88,22 +102,56 @@ class MenuDrawer extends StatelessWidget {
                     color: const Color(0xFFF3F4F6),
                     child: Column(
                       children: [
-                        // Clinics lost its tab in the same pass; this is the
-                        // way in now.
+                        // Matches the bottom-bar destination.
                         _MenuRow(
-                          label: 'Clinics & hospitals',
+                          label: 'Appointments',
                           transparent: true,
-                          onTap: () => _push(context, const ClinicsScreen()),
+                          onTap: () => _go(context, AppTab.appointments.index),
                         ),
+                        // Lab tests and the dietitian share the Lab tab,
+                        // so the drawer names the inner page rather than
+                        // leaving it behind a tab labelled something else.
+                        _MenuRow(
+                          label: 'Lab tests',
+                          transparent: true,
+                          onTap: () => _go(
+                            context,
+                            AppTab.lab.index,
+                            subTab: HealthSubTab.labsTests,
+                          ),
+                        ),
+                        _MenuRow(
+                          label: 'Dietitian',
+                          transparent: true,
+                          onTap: () => _go(
+                            context,
+                            AppTab.lab.index,
+                            subTab: HealthSubTab.dietitian,
+                          ),
+                        ),
+                        // Only for a signed-in agent — sits with Refer & earn
+                        // because it is that card's counterpart.
+                        if (agent != null)
+                          _MenuRow(
+                            label: 'Agent portal',
+                            transparent: true,
+                            onTap: () => _push(
+                              context,
+                              AgentPortalScreen(agent: agent),
+                            ),
+                          ),
                         _MenuRow(
                           label: 'Refer & earn',
                           transparent: true,
                           onTap: () => _push(context, const ReferEarnScreen()),
                         ),
+                        // Orders is a destination now, so the row switches to
+                        // it rather than stacking a second copy on top of the
+                        // tab that already holds it.
                         _MenuRow(
                           label: 'My orders',
                           transparent: true,
-                          onTap: () => _push(context, const OrdersScreen()),
+                          onTap: () => _go(context, AppTab.orders.index),
                         ),
                         _MenuRow(
                           label: 'Account',
@@ -272,6 +320,82 @@ class _MenuRow extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                     color: AppColors.textDark,
                   ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 24,
+                color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Highlighted menu entry for the Investment Plan, pinned right below the
+/// dashboard. Tinted and iconned so it reads as a feature, not a browse link.
+class _InvestmentPlanRow extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _InvestmentPlanRow({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.pageTint,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: const Icon(
+                  Icons.trending_up_rounded,
+                  size: 20,
+                  color: AppColors.brandBlue,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Investment Plan',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      '100% assured ROI on every unit share',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(width: 10),

@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/upload_picker.dart';
 import '../patients/patient_book.dart';
 import '../patients/patient_picker.dart';
 import 'medicine_duration.dart';
@@ -49,9 +50,7 @@ class PrescriptionFormController extends ChangeNotifier {
   /// A repeat with no end and no tick saying so is not a decision yet — it is
   /// a blank field, and it would silently become a one-off order.
   bool get hasSchedule =>
-      !isRecurring ||
-      neverExpires ||
-      (until != null && until!.isAfter(from));
+      !isRecurring || neverExpires || (until != null && until!.isAfter(from));
 
   /// True once the due date has been set to a day that is not after the
   /// start: worth saying out loud, where a merely unset date is not.
@@ -61,7 +60,11 @@ class PrescriptionFormController extends ChangeNotifier {
   // A prescription that does not say who it is for, or how much to dispense,
   // cannot be filled. Both are as required as the file itself.
   bool get isComplete =>
-      file != null && !tooLarge && patient != null && hasDuration && hasSchedule;
+      file != null &&
+      !tooLarge &&
+      patient != null &&
+      hasDuration &&
+      hasSchedule;
 
   String get supplyLabel {
     if (isCustomDuration && customDays != null && customDays! > 0) {
@@ -258,14 +261,14 @@ class _PrescriptionFormBodyState extends State<PrescriptionFormBody> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _SourceTile(
+                  UploadSourceTile(
                     icon: Icons.add_a_photo_outlined,
                     label: copy.useCamera,
                     enabled: !_form.busy,
                     onTap: () => _pick(ImageSource.camera),
                   ),
                   const SizedBox(width: 14),
-                  _SourceTile(
+                  UploadSourceTile(
                     icon: Icons.add_photo_alternate_outlined,
                     label: copy.useGallery,
                     enabled: !_form.busy,
@@ -276,10 +279,11 @@ class _PrescriptionFormBodyState extends State<PrescriptionFormBody> {
             ),
             if (_form.file != null) ...[
               const SizedBox(height: 18),
-              _SelectedFileCard(
+              UploadedFileCard(
                 name: _form.file!.name,
                 bytes: _form.bytes,
                 tooLarge: _form.tooLarge,
+                limitLabel: '5 MB',
                 removeLabel: copy.remove,
                 onRemove: _form.clearFile,
               ),
@@ -428,7 +432,10 @@ class RecurringPicker extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 8, right: 6),
                 child: Text(
                   copy.dueBeforeFrom,
-                  style: const TextStyle(fontSize: 12.5, color: AppColors.danger),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.danger,
+                  ),
                 ),
               ),
             const SizedBox(height: 2),
@@ -441,11 +448,11 @@ class RecurringPicker extends StatelessWidget {
                   children: [
                     Checkbox(
                       value: form.neverExpires,
-                      onChanged: (value) => form.setNeverExpires(value ?? false),
+                      onChanged: (value) =>
+                          form.setNeverExpires(value ?? false),
                       activeColor: AppColors.brandBlue,
                       visualDensity: VisualDensity.compact,
-                      materialTapTargetSize:
-                          MaterialTapTargetSize.shrinkWrap,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
                     const SizedBox(width: 6),
                     Text(
@@ -541,140 +548,6 @@ class _DateRow extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _SourceTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  const _SourceTile({
-    required this.icon,
-    required this.label,
-    required this.enabled,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Material(
-        color: AppColors.offerTint,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.searchBorder),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 34, color: AppColors.brandBlue),
-                const SizedBox(height: 10),
-                Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    height: 1.25,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.brandBlue,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SelectedFileCard extends StatelessWidget {
-  final String name;
-  final int bytes;
-  final bool tooLarge;
-  final String removeLabel;
-  final VoidCallback onRemove;
-
-  const _SelectedFileCard({
-    required this.name,
-    required this.bytes,
-    required this.tooLarge,
-    required this.removeLabel,
-    required this.onRemove,
-  });
-
-  String get _readableSize {
-    if (bytes >= 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
-    }
-    return '${(bytes / 1024).toStringAsFixed(0)} KB';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: tooLarge ? AppColors.dangerTint : AppColors.greenTint,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: tooLarge ? AppColors.dangerLine : AppColors.brandGreenDeep,
-        ),
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          Icon(
-            tooLarge ? Icons.error_outline_rounded : Icons.check_circle_outline,
-            size: 22,
-            color: tooLarge ? AppColors.danger : AppColors.brandGreenDeep,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  tooLarge
-                      ? '$_readableSize · exceeds the 5 MB limit'
-                      : '$_readableSize · ready to upload',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    color: tooLarge ? AppColors.danger : AppColors.textBody,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: onRemove,
-            icon: const Icon(Icons.close_rounded, size: 20),
-            color: AppColors.textMuted,
-            tooltip: removeLabel,
-          ),
-        ],
       ),
     );
   }

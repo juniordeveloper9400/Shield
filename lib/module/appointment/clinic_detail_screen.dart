@@ -156,7 +156,7 @@ class _DetailHeader extends StatelessWidget {
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [AppColors.brandBlue, AppColors.brandNavy],
+                colors: [AppColors.brandBlue, AppColors.brandBlue],
               ),
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(26)),
             ),
@@ -309,7 +309,7 @@ class _Identity extends StatelessWidget {
               const Icon(
                 Icons.verified_rounded,
                 size: 21,
-                color: AppColors.brandGreenDeep,
+                color: AppColors.brandBlue,
               ),
             ],
           ],
@@ -398,7 +398,7 @@ class _Description extends StatelessWidget {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w700,
-              color: AppColors.brandGreenDeep,
+              color: AppColors.brandBlue,
             ),
           ),
         ),
@@ -528,13 +528,21 @@ class _DoctorRow extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.asset(
-                  doctor.avatar,
-                  width: 54,
-                  height: 54,
-                  fit: BoxFit.cover,
+              Container(
+                width: 54,
+                height: 54,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.categoryPanel,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  doctor.initials,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.brandBlue,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -568,7 +576,7 @@ class _DoctorRow extends StatelessWidget {
                       style: const TextStyle(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
-                        color: AppColors.brandGreenDeep,
+                        color: AppColors.brandBlue,
                       ),
                     ),
                   ],
