@@ -19,14 +19,33 @@ const Color _onDarkMuted = Color(0xFFCBD9EE);
 /// "Direct sale": the customers this agent personally sold a privilege plan
 /// to — not the agents under them, which is what the team tree is for — each
 /// with the plan they hold and whether it is still live.
-class AgentDirectSaleSection extends StatelessWidget {
+///
+/// Leads with a summary — total value, total earned, how many are still
+/// active — and folds the customer-by-customer list behind an arrow, the
+/// same shape [AgentTeamSalesCard] leads with its own total before the
+/// per-tier detail. A wall of customer cards is not what this section needs
+/// to open with; the totals are.
+class AgentDirectSaleSection extends StatefulWidget {
   final Agent agent;
 
   const AgentDirectSaleSection({super.key, required this.agent});
 
   @override
+  State<AgentDirectSaleSection> createState() =>
+      _AgentDirectSaleSectionState();
+}
+
+class _AgentDirectSaleSectionState extends State<AgentDirectSaleSection> {
+  bool _expanded = false;
+
+  void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
   Widget build(BuildContext context) {
-    final customers = AgentService.instance.customersOf(agent);
+    final service = AgentService.instance;
+    final agent = widget.agent;
+    final customers = service.customersOf(agent);
+    const accent = AppColors.brandBlue;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -78,12 +97,204 @@ class AgentDirectSaleSection extends StatelessWidget {
               style: TextStyle(fontSize: 13.5, color: AppColors.textBody),
             ),
           )
-        else
-          for (var i = 0; i < customers.length; i++) ...[
-            if (i > 0) const SizedBox(height: 12),
-            _CustomerCard(customer: customers[i]),
-          ],
+        else ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accent.withValues(alpha: 0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // The switch: total value up front, and the arrow that
+                  // opens onto every customer that adds up to it.
+                  Material(
+                    color: accent,
+                    child: InkWell(
+                      key: const ValueKey('direct-sale-summary'),
+                      onTap: _toggle,
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: AppColors.white.withValues(alpha: 0.18),
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              child: const Icon(
+                                Icons.storefront_rounded,
+                                size: 20,
+                                color: AppColors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: Text(
+                                'Direct sale ₹${formatRupees(service.directSaleVolume(agent))}',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  height: 1.25,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            _SummaryChevron(
+                              expanded: _expanded,
+                              accent: AppColors.white,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Kept apart from the total on purpose — how much a
+                  // customer paid and how many are still active answer
+                  // different questions than what it earned this agent.
+                  Container(
+                    color: AppColors.offerTint,
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _SummaryStat(
+                            label: 'CUSTOMERS',
+                            value: '${customers.length}',
+                          ),
+                        ),
+                        Expanded(
+                          child: _SummaryStat(
+                            label: 'ACTIVE',
+                            value: '${service.activeCustomerCount(agent)}',
+                          ),
+                        ),
+                        Expanded(
+                          child: _SummaryStat(
+                            label: 'YOU EARNED',
+                            value:
+                                '₹${formatRupees(service.directSaleEarnings(agent))}',
+                            accent: AppColors.brandGreenDark,
+                            alignEnd: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: _expanded
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < customers.length; i++) ...[
+                          if (i > 0) const SizedBox(height: 12),
+                          _CustomerCard(customer: customers[i]),
+                        ],
+                      ],
+                    ),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+/// One figure in the direct-sale summary strip: a small label over the
+/// number, so "customers", "active" and "you earned" each get their own
+/// column rather than reading as one run-on line.
+class _SummaryStat extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? accent;
+  final bool alignEnd;
+
+  const _SummaryStat({
+    required this.label,
+    required this.value,
+    this.accent,
+    this.alignEnd = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 9.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
+            color: AppColors.textMuted,
+          ),
+        ),
+        const SizedBox(height: 3),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: alignEnd ? Alignment.centerRight : Alignment.centerLeft,
+          child: Text(
+            value,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: accent ?? AppColors.textDark,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// The fold arrow on the direct-sale summary — same shape and turn as the
+/// one on [AgentTeamSalesCard], so the two "tap to see everything below
+/// this total" switches in the portal read as the same control.
+class _SummaryChevron extends StatelessWidget {
+  final bool expanded;
+  final Color accent;
+
+  const _SummaryChevron({required this.expanded, required this.accent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.16),
+        shape: BoxShape.circle,
+        border: Border.all(color: accent.withValues(alpha: 0.5)),
+      ),
+      alignment: Alignment.center,
+      child: AnimatedRotation(
+        turns: expanded ? 0.5 : 0,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        child: Icon(
+          Icons.keyboard_arrow_down_rounded,
+          size: 20,
+          color: accent,
+        ),
+      ),
     );
   }
 }

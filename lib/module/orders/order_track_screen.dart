@@ -49,36 +49,62 @@ class OrderTrackScreen extends StatelessWidget {
       bottomNavigationBar: track.awaitingPayment
           ? OrderPayFooter(order: order)
           : null,
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      body: Column(
         children: [
-          _StatusHeader(order: order),
-          const SizedBox(height: 12),
-          _TrackCard(track: track),
-          const SizedBox(height: 14),
-          const _ReminderRow(),
-          if (order.kind == OrderKind.prescription) ...[
-            const SizedBox(height: 14),
-            const PrescriptionUploadedCard(),
-          ],
-          const SizedBox(height: 14),
-          DeliverToCard(order: order),
-          const SizedBox(height: 14),
-          const EmailIdCard(),
-          const SizedBox(height: 14),
-          DeliveryUpdatesCard(order: order),
-          if (order.status == OrderStatus.processing) ...[
-            const SizedBox(height: 14),
-            CancelOrderCard(order: order),
-          ],
-          const SizedBox(height: 14),
-          const NeedHelpCard(),
-          const SizedBox(height: 14),
-          const LabPackagePromoCard(),
-          const SizedBox(height: 14),
-          BillDetailsCard(order: order),
-          const SizedBox(height: 14),
-          const SocialMediaCard(),
+          // Where the order stands is what a member opens this screen to
+          // read, so it stays put at the top rather than scrolling away
+          // under everything else on the page — a shadow marks it off as
+          // fixed rather than just the first card in the list.
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.pageTint,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.textDark.withValues(alpha: 0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Column(
+              children: [
+                _StatusHeader(order: order),
+                const SizedBox(height: 12),
+                _TrackCard(track: track),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+              children: [
+                const _ReminderRow(),
+                if (order.kind == OrderKind.prescription) ...[
+                  const SizedBox(height: 14),
+                  const PrescriptionUploadedCard(),
+                ],
+                const SizedBox(height: 14),
+                DeliverToCard(order: order),
+                const SizedBox(height: 14),
+                const EmailIdCard(),
+                const SizedBox(height: 14),
+                DeliveryUpdatesCard(order: order),
+                if (order.status == OrderStatus.processing) ...[
+                  const SizedBox(height: 14),
+                  CancelOrderCard(order: order),
+                ],
+                const SizedBox(height: 14),
+                const NeedHelpCard(),
+                const SizedBox(height: 14),
+                const LabPackagePromoCard(),
+                const SizedBox(height: 14),
+                BillDetailsCard(order: order),
+                const SizedBox(height: 14),
+                const SocialMediaCard(),
+              ],
+            ),
+          ),
         ],
       ),
     );

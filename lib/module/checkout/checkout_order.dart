@@ -57,6 +57,11 @@ class CheckoutOrder {
   /// shipped anywhere.
   final bool requiresDelivery;
 
+  /// Units in the order, for the "N items" line next to the delivery
+  /// estimate. Null when there is nothing to count — a privilege plan is not
+  /// a quantity of anything.
+  final int? itemCount;
+
   const CheckoutOrder({
     required this.title,
     required this.subtitle,
@@ -65,6 +70,7 @@ class CheckoutOrder {
     required this.submitLabel,
     this.lines = const [],
     this.requiresDelivery = false,
+    this.itemCount,
   });
 
   String get amountLabel => '₹${formatRupees(amount.round())}';

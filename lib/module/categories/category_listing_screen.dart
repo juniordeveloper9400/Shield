@@ -7,6 +7,7 @@ import '../cart/cart_control.dart';
 import '../cart/cart_screen.dart';
 import '../cart/cart_service.dart';
 import '../home/product_showcase.dart';
+import '../product/product_detail_screen.dart';
 import '../search/search_screen.dart';
 import 'category_catalogue.dart';
 import 'listing_catalogue.dart';
@@ -41,8 +42,7 @@ class _CategoryListingScreenState extends State<CategoryListingScreen> {
 
   /// What the grid shows: the chip rail's selection with the filter sheet's
   /// sub-category and brand picks applied on top.
-  List<Product> get _products =>
-      _filter.resolve(widget.group, chip: _selected);
+  List<Product> get _products => _filter.resolve(widget.group, chip: _selected);
 
   Future<void> _openFilter() async {
     final result = await showListingFilterSheet(
@@ -137,8 +137,7 @@ class _CategoryListingScreenState extends State<CategoryListingScreen> {
               if (products.isEmpty)
                 SliverToBoxAdapter(
                   child: _NoMatches(
-                    onClear: () =>
-                        setState(() => _filter = ListingFilter.none),
+                    onClear: () => setState(() => _filter = ListingFilter.none),
                   ),
                 )
               else
@@ -538,100 +537,112 @@ class ProductTile extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Square, because the product artwork is square: contained in a
-          // wider-than-tall box it was limited by the short side and sat with
-          // a gutter down either edge, which is what made it read as small.
-          AspectRatio(
-            aspectRatio: 1,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: AppImage(
-                      image: product.image,
-                      fallbackIcon: product.icon,
-                      iconSize: 56,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-                if (product.discountLabel != null)
-                  _DiscountFlag(label: product.discountLabel!),
-              ],
+      // The tile opens the product's details page; the ADD / quantity control
+      // sitting on it keeps its own taps.
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ProductDetailScreen(product: product),
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.2,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textDark,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Square, because the product artwork is square: contained in a
+              // wider-than-tall box it was limited by the short side and sat
+              // with a gutter down either edge, making it read as small.
+              AspectRatio(
+                aspectRatio: 1,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: AppImage(
+                          image: product.image,
+                          fallbackIcon: product.icon,
+                          iconSize: 56,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    product.pack,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                  const Spacer(),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
+                    if (product.discountLabel != null)
+                      _DiscountFlag(label: product.discountLabel!),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '₹${product.price}',
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          height: 1.2,
+                          fontWeight: FontWeight.w600,
                           color: AppColors.textDark,
                         ),
                       ),
-                      const SizedBox(width: 5),
-                      Flexible(
-                        child: Text(
-                          '₹${product.mrp}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textMuted,
-                            decoration: TextDecoration.lineThrough,
-                          ),
+                      const SizedBox(height: 2),
+                      Text(
+                        product.pack,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textMuted,
                         ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(
+                            '₹${product.price}',
+                            style: const TextStyle(
+                              fontSize: 15.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              '₹${product.mrp}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.textMuted,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      CartControl(
+                        name: product.name,
+                        pack: product.pack,
+                        price: product.price,
+                        mrp: product.mrp,
+                        image: product.image,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  CartControl(
-                    name: product.name,
-                    pack: product.pack,
-                    price: product.price,
-                    mrp: product.mrp,
-                    image: product.image,
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -662,7 +673,6 @@ class _DiscountFlag extends StatelessWidget {
     );
   }
 }
-
 
 /// "Top deals": a featured product with a thumbnail rail to switch between
 /// the rest of the discounted stock.
@@ -760,99 +770,109 @@ class _FeaturedDeal extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            // Wider and less padded than it was, so the square artwork is
-            // limited by the row's height rather than by its own box.
-            width: 124,
-            height: 132,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: AppImage(
-                      image: product.image,
-                      fallbackIcon: product.icon,
-                      iconSize: 46,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-                if (product.discountLabel != null)
-                  _DiscountFlag(label: product.discountLabel!),
-              ],
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ProductDetailScreen(product: product),
             ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 12, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    product.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      height: 1.3,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '₹${product.mrp}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.textMuted,
-                                decoration: TextDecoration.lineThrough,
-                              ),
-                            ),
-                            Text(
-                              '₹${product.price}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textDark,
-                              ),
-                            ),
-                          ],
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                // Wider and less padded than it was, so the square artwork is
+                // limited by the row's height rather than by its own box.
+                width: 124,
+                height: 132,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: AppImage(
+                          image: product.image,
+                          fallbackIcon: product.icon,
+                          iconSize: 46,
+                          fit: BoxFit.contain,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 108,
-                        child: CartControl(
-                          name: product.name,
-                          pack: product.pack,
-                          price: product.price,
-                          mrp: product.mrp,
-                          image: product.image,
+                    ),
+                    if (product.discountLabel != null)
+                      _DiscountFlag(label: product.discountLabel!),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 12, 12, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          height: 1.3,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textDark,
                         ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  '₹${product.mrp}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    color: AppColors.textMuted,
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
+                                ),
+                                Text(
+                                  '₹${product.price}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textDark,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 108,
+                            child: CartControl(
+                              name: product.name,
+                              pack: product.pack,
+                              price: product.price,
+                              mrp: product.mrp,
+                              image: product.image,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

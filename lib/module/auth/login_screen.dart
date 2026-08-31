@@ -29,9 +29,17 @@ class _LoginScreenState extends State<LoginScreen> {
   final _name = TextEditingController();
   final _phone = TextEditingController();
   final _otp = TextEditingController();
+  final _otpFocus = FocusNode();
 
   _Step _step = _Step.details;
+
+  /// A send or verify round trip is in flight — blocks the buttons and a
+  /// re-entrant submit from the keyboard's "done" action or an autofilled code.
   bool _busy = false;
+
+  /// A resend is in flight — kept apart from [_busy] so it can show its own
+  /// "Sending…" state on the link without disabling the whole code step.
+  bool _resending = false;
   String? _error;
 
   Timer? _cooldown;
@@ -45,11 +53,17 @@ class _LoginScreenState extends State<LoginScreen> {
     _name.addListener(_repaint);
     _phone.addListener(_repaint);
     _otp.addListener(_clearErrorOnEdit);
+    // Android instant verification / SMS auto-retrieval can complete the
+    // sign-in without a code ever being typed. RootScreen swaps this screen
+    // out when that happens; drop the keyboard first so it does not linger
+    // over the next screen.
+    AuthService.instance.currentUser.addListener(_onSessionChanged);
   }
 
   @override
   void dispose() {
     _cooldown?.cancel();
+    AuthService.instance.currentUser.removeListener(_onSessionChanged);
     _name
       ..removeListener(_repaint)
       ..dispose();
@@ -59,7 +73,14 @@ class _LoginScreenState extends State<LoginScreen> {
     _otp
       ..removeListener(_clearErrorOnEdit)
       ..dispose();
+    _otpFocus.dispose();
     super.dispose();
+  }
+
+  void _onSessionChanged() {
+    if (AuthService.instance.isSignedIn) {
+      FocusManager.instance.primaryFocus?.unfocus();
+    }
   }
 
   void _repaint() {
@@ -82,6 +103,9 @@ class _LoginScreenState extends State<LoginScreen> {
   // ---- Actions ----
 
   Future<void> _sendOtp() async {
+    if (_busy) {
+      return;
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
@@ -91,21 +115,18 @@ class _LoginScreenState extends State<LoginScreen> {
       _busy = true;
       _error = null;
     });
-    // Stands in for the SMS round trip, so the button spends a beat in its
-    // pending state instead of jumping straight to the code boxes.
-    await Future<void>.delayed(const Duration(milliseconds: 450));
-    if (!mounted) {
-      return;
-    }
 
-    final failure = AuthService.instance.requestOtp(
+    final failure = await AuthService.instance.requestOtp(
       name: _name.text,
       phone: _phone.text,
     );
+    if (!mounted) {
+      return;
+    }
     if (failure != null) {
       setState(() {
         _busy = false;
-        _error = 'Could not send the code. Check your details.';
+        _error = _sendErrorText(failure);
       });
       return;
     }
@@ -120,18 +141,71 @@ class _LoginScreenState extends State<LoginScreen> {
     _announceCode();
   }
 
-  void _resend() {
-    if (_secondsLeft > 0) {
+  Future<void> _resend() async {
+    if (_secondsLeft > 0 || _resending || _busy) {
       return;
     }
-    AuthService.instance.requestOtp(name: _name.text, phone: _phone.text);
+    setState(() {
+      _resending = true;
+      _error = null;
+    });
+
+    final failure = await AuthService.instance.requestOtp(
+      name: _name.text,
+      phone: _phone.text,
+    );
+    if (!mounted) {
+      return;
+    }
+    if (failure != null) {
+      setState(() {
+        _resending = false;
+        _error = _sendErrorText(failure);
+      });
+      return;
+    }
     _otp.clear();
-    setState(() => _error = null);
+    setState(() {
+      _resending = false;
+      _error = null;
+    });
+    _otpFocus.requestFocus();
     _startCooldown();
     _announceCode();
   }
 
+  /// Turns a send-time [OtpError] into a line for the form.
+  String _sendErrorText(OtpError failure) {
+    switch (failure) {
+      case OtpError.invalidName:
+      case OtpError.invalidPhone:
+        return 'Could not send the code. Check your details.';
+      case OtpError.tooManyRequests:
+        return 'Too many attempts from this device. Try again later.';
+      case OtpError.quotaExceeded:
+        return 'Verification is temporarily unavailable. Try again later.';
+      case OtpError.network:
+        return 'No connection. Check your network and try again.';
+      case OtpError.timeout:
+        return 'Verification timed out before the code was sent. '
+            'Check your connection and tap Resend.';
+      case OtpError.unavailable:
+        return 'Verification is unavailable on this device right now.';
+      case OtpError.noPendingRequest:
+      case OtpError.wrongOtp:
+      case OtpError.codeExpired:
+      case OtpError.unknown:
+        return 'Could not send the code. Please try again.';
+    }
+  }
+
   Future<void> _verify([String? completed]) async {
+    // Guard against a second entry: a filled field fires onCompleted while the
+    // member may also tap "Verify & continue", and an autofilled code can land
+    // mid-request.
+    if (_busy) {
+      return;
+    }
     final code = completed ?? _otp.text;
     if (code.length < AuthService.otpLength) {
       setState(() => _error = 'Enter the ${AuthService.otpLength}-digit code');
@@ -143,25 +217,69 @@ class _LoginScreenState extends State<LoginScreen> {
       _busy = true;
       _error = null;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+
+    var failure = await AuthService.instance.verifyOtp(code);
     if (!mounted) {
       return;
     }
-
-    final failure = AuthService.instance.verifyOtp(code);
+    // Android instant verification can complete the sign-in from its own
+    // callback while this manual verify is in flight — then verifyOtp reports
+    // "no pending request" even though the member is in. Treat being signed in
+    // as success and let the tail below finish the flow.
+    if (failure != null && AuthService.instance.isSignedIn) {
+      failure = null;
+    }
     if (failure == OtpError.wrongOtp) {
+      _otp.clear();
       setState(() {
         _busy = false;
         _error = 'That code is incorrect. Check the SMS and try again.';
       });
+      // Put the keyboard back so the member can retype straight away.
+      _otpFocus.requestFocus();
       return;
     }
-    if (failure != null) {
-      // The pending request is gone — start over rather than retry blindly.
+    if (failure == OtpError.tooManyRequests) {
+      setState(() {
+        _busy = false;
+        _error = 'Too many attempts. Wait a while before trying again.';
+      });
+      return;
+    }
+    if (failure == OtpError.network) {
+      setState(() {
+        _busy = false;
+        _error = 'No connection. Check your network and try again.';
+      });
+      return;
+    }
+    if (failure == OtpError.timeout) {
+      setState(() {
+        _busy = false;
+        _error = 'Verification timed out. Check your connection and try again.';
+      });
+      return;
+    }
+    if (failure == OtpError.unavailable) {
+      setState(() {
+        _busy = false;
+        _error = 'Verification is unavailable on this device right now.';
+      });
+      return;
+    }
+    if (failure == OtpError.noPendingRequest || failure == OtpError.codeExpired) {
+      // The verification session is gone — start over rather than retry blindly.
       setState(() {
         _busy = false;
         _step = _Step.details;
         _error = 'That code expired. Request a new one.';
+      });
+      return;
+    }
+    if (failure != null) {
+      setState(() {
+        _busy = false;
+        _error = 'Could not verify the code. Please try again.';
       });
       return;
     }
@@ -205,16 +323,14 @@ class _LoginScreenState extends State<LoginScreen> {
     });
   }
 
-  /// There is no SMS behind this build, so the code is handed over on screen.
+  /// Confirms the SMS is on its way.
   void _announceCode() {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           duration: const Duration(seconds: 3),
-          content: Text(
-            'OTP sent to +91 ${_phone.text} · demo code ${AuthService.demoOtp}',
-          ),
+          content: Text('OTP sent to +91 ${_phone.text}'),
         ),
       );
   }
@@ -373,6 +489,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(height: 18),
         OtpField(
           controller: _otp,
+          focusNode: _otpFocus,
           length: AuthService.otpLength,
           hasError: _error != null,
           onCompleted: _verify,
@@ -382,25 +499,45 @@ class _LoginScreenState extends State<LoginScreen> {
           AuthErrorNote(message: _error!),
         ],
         const SizedBox(height: 14),
-        _ResendRow(secondsLeft: _secondsLeft, onResend: _resend),
+        _ResendRow(
+          secondsLeft: _secondsLeft,
+          busy: _resending,
+          onResend: _resend,
+        ),
         const SizedBox(height: 18),
         AuthButton(label: 'Verify & continue', busy: _busy, onPressed: _verify),
-        const SizedBox(height: 16),
-        const _DemoCodeHint(),
       ],
     );
   }
 }
 
-/// Countdown, then a live resend link.
+/// Countdown, then a live resend link — or a "Sending…" note while a resend
+/// is in flight.
 class _ResendRow extends StatelessWidget {
   final int secondsLeft;
+  final bool busy;
   final VoidCallback onResend;
 
-  const _ResendRow({required this.secondsLeft, required this.onResend});
+  const _ResendRow({
+    required this.secondsLeft,
+    required this.busy,
+    required this.onResend,
+  });
 
   @override
   Widget build(BuildContext context) {
+    if (busy) {
+      return const Text(
+        'Sending a new code…',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textMuted,
+        ),
+      );
+    }
+
     if (secondsLeft > 0) {
       final seconds = secondsLeft.toString().padLeft(2, '0');
       return Text(
@@ -441,31 +578,6 @@ class _ResendRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Surfaces the stand-in code while there is no SMS gateway behind the form.
-class _DemoCodeHint extends StatelessWidget {
-  const _DemoCodeHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.offerTint,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      child: Text(
-        'Demo mode · any number works, the code is ${AuthService.demoOtp}',
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          fontSize: 12.5,
-          fontWeight: FontWeight.w600,
-          color: AppColors.brandBlue,
-        ),
-      ),
     );
   }
 }

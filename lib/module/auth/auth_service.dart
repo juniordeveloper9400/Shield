@@ -1,10 +1,16 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
+
+import '../../data/neon/member_repository.dart';
 
 /// A signed-in member.
 ///
 /// Identity is the mobile number: it is what the code was sent to, and it is
-/// what a real backend would key the account on. The name is what the member
-/// typed on the way in and is only ever used for display.
+/// what the backend keys the account on. The name is what the member typed on
+/// the way in and is only ever used for display — Firebase Phone Auth does not
+/// carry one, so the app holds it alongside the session.
 @immutable
 class AuthUser {
   final String name;
@@ -30,21 +36,61 @@ class AuthUser {
 }
 
 /// Why a step of the OTP flow was rejected.
-enum OtpError { invalidName, invalidPhone, noPendingRequest, wrongOtp }
+enum OtpError {
+  invalidName,
+  invalidPhone,
+  noPendingRequest,
+  wrongOtp,
 
-/// In-memory, OTP-based authentication.
+  /// The verification session lapsed before the code was entered.
+  codeExpired,
+
+  /// Firebase is rate-limiting this device or number.
+  tooManyRequests,
+
+  /// The project's SMS allowance is used up.
+  quotaExceeded,
+
+  /// The send or verify call could not reach Firebase.
+  network,
+
+  /// Firebase never called back — usually the reCAPTCHA "verifying you're not
+  /// a robot" fallback opened and stalled, so `codeSent` never fired and no
+  /// SMS went out. The flow is abandoned rather than left spinning forever.
+  timeout,
+
+  /// Firebase Phone Auth is not available on this build — usually
+  /// `Firebase.initializeApp()` failed at launch because the current platform
+  /// has no configured options (only Android is wired; see FIREBASE_SETUP.md).
+  unavailable,
+
+  /// Anything Firebase reported that does not map to one of the above.
+  unknown,
+}
+
+/// Phone-number sign-in for the member session.
 ///
-/// SECURITY: [demoOtp] is compiled into the app bundle and accepts every
-/// verification, so this class must never stand in for a real gateway. It
-/// exists so the sign-in flow can be exercised before an SMS provider is
-/// wired in, and it is expected to be replaced wholesale by API calls —
-/// [requestOtp] becoming the send call and [verifyOtp] the verify call.
+/// The flow is two calls — [requestOtp] sends the SMS, [verifyOtp] checks the
+/// code — and the same [currentUser] notifier every screen already listens to.
+/// The work behind those two calls is delegated to an [AuthGateway]; in the
+/// app that is always [FirebaseAuthGateway] (Firebase Phone Auth), built lazily
+/// on first use so `Firebase.initializeApp()` in `main()` has already run.
+/// There is no demo or offline fallback — a real code is sent and checked.
+/// Tests inject an in-memory fake with [useGateway] before driving the flow.
+///
+/// Finishing the Firebase side (project `shield-zabnix`) is a checklist in
+/// `FIREBASE_SETUP.md` at the repo root: `flutterfire configure`, enable the
+/// Phone provider, register the app's SHA fingerprints, add an APNs key for
+/// iOS. The Admin SDK service account (`firebase-adminsdk-…@…gserviceaccount
+/// .com`) is a server credential and must never be added to this app.
 class AuthService {
   AuthService._();
 
   static final AuthService instance = AuthService._();
 
-  /// The only code the stand-in gateway accepts.
+  /// Stand-in code the agent registration screen's placeholder OTP step still
+  /// accepts (see `agent_registration_screen.dart`). The member sign-in flow
+  /// below does real Firebase verification and never uses this.
   static const String demoOtp = '123456';
 
   /// Digits in a code. The OTP field draws this many boxes.
@@ -55,6 +101,17 @@ class AuthService {
 
   /// Null while signed out. Widgets listen to this to decide what to show.
   final ValueNotifier<AuthUser?> currentUser = ValueNotifier<AuthUser?>(null);
+
+  /// Sends and checks the code. Null until first used or injected by a test;
+  /// the app builds a [FirebaseAuthGateway] on first access via [_activeGateway].
+  AuthGateway? _gateway;
+
+  /// The gateway to run send/verify against, building the Firebase one on
+  /// first use. Only reached from [requestOtp] / [verifyOtp], which run after
+  /// `Firebase.initializeApp()`; tests must call [useGateway] first so this
+  /// never constructs a real Firebase client.
+  AuthGateway get _activeGateway =>
+      _gateway ??= FirebaseAuthGateway(onResolved: _resolvePendingFromGateway);
 
   /// Set between [requestOtp] and [verifyOtp] — the half-finished sign-in.
   _PendingLogin? _pending;
@@ -67,6 +124,74 @@ class AuthService {
   String? get pendingName => _pending?.name;
 
   String? get pendingPhone => _pending?.phone;
+
+  /// Android instant verification / SMS auto-retrieval signs the member into
+  /// Firebase without the code ever being typed. When that happens the gateway
+  /// calls this, and the half-finished sign-in is completed the same way
+  /// [verifyOtp] would have — so the member is not left sitting on the code
+  /// screen while Firebase already considers them signed in.
+  void _resolvePendingFromGateway() {
+    final pending = _pending;
+    if (pending == null) {
+      return;
+    }
+    _pending = null;
+    final user = AuthUser(name: pending.name, phone: pending.phone);
+    currentUser.value = user;
+    _afterSignIn(user);
+  }
+
+  /// Persists the freshly signed-in member: writes the name onto the Firebase
+  /// profile so the next launch has it, and records the account in the
+  /// `app.member` table. Both are best-effort and never block the sign-in.
+  void _afterSignIn(AuthUser user) {
+    unawaited(_activeGateway.saveDisplayName(user.name));
+    unawaited(
+      MemberRepository.instance.upsertOnSignIn(
+        name: user.name,
+        phone: user.phone,
+      ),
+    );
+  }
+
+  /// Restores a persisted sign-in at launch, so a member who has signed in
+  /// once goes straight into the app without seeing the login screen again.
+  ///
+  /// Call from `main()` once `Firebase.initializeApp()` has run. A no-op when
+  /// already signed in, when there is no live session on the device, or when
+  /// Firebase is unavailable on this build.
+  Future<void> restoreSession() async {
+    if (isSignedIn) {
+      return;
+    }
+
+    final AuthUser? restored;
+    try {
+      restored = await _activeGateway.restoreUser();
+    } catch (error) {
+      debugPrint('restoreSession: gateway unavailable — $error');
+      return;
+    }
+    if (restored == null || restored.phone.isEmpty) {
+      return;
+    }
+
+    // Phone Auth keeps the number but not the name. Take it from the profile,
+    // falling back to the members table, then to a neutral placeholder that
+    // registration will overwrite.
+    var name = restored.name.trim();
+    if (name.isEmpty) {
+      name = (await MemberRepository.instance.nameByPhone(restored.phone))
+              ?.trim() ??
+          '';
+    }
+
+    currentUser.value = AuthUser(
+      name: name.isEmpty ? 'Member' : name,
+      phone: restored.phone,
+    );
+    unawaited(MemberRepository.instance.touchLogin(restored.phone));
+  }
 
   /// Null when [value] is usable as a name, otherwise the reason it is not.
   static String? validateName(String? value) {
@@ -98,9 +223,12 @@ class AuthService {
     return null;
   }
 
-  /// "Sends" a code to [phone] and holds the details until it is verified.
-  /// Returns null when the code went out.
-  OtpError? requestOtp({required String name, required String phone}) {
+  /// Sends a code to [phone] and holds the details until it is verified.
+  /// Returns null when the code went out, otherwise the reason it did not.
+  Future<OtpError?> requestOtp({
+    required String name,
+    required String phone,
+  }) async {
     final cleanName = name.trim();
     final cleanPhone = phone.trim();
     if (validateName(cleanName) != null) {
@@ -110,30 +238,58 @@ class AuthService {
       return OtpError.invalidPhone;
     }
 
+    final OtpError? failure;
+    try {
+      failure = await _activeGateway.sendCode('+91$cleanPhone');
+    } catch (error) {
+      // No Firebase app on this platform, or the plugin threw before it could
+      // report a typed failure. Surface it as unavailable rather than letting
+      // it escape as an unhandled async error.
+      debugPrint('requestOtp: gateway unavailable — $error');
+      return OtpError.unavailable;
+    }
+    if (failure != null) {
+      return failure;
+    }
+
     _pending = _PendingLogin(name: cleanName, phone: cleanPhone);
     return null;
   }
 
   /// Signs the pending member in when [code] matches. Returns null on success.
-  OtpError? verifyOtp(String code) {
+  Future<OtpError?> verifyOtp(String code) async {
     final pending = _pending;
     if (pending == null) {
       return OtpError.noPendingRequest;
     }
-    if (code.trim() != demoOtp) {
-      return OtpError.wrongOtp;
+
+    final OtpError? failure;
+    try {
+      failure = await _activeGateway.confirmCode(code.trim());
+    } catch (error) {
+      debugPrint('verifyOtp: gateway unavailable — $error');
+      return OtpError.unavailable;
+    }
+    if (failure != null) {
+      return failure;
     }
 
     _pending = null;
-    currentUser.value = AuthUser(name: pending.name, phone: pending.phone);
+    final user = AuthUser(name: pending.name, phone: pending.phone);
+    currentUser.value = user;
+    _afterSignIn(user);
     return null;
   }
 
   /// Drops the half-finished sign-in — the member went back to edit details.
-  void cancelOtp() => _pending = null;
-
-  void logOut() {
+  void cancelOtp() {
     _pending = null;
+    _gateway?.discard();
+  }
+
+  Future<void> logOut() async {
+    _pending = null;
+    await _gateway?.signOut();
     currentUser.value = null;
   }
 
@@ -145,11 +301,219 @@ class AuthService {
     currentUser.value = AuthUser(name: name.trim(), phone: phone.trim());
   }
 
-  /// Test hook: back to a signed-out session with nothing pending.
+  /// Test hook: back to a signed-out session with nothing pending and no
+  /// gateway. Pair with [useGateway] before driving the sign-in flow.
   @visibleForTesting
   void reset() {
     _pending = null;
+    _gateway = null;
     currentUser.value = null;
+  }
+
+  /// Test hook: run send/verify against [gateway] — an in-memory fake — so the
+  /// flow can be exercised without a live Firebase project.
+  @visibleForTesting
+  void useGateway(AuthGateway gateway) {
+    _gateway = gateway;
+  }
+}
+
+/// The send/verify half of [AuthService], swapped between the real Firebase
+/// implementation and an in-memory stand-in.
+abstract class AuthGateway {
+  /// Starts verification for an E.164 number (`+91XXXXXXXXXX`). Returns null
+  /// once the code is on its way, otherwise the failure.
+  Future<OtpError?> sendCode(String e164Phone);
+
+  /// Checks [code] against the last [sendCode]. Returns null when it matches.
+  Future<OtpError?> confirmCode(String code);
+
+  /// The member a persisted sign-in restores to, or null when there is no
+  /// live session on this device. Called once at launch so a signed-in member
+  /// never sees the login screen again until they sign out.
+  Future<AuthUser?> restoreUser();
+
+  /// Stores [name] on the persisted session — Firebase Phone Auth keeps the
+  /// number but carries no name, so it is written to the user's profile here
+  /// and read back by [restoreUser] on the next launch.
+  Future<void> saveDisplayName(String name);
+
+  /// Forgets the pending verification without signing out.
+  void discard();
+
+  Future<void> signOut();
+}
+
+/// Firebase Phone Auth. Holds the `verificationId` from [sendCode] and pairs
+/// it with the typed code in [confirmCode].
+class FirebaseAuthGateway implements AuthGateway {
+  FirebaseAuthGateway({this.onResolved});
+
+  /// Called when Android instant verification or SMS auto-retrieval signs the
+  /// member in before a code was ever typed, so [AuthService] can finish the
+  /// pending sign-in itself.
+  final void Function()? onResolved;
+
+  final fb.FirebaseAuth _auth = fb.FirebaseAuth.instance;
+
+  String? _verificationId;
+  int? _resendToken;
+
+  /// How long to wait for Firebase to call back before giving up. Covers the
+  /// case where the reCAPTCHA fallback web page opens and never resolves, which
+  /// otherwise leaves [sendCode] hanging and the "Get OTP" button spinning.
+  static const Duration _callbackDeadline = Duration(seconds: 70);
+
+  /// Ceiling on a single verify round trip.
+  static const Duration _verifyDeadline = Duration(seconds: 30);
+
+  @override
+  Future<OtpError?> sendCode(String e164Phone) async {
+    final result = Completer<OtpError?>();
+
+    await _auth.verifyPhoneNumber(
+      phoneNumber: e164Phone,
+      // The SMS auto-retrieval window once the code is on its way. This does
+      // not bound the reCAPTCHA step, so it is not a substitute for the
+      // client-side deadline applied to [result] below.
+      timeout: const Duration(seconds: 60),
+      forceResendingToken: _resendToken,
+      verificationCompleted: (credential) async {
+        // Android instant validation / auto-retrieval: no code is ever typed,
+        // so sign in here and let [AuthService] promote the pending login.
+        try {
+          await _auth.signInWithCredential(credential);
+          _verificationId = null;
+          // On pure instant verification `codeSent` never fires — unblock the
+          // send call so the flow is not left spinning on "Get OTP".
+          if (!result.isCompleted) {
+            result.complete(null);
+          }
+          onResolved?.call();
+        } catch (_) {
+          // Fall through to the manual code path, which will surface any error.
+        }
+      },
+      verificationFailed: (e) {
+        if (!result.isCompleted) {
+          result.complete(_map(e));
+        }
+      },
+      codeSent: (verificationId, resendToken) {
+        _verificationId = verificationId;
+        _resendToken = resendToken;
+        if (!result.isCompleted) {
+          result.complete(null);
+        }
+      },
+      codeAutoRetrievalTimeout: (verificationId) {
+        _verificationId = verificationId;
+        if (!result.isCompleted) {
+          result.complete(null);
+        }
+      },
+    );
+
+    // If none of the callbacks above fire — the classic symptom of the
+    // reCAPTCHA fallback stalling — stop waiting so the caller can surface a
+    // real error instead of an endless spinner.
+    return result.future.timeout(
+      _callbackDeadline,
+      onTimeout: () => OtpError.timeout,
+    );
+  }
+
+  @override
+  Future<OtpError?> confirmCode(String code) async {
+    final verificationId = _verificationId;
+    if (verificationId == null) {
+      return OtpError.noPendingRequest;
+    }
+    try {
+      final credential = fb.PhoneAuthProvider.credential(
+        verificationId: verificationId,
+        smsCode: code,
+      );
+      await _auth.signInWithCredential(credential).timeout(_verifyDeadline);
+      _verificationId = null;
+      return null;
+    } on TimeoutException {
+      return OtpError.timeout;
+    } on fb.FirebaseAuthException catch (e) {
+      return _map(e);
+    } catch (_) {
+      return OtpError.unknown;
+    }
+  }
+
+  @override
+  Future<AuthUser?> restoreUser() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return null;
+    }
+    // Phone Auth stores the number as E.164 (`+91XXXXXXXXXX`); the app keys
+    // members on the bare ten digits.
+    final e164 = user.phoneNumber ?? '';
+    final phone = e164.startsWith('+91')
+        ? e164.substring(3)
+        : e164.replaceAll(RegExp(r'[^0-9]'), '');
+    return AuthUser(name: user.displayName ?? '', phone: phone);
+  }
+
+  @override
+  Future<void> saveDisplayName(String name) async {
+    final user = _auth.currentUser;
+    if (user == null || name.trim().isEmpty || user.displayName == name.trim()) {
+      return;
+    }
+    try {
+      await user.updateDisplayName(name.trim());
+    } catch (error) {
+      // Non-fatal: the name is also written to the members table, and the
+      // next launch falls back to that when the profile has no name.
+      debugPrint('saveDisplayName: $error');
+    }
+  }
+
+  @override
+  void discard() {
+    _verificationId = null;
+  }
+
+  @override
+  Future<void> signOut() => _auth.signOut();
+
+  OtpError _map(fb.FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-verification-code':
+        return OtpError.wrongOtp;
+      case 'invalid-phone-number':
+        return OtpError.invalidPhone;
+      case 'session-expired':
+      case 'code-expired':
+        return OtpError.codeExpired;
+      case 'too-many-requests':
+        return OtpError.tooManyRequests;
+      case 'quota-exceeded':
+      case 'missing-client-identifier':
+        return OtpError.quotaExceeded;
+      case 'network-request-failed':
+        return OtpError.network;
+      case 'operation-not-allowed':
+        // Phone sign-in is off in the Firebase console
+        // (Authentication → Sign-in method → Phone).
+        assert(() {
+          debugPrint(
+            'Firebase: enable the Phone provider in the console — '
+            'Authentication → Sign-in method → Phone.',
+          );
+          return true;
+        }());
+        return OtpError.quotaExceeded;
+      default:
+        return OtpError.unknown;
+    }
   }
 }
 

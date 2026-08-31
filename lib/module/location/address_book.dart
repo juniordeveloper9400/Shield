@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../data/neon/order_repository.dart';
+
 /// What a saved address is used for.
 enum AddressLabel {
   home('Home'),
@@ -23,6 +25,13 @@ class Address {
   final String phone;
   final AddressLabel label;
 
+  /// The patient this address was captured for, when it came off the
+  /// patient form rather than the standalone address form — null for an
+  /// address added any other way. Lets [AddressBook.upsertForPatient] find
+  /// and replace the one address that belongs to a given patient instead of
+  /// piling up a fresh entry every time their details are edited.
+  final String? patientId;
+
   const Address({
     required this.pincode,
     required this.house,
@@ -32,9 +41,24 @@ class Address {
     required this.label,
     this.landmark = '',
     this.lastName = '',
+    this.patientId,
   });
 
   String get receiver => lastName.isEmpty ? firstName : '$firstName $lastName';
+
+  /// This address as the plain-values shape [OrderRepository] persists. The
+  /// [label] enum name maps straight onto the `app.address_label` tokens
+  /// (`home` -> `HOME`).
+  DeliveryAddressInput toDeliveryInput() => DeliveryAddressInput(
+        label: label.name.toUpperCase(),
+        house: house,
+        area: area,
+        landmark: landmark,
+        pincode: pincode,
+        firstName: firstName,
+        lastName: lastName,
+        phone: phone,
+      );
 
   /// Single-line rendering for lists.
   String get summary {
@@ -84,6 +108,16 @@ class AddressBook extends ChangeNotifier {
 
   bool get isEmpty => _addresses.isEmpty;
 
+  /// The address captured for [patientId] on their own patient form, if any.
+  Address? forPatient(String patientId) {
+    for (final address in _addresses) {
+      if (address.patientId == patientId) {
+        return address;
+      }
+    }
+    return null;
+  }
+
   /// The saved address being delivered to, or null when the location is just
   /// a pincode.
   Address? get deliverTo => _deliverTo;
@@ -107,6 +141,38 @@ class AddressBook extends ChangeNotifier {
   void add(Address address) {
     _addresses.add(address);
     _deliverTo = address;
+    notifyListeners();
+  }
+
+  /// Starts delivering to an address already on file — picking one on the
+  /// "Select address" list, rather than saving a new one.
+  void select(Address address) {
+    _deliverTo = address;
+    notifyListeners();
+  }
+
+  /// Saves the one address that belongs to [patientId]: replaces it in place
+  /// if the patient form already put one on file, otherwise adds it as a new
+  /// entry. Editing a patient's details again and again is meant to keep
+  /// updating this same address, not pile up a fresh one on every save.
+  ///
+  /// Unlike [add], this does not start delivering to it — it only makes the
+  /// address available to pick on the "Select address" list, which is a
+  /// choice the member still makes for themselves.
+  void upsertForPatient(String patientId, Address address) {
+    final index = _addresses.indexWhere((a) => a.patientId == patientId);
+    if (index == -1) {
+      _addresses.add(address);
+    } else {
+      final replaced = _addresses[index];
+      _addresses[index] = address;
+      // The old instance may still be the delivery target — carry that over
+      // to its replacement rather than leaving deliverTo pointing at an
+      // address no longer on the list.
+      if (identical(replaced, _deliverTo)) {
+        _deliverTo = address;
+      }
+    }
     notifyListeners();
   }
 

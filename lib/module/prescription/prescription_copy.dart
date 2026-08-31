@@ -61,6 +61,7 @@ class PrescriptionCopy {
   final String free;
   final String proceed;
   final String remove;
+  final String viewFile;
 
   // ---- Recurring orders ----
   final String recurringHeading;
@@ -132,6 +133,7 @@ class PrescriptionCopy {
     required this.free,
     required this.proceed,
     required this.remove,
+    required this.viewFile,
     required this.recurringHeading,
     required this.recurringIntro,
     required this.recurringToggle,
@@ -228,6 +230,7 @@ class PrescriptionCopy {
     free: 'Free',
     proceed: 'Proceed',
     remove: 'Remove',
+    viewFile: 'View',
     recurringHeading: 'Recurring order',
     recurringIntro:
         'For medicine you take every month. We reorder it for you until the '
@@ -334,6 +337,7 @@ class PrescriptionCopy {
     free: 'സൗജന്യം',
     proceed: 'തുടരുക',
     remove: 'നീക്കം ചെയ്യുക',
+    viewFile: 'കാണുക',
     recurringHeading: 'ആവർത്തിച്ചുള്ള ഓർഡർ',
     recurringIntro:
         'എല്ലാ മാസവും കഴിക്കുന്ന മരുന്നിനുവേണ്ടി. അവസാന തീയതി വരെ, '

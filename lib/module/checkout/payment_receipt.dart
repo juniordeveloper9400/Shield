@@ -19,9 +19,9 @@ class PaymentReceipt {
   final int bytes;
 
   /// The bank's own reference for the transfer — a UTR or a transaction ID.
-  /// Optional: not every app shows one at the moment of paying, and a member
-  /// who cannot find it should not be stopped from submitting the picture.
-  final String? bankReference;
+  /// Mandatory: it is what the checkout collects so a person settling the
+  /// claim can match this picture to a line on the statement.
+  final String bankReference;
 
   /// The code the order was quoted under, carried through so a submission can
   /// be matched back to what it was paying for.
@@ -47,6 +47,6 @@ class PaymentReceipt {
     required this.bankAccount,
     required this.agentCode,
     required this.submittedAt,
-    this.bankReference,
+    required this.bankReference,
   });
 }

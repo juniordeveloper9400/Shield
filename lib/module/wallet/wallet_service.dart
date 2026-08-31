@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../dates.dart';
 import '../../money.dart';
 import '../privilege/privilege_tier.dart';
+import '../registration/shield_store.dart';
 
 /// One line in the wallet ledger.
 @immutable
@@ -46,11 +47,17 @@ class WalletCard {
   /// was issued for.
   final int recharged;
 
+  /// The SHIELD branch this plan was activated against — the one a member with
+  /// more than one plan can bill a later order to by picking this plan at
+  /// checkout. Null on plans activated before the branch was recorded.
+  final ShieldStore? store;
+
   const WalletCard({
     required this.load,
     required this.issuedOn,
     required this.rechargedOn,
     this.recharged = 0,
+    this.store,
   });
 
   String get name => load.name;
@@ -144,12 +151,14 @@ class WalletCard {
 
   String get expiresOnLabel => formatDate(expiresOn);
 
-  /// A recharge of [amount] on [date]: the same card, carrying more.
+  /// A recharge of [amount] on [date]: the same card, carrying more. The
+  /// activation branch is fixed on the first issue and rides through recharges.
   WalletCard rechargedWith(int amount, DateTime date) => WalletCard(
     load: load,
     issuedOn: issuedOn,
     rechargedOn: date,
     recharged: recharged + amount,
+    store: store,
   );
 }
 
@@ -287,13 +296,20 @@ class WalletService extends ChangeNotifier {
   /// The one way a wallet comes to be open. Activating a card the account
   /// already holds recharges that card; activating a different one issues a
   /// second card alongside it, which is why the wallet holds a list.
-  void activate(PrivilegeLoad load, {String date = 'Today', DateTime? on}) {
+  void activate(
+    PrivilegeLoad load, {
+    String date = 'Today',
+    DateTime? on,
+    ShieldStore? store,
+  }) {
     final day = on ?? DateTime.now();
     final existing = _cards.indexWhere((card) => card.load == load);
     if (existing >= 0) {
       _cards[existing] = _cards[existing].rechargedWith(load.credited, day);
     } else {
-      _cards.add(WalletCard(load: load, issuedOn: day, rechargedOn: day));
+      _cards.add(
+        WalletCard(load: load, issuedOn: day, rechargedOn: day, store: store),
+      );
     }
 
     _credit(

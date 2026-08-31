@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
 import '../earnings/earnings_detail_screen.dart';
+import '../earnings/member_earnings.dart';
 import '../orders/purchase_service.dart';
+import '../wallet/wallet_service.dart';
 
-/// "Your earnings": what buying through SHIELD has been worth.
+/// "Your savings": what buying through SHIELD has been worth.
 ///
 /// Presents the member's total savings on a rich, polished card with a soft
 /// mint-emerald gradient, decorative watermark glyph, and a clear call-to-action
@@ -16,10 +18,12 @@ class EarningsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: PurchaseService.instance,
+      listenable: Listenable.merge([
+        PurchaseService.instance,
+        WalletService.instance,
+      ]),
       builder: (context, _) {
-        final orders = PurchaseService.instance;
-        final earned = orders.savedTotal;
+        final earned = MemberEarnings.saved;
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
@@ -119,7 +123,7 @@ class EarningsSection extends StatelessWidget {
                               const SizedBox(width: 11),
                               const Expanded(
                                 child: Text(
-                                  'Your earnings',
+                                  'Your savings',
                                   style: TextStyle(
                                     fontSize: 16.5,
                                     fontWeight: FontWeight.w800,
@@ -167,7 +171,7 @@ class EarningsSection extends StatelessWidget {
                           // money kept in the member's pocket by buying here,
                           // not a balance they can spend or withdraw.
                           const Text(
-                            'Total money you have saved on your orders',
+                            'Total money you have saved',
                             style: TextStyle(
                               fontSize: 12.5,
                               height: 1.3,
@@ -198,7 +202,7 @@ class EarningsSection extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              if (orders.savedPercentLabel != '0%') ...[
+                              if (MemberEarnings.savedPercentLabel != '0%') ...[
                                 const SizedBox(width: 8),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -210,7 +214,7 @@ class EarningsSection extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
-                                    '${orders.savedPercentLabel} saved',
+                                    '${MemberEarnings.savedPercentLabel} saved',
                                     style: const TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w800,
@@ -225,7 +229,7 @@ class EarningsSection extends StatelessWidget {
                           Text(
                             earned == 0
                                 ? 'Buy at SHIELD prices and the difference is yours.'
-                                : 'Kept out of ${orders.mrpLabel} of printed prices.',
+                                : 'Kept out of ₹${formatRupees(MemberEarnings.totalPrice)} of total price.',
                             style: const TextStyle(
                               fontSize: 13,
                               height: 1.35,

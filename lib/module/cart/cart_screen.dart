@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/neon/order_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import '../auth/auth_flow.dart';
+import '../auth/auth_service.dart';
 import '../checkout/checkout_order.dart';
 import '../checkout/checkout_screen.dart';
+import '../location/address_book.dart';
 import '../orders/order_placed_screen.dart';
 import '../orders/purchase_service.dart';
 import '../prescription/upload_prescription_screen.dart';
@@ -54,11 +59,7 @@ class _CartScreenState extends State<CartScreen> {
   /// afterwards. Delivery is left out of both — it is a charge, not a saving,
   /// and counting it on one side would understate what the order earned.
   Future<void> _openCheckout() async {
-    final mrp = _cart.mrpTotal.round();
-    final paid = _cart.subtotal.round();
-    final payable = _cart.payable.round();
-    final items = _cart.itemCount;
-    if (items == 0) {
+    if (_cart.itemCount == 0) {
       return;
     }
 
@@ -67,36 +68,92 @@ class _CartScreenState extends State<CartScreen> {
     // order-placed confirmation that replaces the checkout.
     Purchase? placed;
 
+    // Rebuilt off the live cart every time it changes — "Last minute buys"
+    // on the checkout screen itself adds straight into this same cart, and
+    // the order it is about to place has to catch up rather than still
+    // reading the totals from the moment "Proceed to checkout" was tapped.
+    CheckoutOrder buildOrder() {
+      final mrp = _cart.mrpTotal.round();
+      final paid = _cart.subtotal.round();
+      final payable = _cart.payable.round();
+      final items = _cart.itemCount;
+      return CheckoutOrder(
+        title: 'Medicine order',
+        subtitle: '$items item${items == 1 ? '' : 's'} from your cart',
+        amount: payable.toDouble(),
+        reference: id,
+        submitLabel: 'Place order',
+        requiresDelivery: true,
+        itemCount: items,
+        lines: [
+          CheckoutLine('Printed price', mrp.toDouble()),
+          CheckoutLine('SHIELD price', paid.toDouble()),
+          CheckoutLine(
+            'You earned',
+            (mrp - paid).toDouble(),
+            isCredit: true,
+          ),
+          CheckoutLine('Delivery fee', _cart.deliveryFee),
+        ],
+      );
+    }
+
     await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => CheckoutScreen(
-          order: CheckoutOrder(
-            title: 'Medicine order',
-            subtitle: '$items item${items == 1 ? '' : 's'} from your cart',
-            amount: payable.toDouble(),
-            reference: id,
-            submitLabel: 'Place order',
-            requiresDelivery: true,
-            lines: [
-              CheckoutLine('Printed price', mrp.toDouble()),
-              CheckoutLine('SHIELD price', paid.toDouble()),
-              CheckoutLine(
-                'You earned',
-                (mrp - paid).toDouble(),
-                isCredit: true,
-              ),
-              CheckoutLine('Delivery fee', _cart.deliveryFee),
-            ],
-          ),
-          onComplete: (_) async {
+          order: buildOrder(),
+          liveTotals: _cart,
+          refreshOrder: buildOrder,
+          onComplete: (receipt) async {
+            // Read fresh rather than from whatever was captured when this
+            // screen first opened — the very last-minute buy could still be
+            // sitting in the cart, uncounted, otherwise.
             placed = PurchaseService.instance.record(
               id: id,
               placedOn: formatDate(DateTime.now()),
-              itemCount: items,
-              mrpTotal: mrp,
-              paidTotal: paid,
+              itemCount: _cart.itemCount,
+              mrpTotal: _cart.mrpTotal.round(),
+              paidTotal: _cart.subtotal.round(),
               kind: OrderKind.standard,
             );
+            // Write the order through to Neon while the cart lines are still
+            // here to copy. Best-effort: a database that is absent (tests, a
+            // build with no DATABASE_URL) or down must not stop the order.
+            final phone = AuthService.instance.currentUser.value?.phone;
+            if (phone != null) {
+              unawaited(
+                OrderRepository.instance.saveStandardOrder(
+                  phone: phone,
+                  code: id,
+                  lines: [
+                    for (final line in _cart.lines)
+                      OrderLineInput(
+                        name: line.name,
+                        pack: line.pack,
+                        unitPrice: line.price,
+                        mrp: line.mrp,
+                        qty: line.qty,
+                      ),
+                  ],
+                  mrpTotal: _cart.mrpTotal.round(),
+                  paidTotal: _cart.subtotal.round(),
+                  deliveryFee: _cart.deliveryFee.round(),
+                  itemCount: _cart.itemCount,
+                  storeCode: receipt.storeId,
+                  paymentMethodCode: receipt.method.id,
+                  reference: receipt.bankReference.isEmpty
+                      ? id
+                      : receipt.bankReference,
+                  address: AddressBook.instance.deliverTo?.toDeliveryInput(),
+                  receipt: OrderReceiptInput(
+                    payerName: AuthService.instance.currentUser.value?.name,
+                    reference: receipt.bankReference,
+                    amount: _cart.payable,
+                    fileName: receipt.fileName,
+                  ),
+                ),
+              );
+            }
             _cart.clear();
           },
           successScreen: (_) => OrderPlacedScreen(order: placed!),
@@ -739,8 +796,8 @@ class _ActionCard extends StatelessWidget {
 }
 
 /// Bottom sheet for editing a line's quantity: a [QuantityStepper] to type or
-/// step, chips for every quantity up to [CartService.maxLineQty], and a
-/// "Remove item" action beneath.
+/// step (up to [CartService.maxLineQty]), shortcut chips for the first
+/// [CartService.quickPickQty], and a "Remove item" action beneath.
 class _QuantitySheet extends StatelessWidget {
   final CartLine line;
 
@@ -803,7 +860,7 @@ class _QuantitySheet extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 10,
                   children: [
-                    for (var n = 1; n <= CartService.maxLineQty; n++)
+                    for (var n = 1; n <= CartService.quickPickQty; n++)
                       _NumChip(
                         n: n,
                         selected: n == current,

@@ -2,22 +2,26 @@ import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
 import '../auth/auth_flow.dart';
+import '../location/address_book.dart';
+import '../location/address_form_screen.dart';
 import 'prescription_cart_service.dart';
 import 'prescription_checkout_screen.dart';
 
 /// The prescription basket: whole prescriptions waiting on the counter.
 ///
-/// One row per prescription, led by its number. The medicines on it are a
-/// count rather than a list — what the member is confirming here is which
-/// papers they want filled, and the lines behind each are on the prescription
-/// card itself. See [PrescriptionCartService] for why this is its own basket.
+/// Laid out like the product cart — a count strip, white bordered cards, an
+/// "add another" row and a delivery-address section — so a member who has
+/// filled one basket already knows this one. One row per prescription, led by
+/// its number; the medicines on it are a count rather than a list, since what
+/// is being confirmed here is which papers to fill. See
+/// [PrescriptionCartService] for why this is its own basket.
 class PrescriptionCartScreen extends StatelessWidget {
   const PrescriptionCartScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.pageTint,
+      backgroundColor: AppColors.white,
       appBar: AppBar(
         backgroundColor: AppColors.white,
         surfaceTintColor: AppColors.white,
@@ -43,15 +47,44 @@ class PrescriptionCartScreen extends StatelessWidget {
             return const _EmptyState();
           }
 
+          final count = cart.orders.length;
+
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            padding: const EdgeInsets.only(bottom: 28),
             children: [
-              for (var index = 0; index < cart.orders.length; index++) ...[
-                _OrderCard(index: index, order: cart.orders[index]),
-                const SizedBox(height: 12),
-              ],
-              const SizedBox(height: 4),
-              const _PricingNote(),
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                decoration: const BoxDecoration(
+                  color: AppColors.white,
+                  border: Border(bottom: BorderSide(color: AppColors.border)),
+                ),
+                child: Text(
+                  '$count ${count == 1 ? 'Prescription' : 'Prescriptions'}',
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (var index = 0; index < count; index++)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: _OrderCard(index: index, order: cart.orders[index]),
+                ),
+              _AddMoreRow(onTap: () => Navigator.of(context).maybePop()),
+              Container(
+                color: AppColors.pageTint,
+                padding: const EdgeInsets.all(16),
+                child: const Column(
+                  children: [
+                    _DeliveryAddressCard(),
+                    SizedBox(height: 12),
+                    _PricingNote(),
+                  ],
+                ),
+              ),
             ],
           );
         },
@@ -62,7 +95,7 @@ class PrescriptionCartScreen extends StatelessWidget {
           if (PrescriptionCartService.instance.isEmpty) {
             return const SizedBox.shrink();
           }
-          return const _SendBar();
+          return const _CheckoutBar();
         },
       ),
     );
@@ -111,11 +144,13 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-/// One prescription in the basket.
+/// One prescription in the basket, in the product cart's two-part card: the
+/// number and patient up top with the remove control, the size of the order
+/// below a divider.
 ///
-/// The number leads, in a monospaced-looking chip, because it is the handle
-/// the counter and the member share — everything else on the row describes
-/// which prescription that number is.
+/// The number leads, in a chip, because it is the handle the counter and the
+/// member share — everything else on the row describes which prescription that
+/// number is.
 class _OrderCard extends StatelessWidget {
   final int index;
   final PrescriptionOrder order;
@@ -132,51 +167,65 @@ class _OrderCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      padding: const EdgeInsets.fromLTRB(13, 12, 8, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.brandBlue,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    order.number,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.6,
+                      color: AppColors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      record.patient.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                _RemoveButton(
+                  key: ValueKey('remove-prescription-${order.number}'),
+                  onTap: () =>
+                      PrescriptionCartService.instance.removeAt(index),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.brandBlue,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        order.number,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
-                          color: AppColors.white,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        record.patient.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 7),
                 Text(
                   _contents(order),
                   style: const TextStyle(
@@ -200,17 +249,6 @@ class _OrderCard extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            key: ValueKey('remove-prescription-${order.number}'),
-            tooltip: 'Remove ${order.number}',
-            icon: const Icon(
-              Icons.delete_outline_rounded,
-              size: 20,
-              color: AppColors.textMuted,
-            ),
-            onPressed: () =>
-                PrescriptionCartService.instance.removeAt(index),
-          ),
         ],
       ),
     );
@@ -227,6 +265,203 @@ class _OrderCard extends StatelessWidget {
         order.record.supplyLabel.split(' · ').last,
     ];
     return parts.join(' · ');
+  }
+}
+
+/// The delivery-address section, the same one the product checkout carries:
+/// "DELIVER TO", the saved address, and a way to add or change it. Setting it
+/// here carries straight through to the checkout, which shares
+/// [AddressBook.instance].
+class _DeliveryAddressCard extends StatelessWidget {
+  const _DeliveryAddressCard();
+
+  void _edit(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AddressFormScreen()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: AddressBook.instance,
+      builder: (context, _) {
+        final address = AddressBook.instance.deliverTo;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border),
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.location_on_outlined,
+                    size: 20,
+                    color: AppColors.brandBlue,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'DELIVER TO',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.3,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ),
+                  if (address != null)
+                    TextButton(
+                      onPressed: () => _edit(context),
+                      style: TextButton.styleFrom(
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text(
+                        'Change',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.brandBlue,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (address == null)
+                OutlinedButton.icon(
+                  onPressed: () => _edit(context),
+                  icon: const Icon(Icons.add_location_alt_outlined, size: 20),
+                  label: const Text('Add delivery address'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.brandBlue,
+                    side: const BorderSide(
+                      color: AppColors.brandBlue,
+                      width: 1.4,
+                    ),
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${address.label.label} · ${address.receiver}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      address.summary,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color: AppColors.textBody,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      address.phone,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The row that sends the member back to add another prescription — the
+/// product cart's "Add more medicines" in prescription terms.
+class _AddMoreRow extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddMoreRow({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.white,
+          border: Border(
+            top: BorderSide(color: AppColors.border),
+            bottom: BorderSide(color: AppColors.border),
+          ),
+        ),
+        padding: const EdgeInsets.all(16),
+        child: const Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Add another prescription',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.brandBlue,
+                ),
+              ),
+            ),
+            SizedBox(width: 8),
+            Icon(Icons.add_rounded, color: AppColors.brandBlue),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The circular close control on a card, matching the product cart's.
+class _RemoveButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _RemoveButton({super.key, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.white,
+      shape: const CircleBorder(side: BorderSide(color: AppColors.border)),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: const SizedBox(
+          width: 28,
+          height: 28,
+          child: Icon(
+            Icons.close_rounded,
+            size: 16,
+            color: AppColors.textMuted,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -274,28 +509,29 @@ class _PricingNote extends StatelessWidget {
   }
 }
 
-/// Sends the basket to the counter. No amount on it, because there is not one
-/// yet — the button says what happens next instead of what it costs.
-class _SendBar extends StatelessWidget {
-  const _SendBar();
+/// The checkout bar, the product cart's shape: what the basket holds on the
+/// left, the one way forward on the right. No amount, because there is not one
+/// yet — the left line says the price comes at the counter instead.
+class _CheckoutBar extends StatelessWidget {
+  const _CheckoutBar();
 
   @override
   Widget build(BuildContext context) {
     final cart = PrescriptionCartService.instance;
     final count = cart.orderCount;
 
-    return SafeArea(
-      top: false,
-      child: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.white,
-          border: Border(top: BorderSide(color: AppColors.border)),
-        ),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.white,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(
+            children: [
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -314,27 +550,28 @@ class _SendBar extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              height: 46,
-              child: ElevatedButton(
-                onPressed: () => _proceed(context),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.brandBlue,
-                  foregroundColor: AppColors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+              const SizedBox(width: 16),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => _proceed(context),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.brandBlue,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 22),
-                ),
-                child: const Text(
-                  'Proceed to checkout',
-                  style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+                  child: const Text(
+                    'Proceed to checkout',
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

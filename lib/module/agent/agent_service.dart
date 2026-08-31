@@ -332,9 +332,11 @@ class AgentService extends ChangeNotifier {
         // The profile photo is captured here at registration and nowhere
         // else — the agent's own detail screen only ever shows it.
         photoBytes: photoBytes,
-        // Registered, not yet vouched for — [parent] approves them from
-        // their own detail screen before they show up as anything but zero.
-        approvalStatus: AgentApprovalStatus.pending,
+        // Approved on the spot — registering someone is the recruiter's own
+        // decision, made with a live OTP check already behind it, so there
+        // is nothing further to gate them on. [Agent]'s own default already
+        // reads this way; spelled out here so it stays true on purpose.
+        approvalStatus: AgentApprovalStatus.approved,
       ),
     );
     notifyListeners();

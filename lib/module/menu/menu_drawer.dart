@@ -7,11 +7,17 @@ import '../agent/agent_portal_screen.dart';
 import '../agent/agent_service.dart';
 import '../auth/auth_service.dart';
 import '../cart/cart_screen.dart';
+import '../cart/cart_service.dart';
 import '../categories/categories_screen.dart';
 import '../health/health_section.dart';
 import '../investment/investment_plan_screen.dart';
+import '../labtest/lab_cart_screen.dart';
+import '../labtest/lab_cart_service.dart';
+import '../prescription/prescription_cart_screen.dart';
+import '../prescription/prescription_cart_service.dart';
 import '../registration/registration_service.dart';
 import '../refer/refer_earn_screen.dart';
+import '../rewards/rewards_screen.dart';
 import '../wallet/wallet_screen.dart';
 import '../wallet/wallet_service.dart';
 
@@ -80,8 +86,12 @@ class MenuDrawer extends StatelessWidget {
                   _DashboardPanel(
                     onOpenWallet: () => _push(context, const WalletScreen()),
                     onOpenCart: () => _push(context, const CartScreen()),
+                    onOpenPrescriptionCart: () =>
+                        _push(context, const PrescriptionCartScreen()),
+                    onOpenLabCart: () =>
+                        _push(context, const LabCartScreen()),
                     onOpenOrders: () => _go(context, AppTab.orders.index),
-                    onOpenRewards: () => _go(context, AppTab.account.index),
+                    onOpenRewards: () => _push(context, const RewardsScreen()),
                   ),
                   // Sits directly under the dashboard: its own call-out row
                   // rather than one of the plain browse links, since it opens
@@ -416,12 +426,16 @@ class _InvestmentPlanRow extends StatelessWidget {
 class _DashboardPanel extends StatelessWidget {
   final VoidCallback onOpenWallet;
   final VoidCallback onOpenCart;
+  final VoidCallback onOpenPrescriptionCart;
+  final VoidCallback onOpenLabCart;
   final VoidCallback onOpenOrders;
   final VoidCallback onOpenRewards;
 
   const _DashboardPanel({
     required this.onOpenWallet,
     required this.onOpenCart,
+    required this.onOpenPrescriptionCart,
+    required this.onOpenLabCart,
     required this.onOpenOrders,
     required this.onOpenRewards,
   });
@@ -480,10 +494,31 @@ class _DashboardPanel extends StatelessWidget {
                     width: tileWidth,
                     child: _StatTile(
                       icon: Icons.shopping_cart_outlined,
-                      label: 'Cart items',
-                      value: '4',
+                      label: 'Product cart',
+                      value: '${CartService.instance.itemCount}',
                       accent: AppColors.brandBlue,
                       onTap: onOpenCart,
+                    ),
+                  ),
+                  SizedBox(
+                    width: tileWidth,
+                    child: _StatTile(
+                      icon: Icons.receipt_long_outlined,
+                      label: 'Prescription cart',
+                      value:
+                          '${PrescriptionCartService.instance.orderCount}',
+                      accent: AppColors.brandGreenDeep,
+                      onTap: onOpenPrescriptionCart,
+                    ),
+                  ),
+                  SizedBox(
+                    width: tileWidth,
+                    child: _StatTile(
+                      icon: Icons.biotech_outlined,
+                      label: 'Lab cart',
+                      value: '${LabCartService.instance.bookingCount}',
+                      accent: AppColors.brandGreenDeep,
+                      onTap: onOpenLabCart,
                     ),
                   ),
                   SizedBox(

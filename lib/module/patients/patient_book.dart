@@ -51,6 +51,12 @@ class Patient {
 
   final PatientRelation relation;
 
+  /// The `uuid` of this patient's row in `app.patient` on the backend, once one
+  /// has been written. Null when the record has only ever lived in memory — a
+  /// build with no `DATABASE_URL`, or a save made while the database was
+  /// unreachable. Carried so a later edit or removal updates the same row.
+  final String? remoteId;
+
   const Patient({
     required this.id,
     required this.name,
@@ -60,6 +66,7 @@ class Patient {
     required this.gender,
     required this.relation,
     this.abhaId = '',
+    this.remoteId,
   });
 
   /// Whole years today, derived rather than stored.
@@ -102,6 +109,7 @@ class Patient {
     PatientGender? gender,
     String? abhaId,
     PatientRelation? relation,
+    String? remoteId,
   }) {
     return Patient(
       id: id,
@@ -112,6 +120,7 @@ class Patient {
       gender: gender ?? this.gender,
       abhaId: abhaId ?? this.abhaId,
       relation: relation ?? this.relation,
+      remoteId: remoteId ?? this.remoteId,
     );
   }
 }
@@ -183,6 +192,18 @@ class PatientBook extends ChangeNotifier {
       return;
     }
     _patients[index] = patient;
+    notifyListeners();
+  }
+
+  /// Pins the backend row's [remoteId] onto the in-memory patient once the
+  /// write returns. A no-op when the id is unknown (the patient was removed
+  /// again before the round trip finished).
+  void attachRemoteId(String id, String remoteId) {
+    final index = _patients.indexWhere((entry) => entry.id == id);
+    if (index == -1) {
+      return;
+    }
+    _patients[index] = _patients[index].copyWith(remoteId: remoteId);
     notifyListeners();
   }
 

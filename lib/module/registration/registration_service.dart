@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../dates.dart' as dates;
+import 'member_repository.dart';
 import 'shield_store.dart';
 
 /// How a member describes themselves. Kept short and with an opt-out, because
@@ -177,6 +180,11 @@ class RegistrationService extends ChangeNotifier {
 
   /// Saves the profile, crediting [rewardPoints] the first time only — a later
   /// edit is not a second reward.
+  ///
+  /// The in-memory update happens synchronously so the UI and the reward land
+  /// immediately; the profile is then written through to `app.member` in the
+  /// background. A failed or unconfigured database write is logged, never
+  /// thrown — registration is an offer, not a gate, and must not break here.
   void save(Registration registration) {
     final isFirst = _profile == null;
     _profile = registration;
@@ -185,6 +193,21 @@ class RegistrationService extends ChangeNotifier {
       _points += rewardPoints;
     }
     notifyListeners();
+    unawaited(_persist(registration));
+  }
+
+  /// Write-through to Neon (`app.member`). Best-effort: see [save].
+  Future<void> _persist(Registration registration) async {
+    if (!MemberRepository.instance.isAvailable) {
+      return;
+    }
+    try {
+      await MemberRepository.instance
+          .upsertRegistration(registration, rewardPoints: _points);
+    } catch (error, stack) {
+      debugPrint('registration: could not save profile to database — $error');
+      debugPrintStack(stackTrace: stack);
+    }
   }
 
   /// The member closed or skipped the form.

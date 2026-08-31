@@ -5,6 +5,14 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Firebase (Phone Auth): apply the Google Services plugin only once its config
+// is present, so the app still builds — on the demo auth gateway — before
+// `google-services.json` has been added. Drop the file into android/app/ (or
+// run `flutterfire configure`) and it switches on with no further edits.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.zabnix.shield"
     compileSdk = flutter.compileSdkVersion

@@ -15,6 +15,7 @@ import 'package:shield/money.dart';
 import 'package:shield/module/home/home_hero_banner.dart';
 import 'package:shield/module/home/product_collection_screen.dart';
 import 'package:shield/module/home/product_showcase.dart';
+import 'package:shield/module/search/search_screen.dart';
 import 'package:shield/module/home/prescription_card.dart';
 import 'package:shield/theme/app_colors.dart';
 import 'package:shield/module/home/refer_earn_card.dart';
@@ -432,6 +433,95 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Soft Soles Foot Cream'), findsOneWidget);
+  });
+
+  group('the "View all" collection screen', () {
+    Future<void> openDealsCollection(WidgetTester tester) async {
+      await pumpHome(tester, const Size(400, 9000));
+      final viewAll = find.descendant(
+        of: find.ancestor(
+          of: find.text('Deals You Love'),
+          matching: find.byType(ProductShowcase),
+        ),
+        matching: find.text('View all'),
+      );
+      await tester.ensureVisible(viewAll);
+      await tester.tap(viewAll);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the app-bar magnifier opens the app-wide product search', (
+      tester,
+    ) async {
+      await openDealsCollection(tester);
+
+      // Matches the category listing screen: search is a magnifier in the app
+      // bar, not an inline box on this screen.
+      expect(find.widgetWithText(TextField, 'Search these products'), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.search_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SearchScreen), findsOneWidget);
+    });
+
+    testWidgets('the filter sheet orders the grid by price, low to high', (
+      tester,
+    ) async {
+      await openDealsCollection(tester);
+
+      await tester.tap(find.text('Filter'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Price — low to high'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+
+      // Soft Soles (₹165) is the cheapest in the row and now leads it; Protein
+      // Powder (₹1,999) is the dearest and sits below.
+      final cheapest = tester.getTopLeft(find.text('Soft Soles Foot Cream')).dy;
+      final dearest = tester.getTopLeft(find.text('Protein Powder Chocolate')).dy;
+      expect(cheapest, lessThan(dearest));
+
+      // The pill now carries its active count, the same as the category
+      // listing screen's.
+      expect(find.text('Filter · 1'), findsOneWidget);
+    });
+
+    testWidgets('the filter sheet is the two-pane rail the listing screen uses', (
+      tester,
+    ) async {
+      await openDealsCollection(tester);
+
+      await tester.tap(find.text('Filter'));
+      await tester.pumpAndSettle();
+
+      // A "Filters" header, a left rail of facets, and a Clear / Apply foot.
+      expect(find.text('Filters'), findsOneWidget);
+      expect(find.text('Sort'), findsOneWidget);
+      expect(find.text('Offers'), findsOneWidget);
+      expect(find.text('Clear'), findsOneWidget);
+      expect(find.text('Apply'), findsOneWidget);
+
+      // The Offers rail swaps the right pane to its own options.
+      await tester.tap(find.text('Offers'));
+      await tester.pumpAndSettle();
+      expect(find.text('On offer only'), findsOneWidget);
+      await tester.tap(find.text('On offer only'));
+      await tester.pumpAndSettle();
+
+      // That rail tab now shows a count of one.
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('Offers'),
+            matching: find.byType(InkWell),
+          ),
+          matching: find.text('1'),
+        ),
+        findsOneWidget,
+      );
+    });
   });
 
   testWidgets('the feed carries every requested bottom section', (

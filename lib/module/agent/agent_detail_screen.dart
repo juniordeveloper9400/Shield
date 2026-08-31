@@ -7,130 +7,6 @@ import 'agent_model.dart';
 import 'agent_registration_screen.dart';
 import 'agent_service.dart';
 
-/// Records [status] against [agent] and confirms it, from whichever button
-/// on [_ApprovalBanner] asked for it.
-void _setApproval(
-  BuildContext context,
-  Agent agent,
-  AgentApprovalStatus status,
-) {
-  AgentService.instance.setApproval(agent, status);
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(
-        status == AgentApprovalStatus.approved
-            ? '${agent.name} approved'
-            : '${agent.name} rejected',
-      ),
-    ),
-  );
-}
-
-/// What a not-yet-approved agent is waiting on, and the parent's two ways to
-/// answer it — or, once already turned away, the one way back.
-class _ApprovalBanner extends StatelessWidget {
-  final Agent agent;
-
-  const _ApprovalBanner({required this.agent});
-
-  @override
-  Widget build(BuildContext context) {
-    final status = agent.approvalStatus;
-    final pending = status == AgentApprovalStatus.pending;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: status.tint,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: status.accent.withValues(alpha: 0.4)),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                pending ? Icons.hourglass_top_rounded : Icons.block_rounded,
-                size: 18,
-                color: status.accent,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  pending ? 'Awaiting your approval' : 'Registration rejected',
-                  style: const TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            pending
-                ? '${agent.name} registered under you and is not counted '
-                      'as active yet. Their figures show as ₹0 until you '
-                      'decide.'
-                : '${agent.name} was turned away. Their figures stay at '
-                      '₹0 unless you reconsider.',
-            style: const TextStyle(
-              fontSize: 12.5,
-              height: 1.4,
-              color: AppColors.textBody,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              if (pending) ...[
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _setApproval(
-                      context,
-                      agent,
-                      AgentApprovalStatus.rejected,
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      side: const BorderSide(color: AppColors.danger),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                    ),
-                    child: const Text('Reject'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: FilledButton(
-                  onPressed: () => _setApproval(
-                    context,
-                    agent,
-                    AgentApprovalStatus.approved,
-                  ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.brandGreenDeep,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                  ),
-                  child: Text(pending ? 'Approve' : 'Approve after all'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// One agent's card: who they are, where they sit, and the figures behind
 /// them. Reached by tapping a row in "Direct sale" or a node in "My Team".
 class AgentDetailScreen extends StatelessWidget {
@@ -191,13 +67,6 @@ class AgentDetailScreen extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
             children: [
               _HeaderCard(agent: agent),
-              // Whatever this agent is waiting on — a first decision, or a
-              // reconsidered one — sits right under who they are, ahead of
-              // the figures it is the reason those figures read zero.
-              if (!agent.isApproved) ...[
-                const SizedBox(height: 16),
-                _ApprovalBanner(agent: agent),
-              ],
               if (agent.isRegistered) ...[
                 const SizedBox(height: 16),
                 _RegistrationCard(agent: agent),
@@ -229,7 +98,7 @@ class AgentDetailScreen extends StatelessWidget {
                   _Stat('Team size', '$teamCount'),
                 ],
               ),
-              if (agent.level != AgentLevel.ward && agent.isApproved) ...[
+              if (agent.level != AgentLevel.ward) ...[
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
@@ -314,31 +183,6 @@ class _HeaderCard extends StatelessWidget {
                           ),
                         ),
                         ActivePill(active: agent.active),
-                        // Only shown once it says something the two pills
-                        // above it do not — an approved agent is already
-                        // covered by "Active"/"Inactive".
-                        if (!agent.isApproved)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 9,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: agent.approvalStatus.tint,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: agent.approvalStatus.accent,
-                              ),
-                            ),
-                            child: Text(
-                              agent.approvalStatus.label,
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w800,
-                                color: agent.approvalStatus.accent,
-                              ),
-                            ),
-                          ),
                       ],
                     ),
                   ],

@@ -140,32 +140,34 @@ void main() {
       await openPicker(tester);
 
       final field = inStepper(find.byType(TextField));
-      await tester.enterText(field, '12');
+      // A three-digit amount, well past the old cap of 20, is taken as typed.
+      await tester.enterText(field, '250');
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
-      expect(CartService.instance.lines.single.qty, 12);
+      expect(CartService.instance.lines.single.qty, 250);
 
       // Over the ceiling is pulled back to it.
-      await tester.enterText(field, '99');
+      await tester.enterText(field, '');
+      await tester.enterText(field, '9999');
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(CartService.instance.lines.single.qty, CartService.maxLineQty);
     });
 
-    testWidgets('the picker offers every quantity up to the max', (
+    testWidgets('the picker offers a shortcut chip for every quick-pick qty', (
       tester,
     ) async {
       seedOne();
       await pumpCart(tester);
       await openPicker(tester);
 
-      final maxChip = find.text('${CartService.maxLineQty}');
+      final maxChip = find.text('${CartService.quickPickQty}');
       expect(maxChip, findsOneWidget);
       await tester.ensureVisible(maxChip);
       await tester.tap(maxChip);
       await tester.pumpAndSettle();
 
-      expect(CartService.instance.lines.single.qty, CartService.maxLineQty);
+      expect(CartService.instance.lines.single.qty, CartService.quickPickQty);
     });
 
     testWidgets('Remove item from the sheet clears the line', (tester) async {

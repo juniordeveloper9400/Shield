@@ -4,6 +4,8 @@ import '../../theme/app_colors.dart';
 import '../../money.dart';
 import '../auth/auth_service.dart';
 import '../cart/cart_screen.dart';
+import '../investor/investor_portal_screen.dart';
+import '../investor/investor_service.dart';
 import '../location/address_form_screen.dart';
 import '../patients/manage_patients_screen.dart';
 import '../refer/refer_earn_screen.dart';
@@ -18,6 +20,10 @@ class AccountScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final investor = InvestorService.instance.investorForPhone(
+      AuthService.instance.currentUser.value?.phone,
+    );
+
     return Scaffold(
       backgroundColor: AppColors.pageTint,
       appBar: AppBar(
@@ -55,6 +61,25 @@ class AccountScreen extends StatelessWidget {
           // list below does not have to know whether it is there.
           const _RegisterBanner(),
           const SizedBox(height: 18),
+          // Only for a signed-in investor number — everyone else never sees
+          // this group at all.
+          if (investor != null) ...[
+            _MenuGroup(
+              items: [
+                _MenuItem(
+                  icon: Icons.trending_up_rounded,
+                  label: 'Portfolio',
+                  trailing: investor.investorCode,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => InvestorPortalScreen(investor: investor),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+          ],
           _MenuGroup(
             items: [
               _MenuItem(

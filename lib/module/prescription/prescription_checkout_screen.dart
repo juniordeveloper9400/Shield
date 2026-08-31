@@ -1,14 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/neon/order_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_flow.dart';
+import '../auth/auth_service.dart';
 import '../checkout/checkout_chrome.dart';
 import '../checkout/payment_method.dart';
 import '../location/address_book.dart';
 import '../location/address_form_screen.dart';
 import '../orders/purchase_service.dart';
+import '../registration/registration_service.dart';
+import '../registration/shield_store.dart';
+import 'medicine_duration.dart';
 import 'prescription_cart_service.dart';
+import 'prescription_record.dart';
 import 'prescription_order_placed_screen.dart';
 
 /// Checkout for the prescription basket.
@@ -37,6 +45,36 @@ class _PrescriptionCheckoutScreenState
 
   int get _unitCount =>
       widget.orders.fold(0, (sum, order) => sum + order.unitCount);
+
+  /// The branch this order is served by. The one pinned to the account comes
+  /// first — the store chosen at registration or privilege-plan activation —
+  /// then the branch nearest the delivery address, then the top of the
+  /// directory. Never a choice here: a prescription is packed by the member's
+  /// own store like every other order.
+  ShieldStore get _store {
+    final registered = RegistrationService.instance.profile?.store;
+    if (registered != null) {
+      return registered;
+    }
+    final pincode = AddressBook.instance.deliverTo?.pincode;
+    final nearby = pincode != null ? StoreDirectory.suggestFor(pincode) : null;
+    return nearby ?? StoreDirectory.all.first;
+  }
+
+  /// The line under the locked store card, or null when there is nothing to
+  /// explain.
+  String? get _storeNote {
+    if (RegistrationService.instance.profile?.store != null) {
+      return 'The store on your account. Every order, including prescriptions, '
+          'is served by this branch.';
+    }
+    final pincode = AddressBook.instance.deliverTo?.pincode;
+    if (pincode != null && StoreDirectory.suggestFor(pincode) != null) {
+      return 'Nearest branch to your delivery address. Complete registration '
+          'to pin your own store here.';
+    }
+    return null;
+  }
 
   void _chooseMethod(PaymentMethod method) {
     if (!method.isLive) {
@@ -81,6 +119,25 @@ class _PrescriptionCheckoutScreenState
         status: OrderStatus.processing,
         kind: OrderKind.prescription,
       );
+      // Write the prescription chain — patient, prescription, medicines and a
+      // kind:PRESCRIPTION order — through to Neon before the basket is cleared.
+      // Best-effort: a missing or unreachable database must not stop the order.
+      final phone = AuthService.instance.currentUser.value?.phone;
+      if (phone != null) {
+        unawaited(
+          OrderRepository.instance.savePrescriptionOrder(
+            phone: phone,
+            orderCode: id,
+            storeCode: _store.id,
+            paymentMethodCode: _method.id,
+            address: AddressBook.instance.deliverTo?.toDeliveryInput(),
+            prescriptions: [
+              for (final order in widget.orders)
+                _prescriptionInput(order.record),
+            ],
+          ),
+        );
+      }
       PrescriptionCartService.instance.clear();
 
       if (!mounted) {
@@ -99,6 +156,52 @@ class _PrescriptionCheckoutScreenState
       setState(() => _placing = false);
     }
   }
+
+  /// One [PrescriptionRecord] as the plain-values shape [OrderRepository]
+  /// persists. Only complete medicine lines are sent — a half-keyed row is not
+  /// something to file.
+  static PrescriptionInput _prescriptionInput(PrescriptionRecord record) {
+    final patient = record.patient;
+    return PrescriptionInput(
+      code: record.number,
+      fileName: record.fileName,
+      doctor: record.doctor,
+      duration: _durationToken(record.duration),
+      customDays: record.customDays,
+      recurringFrom: record.recurring?.from,
+      recurringUntil: record.recurring?.until,
+      patient: PrescriptionPatientInput(
+        remoteUuid: patient.remoteId,
+        name: patient.name,
+        phone: patient.phone,
+        address: patient.address,
+        dob: patient.dob,
+        gender: patient.gender.name.toUpperCase(),
+        relation: patient.relation.name.toUpperCase(),
+        abhaId: patient.abhaId,
+      ),
+      medicines: [
+        for (final medicine in record.dispensable)
+          PrescriptionMedicineInput(
+            name: medicine.name,
+            pack: medicine.pack,
+            doseMorning: medicine.intake.morning,
+            doseAfternoon: medicine.intake.afternoon,
+            doseNight: medicine.intake.night,
+          ),
+      ],
+    );
+  }
+
+  /// [MedicineDuration] as its `app.medicine_duration` token, or null.
+  static String? _durationToken(MedicineDuration? duration) => switch (duration) {
+        MedicineDuration.oneWeek => 'ONE_WEEK',
+        MedicineDuration.fifteenDays => 'FIFTEEN_DAYS',
+        MedicineDuration.oneMonth => 'ONE_MONTH',
+        MedicineDuration.twoMonths => 'TWO_MONTHS',
+        MedicineDuration.threeMonths => 'THREE_MONTHS',
+        null => null,
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +231,25 @@ class _PrescriptionCheckoutScreenState
             orders: widget.orders,
             medicineCount: _medicineCount,
             unitCount: _unitCount,
+          ),
+          const SizedBox(height: 14),
+          // The store follows the account, so keep it in step with a
+          // registration completed or an address saved over this screen.
+          ListenableBuilder(
+            listenable: Listenable.merge([
+              RegistrationService.instance,
+              AddressBook.instance,
+            ]),
+            builder: (context, _) => _Card(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const CheckoutHeading('Your store'),
+                  const SizedBox(height: 10),
+                  LockedStoreCard(store: _store, note: _storeNote),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 14),
           const _DeliveryCard(),

@@ -1,11 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/neon/wallet_repository.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_flow.dart';
+import '../auth/auth_service.dart';
 import '../checkout/checkout_order.dart';
 import '../checkout/checkout_screen.dart';
 import '../registration/registration_flow.dart';
 import '../registration/registration_service.dart';
+import '../registration/shield_store.dart';
 import '../wallet/wallet_service.dart';
 import 'privilege_card_face.dart';
 import 'privilege_tier.dart';
@@ -131,6 +136,10 @@ class _PrivilegeScreenState extends State<PrivilegeScreen> {
       final done = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => CheckoutScreen(
+            // The branch is a choice here — this is where a member pins the
+            // store their account is served by. Every product and pharmacy
+            // checkout after this shows it locked.
+            storeSelectable: true,
             order: CheckoutOrder(
               title: load.name,
               subtitle: 'Privilege Programme activation',
@@ -148,10 +157,45 @@ class _PrivilegeScreenState extends State<PrivilegeScreen> {
                 CheckoutLine('Wallet credit', load.credited.toDouble()),
               ],
             ),
-            onComplete: (_) async {
+            onComplete: (receipt) async {
               // Activation, not a top-up: this is what opens the wallet, and
-              // the wallet keeps the card it was opened on.
-              WalletService.instance.activate(load);
+              // the wallet keeps the card it was opened on — along with the
+              // branch it was activated against, so a member holding more than
+              // one plan can bill a later order to that branch by picking this
+              // plan at checkout.
+              WalletService.instance.activate(
+                load,
+                store: StoreDirectory.byId(receipt.storeId),
+              );
+              // The durable copy on Neon: the wallet, the card and its two
+              // ledger lines. Best-effort and fire-and-forget — a build with
+              // no DATABASE_URL, or an unreachable database, must not stop the
+              // activation the member just paid for. AuthFlow.guard above has
+              // already ensured someone is signed in.
+              final user = AuthService.instance.currentUser.value;
+              if (user != null) {
+                unawaited(
+                  WalletRepository.instance.activateCard(
+                    memberPhone: user.phone,
+                    memberName: user.name,
+                    tierKind: load.tier.kind,
+                    amount: load.amount,
+                    bonus: load.bonus,
+                    credited: load.credited,
+                    cardNumber: load.cardNumber,
+                    storeCode: receipt.storeId,
+                  ),
+                );
+              }
+              // Pin the branch chosen on the checkout to the account, so every
+              // product and pharmacy order from here is locked to it. A repeat
+              // save is not a second registration reward.
+              final profile = RegistrationService.instance.profile;
+              if (profile != null && profile.storeId != receipt.storeId) {
+                RegistrationService.instance.save(
+                  profile.copyWith(storeId: receipt.storeId),
+                );
+              }
             },
           ),
         ),

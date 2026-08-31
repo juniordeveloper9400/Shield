@@ -11,10 +11,13 @@ import 'package:shield/module/checkout/receipt_form.dart';
 import 'package:shield/module/location/address_book.dart';
 import 'package:shield/module/orders/order_placed_screen.dart';
 import 'package:shield/module/orders/purchase_service.dart';
+import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/privilege/privilege_screen.dart';
 import 'package:shield/module/privilege/privilege_tier.dart';
 import 'package:shield/module/registration/registration_service.dart';
+import 'package:shield/module/registration/shield_store.dart';
 import 'package:shield/module/wallet/wallet_service.dart';
+import 'package:shield/money.dart';
 
 void main() {
   void resetAll() {
@@ -24,6 +27,7 @@ void main() {
     PurchaseService.instance.clear();
     WalletService.instance.reset();
     AddressBook.instance.reset();
+    PatientBook.instance.reset();
     ReceiptPicker.debugOverride = null;
   }
 
@@ -37,6 +41,16 @@ void main() {
         phone: '9000012345',
         label: AddressLabel.home,
       ),
+    );
+  }
+
+  void givePatient() {
+    PatientBook.instance.add(
+      name: 'Asha Nair',
+      phone: '9000012345',
+      dob: DateTime(1994, 9, 4),
+      gender: PatientGender.female,
+      relation: PatientRelation.self,
     );
   }
 
@@ -124,6 +138,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('receipt.jpg'), findsOneWidget);
 
+    // The picture alone does not arm the button — the UTR / transaction ID is
+    // mandatory too.
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNull,
+    );
+    await tester.enterText(find.byType(TextField).first, 'UTR7788990011');
+    await tester.pumpAndSettle();
+
     await tester.tap(find.text('Submit receipt'));
     await tester.pumpAndSettle();
 
@@ -131,6 +154,7 @@ void main() {
     expect(receipt?.storeId, 'SHD-MEL');
     expect(receipt?.agentCode, 'AGT42');
     expect(receipt?.bankAccount.id, 'mel-sbi');
+    expect(receipt?.bankReference, 'UTR7788990011');
   });
 
   testWidgets('a registered member sees their registration store, fixed', (
@@ -177,17 +201,22 @@ void main() {
       mrp: 500,
     );
 
-    await pump(tester, const CartScreen());
+    await pump(tester, const CartScreen(), size: const Size(420, 3400));
     await tester.tap(find.text('Proceed to checkout'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'AGT99');
     await tester.pumpAndSettle();
 
-    expect(find.text('Delivery address'), findsOneWidget);
-    expect(find.text('Add delivery address'), findsOneWidget);
-    expect(find.text('Required to place the order.'), findsOneWidget);
+    expect(find.text('DELIVER TO'), findsOneWidget);
+    expect(find.text('Add a delivery address'), findsOneWidget);
+    expect(find.text('PATIENT'), findsOneWidget);
+    expect(find.text('Add a patient'), findsOneWidget);
+    expect(
+      find.text('A delivery address and a patient are required to continue.'),
+      findsOneWidget,
+    );
     // The one FilledButton on step one is the action bar; it is dead until an
-    // address is saved.
+    // address and a patient are both chosen.
     expect(
       tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
       isNull,
@@ -200,6 +229,7 @@ void main() {
     AuthService.instance.signInAs();
     RegistrationService.instance.dismissPrompt();
     giveAddress();
+    givePatient();
     CartService.instance.add(
       name: 'Test product',
       pack: 'Box',
@@ -209,19 +239,24 @@ void main() {
     ReceiptPicker.debugOverride = (source) async =>
         const PickedFile(name: 'cart-receipt.jpg', bytes: 100 * 1024);
 
-    await pump(tester, const CartScreen());
+    await pump(tester, const CartScreen(), size: const Size(420, 3400));
 
     await tester.tap(find.text('Proceed to checkout'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Delivery address'), findsOneWidget);
-    expect(find.text('Asha'), findsOneWidget);
+    expect(find.text('Order Summary'), findsOneWidget);
+    expect(find.text('DELIVER TO'), findsOneWidget);
+    expect(find.text('Home (679322)'), findsOneWidget);
+    expect(find.text('PATIENT'), findsOneWidget);
+    expect(find.text('Asha Nair'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'AGT99');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Next'));
+    await tester.tap(find.text('Select payment mode'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Gallery'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'UTR123456');
     await tester.pumpAndSettle();
     await tester.tap(find.text('Place order'));
     await tester.pumpAndSettle();
@@ -241,6 +276,64 @@ void main() {
     expect(find.byIcon(Icons.check_rounded), findsOneWidget);
     expect(find.text('Track order'), findsOneWidget);
   });
+
+  testWidgets(
+    'a last-minute buy added on the order summary reaches the total and the '
+    'placed order',
+    (tester) async {
+      AuthService.instance.signInAs();
+      RegistrationService.instance.dismissPrompt();
+      giveAddress();
+      givePatient();
+      CartService.instance.add(
+        name: 'Test product',
+        pack: 'Box',
+        price: 450,
+        mrp: 500,
+      );
+      ReceiptPicker.debugOverride = (source) async =>
+          const PickedFile(name: 'cart-receipt.jpg', bytes: 100 * 1024);
+
+      await pump(tester, const CartScreen(), size: const Size(420, 3400));
+      await tester.tap(find.text('Proceed to checkout'));
+      await tester.pumpAndSettle();
+
+      // Delivery fee (₹40) on top of the one item's price.
+      expect(find.text('₹${formatRupees(490)}'), findsWidgets);
+
+      // What tapping ADD on "Last minute buys" does under the hood: another
+      // line lands in the same cart while this screen is still open.
+      CartService.instance.add(
+        name: 'Dolo 650mg Tablet',
+        pack: 'Strip of 15 tablets',
+        price: 32,
+        mrp: 35,
+      );
+      await tester.pumpAndSettle();
+
+      // The total on this very screen has already moved to include it.
+      expect(find.text('₹${formatRupees(490)}'), findsNothing);
+      expect(find.text('₹${formatRupees(522)}'), findsWidgets);
+
+      await tester.enterText(find.byType(TextField).first, 'AGT99');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select payment mode'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Gallery'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'UTR123456');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Place order'));
+      await tester.pumpAndSettle();
+
+      // The placed order counts both lines, not just the one that was in the
+      // cart when "Proceed to checkout" was first tapped.
+      final placed = PurchaseService.instance.purchases.single;
+      expect(placed.itemCount, 2);
+      expect(placed.mrpTotal, 535);
+      expect(placed.paidTotal, 482);
+    },
+  );
 
   testWidgets('privilege activation opens checkout before wallet is credited', (
     tester,
@@ -268,12 +361,118 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Gallery'));
     await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, 'UTR123456');
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Submit receipt'));
     await tester.pumpAndSettle();
 
     expect(
       WalletService.instance.balance,
       PrivilegeProgramme.silver.entry.credited,
+    );
+  });
+
+  testWidgets(
+    'holding two plans, checkout offers a plan chooser that moves the branch',
+    (tester) async {
+      AuthService.instance.signInAs();
+      register(storeId: 'SHD-MEL');
+      // Two plans activated against different branches.
+      WalletService.instance.activate(
+        PrivilegeProgramme.silver.entry,
+        store: StoreDirectory.byId('SHD-MEL'),
+      );
+      WalletService.instance.activate(
+        PrivilegeProgramme.gold.entry,
+        store: StoreDirectory.byId('SHD-ALN'),
+      );
+
+      PaymentReceipt? receipt;
+      await pump(
+        tester,
+        CheckoutScreen(
+          order: const CheckoutOrder(
+            title: 'Medicine order',
+            subtitle: '1 item from your cart',
+            amount: 450,
+            reference: 'SHD-9',
+            submitLabel: 'Submit receipt',
+          ),
+          onComplete: (value) async => receipt = value,
+        ),
+        size: const Size(420, 2000),
+      );
+
+      // The chooser lists both plans, and the branch defaults to the plan on
+      // the registration store — Silver, at Melattur.
+      expect(
+        find.textContaining('Bill this order against one of your active plans'),
+        findsOneWidget,
+      );
+      expect(find.text('Silver Shield'), findsOneWidget);
+      expect(find.text('Gold Shield'), findsOneWidget);
+      expect(find.text('SHIELD Pharmacy Melattur'), findsWidgets);
+
+      // Pick the Gold plan: the locked branch moves to the one it was
+      // activated at, and the note names the plan.
+      await tester.tap(find.text('Gold Shield'));
+      await tester.pumpAndSettle();
+      expect(find.text('SHIELD Pharmacy Alanallur'), findsWidgets);
+      expect(
+        find.textContaining('Serving branch for your Gold Shield'),
+        findsOneWidget,
+      );
+
+      // …and that branch is what the submitted receipt carries.
+      await tester.enterText(find.byType(TextField).first, 'AGT42');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Next'));
+      await tester.pumpAndSettle();
+      ReceiptPicker.debugOverride = (source) async =>
+          const PickedFile(name: 'receipt.jpg', bytes: 120 * 1024);
+      await tester.tap(find.text('Gallery'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, 'UTR7788990011');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Submit receipt'));
+      await tester.pumpAndSettle();
+
+      expect(receipt?.storeId, 'SHD-ALN');
+      expect(receipt?.bankAccount.id, 'aln-sbi');
+    },
+  );
+
+  testWidgets('a single activated plan shows no chooser', (tester) async {
+    AuthService.instance.signInAs();
+    register(storeId: 'SHD-MJR');
+    WalletService.instance.activate(
+      PrivilegeProgramme.silver.entry,
+      store: StoreDirectory.byId('SHD-MEL'),
+    );
+
+    await pump(
+      tester,
+      CheckoutScreen(
+        order: const CheckoutOrder(
+          title: 'Medicine order',
+          subtitle: '1 item from your cart',
+          amount: 450,
+          reference: 'SHD-10',
+          submitLabel: 'Submit receipt',
+        ),
+        onComplete: (_) async {},
+      ),
+    );
+
+    expect(
+      find.textContaining('Bill this order against'),
+      findsNothing,
+    );
+    // The branch stays the registration one, locked.
+    expect(find.text('SHIELD Pharmacy Manjery'), findsWidgets);
+    expect(
+      find.textContaining('store you chose during registration'),
+      findsOneWidget,
     );
   });
 }

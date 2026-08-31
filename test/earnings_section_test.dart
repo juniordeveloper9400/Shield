@@ -1,17 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/money.dart';
 import 'package:shield/module/earnings/earnings_detail_screen.dart';
 import 'package:shield/module/home/earnings_section.dart';
 import 'package:shield/module/home/refer_earn_card.dart';
 import 'package:shield/module/orders/orders_screen.dart';
 import 'package:shield/module/orders/purchase_service.dart';
 import 'package:shield/module/privilege/privilege_card.dart';
+import 'package:shield/module/privilege/privilege_tier.dart';
+import 'package:shield/module/wallet/wallet_service.dart';
 import 'package:shield/screens/home_screen.dart';
 
 void main() {
   void resetAll() {
     PurchaseService.instance.reset();
+    WalletService.instance.reset();
   }
 
   setUp(resetAll);
@@ -137,23 +141,20 @@ void main() {
 
       final orders = PurchaseService.instance;
 
-      expect(find.text('Your earnings'), findsOneWidget);
+      expect(find.text('Your savings'), findsOneWidget);
       // A plain-language label spells out what the big figure is, so it is not
       // mistaken for a spendable balance.
-      expect(
-        find.text('Total money you have saved on your orders'),
-        findsOneWidget,
-      );
+      expect(find.text('Total money you have saved'), findsOneWidget);
       expect(find.text(orders.savedLabel), findsOneWidget);
       expect(
-        find.text('Kept out of ${orders.mrpLabel} of printed prices.'),
+        find.text('Kept out of ${orders.mrpLabel} of total price.'),
         findsOneWidget,
       );
 
       // Sub-tiles and Your orders button are NOT on the home card.
-      expect(find.text('Printed price'), findsNothing);
+      expect(find.text('Total price'), findsNothing);
       expect(find.text('You paid'), findsNothing);
-      expect(find.text('You earned'), findsNothing);
+      expect(find.text('You saved'), findsNothing);
       expect(find.text('Your orders'), findsNothing);
     });
 
@@ -165,27 +166,51 @@ void main() {
 
       expect(find.byType(EarningsDetailScreen), findsOneWidget);
       expect(find.text('Your Earnings'), findsOneWidget);
-      expect(find.text('Printed price'), findsOneWidget);
+      expect(find.text('Total price'), findsOneWidget);
       expect(find.text('You paid'), findsOneWidget);
-      expect(find.text('You earned'), findsOneWidget);
+      expect(find.text('You saved'), findsOneWidget);
       expect(find.text('Earnings Breakdown by Order'), findsOneWidget);
+      // No plan has been activated, so there is nothing to show here.
+      expect(find.text('Privilege Plan Bonus'), findsNothing);
 
       // Does not show the Your orders button on the details page either.
       expect(find.text('Your orders'), findsNothing);
     });
 
-    testWidgets('referral and wallet figures are not in this total', (
-      tester,
-    ) async {
+    testWidgets('referral figures are not in this total', (tester) async {
       await pumpSection(tester);
 
       expect(find.text('Sahakar'), findsNothing);
       expect(find.text('Points'), findsNothing);
       expect(find.textContaining('pts'), findsNothing);
       expect(find.textContaining('invites'), findsNothing);
-      expect(find.text('Plan bonus'), findsNothing);
-      expect(find.text('Wallet'), findsNothing);
     });
+
+    testWidgets(
+      'activating a privilege plan folds its 10% bonus into the total',
+      (tester) async {
+        final ordersOnly = PurchaseService.instance.savedTotal;
+        final silver = PrivilegeProgramme.silver.entry;
+        WalletService.instance.activate(silver);
+
+        await pumpSection(tester);
+
+        // ₹1,000 on a ₹10,000 Silver load — on top of what the orders alone
+        // already saved, not instead of it.
+        expect(silver.bonus, 1000);
+        expect(
+          find.text('₹${formatRupees(ordersOnly + silver.bonus)}'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byType(EarningsSection));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Privilege Plan Bonus'), findsOneWidget);
+        expect(find.text(silver.name), findsOneWidget);
+        expect(find.text('+${silver.bonusLabel}'), findsOneWidget);
+      },
+    );
 
     testWidgets('the total moves when an order is placed', (tester) async {
       await pumpSection(tester);

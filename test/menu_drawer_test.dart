@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/module/auth/auth_service.dart';
+import 'package:shield/module/labtest/lab_cart_screen.dart';
 import 'package:shield/module/menu/menu_drawer.dart';
+import 'package:shield/module/prescription/prescription_cart_screen.dart';
 import 'package:shield/module/wallet/wallet_screen.dart';
 import 'package:shield/screens/app_shell.dart';
 
@@ -133,8 +135,34 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Active orders'), findsOneWidget);
-    expect(find.text('Cart items'), findsOneWidget);
+    expect(find.text('Product cart'), findsOneWidget);
+    expect(find.text('Prescription cart'), findsOneWidget);
+    expect(find.text('Lab cart'), findsOneWidget);
     expect(find.text('Reward points'), findsOneWidget);
+  });
+
+  testWidgets('dashboard prescription tile opens the prescription cart', (
+    tester,
+  ) async {
+    await pumpShell(tester);
+    await openMenu(tester);
+
+    await tester.tap(find.text('Prescription cart'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Menu'), findsNothing);
+    expect(find.byType(PrescriptionCartScreen), findsOneWidget);
+  });
+
+  testWidgets('dashboard lab tile opens the lab cart', (tester) async {
+    await pumpShell(tester);
+    await openMenu(tester);
+
+    await tester.tap(find.text('Lab cart'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Menu'), findsNothing);
+    expect(find.byType(LabCartScreen), findsOneWidget);
   });
 
   testWidgets('dashboard wallet tile opens the wallet screen', (tester) async {

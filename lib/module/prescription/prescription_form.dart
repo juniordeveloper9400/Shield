@@ -9,6 +9,7 @@ import '../patients/patient_book.dart';
 import '../patients/patient_picker.dart';
 import 'medicine_duration.dart';
 import 'prescription_copy.dart';
+import 'prescription_image_view.dart';
 import 'prescription_record.dart';
 
 /// Cap from the on-screen guidance.
@@ -23,6 +24,12 @@ const int kPrescriptionMaxBytes = 5 * 1024 * 1024;
 class PrescriptionFormController extends ChangeNotifier {
   XFile? file;
   int bytes = 0;
+
+  /// The picked image's bytes, held so the form can show a thumbnail and open
+  /// a full-screen view before the file is ever submitted. Null when the pick
+  /// came from a path the form could not read (a bare test double, say).
+  Uint8List? preview;
+
   bool busy = false;
 
   Patient? patient;
@@ -82,15 +89,17 @@ class PrescriptionFormController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setFile(XFile picked, int length) {
+  void setFile(XFile picked, int length, {Uint8List? preview}) {
     file = picked;
     bytes = length;
+    this.preview = preview;
     notifyListeners();
   }
 
   void clearFile() {
     file = null;
     bytes = 0;
+    preview = null;
     notifyListeners();
   }
 
@@ -191,6 +200,21 @@ class _PrescriptionFormBodyState extends State<PrescriptionFormBody> {
     super.dispose();
   }
 
+  /// Opens the picked image full-screen so the member can check the page is
+  /// readable before committing to it. Only offered once its bytes are to hand.
+  void _viewFile(BuildContext context) {
+    final data = _form.preview;
+    final picked = _form.file;
+    if (data == null || picked == null) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PrescriptionImageView(bytes: data, name: picked.name),
+      ),
+    );
+  }
+
   Future<void> _pick(ImageSource source) async {
     _form.setBusy(true);
     try {
@@ -198,11 +222,13 @@ class _PrescriptionFormBodyState extends State<PrescriptionFormBody> {
       if (picked == null) {
         return;
       }
-      final length = await picked.length();
+      // Read the bytes once, here: they give both the size the card shows and
+      // the thumbnail — and the full-screen view — it now offers.
+      final data = await picked.readAsBytes();
       if (!mounted) {
         return;
       }
-      _form.setFile(picked, length);
+      _form.setFile(picked, data.length, preview: data);
     } on Exception {
       if (!mounted) {
         return;
@@ -286,6 +312,9 @@ class _PrescriptionFormBodyState extends State<PrescriptionFormBody> {
                 limitLabel: '5 MB',
                 removeLabel: copy.remove,
                 onRemove: _form.clearFile,
+                previewBytes: _form.preview,
+                viewLabel: copy.viewFile,
+                onView: _form.preview == null ? null : () => _viewFile(context),
               ),
             ],
             const SizedBox(height: 18),

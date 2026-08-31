@@ -1,16 +1,64 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../theme/app_colors.dart';
 
-/// The networks SHIELD publishes on.
+/// The networks SHIELD publishes on, each with the page it opens.
 enum SocialNetwork {
-  facebook('Facebook'),
-  youtube('YouTube'),
-  instagram('Instagram');
+  facebook('Facebook', 'https://www.facebook.com/share/1C8qHEAqDZ/'),
+  youtube('YouTube', 'https://youtube.com/@sahakarmedicalsofficial'),
+  instagram(
+    'Instagram',
+    'https://www.instagram.com/sahakar_medicals_official',
+  );
 
   final String label;
 
-  const SocialNetwork(this.label);
+  /// The public profile this disc opens, in the browser or the network's app.
+  final String url;
+
+  const SocialNetwork(this.label, this.url);
+}
+
+/// Opens a [SocialNetwork]'s page in the browser or its app.
+///
+/// Behind a seam, the same way [Dialer] is, so a widget test can watch which
+/// page a disc would open without a browser to hand it to. Reset with
+/// [resetForTest] afterwards.
+class SocialLinks {
+  const SocialLinks._();
+
+  @visibleForTesting
+  static Future<bool> Function(Uri uri) opener =
+      (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
+
+  @visibleForTesting
+  static void resetForTest() => opener =
+      (uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
+
+  /// Opens [network]'s profile. A failure says so rather than doing nothing —
+  /// on a device with no browser a silent no-op looks like a dead button.
+  static Future<void> open(BuildContext context, SocialNetwork network) async {
+    final messenger = ScaffoldMessenger.of(context);
+    var opened = false;
+    try {
+      opened = await opener(Uri.parse(network.url));
+    } catch (_) {
+      opened = false;
+    }
+    if (opened) {
+      return;
+    }
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Could not open ${network.label}.'),
+          backgroundColor: AppColors.textDark,
+        ),
+      );
+  }
 }
 
 /// A brand glyph in white on a solid brand-blue disc.

@@ -5,29 +5,23 @@ import 'package:flutter/rendering.dart';
 
 import '../../theme/app_colors.dart';
 import 'agent_detail_screen.dart';
-import 'agent_direct_sale.dart';
 import 'agent_model.dart';
 import 'agent_registration_screen.dart';
 import 'agent_service.dart';
 
-/// "My Team": the fixed shape of the org — every position it holds, filled
-/// or not — drawn as a top-down chart. Each agent opens a fixed number of
-/// positions at the tier below ([AgentLevel.childCapacity]: national → 2
-/// region → 4 state → 8 district → 16 assembly → 32 lsgd → 64 ward). A
-/// filled position is a card; an open one is a "+" in that tier's own colour
-/// — not a name standing in for someone who was never registered — and
-/// tapping it opens registration already pointed at the right parent and
-/// tier. Balanced orthogonal connectors join every position to its parent,
-/// filled or open alike, so the shape reads as one chart rather than as
-/// cards with gaps between them.
+/// "My Team": the downline drawn as a top-to-bottom mind-map. The root sits
+/// alone at the top; a round chevron button hangs off the bottom edge of any
+/// card that has a tier below it. Tapping that button fans the card's own row
+/// of children out beneath it — the registered downline plus the positions
+/// nobody has filled yet, each an open "+" in that tier's tint — joined to
+/// the parent by a curved connector, and the view glides down to bring that
+/// freshly opened level into frame. Nothing deeper shows until one of those
+/// buttons is tapped in turn.
 ///
-/// Opens on the root's own card at full size near the top of the screen —
-/// the one profile that matters on opening this screen — with the rest of
-/// the chart running on below and out to both sides at that same natural
-/// size: reached by scrolling and panning, not by shrinking the whole chart
-/// down to fit the screen at once. The corner button offers that shrunk
-/// whole-chart overview separately, for whenever an overview is worth more
-/// than reading any one card.
+/// Each agent opens a fixed number of positions at the tier below
+/// ([AgentLevel.childCapacity]). Tapping a card's body (not its chevron)
+/// opens that agent's own detail; the corner button shrinks whatever is
+/// currently revealed to a single overview.
 class AgentTeamTreeScreen extends StatefulWidget {
   final Agent root;
 
@@ -37,47 +31,55 @@ class AgentTeamTreeScreen extends StatefulWidget {
   State<AgentTeamTreeScreen> createState() => _AgentTeamTreeScreenState();
 }
 
-class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen> {
-  /// Ids whose branch is folded away. Empty by default — every pre-built
-  /// agent, national down to ward, is on the chart from the start, the way a
-  /// real org chart is read: a caret is there for anyone who wants to tidy a
-  /// branch out of the way, not because the chart withholds anything until
-  /// asked.
-  final Set<String> _collapsed = {};
+class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
+    with SingleTickerProviderStateMixin {
+  /// Ids whose direct children are currently fanned out. Empty by default:
+  /// "My Team" opens on the root's card alone and every tier is revealed one
+  /// chevron tap at a time.
+  final Set<String> _expanded = {};
+
+  /// One key per agent card, so a freshly opened level can be found in the
+  /// laid-out map and scrolled to.
+  final Map<String, GlobalKey> _pillKeys = {};
 
   final _transform = TransformationController();
 
-  /// Measures the laid-out chart so it can be positioned or shrunk to fit.
+  /// Drives the glide to a level when its chevron is tapped. Built in
+  /// [initState] so it always exists by the time [dispose] runs, even on a
+  /// screen where no chevron was ever tapped.
+  late final AnimationController _panController;
+
+  /// Measures the laid-out map so it can be positioned or shrunk to fit.
   final _chartKey = GlobalKey();
 
   /// The InteractiveViewer's own size, kept from the last layout.
   Size _viewportSize = Size.zero;
 
-  /// True once the chart has been positioned at least once.
+  /// True once the map has been positioned at least once.
   bool _fitted = false;
+
+  GlobalKey _keyFor(String id) =>
+      _pillKeys.putIfAbsent(id, () => GlobalKey());
 
   @override
   void initState() {
     super.initState();
+    _panController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _openOnRoot());
   }
 
   @override
   void dispose() {
+    _panController.dispose();
     _transform.dispose();
     super.dispose();
   }
 
-  /// Where the screen opens: the root's own card, full size and near the top
-  /// — the profile that matters on opening "My Team" — with the rest of the
-  /// pre-built downline running on below and out to both sides at that same
-  /// natural size, reached by scrolling and panning rather than by shrinking
-  /// the whole chart down to fit the screen at once.
-  ///
-  /// The chart is laid out with the root centred over its own subtree (see
-  /// the "balanced orthogonal connectors" on [_OrgTreeNode]), so the root's
-  /// x is always the chart's own horizontal centre — which is what lets this
-  /// centre the *root* by centring the whole, far wider, chart.
+  /// Where the screen opens: the root's card centred across the top, with the
+  /// rest of the map free to fan out below it as branches are opened.
   void _openOnRoot() {
     final chartBox =
         _chartKey.currentContext?.findRenderObject() as RenderBox?;
@@ -91,7 +93,9 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen> {
 
     const scale = 1.0;
     final dx = (_viewportSize.width - chartSize.width * scale) / 2;
-    const dy = 24.0;
+    // The national card sits right at the top of the screen — the rest of
+    // the map fans out into the space below it.
+    const dy = _flowTopInset;
 
     setState(() {
       _transform.value = Matrix4.identity()
@@ -101,11 +105,14 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen> {
     });
   }
 
-  /// What the corner button asks for: the whole chart shrunk down to a
-  /// single overview, however wide the downline has grown. Not the default
-  /// view — see [_openOnRoot] — but there when an overview is worth more
-  /// than reading any one card.
+  /// How far below the top edge a card is parked — on first open (the root)
+  /// and after a chevron tap (the level just opened).
+  static const double _flowTopInset = 16.0;
+
+  /// What the corner button asks for: everything currently revealed shrunk
+  /// down to a single overview, however far the open branches have grown.
   void _fitToScreen() {
+    _panController.stop();
     final chartBox =
         _chartKey.currentContext?.findRenderObject() as RenderBox?;
     if (chartBox == null || !chartBox.hasSize || _viewportSize.isEmpty) {
@@ -120,10 +127,12 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen> {
     final scaleY = (_viewportSize.height - 60) / chartSize.height;
     final scale = math.min(math.min(scaleX, scaleY), 1.0);
 
-    final dx = (_viewportSize.width - chartSize.width * scale) / 2;
-    final dy = chartSize.height * scale < _viewportSize.height
-        ? math.max(24.0, (_viewportSize.height - chartSize.height * scale) / 4)
-        : 24.0;
+    final dx =
+        math.max(24.0, (_viewportSize.width - chartSize.width * scale) / 2);
+    final dy = math.max(
+      24.0,
+      (_viewportSize.height - chartSize.height * scale) / 2,
+    );
 
     setState(() {
       _transform.value = Matrix4.identity()
@@ -134,19 +143,83 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen> {
   }
 
   void _toggle(String id) {
+    final opening = !_expanded.contains(id);
     setState(() {
-      if (!_collapsed.remove(id)) {
-        _collapsed.add(id);
+      if (!_expanded.remove(id)) {
+        _expanded.add(id);
       }
     });
+    // Opening a card glides down to the tier it just revealed; closing one
+    // glides back up to its parent, so the chevron pulls the view in the
+    // direction it points.
+    final focus = opening ? id : (_parentId(id) ?? id);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _flowTo(focus));
   }
 
-  Future<void> _addUnder(Agent parent) async {
+  /// The card a collapse should glide back to: a real agent's parent (or the
+  /// root), or, for an open "+" position, the slot or agent one step up its
+  /// path.
+  String? _parentId(String id) {
+    if (id.startsWith('slot/')) {
+      final parts = id.split('/');
+      // slot/<agentId>/<tier>/<i>[/<tier>/<i>...] — drop the last tier+index
+      // pair; what remains is the parent slot, or just the real agent id.
+      if (parts.length > 4) {
+        return parts.sublist(0, parts.length - 2).join('/');
+      }
+      return parts.length > 1 ? parts[1] : null;
+    }
+    final agent = AgentService.instance.byId(id);
+    return agent?.parentId ?? (id == widget.root.id ? null : widget.root.id);
+  }
+
+  /// Glides the view so [id]'s card sits high and centred, its tier fanned
+  /// out in the frame below it.
+  void _flowTo(String id) {
+    final pillBox =
+        _pillKeys[id]?.currentContext?.findRenderObject() as RenderBox?;
+    final chartBox =
+        _chartKey.currentContext?.findRenderObject() as RenderBox?;
+    if (pillBox == null ||
+        chartBox == null ||
+        !pillBox.hasSize ||
+        _viewportSize.isEmpty) {
+      return;
+    }
+
+    // The card's position inside the (untransformed) map content.
+    final topLeft = pillBox.localToGlobal(Offset.zero, ancestor: chartBox);
+    final scale = _transform.value.getMaxScaleOnAxis();
+
+    final targetX = _viewportSize.width / 2 - (topLeft.dx + pillBox.size.width / 2) * scale;
+    final targetY = _flowTopInset - topLeft.dy * scale;
+
+    final target = Matrix4.identity()
+      ..translateByDouble(targetX, targetY, 0, 1)
+      ..scaleByDouble(scale, scale, scale, 1);
+
+    _animateTransformTo(target);
+  }
+
+  void _animateTransformTo(Matrix4 target) {
+    _panController.stop();
+    final anim = Matrix4Tween(begin: _transform.value, end: target).animate(
+      CurvedAnimation(parent: _panController, curve: Curves.easeInOutCubic),
+    );
+    void tick() => _transform.value = anim.value;
+    anim.addListener(tick);
+    _panController
+      ..reset()
+      ..forward().whenCompleteOrCancel(() => anim.removeListener(tick));
+  }
+
+  Future<void> _addUnder(Agent parent, [AgentLevel? level]) async {
     final added = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => AgentRegistrationScreen(
           scopeRoot: widget.root,
           initialParent: parent,
+          initialLevel: level,
         ),
       ),
     );
@@ -205,21 +278,21 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen> {
                 child: InteractiveViewer(
                   transformationController: _transform,
                   constrained: false,
-                  boundaryMargin: const EdgeInsets.all(500),
+                  boundaryMargin: const EdgeInsets.all(600),
                   minScale: 0.1,
                   maxScale: 3.5,
                   child: Padding(
                     key: _chartKey,
-                    padding: const EdgeInsets.fromLTRB(40, 20, 40, 40),
-                    child: _OrgTreeNode(
+                    padding: const EdgeInsets.fromLTRB(40, 16, 40, 96),
+                    child: _MindNode(
                       // Re-read rather than trusting widget.root as-is: a
                       // photo added to the root from its own detail screen
-                      // would otherwise never show here, since widget.root
-                      // is fixed at push time and everyone else in the tree
-                      // is read fresh off the service on every rebuild.
+                      // would otherwise never show here.
                       agent: AgentService.instance.byId(widget.root.id) ??
                           widget.root,
-                      collapsed: _collapsed,
+                      depth: 0,
+                      expanded: _expanded,
+                      keyFor: _keyFor,
                       onToggle: _toggle,
                       onOpen: (agent) => Navigator.of(context).push(
                         MaterialPageRoute(
@@ -239,37 +312,42 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen> {
   }
 }
 
-/// Color theme for hierarchy levels matching the reference design.
-Color _tierColor(AgentLevel level) {
-  switch (level) {
-    case AgentLevel.national:
-      return const Color(0xFF8E343A); // Deep Maroon / Burgundy
-    case AgentLevel.region:
-      return const Color(0xFF1E3A5F); // Dark Navy Blue
-    case AgentLevel.state:
-      return const Color(0xFFBE9B4B); // Ochre / Warm Gold
-    case AgentLevel.district:
-      return const Color(0xFF6B8E4E); // Olive Green
-    case AgentLevel.assembly:
-      return const Color(0xFF5C768D); // Slate Grey-Blue
-    case AgentLevel.lsgd:
-      return const Color(0xFF4A6F70); // Slate Teal
-    case AgentLevel.ward:
-      return const Color(0xFF607D8B); // Steel Grey
-  }
-}
+/// The pastel a card carries, cycled by how deep it sits — so each step down
+/// from the root reads as its own ring, the way a mind-map does, rather than
+/// every card being one flat colour.
+const List<Color> _mindTints = [
+  Color(0xFFC7CAF4), // periwinkle — the root
+  Color(0xFFC4D0EF), // light blue
+  Color(0xFFB2DCC9), // mint
+  Color(0xFFE6D7F0), // lilac
+  Color(0xFFF2E2C6), // sand
+];
 
-/// One node and its recursive subtree.
-class _OrgTreeNode extends StatelessWidget {
+Color _mindTint(int depth) => _mindTints[depth % _mindTints.length];
+
+/// The line joining a card to each of its children.
+const Color _connectorColor = Color(0xFF8A97C9);
+
+/// The round chevron button under a card.
+const Color _caretColor = Color(0xFF8188D6);
+
+/// One agent and, once its chevron is tapped, the row of its children fanned
+/// out below. Recursive — each child is another [_MindNode], collapsed until
+/// its own chevron is tapped.
+class _MindNode extends StatelessWidget {
   final Agent agent;
-  final Set<String> collapsed;
+  final int depth;
+  final Set<String> expanded;
+  final GlobalKey Function(String id) keyFor;
   final void Function(String id) onToggle;
   final void Function(Agent agent) onOpen;
-  final void Function(Agent parent) onAdd;
+  final void Function(Agent parent, AgentLevel level) onAdd;
 
-  const _OrgTreeNode({
+  const _MindNode({
     required this.agent,
-    required this.collapsed,
+    required this.depth,
+    required this.expanded,
+    required this.keyFor,
     required this.onToggle,
     required this.onOpen,
     required this.onAdd,
@@ -281,91 +359,51 @@ class _OrgTreeNode extends StatelessWidget {
     final children = service.childrenOf(agent.id);
     final capacity = agent.level.childCapacity;
     final childLevel = agent.level.child;
-    final folded = collapsed.contains(agent.id);
-    // Every position under this agent shows, filled or not — that is the
-    // whole point of a fixed-shape chart. Only folding it away hides them.
-    final showPositions = capacity > 0 && !folded;
-    final color = _tierColor(agent.level);
+    final canExpand = capacity > 0;
+    final isExpanded = canExpand && expanded.contains(agent.id);
 
-    return _OrgSubtree(
-      connectorColor: color,
-      siblingGap: 24,
-      stemHeight: 22,
-      dropHeight: 22,
-      card: _NodeCard(
-        agent: agent,
-        folded: folded,
-        onToggle: capacity == 0 ? null : () => onToggle(agent.id),
-        onOpen: () => onOpen(agent),
-        // Adding now happens by tapping the specific open position, not a
-        // shortcut on the filled card next to it — see [_EmptySlotNode].
-        onAdd: null,
+    return _MindBranch(
+      connectorColor: _connectorColor,
+      node: _MindPill(
+        pillKey: keyFor(agent.id),
+        boxKey: ValueKey('mind-pill-${agent.id}'),
+        title: agent.name,
+        subtitle: agent.level.label,
+        code: agent.agentCode,
+        depth: depth,
+        toggleLabel: agent.name,
+        expanded: isExpanded,
+        onTap: () => onOpen(agent),
+        onToggle: canExpand ? () => onToggle(agent.id) : null,
+        badge:
+            agent.isApproved ? null : _ApprovalTag(status: agent.approvalStatus),
       ),
-      children: showPositions
+      children: isExpanded
           ? [
               for (final child in children)
-                _OrgTreeNode(
+                _MindNode(
                   agent: child,
-                  collapsed: collapsed,
+                  depth: depth + 1,
+                  expanded: expanded,
+                  keyFor: keyFor,
                   onToggle: onToggle,
                   onOpen: onOpen,
                   onAdd: onAdd,
                 ),
-              // The positions this agent's own children have not filled yet —
-              // fillable straight away, since [agent] standing here is real.
+              // The positions nobody has filled yet — shown as "+" cards that
+              // fan out into their own preview positions when tapped, all the
+              // way down to ward. Registering into any of them reports the
+              // new agent to [agent] directly, so a national agent can open a
+              // ward without a region between them.
               for (var i = children.length; i < capacity; i++)
-                _EmptySlotNode(
+                _MindPlusNode(
                   level: childLevel!,
-                  fillable: true,
-                  onAdd: () => onAdd(agent),
-                ),
-            ]
-          : const [],
-    );
-  }
-}
-
-/// One position on the fixed org shape that nobody has been registered into
-/// yet, drawn where that agent would otherwise sit rather than a name
-/// standing in for someone who is not there — and, since the shape is fixed,
-/// every tier under it drawn the same way in turn, all the way to ward,
-/// whether or not anyone has filled the tiers in between.
-///
-/// Only [fillable] slots — the ones sitting directly under a real agent —
-/// open registration when tapped. A district slot hanging under an
-/// still-empty region slot is shown so the shape reads true, but there is no
-/// real state agent yet to register it under; tapping it says so instead of
-/// opening a form with nowhere valid to save to.
-class _EmptySlotNode extends StatelessWidget {
-  final AgentLevel level;
-  final bool fillable;
-  final VoidCallback onAdd;
-
-  const _EmptySlotNode({
-    required this.level,
-    required this.fillable,
-    required this.onAdd,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final capacity = level.childCapacity;
-    final childLevel = level.child;
-
-    return _OrgSubtree(
-      connectorColor: _tierColor(level).withValues(alpha: 0.5),
-      siblingGap: 24,
-      stemHeight: 22,
-      dropHeight: 22,
-      card: _PlusSlotCard(level: level, fillable: fillable, onAdd: onAdd),
-      children: capacity > 0
-          ? [
-              for (var i = 0; i < capacity; i++)
-                _EmptySlotNode(
-                  level: childLevel!,
-                  // Nothing below an already-unfillable slot is fillable
-                  // either — there is no real agent anywhere above it yet.
-                  fillable: false,
+                  depth: depth + 1,
+                  slotId: 'slot/${agent.id}/${childLevel.name}/$i',
+                  realParent: agent,
+                  expanded: expanded,
+                  keyFor: keyFor,
+                  onToggle: onToggle,
                   onAdd: onAdd,
                 ),
             ]
@@ -374,413 +412,400 @@ class _EmptySlotNode extends StatelessWidget {
   }
 }
 
-/// The "+" itself: an open, unnamed position at [level], in that tier's own
-/// colour so an empty region slot and an empty ward slot still read as
-/// different tiers even with nobody in either of them. Dimmer, and without
-/// the "+" mark, when [fillable] is false — a preview of the shape rather
-/// than something there is anything to do here yet.
-class _PlusSlotCard extends StatelessWidget {
+/// One open position on the fixed org shape — a "+" card in that tier's tint.
+/// Tapping the card opens registration reporting to [realParent] (the nearest
+/// agent who actually exists) at this position's tier. Its own chevron fans
+/// out the [AgentLevel.childCapacity] positions below it, in turn, so the
+/// whole shape can be previewed a tier at a time even where nobody has
+/// registered yet.
+class _MindPlusNode extends StatelessWidget {
   final AgentLevel level;
-  final bool fillable;
-  final VoidCallback onAdd;
+  final int depth;
 
-  const _PlusSlotCard({
+  /// Stable id for this slot's place in the preview shape — path-built from
+  /// the real parent and the chain of slot indices, so its expanded state
+  /// survives rebuilds.
+  final String slotId;
+
+  /// The real agent a registration from anywhere in this slot's subtree
+  /// reports to.
+  final Agent realParent;
+
+  final Set<String> expanded;
+  final GlobalKey Function(String id) keyFor;
+  final void Function(String id) onToggle;
+  final void Function(Agent parent, AgentLevel level) onAdd;
+
+  const _MindPlusNode({
     required this.level,
-    required this.fillable,
+    required this.depth,
+    required this.slotId,
+    required this.realParent,
+    required this.expanded,
+    required this.keyFor,
+    required this.onToggle,
     required this.onAdd,
   });
 
-  void _explainWhyNot(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Register the ${level.parent?.label ?? level.label} above this '
-          'position first',
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final color = _tierColor(level);
-    final alpha = fillable ? 1.0 : 0.45;
+    final childLevel = level.child;
+    final canExpand = level.childCapacity > 0;
+    final isExpanded = canExpand && expanded.contains(slotId);
 
-    return Tooltip(
-      message: fillable
-          ? 'Add a ${level.label.toLowerCase()} agent here'
-          : '${level.label} position — not open yet',
-      child: Material(
-        color: color.withValues(alpha: 0.06 * alpha),
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          onTap: fillable ? onAdd : () => _explainWhyNot(context),
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            width: _NodeCard._cardWidth,
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: color.withValues(alpha: 0.55 * alpha),
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  fillable ? Icons.add_rounded : Icons.lock_outline_rounded,
-                  size: fillable ? 22 : 16,
-                  color: color.withValues(alpha: alpha),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  level.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.2,
-                    color: color.withValues(alpha: alpha),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return _MindBranch(
+      connectorColor: _connectorColor,
+      node: _MindPlusPill(
+        pillKey: keyFor(slotId),
+        level: level,
+        depth: depth,
+        toggleLabel: '${level.label} position',
+        expanded: isExpanded,
+        onAdd: () => onAdd(realParent, level),
+        onToggle: canExpand ? () => onToggle(slotId) : null,
       ),
+      children: isExpanded
+          ? [
+              for (var i = 0; i < level.childCapacity; i++)
+                _MindPlusNode(
+                  level: childLevel!,
+                  depth: depth + 1,
+                  slotId: '$slotId/${childLevel.name}/$i',
+                  realParent: realParent,
+                  expanded: expanded,
+                  keyFor: keyFor,
+                  onToggle: onToggle,
+                  onAdd: onAdd,
+                ),
+            ]
+          : const [],
     );
   }
 }
 
-/// One agent card on the chart:
-/// - Circular profile avatar with level-colored border ring
-/// - Solid card in level-colored background with bold white name and position
-/// - Active status dot & add agent shortcut
-/// - Branch expand / collapse chevron
-class _NodeCard extends StatelessWidget {
-  final Agent agent;
-  final bool folded;
+/// A filled agent card: a rounded pill in its depth's tint carrying the name
+/// and tier, with — when the agent heads a tier — a round chevron button
+/// under it. The pill body opens the agent's detail; the button fans the
+/// tier below in or out.
+class _MindPill extends StatelessWidget {
+  final Key pillKey;
+  final Key boxKey;
+  final String title;
+  final String subtitle;
+
+  /// The printed agent code, shown under the tier.
+  final String code;
+  final int depth;
+  final String toggleLabel;
+  final bool expanded;
+  final VoidCallback onTap;
   final VoidCallback? onToggle;
-  final VoidCallback onOpen;
-  final VoidCallback? onAdd;
+  final Widget? badge;
 
-  const _NodeCard({
-    required this.agent,
-    required this.folded,
+  const _MindPill({
+    required this.pillKey,
+    required this.boxKey,
+    required this.title,
+    required this.subtitle,
+    required this.code,
+    required this.depth,
+    required this.toggleLabel,
+    required this.expanded,
+    required this.onTap,
     required this.onToggle,
-    required this.onOpen,
-    required this.onAdd,
+    this.badge,
   });
-
-  static const double _circleSize = 44;
-  static const double _markBox = _circleSize + 14;
-  static const double _cardWidth = 94;
-  static const double _overlap = 16;
 
   @override
   Widget build(BuildContext context) {
-    final initials = agent.initials;
-    final showInitials = initials.length >= 2;
-    final accent = _tierColor(agent.level);
+    final tint = _mindTint(depth);
 
     return Column(
+      key: pillKey,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.topCenter,
-          children: [
-            // The solid name/position card dropped behind the avatar
-            Container(
-              margin: const EdgeInsets.only(top: _markBox - _overlap),
-              width: _cardWidth,
-              padding: const EdgeInsets.fromLTRB(6, _overlap + 3, 6, 8),
-              decoration: BoxDecoration(
-                color: accent,
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: [
-                  BoxShadow(
-                    color: accent.withValues(alpha: 0.28),
-                    blurRadius: 6,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: GestureDetector(
-                onTap: onOpen,
-                behavior: HitTestBehavior.opaque,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      agent.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        height: 1.15,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      agent.level.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                        color: AppColors.white.withValues(alpha: 0.88),
-                      ),
-                    ),
-                    const SizedBox(height: 1),
-                    Text(
-                      agent.agentCode,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 7.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.1,
-                        color: AppColors.white.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    // Approved is the ordinary state and says nothing extra;
-                    // this only shows up for the recruit still waiting on
-                    // their parent, or the one who was turned away.
-                    if (!agent.isApproved) ...[
-                      const SizedBox(height: 3),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 1.5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          agent.approvalStatus.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 7,
-                            fontWeight: FontWeight.w800,
-                            color: agent.approvalStatus.accent,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            // The round profile head riding the top edge of the card
-            SizedBox(
-              width: _markBox,
-              height: _markBox,
-              child: Stack(
-                clipBehavior: Clip.none,
+        Material(
+          color: tint,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              key: boxKey,
+              constraints: const BoxConstraints(maxWidth: 240),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Center(
-                    child: Semantics(
-                      button: true,
-                      label: '${agent.name}, ${agent.level.label}',
-                      child: Material(
-                        key: ValueKey('node-circle-${agent.id}'),
-                        color: AppColors.white,
-                        shape: CircleBorder(
-                          side: BorderSide(color: accent, width: 2.5),
-                        ),
-                        elevation: 2,
-                        shadowColor: Colors.black26,
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: onOpen,
-                          child: SizedBox(
-                            width: _circleSize,
-                            height: _circleSize,
-                            child: Center(
-                              child: AgentPhotoFace(
-                                photoBytes: agent.photoBytes,
-                                size: _circleSize,
-                                fallback: showInitials
-                                    ? Text(
-                                        initials,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w800,
-                                          color: accent,
-                                        ),
-                                      )
-                                    : Icon(
-                                        Icons.person_rounded,
-                                        size: 22,
-                                        color: accent.withValues(alpha: 0.85),
-                                      ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.2,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textDark,
                     ),
                   ),
-                  // Active status indicator dot
-                  Positioned(
-                    right: 4,
-                    bottom: 4,
-                    child: Container(
-                      width: 11,
-                      height: 11,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: agent.active
-                            ? AppColors.brandGreenDark
-                            : AppColors.textMuted,
-                        border: Border.all(
-                          color: AppColors.white,
-                          width: 2,
-                        ),
-                      ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                      color: AppColors.textDark.withValues(alpha: 0.6),
                     ),
                   ),
-                  // Add under parent badge
-                  if (onAdd != null)
-                    Positioned(
-                      left: 2,
-                      top: 1,
-                      child: Tooltip(
-                        message: 'Add under ${agent.name}',
-                        child: Material(
-                          color: AppColors.brandBlue,
-                          shape: const CircleBorder(
-                            side: BorderSide(
-                              color: AppColors.white,
-                              width: 1.5,
-                            ),
-                          ),
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: onAdd,
-                            child: const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: Icon(
-                                Icons.add_rounded,
-                                size: 14,
-                                color: AppColors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                  Text(
+                    code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.4,
+                      color: AppColors.textDark.withValues(alpha: 0.45),
                     ),
+                  ),
+                  if (badge != null) ...[
+                    const SizedBox(height: 6),
+                    badge!,
+                  ],
                 ],
-              ),
-            ),
-          ],
-        ),
-        if (onToggle != null)
-          Tooltip(
-            message: folded ? 'Expand ${agent.name}' : 'Collapse ${agent.name}',
-            child: InkWell(
-              onTap: onToggle,
-              borderRadius: BorderRadius.circular(20),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
-                child: Icon(
-                  folded
-                      ? Icons.expand_more_rounded
-                      : Icons.expand_less_rounded,
-                  size: 16,
-                  color: accent.withValues(alpha: 0.85),
-                ),
               ),
             ),
           ),
+        ),
+        if (onToggle != null) ...[
+          const SizedBox(height: 6),
+          _CaretButton(
+            expanded: expanded,
+            label: toggleLabel,
+            onTap: onToggle!,
+          ),
+        ],
       ],
     );
   }
 }
 
-/// Custom layout for a node and its child subtrees ensuring:
-/// 1. Symmetrical left and right horizontal connector line lengths.
-/// 2. Parent node positioned exactly at the horizontal midpoint between the
-///    first and last child nodes.
-/// 3. Crisp orthogonal connector lines colored in the parent's tier accent.
-class _OrgSubtree extends MultiChildRenderObjectWidget {
-  final Color connectorColor;
-  final double siblingGap;
-  final double stemHeight;
-  final double dropHeight;
+/// The "+" card for a still-open position. Same pill shape as [_MindPill], in
+/// the tier's tint, with a lead "+" instead of a name; tapping the card opens
+/// registration. When the tier has positions of its own, a chevron under it
+/// fans those out as their own "+" cards.
+class _MindPlusPill extends StatelessWidget {
+  final Key pillKey;
+  final AgentLevel level;
+  final int depth;
+  final String toggleLabel;
+  final bool expanded;
+  final VoidCallback onAdd;
+  final VoidCallback? onToggle;
 
-  _OrgSubtree({
-    super.key,
-    required Widget card,
-    required List<Widget> children,
-    required this.connectorColor,
-    this.siblingGap = 24,
-    this.stemHeight = 22,
-    this.dropHeight = 22,
-  }) : super(children: [card, ...children]);
-
-  @override
-  _RenderOrgTree createRenderObject(BuildContext context) {
-    return _RenderOrgTree(
-      connectorColor: connectorColor,
-      siblingGap: siblingGap,
-      stemHeight: stemHeight,
-      dropHeight: dropHeight,
-    );
-  }
-
-  @override
-  void updateRenderObject(BuildContext context, _RenderOrgTree renderObject) {
-    renderObject
-      ..connectorColor = connectorColor
-      ..siblingGap = siblingGap
-      ..stemHeight = stemHeight
-      ..dropHeight = dropHeight;
-  }
-}
-
-class _OrgTreeParentData extends ContainerBoxParentData<RenderBox> {}
-
-class _RenderOrgTree extends RenderBox
-    with
-        ContainerRenderObjectMixin<RenderBox, _OrgTreeParentData>,
-        RenderBoxContainerDefaultsMixin<RenderBox, _OrgTreeParentData> {
-  Color connectorColor;
-  double siblingGap;
-  double stemHeight;
-  double dropHeight;
-
-  /// The horizontal center of the node card relative to this subtree's origin.
-  double nodeCenterX = 0.0;
-
-  _RenderOrgTree({
-    required this.connectorColor,
-    required this.siblingGap,
-    required this.stemHeight,
-    required this.dropHeight,
+  const _MindPlusPill({
+    required this.pillKey,
+    required this.level,
+    required this.depth,
+    required this.toggleLabel,
+    required this.expanded,
+    required this.onAdd,
+    required this.onToggle,
   });
 
   @override
+  Widget build(BuildContext context) {
+    final tint = _mindTint(depth);
+
+    return Column(
+      key: pillKey,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Tooltip(
+          message: 'Add a ${level.label.toLowerCase()} agent here',
+          child: Material(
+            color: tint.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(10),
+            child: InkWell(
+              onTap: onAdd,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: tint),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.add_rounded,
+                      size: 18,
+                      color: AppColors.textDark.withValues(alpha: 0.7),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      level.label,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2,
+                        color: AppColors.textDark.withValues(alpha: 0.75),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        if (onToggle != null) ...[
+          const SizedBox(height: 6),
+          _CaretButton(
+            expanded: expanded,
+            label: toggleLabel,
+            onTap: onToggle!,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// The round chevron button under a card. Points down while the branch is
+/// folded, up while it is open.
+class _CaretButton extends StatelessWidget {
+  final bool expanded;
+  final String label;
+  final VoidCallback onTap;
+
+  const _CaretButton({
+    required this.expanded,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: expanded ? 'Collapse $label' : 'Expand $label',
+      child: Material(
+        color: _caretColor,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: Icon(
+              expanded
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              size: 20,
+              color: AppColors.white,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The small "Pending" / "Rejected" tag shown on a card for a recruit whose
+/// parent has not yet signed off — an approved agent shows nothing extra.
+class _ApprovalTag extends StatelessWidget {
+  final AgentApprovalStatus status;
+
+  const _ApprovalTag({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        status.label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w800,
+          color: status.accent,
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Layout: a node on top, its children fanned out in a row beneath it, joined
+// by curved connectors from the card's bottom centre to each child's top.
+// ---------------------------------------------------------------------------
+
+class _MindBranch extends MultiChildRenderObjectWidget {
+  final Color connectorColor;
+
+  _MindBranch({
+    required Widget node,
+    required List<Widget> children,
+    required this.connectorColor,
+  }) : super(children: [node, ...children]);
+
+  @override
+  _RenderMindBranch createRenderObject(BuildContext context) =>
+      _RenderMindBranch(connectorColor: connectorColor);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderMindBranch renderObject) {
+    renderObject.connectorColor = connectorColor;
+  }
+}
+
+class _MindBranchParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderMindBranch extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _MindBranchParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _MindBranchParentData> {
+  Color connectorColor;
+
+  /// Horizontal gap between two neighbouring sibling branches.
+  static const double siblingGap = 20;
+
+  /// Vertical gap between a card's bottom edge and its children — where the
+  /// curved connectors live.
+  static const double branchGap = 40;
+
+  /// The horizontal centre of this branch's own card, relative to the branch
+  /// origin — where a parent's connector should land.
+  double nodeCenterX = 0.0;
+
+  _RenderMindBranch({required this.connectorColor});
+
+  @override
   void setupParentData(RenderBox child) {
-    if (child.parentData is! _OrgTreeParentData) {
-      child.parentData = _OrgTreeParentData();
+    if (child.parentData is! _MindBranchParentData) {
+      child.parentData = _MindBranchParentData();
     }
+  }
+
+  List<_RenderMindBranch> _childBranches(RenderBox node) {
+    final out = <_RenderMindBranch>[];
+    var c = (node.parentData as _MindBranchParentData).nextSibling;
+    while (c != null) {
+      if (c is _RenderMindBranch) {
+        out.add(c);
+      }
+      c = (c.parentData as _MindBranchParentData).nextSibling;
+    }
+    return out;
   }
 
   @override
@@ -791,149 +816,100 @@ class _RenderOrgTree extends RenderBox
       return;
     }
 
-    final parentCard = firstChild!;
-    parentCard.layout(const BoxConstraints(), parentUsesSize: true);
+    final node = firstChild!;
+    node.layout(const BoxConstraints(), parentUsesSize: true);
 
-    final children = <_RenderOrgTree>[];
-    var child = (parentCard.parentData as _OrgTreeParentData).nextSibling;
-    while (child != null) {
-      if (child is _RenderOrgTree) {
-        child.layout(const BoxConstraints(), parentUsesSize: true);
-        children.add(child);
-      }
-      child = (child.parentData as _OrgTreeParentData).nextSibling;
+    final branches = _childBranches(node);
+    for (final b in branches) {
+      b.layout(const BoxConstraints(), parentUsesSize: true);
     }
 
-    if (children.isEmpty) {
-      size = parentCard.size;
+    if (branches.isEmpty) {
+      (node.parentData as _MindBranchParentData).offset = Offset.zero;
+      size = node.size;
       nodeCenterX = size.width / 2.0;
-      (parentCard.parentData as _OrgTreeParentData).offset = Offset.zero;
       return;
     }
 
-    // Measure children row widths and calculate relative child origins
-    final childOffsetsX = <double>[];
-    double currentX = 0;
-    for (var i = 0; i < children.length; i++) {
-      childOffsetsX.add(currentX);
-      currentX += children[i].size.width;
-      if (i < children.length - 1) {
-        currentX += siblingGap;
+    // Lay the child branches out left to right.
+    final childX = <double>[];
+    var x = 0.0;
+    for (var i = 0; i < branches.length; i++) {
+      childX.add(x);
+      x += branches[i].size.width;
+      if (i < branches.length - 1) {
+        x += siblingGap;
       }
     }
-    final totalChildrenWidth = currentX;
+    final childrenWidth = x;
+    final childY = node.size.height + branchGap;
 
-    // Centers of first and last child nodes relative to the children row
-    final firstCenter = childOffsetsX.first + children.first.nodeCenterX;
-    final lastCenter = childOffsetsX.last + children.last.nodeCenterX;
+    // Align the card's centre with the midpoint between the first and last
+    // child's own centres, padding left/right if the card overhangs.
+    final firstCenter = childX.first + branches.first.nodeCenterX;
+    final lastCenter = childX.last + branches.last.nodeCenterX;
     final mid = (firstCenter + lastCenter) / 2.0;
 
-    // Pad left/right if the parent card is wider than the mid offset
-    final leftPadding = math.max(0.0, parentCard.size.width / 2.0 - mid);
-    final rightPadding = math.max(
+    final leftPad = math.max(0.0, node.size.width / 2.0 - mid);
+    final rightPad = math.max(
       0.0,
-      parentCard.size.width / 2.0 - (totalChildrenWidth - mid),
+      node.size.width / 2.0 - (childrenWidth - mid),
     );
+    final totalWidth = childrenWidth + leftPad + rightPad;
+    nodeCenterX = leftPad + mid;
 
-    final totalWidth = totalChildrenWidth + leftPadding + rightPadding;
-    nodeCenterX = leftPadding + mid;
-
-    // Position parent card centered directly at nodeCenterX (the exact mid-point)
-    (parentCard.parentData as _OrgTreeParentData).offset = Offset(
-      nodeCenterX - parentCard.size.width / 2.0,
+    (node.parentData as _MindBranchParentData).offset = Offset(
+      nodeCenterX - node.size.width / 2.0,
       0,
     );
 
-    final connectorTotalHeight = stemHeight + dropHeight;
-    final childrenY = parentCard.size.height + connectorTotalHeight;
-
-    double maxChildHeight = 0;
-    for (var i = 0; i < children.length; i++) {
-      (children[i].parentData as _OrgTreeParentData).offset = Offset(
-        leftPadding + childOffsetsX[i],
-        childrenY,
+    var maxBottom = node.size.height;
+    for (var i = 0; i < branches.length; i++) {
+      (branches[i].parentData as _MindBranchParentData).offset = Offset(
+        leftPad + childX[i],
+        childY,
       );
-      maxChildHeight = math.max(maxChildHeight, children[i].size.height);
+      maxBottom = math.max(maxBottom, childY + branches[i].size.height);
     }
 
-    size = Size(totalWidth, childrenY + maxChildHeight);
+    size = Size(totalWidth, maxBottom);
   }
 
   @override
   void paint(PaintingContext context, Offset offset) {
-    final parentCard = firstChild;
-    if (parentCard == null) return;
-
-    final children = <_RenderOrgTree>[];
-    var child = (parentCard.parentData as _OrgTreeParentData).nextSibling;
-    while (child != null) {
-      if (child is _RenderOrgTree) {
-        children.add(child);
-      }
-      child = (child.parentData as _OrgTreeParentData).nextSibling;
+    final node = firstChild;
+    if (node == null) {
+      return;
     }
+    final branches = _childBranches(node);
 
-    // Paint orthogonal connector lines behind nodes
-    if (children.isNotEmpty) {
+    if (branches.isNotEmpty) {
       final canvas = context.canvas;
       final linePaint = Paint()
         ..color = connectorColor
         ..strokeWidth = 1.8
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.square;
+        ..style = PaintingStyle.stroke;
 
-      final parentBottomCenter = offset + Offset(nodeCenterX, parentCard.size.height);
-      final busY = parentBottomCenter.dy + stemHeight;
+      final startX = offset.dx + nodeCenterX;
+      final startY = offset.dy + node.size.height;
 
-      // 1. Vertical stem from bottom of parent to bus line
-      canvas.drawLine(
-        parentBottomCenter,
-        Offset(parentBottomCenter.dx, busY),
-        linePaint,
-      );
-
-      if (children.length == 1) {
-        // Single child: straight line from bus to child top center
-        final childParentData = children.first.parentData as _OrgTreeParentData;
-        final childTopCenter = offset + Offset(
-          childParentData.offset.dx + children.first.nodeCenterX,
-          childParentData.offset.dy,
-        );
-        canvas.drawLine(
-          Offset(parentBottomCenter.dx, busY),
-          childTopCenter,
-          linePaint,
-        );
-      } else {
-        // Multiple children:
-        // Horizontal bus extending from first child center to last child center
-        final firstChildData = children.first.parentData as _OrgTreeParentData;
-        final lastChildData = children.last.parentData as _OrgTreeParentData;
-        final firstX =
-            offset.dx + firstChildData.offset.dx + children.first.nodeCenterX;
-        final lastX =
-            offset.dx + lastChildData.offset.dx + children.last.nodeCenterX;
-
-        canvas.drawLine(Offset(firstX, busY), Offset(lastX, busY), linePaint);
-
-        // Vertical drop lines into each child
-        for (final c in children) {
-          final cData = c.parentData as _OrgTreeParentData;
-          final childX = offset.dx + cData.offset.dx + c.nodeCenterX;
-          final childY = offset.dy + cData.offset.dy;
-          canvas.drawLine(Offset(childX, busY), Offset(childX, childY), linePaint);
-        }
+      for (final b in branches) {
+        final bd = b.parentData as _MindBranchParentData;
+        final endX = offset.dx + bd.offset.dx + b.nodeCenterX;
+        final endY = offset.dy + bd.offset.dy;
+        final dy = (endY - startY) / 2.0;
+        final path = Path()
+          ..moveTo(startX, startY)
+          ..cubicTo(startX, startY + dy, endX, endY - dy, endX, endY);
+        canvas.drawPath(path, linePaint);
       }
     }
 
-    // Paint parent card
-    final cardParentData = parentCard.parentData as _OrgTreeParentData;
-    context.paintChild(parentCard, offset + cardParentData.offset);
-
-    // Paint child subtrees
-    for (final c in children) {
-      final cData = c.parentData as _OrgTreeParentData;
-      context.paintChild(c, offset + cData.offset);
+    final nodeData = node.parentData as _MindBranchParentData;
+    context.paintChild(node, offset + nodeData.offset);
+    for (final b in branches) {
+      final bd = b.parentData as _MindBranchParentData;
+      context.paintChild(b, offset + bd.offset);
     }
   }
 

@@ -1,4 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Release builds need this spelled out — debug/profile get it from their
+         own manifests. Firebase Phone Auth, the Neon backend and every remote
+         image or video all talk over the network. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="SHIELD"
         android:name="${applicationName}"
@@ -52,6 +57,13 @@
         <intent>
             <action android:name="android.intent.action.DIAL"/>
             <data android:scheme="tel"/>
+        </intent>
+        <!-- The social links open a web page (or the network's own app)
+             through url_launcher. Same package-visibility rule on API 30+:
+             without this every browser is hidden and the launch fails. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

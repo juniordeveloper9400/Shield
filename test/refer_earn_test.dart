@@ -684,51 +684,21 @@ void main() {
       }
     });
 
-    testWidgets('the commission card says how many invites have taken a plan', (
+    testWidgets('the opened card is the rate and the bands, nothing more', (
       tester,
     ) async {
       await pumpScreen(tester, size: const Size(400, 3200));
       await openCommission(tester);
 
-      // Sample standing: two of three.
-      expect(find.text('2 of your 3 invites activated a plan'), findsOneWidget);
-    });
-
-    testWidgets('no invites on a plan reads as none yet, not as a zero', (
-      tester,
-    ) async {
-      await pumpScreen(
-        tester,
-        progress: const ReferralProgress(directReferrals: 3),
-        size: const Size(400, 3200),
-      );
-      await openCommission(tester);
-
+      // The standing — the "N of your M invites activated a plan" line, its
+      // Sahakar-money pill and the caption under it — has been taken off this
+      // card. Only the rule and the three bands remain.
+      expect(find.textContaining('invites activated a plan'), findsNothing);
+      expect(find.textContaining('earned so far from referred members'), findsNothing);
       expect(
         find.text('None of your invites has activated a plan yet'),
-        findsOneWidget,
+        findsNothing,
       );
-    });
-
-    testWidgets('the opened card carries the Sahakar money it has paid', (
-      tester,
-    ) async {
-      await pumpScreen(tester, size: const Size(400, 3200));
-      await openCommission(tester);
-
-      // The same figure the standing card shows, because it is the same
-      // number read from the same place — this card is where it comes from.
-      expect(find.text('₹1,000'), findsNWidgets(2));
-
-      // Nothing to show before an invite has taken a plan out.
-      await pumpScreen(
-        tester,
-        progress: const ReferralProgress(directReferrals: 3),
-        size: const Size(400, 3200),
-      );
-      await openCommission(tester);
-
-      expect(find.text('₹1,000'), findsNothing);
     });
 
     testWidgets('a rung is badged as a rank, not as a plan card', (

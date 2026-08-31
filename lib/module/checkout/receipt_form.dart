@@ -60,8 +60,10 @@ class ReceiptPicker {
 class ReceiptFormController extends ChangeNotifier {
   PickedFile? file;
 
-  /// The bank's reference for the transfer. Optional — see
-  /// [PaymentReceipt.bankReference].
+  /// The bank's reference for the transfer — a UTR or a transaction ID.
+  /// Mandatory: every UPI and bank app shows one the moment a transfer clears,
+  /// and it is what lets a person at the other end match this submission to a
+  /// line on the statement. See [PaymentReceipt.bankReference].
   String bankReference = '';
 
   bool busy = false;
@@ -69,10 +71,11 @@ class ReceiptFormController extends ChangeNotifier {
 
   bool get tooLarge => (file?.bytes ?? 0) > kReceiptMaxBytes;
 
-  /// A receipt and nothing else. The reference helps, but a member who cannot
-  /// find it in their banking app must still be able to send the picture —
-  /// blocking on it would leave them with money gone and no way to say so.
-  bool get isComplete => file != null && !tooLarge;
+  /// A receipt picture within the size cap and the transfer's reference. Both
+  /// are needed to act on the claim — the picture to look at, the reference to
+  /// find the money against.
+  bool get isComplete =>
+      file != null && !tooLarge && bankReference.isNotEmpty;
 
   void setFile(PickedFile picked) {
     file = picked;

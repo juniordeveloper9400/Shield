@@ -263,8 +263,8 @@ void main() {
       // The first state ever minted on a fresh roster.
       expect(added.agentCode, 'SHD-STE-001');
       expect(added.earned, 0);
-      // Registered, not yet vouched for.
-      expect(added.approvalStatus, AgentApprovalStatus.pending);
+      // Approved on the spot — nothing left to clear before they can work.
+      expect(added.approvalStatus, AgentApprovalStatus.approved);
     });
 
     test('the level must sit below the parent', () {
@@ -310,24 +310,17 @@ void main() {
       expect(pending.earned, national.earned);
     });
 
-    test('setApproval moves a pending agent onto the roster as approved', () {
+    test('registering leaves an agent approved immediately, nothing to clear', () {
       register(national, first: 'Priya', last: 'Menon');
       final added = service
           .childrenOf(national.id)
           .firstWhere((a) => a.name == 'Priya Menon');
-      expect(added.approvalStatus, AgentApprovalStatus.pending);
-      expect(service.earnedFor(added), 0);
 
-      service.setApproval(added, AgentApprovalStatus.approved);
-
-      final approved = service.byId(added.id)!;
-      expect(approved.approvalStatus, AgentApprovalStatus.approved);
-      // Same identity, same KYC — approval changes nothing else about them.
-      expect(approved.id, added.id);
-      expect(approved.firstName, 'Priya');
+      expect(added.approvalStatus, AgentApprovalStatus.approved);
+      expect(service.earnedFor(added), added.earned);
     });
 
-    test('a rejected agent can still be approved after all', () {
+    test('setApproval still works as a raw mechanism, even unreached from the UI', () {
       register(national, first: 'Priya', last: 'Menon');
       final added = service
           .childrenOf(national.id)
@@ -340,10 +333,11 @@ void main() {
       );
 
       service.setApproval(added, AgentApprovalStatus.approved);
-      expect(
-        service.byId(added.id)!.approvalStatus,
-        AgentApprovalStatus.approved,
-      );
+      final approved = service.byId(added.id)!;
+      expect(approved.approvalStatus, AgentApprovalStatus.approved);
+      // Same identity, same KYC — approval changes nothing else about them.
+      expect(approved.id, added.id);
+      expect(approved.firstName, 'Priya');
     });
   });
 
@@ -515,6 +509,11 @@ void main() {
 
       expect(find.text('Direct sale'), findsOneWidget);
 
+      // Customer cards are folded behind the summary until the arrow is
+      // turned.
+      await tester.tap(find.byKey(const ValueKey('direct-sale-summary')));
+      await tester.pumpAndSettle();
+
       final customers = service.customersOf(national);
       expect(customers, isNotEmpty);
       final totalPlans = customers.fold<int>(0, (n, c) => n + c.planCount);
@@ -592,6 +591,8 @@ void main() {
       tester,
     ) async {
       await pumpPortal(tester);
+      await tester.tap(find.byKey(const ValueKey('direct-sale-summary')));
+      await tester.pumpAndSettle();
 
       final customer = service.customersOf(national).first;
       await tester.tap(find.text(customer.name));
@@ -736,7 +737,9 @@ void main() {
 
   group('my team', () {
     Future<void> pumpTree(WidgetTester tester) async {
-      tester.view.physicalSize = const Size(420, 2000);
+      // Wide enough for the left-to-right mind-map to fan a couple of tiers
+      // out without the deeper cards landing past the viewport edge.
+      tester.view.physicalSize = const Size(1400, 1600);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
@@ -745,102 +748,90 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    /// The default "opens on root" view spreads the full, fixed shape out
-    /// far wider than any test viewport — most positions sit off past its
-    /// edges, reachable by panning rather than by a direct tap. Shrinking to
-    /// the whole-team overview first brings every position back within the
-    /// viewport, so a targeted tap can still find it precisely.
-    Future<void> fitWhole(WidgetTester tester) async {
-      await tester.tap(find.byTooltip('Fit whole team'));
+    /// Opens the root's own tier so its region row is on screen.
+    Future<void> expandRoot(WidgetTester tester) async {
+      await tester.tap(find.byTooltip('Expand ${national.name}'));
       await tester.pumpAndSettle();
     }
 
-    testWidgets('opens on a fresh roster showing the root and its open positions', (
+    testWidgets('opens on the root alone — the tier below waits for a tap', (
       tester,
     ) async {
       await pumpTree(tester);
 
       expect(find.text(national.name), findsOneWidget);
-      // Nobody has been registered yet — both region positions under the
-      // root show as open slots, not names.
-      expect(find.text('Region'), findsNWidgets(2));
-      expect(find.byTooltip('Add a region agent here'), findsNWidgets(2));
+      // Nothing of the tier below is drawn until the root is tapped open.
+      expect(find.text('Region'), findsNothing);
+      expect(find.byTooltip('Add a region agent here'), findsNothing);
     });
 
-    testWidgets('opening on just the root, the mark renders at full size', (
+    testWidgets('tapping the root reveals just its own region row', (
       tester,
     ) async {
       await pumpTree(tester);
 
-      // Regression guard for the chart opening shrunk to a speck in a sea of
-      // empty space: the mark should render close to its natural size.
-      final circle = tester.getSize(
-        find.byKey(const ValueKey('node-circle-nat-001')),
-      );
-      expect(circle.width, greaterThan(30));
-    });
-
-    testWidgets('the whole fixed shape is visible from the start, all the way to ward', (
-      tester,
-    ) async {
-      await pumpTree(tester);
-
-      // Every tier the org shape holds is already drawn as open positions —
-      // none of it waits behind a tap to be revealed.
-      expect(find.text('Region'), findsNWidgets(2));
-      expect(find.text('State'), findsNWidgets(4));
-      expect(find.text('District'), findsNWidgets(8));
-      expect(find.text('Assembly'), findsNWidgets(16));
-      expect(find.text('LSGD'), findsNWidgets(32));
-      expect(find.text('Ward'), findsNWidgets(64));
-    });
-
-    testWidgets('only the positions directly under a real agent can be tapped to fill', (
-      tester,
-    ) async {
-      await pumpTree(tester);
-
-      // The two region slots sit directly under the root — open right away.
-      expect(find.byTooltip('Add a region agent here'), findsNWidgets(2));
-      // Everything deeper is a preview of the shape, not yet actionable —
-      // there is no real state, or ward, agent anywhere above it yet.
-      expect(find.byTooltip('State position — not open yet'), findsNWidgets(4));
-      expect(find.byTooltip('Ward position — not open yet'), findsNWidgets(64));
-    });
-
-    testWidgets('tapping an unfillable position explains what has to happen first', (
-      tester,
-    ) async {
-      await pumpTree(tester);
-      await fitWhole(tester);
-
-      await tester.tap(
-        find.byTooltip('State position — not open yet').first,
-        warnIfMissed: false,
-      );
+      await tester.tap(find.byTooltip('Expand ${national.name}'));
       await tester.pumpAndSettle();
 
-      expect(
-        find.text('Register the Region above this position first'),
-        findsOneWidget,
-      );
-      // Nothing was added.
-      expect(service.roster.length, AgentDirectory.seed.length);
+      // The two region positions under the root now show as open slots…
+      expect(find.text('Region'), findsNWidgets(2));
+      expect(find.byTooltip('Add a region agent here'), findsNWidgets(2));
+      // …and nothing a tier deeper has been revealed with them.
+      expect(find.text('State'), findsNothing);
     });
 
-    testWidgets('a card is led by a round profile head, not a squared badge', (
+    testWidgets('opening on just the root, the card renders at full size', (
+      tester,
+    ) async {
+      await pumpTree(tester);
+
+      // Regression guard for the map opening shrunk to a speck in a sea of
+      // empty space: the root card should render close to its natural size.
+      final card = tester.getSize(
+        find.byKey(const ValueKey('mind-pill-nat-001')),
+      );
+      expect(card.width, greaterThan(80));
+    });
+
+    testWidgets('each tap reveals only the next tier, never the whole shape', (
+      tester,
+    ) async {
+      register(national, first: 'Ann', last: 'Raj');
+      register(national, first: 'Biju', last: 'Nair');
+      await pumpTree(tester);
+
+      // Closed on open.
+      expect(find.text('Ann Raj'), findsNothing);
+
+      await tester.tap(find.byTooltip('Expand ${national.name}'));
+      await tester.pumpAndSettle();
+      // The root's own two regions show — and nothing below them.
+      expect(find.text('Ann Raj'), findsOneWidget);
+      expect(find.text('Biju Nair'), findsOneWidget);
+      expect(find.byTooltip('Add a state agent here'), findsNothing);
+
+      // Tapping one region reveals just that region's state row; its sibling
+      // stays shut.
+      await tester.tap(find.byTooltip('Expand Ann Raj'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Add a state agent here'), findsNWidgets(2));
+      expect(find.byTooltip('Expand Biju Nair'), findsOneWidget);
+    });
+
+    testWidgets('a card carries the name and tier, not a squared code badge', (
       tester,
     ) async {
       register(national, first: 'Priya', last: 'Menon');
       await pumpTree(tester);
+      await expandRoot(tester);
 
-      // Initials in a circle, the same mark the portal strip and an agent's
-      // own detail card use — not the square lettered tag the roster lists
-      // still carry.
-      expect(find.text(national.initials), findsOneWidget);
+      // The card reads as a plain labelled node — name over tier — not the
+      // square lettered tag the roster lists still carry.
+      expect(find.text(national.name), findsOneWidget);
+      expect(find.text('National'), findsOneWidget);
       expect(find.text(national.level.code), findsNothing);
       final region = service.childrenOf(national.id).first;
-      expect(find.text(region.initials), findsOneWidget);
+      expect(find.text(region.name), findsOneWidget);
       expect(find.text(region.level.code), findsNothing);
     });
 
@@ -856,10 +847,9 @@ void main() {
       expect(find.text(national.name), findsOneWidget);
     });
 
-    testWidgets('a card folds its branch away and back', (tester) async {
+    testWidgets('a card folds its revealed tier away and back', (tester) async {
       await pumpTree(tester);
-      await fitWhole(tester);
-
+      await expandRoot(tester);
       expect(find.text('Region'), findsNWidgets(2));
 
       await tester.tap(find.byTooltip('Collapse ${national.name}'));
@@ -871,19 +861,39 @@ void main() {
       expect(find.text('Region'), findsNWidgets(2));
     });
 
-    testWidgets('tapping a filled node opens that agent detail', (tester) async {
+    testWidgets('a filled card shows the name, tier and agent code', (
+      tester,
+    ) async {
       register(national, first: 'Priya', last: 'Menon');
       await pumpTree(tester);
-      await fitWhole(tester);
-
-      await tester.tap(find.text('Priya Menon'));
-      await tester.pumpAndSettle();
+      await expandRoot(tester);
 
       final region = service
           .childrenOf(national.id)
           .firstWhere((a) => a.name == 'Priya Menon');
-      expect(find.byType(AgentDetailScreen), findsOneWidget);
+      expect(find.text('Priya Menon'), findsOneWidget);
       expect(find.text(region.agentCode), findsOneWidget);
+    });
+
+    testWidgets('tapping a card body opens that agent detail', (tester) async {
+      register(national, first: 'Priya', last: 'Menon');
+      await pumpTree(tester);
+      await expandRoot(tester);
+
+      final region = service
+          .childrenOf(national.id)
+          .firstWhere((a) => a.name == 'Priya Menon');
+      await tester.tap(find.text('Priya Menon'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AgentDetailScreen), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(AgentDetailScreen),
+          matching: find.text(region.agentCode),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Team sales'), findsOneWidget);
     });
 
@@ -891,7 +901,7 @@ void main() {
       tester,
     ) async {
       await pumpTree(tester);
-      await fitWhole(tester);
+      await expandRoot(tester);
 
       await tester.tap(find.byTooltip('Add a region agent here').first);
       await tester.pumpAndSettle();
@@ -906,21 +916,24 @@ void main() {
       );
     });
 
-    testWidgets('registering into a slot turns it into a card, and its own children open up', (
+    testWidgets('registering into a slot turns it into a card that opens in turn', (
       tester,
     ) async {
       await pumpTree(tester);
-      await fitWhole(tester);
+      await expandRoot(tester);
 
       await tester.tap(find.byTooltip('Add a region agent here').first);
       await tester.pumpAndSettle();
       await submitRegistrationForm(tester, first: 'Priya', last: 'Menon');
 
-      // Back on the tree: the slot is now a filled card…
+      // Back on the tree, the root still open: the slot is now a filled card…
       expect(find.text('Priya Menon'), findsOneWidget);
       // …the other region slot is still open…
       expect(find.byTooltip('Add a region agent here'), findsOneWidget);
-      // …and the new agent's own two state positions are fillable in turn.
+      // …and the new agent's own tier waits for its own tap.
+      expect(find.byTooltip('Add a state agent here'), findsNothing);
+      await tester.tap(find.byTooltip('Expand Priya Menon'));
+      await tester.pumpAndSettle();
       expect(find.byTooltip('Add a state agent here'), findsNWidgets(2));
     });
 
@@ -939,6 +952,45 @@ void main() {
       expect(find.text('PAN'), findsOneWidget);
       expect(find.text('Date of birth'), findsOneWidget);
       expect(find.text('Bank account number'), findsOneWidget);
+    });
+
+    testWidgets('an open position fans out its own preview positions in turn', (
+      tester,
+    ) async {
+      await pumpTree(tester);
+      await expandRoot(tester);
+
+      // Nothing below the region slots yet.
+      expect(find.byTooltip('Add a state agent here'), findsNothing);
+
+      // Open one region position's own preview — states appear even though no
+      // region agent exists.
+      await tester.tap(find.byTooltip('Expand Region position').first);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Add a state agent here'), findsNWidgets(2));
+      // The other region slot's states stay hidden.
+      expect(find.byTooltip('Expand Region position'), findsOneWidget);
+    });
+
+    testWidgets('a deep open position registers under national, tier preset', (
+      tester,
+    ) async {
+      await pumpTree(tester);
+      await expandRoot(tester);
+      await tester.tap(find.byTooltip('Expand Region position').first);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Add a state agent here').first);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AgentRegistrationScreen), findsOneWidget);
+      // Reports to the national agent — no region between them — with the
+      // State tier already chosen.
+      expect(
+        find.textContaining('${national.name} · ${national.level.label}'),
+        findsOneWidget,
+      );
+      expect(find.text('State'), findsWidgets);
     });
   });
 
@@ -1165,10 +1217,6 @@ void main() {
       final added = service
           .childrenOf(national.id)
           .firstWhere((a) => a.name == 'Priya Menon');
-      // A fresh registration is pending — recruiting under them opens up
-      // once national approves, the same as it would from national's own
-      // detail screen.
-      service.setApproval(added, AgentApprovalStatus.approved);
 
       await tester.pumpWidget(
         MaterialApp(home: AgentDetailScreen(agent: added)),
@@ -1216,7 +1264,7 @@ void main() {
     });
 
     testWidgets(
-      'a pending agent shows the approval banner and reads zero',
+      'a freshly registered agent has no approval gate to clear at all',
       (tester) async {
         tester.view.physicalSize = const Size(460, 2600);
         tester.view.devicePixelRatio = 1.0;
@@ -1232,39 +1280,14 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        expect(find.text('Awaiting your approval'), findsOneWidget);
-        expect(find.text('Pending approval'), findsOneWidget);
-        expect(find.text('Approve'), findsOneWidget);
-        expect(find.text('Reject'), findsOneWidget);
-        expect(find.textContaining('Add an agent under'), findsNothing);
+        // No approval banner, no Approve/Reject — the screen goes straight
+        // to the agent's own figures and the way to recruit under them.
+        expect(find.text('Awaiting your approval'), findsNothing);
+        expect(find.text('Approve'), findsNothing);
+        expect(find.text('Reject'), findsNothing);
+        expect(find.text('Add an agent under Priya Menon'), findsOneWidget);
       },
     );
-
-    testWidgets('tapping Approve unlocks recruiting under the agent', (
-      tester,
-    ) async {
-      tester.view.physicalSize = const Size(460, 2600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
-
-      register(national, first: 'Priya', last: 'Menon');
-      final added = service
-          .childrenOf(national.id)
-          .firstWhere((a) => a.name == 'Priya Menon');
-
-      await tester.pumpWidget(
-        MaterialApp(home: AgentDetailScreen(agent: added)),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.text('Approve'));
-      await tester.pumpAndSettle();
-
-      expect(service.byId(added.id)!.approvalStatus, AgentApprovalStatus.approved);
-      expect(find.text('Priya Menon approved'), findsOneWidget);
-      expect(find.text('Awaiting your approval'), findsNothing);
-      expect(find.text('Add an agent under Priya Menon'), findsOneWidget);
-    });
 
     testWidgets('the profile photo is read-only here — no picker affordance', (
       tester,

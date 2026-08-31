@@ -38,9 +38,14 @@ class CartService extends ChangeNotifier {
 
   static final CartService instance = CartService._();
 
-  /// The most of any one item a cart line may hold. The quantity picker offers
-  /// up to this, and [setQty] / [changeQty] cap at it.
-  static const int maxLineQty = 20;
+  /// The most of any one item a cart line may hold. The typed field accepts up
+  /// to this, and [setQty] / [changeQty] cap at it.
+  static const int maxLineQty = 999;
+
+  /// How far the quantity picker's shortcut list (radio rows / chips) runs.
+  /// Past this a member types the number instead — a 999-row list would be
+  /// unusable, and nobody scrolls to pick 400.
+  static const int quickPickQty = 20;
 
   final List<CartLine> _lines = [];
 

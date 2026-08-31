@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shield/dates.dart';
 import 'package:shield/module/account/account_screen.dart';
 import 'package:shield/module/auth/auth_service.dart';
+import 'package:shield/module/location/address_book.dart';
 import 'package:shield/module/patients/manage_patients_screen.dart';
 import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/patients/patient_form_sheet.dart';
@@ -12,8 +13,14 @@ import 'package:shield/module/prescription/upload_prescription_screen.dart';
 import 'package:shield/widgets/age_badge.dart';
 
 void main() {
-  setUp(PatientBook.instance.reset);
-  tearDown(PatientBook.instance.reset);
+  setUp(() {
+    PatientBook.instance.reset();
+    AddressBook.instance.reset();
+  });
+  tearDown(() {
+    PatientBook.instance.reset();
+    AddressBook.instance.reset();
+  });
 
   Future<void> pump(
     WidgetTester tester,
@@ -30,6 +37,27 @@ void main() {
 
   Future<void> fill(WidgetTester tester, String label, String value) async {
     await tester.enterText(find.widgetWithText(TextFormField, label), value);
+  }
+
+  /// Fills the "Address details" section at the foot of the patient form —
+  /// the address lines and the receiver details underneath them.
+  Future<void> fillAddress(
+    WidgetTester tester, {
+    String pincode = '682001',
+    String house = '12 Lake View Road',
+    String area = 'Kochi',
+    String receiverFirst = 'Asha',
+    String receiverLast = '',
+    String receiverPhone = '9000012345',
+  }) async {
+    await fill(tester, 'Pincode', pincode);
+    await fill(tester, 'House no / Floor / Building', house);
+    await fill(tester, 'Area / Locality', area);
+    await fill(tester, 'First name', receiverFirst);
+    if (receiverLast.isNotEmpty) {
+      await fill(tester, 'Last name', receiverLast);
+    }
+    await fill(tester, 'Mobile Number', receiverPhone);
   }
 
   /// A date of birth [age] years back, so the derived age is stable whenever
@@ -182,20 +210,29 @@ void main() {
 
       await fill(tester, 'Full name', 'Asha Nair');
       await fill(tester, 'Mobile number', '9000012345');
-      await fill(tester, 'Address', '12 Lake View Road, Kochi');
       await pickDob(tester);
       await tester.tap(find.text('Female'));
       await tester.pumpAndSettle();
       await fill(tester, 'ABHA ID', '12345678901234');
       await tester.tap(find.text('Spouse'));
       await tester.pumpAndSettle();
+      await fillAddress(
+        tester,
+        pincode: '682001',
+        house: '12 Lake View Road',
+        area: 'Kochi',
+        receiverFirst: 'Asha',
+        receiverLast: 'Nair',
+        receiverPhone: '9000012345',
+      );
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
 
       final saved = PatientBook.instance.patients.single;
       expect(saved.name, 'Asha Nair');
       expect(saved.phone, '9000012345');
-      expect(saved.address, '12 Lake View Road, Kochi');
+      // The one-line summary the address section rolled up on save.
+      expect(saved.address, '12 Lake View Road, Kochi, 682001');
       expect(saved.abhaId, '12345678901234');
       expect(saved.gender, PatientGender.female);
       expect(saved.relation, PatientRelation.spouse);
@@ -208,7 +245,17 @@ void main() {
         find.text('+91 9000012345 · ABHA 12-3456-7890-1234'),
         findsOneWidget,
       );
-      expect(find.text('12 Lake View Road, Kochi'), findsOneWidget);
+      expect(find.text('12 Lake View Road, Kochi, 682001'), findsOneWidget);
+
+      // The address just entered is also on file for this patient, ready to
+      // show up on "Select address" — not a plain string with nowhere else
+      // to live.
+      final linked = AddressBook.instance.forPatient(saved.id);
+      expect(linked, isNotNull);
+      expect(linked!.house, '12 Lake View Road');
+      expect(linked.area, 'Kochi');
+      expect(linked.pincode, '682001');
+      expect(linked.receiver, 'Asha Nair');
     });
 
     testWidgets(
@@ -272,11 +319,19 @@ void main() {
       const order = [
         'Full name',
         'Mobile number',
-        'Address',
         'Date of birth',
         'Gender',
         'ABHA ID',
         'Relation',
+        // The address details section sits at the foot of the form, after
+        // everything about the patient themselves — the address lines, then
+        // who actually receives the delivery.
+        'Pincode',
+        'House no / Floor / Building',
+        'Area / Locality',
+        'Receiver details',
+        'First name',
+        'Mobile Number',
       ];
       var previous = -1.0;
       for (final label in order) {
@@ -289,6 +344,34 @@ void main() {
         previous = position;
       }
     });
+
+    testWidgets(
+      'the address section offers Current Location beside the pincode',
+      (tester) async {
+        await pump(tester, const ManagePatientsScreen());
+
+        await tester.tap(find.text('Add patient'));
+        await tester.pumpAndSettle();
+
+        // The same pincode + Current Location row the standalone address form
+        // opens with.
+        expect(find.text('Current Location'), findsOneWidget);
+        final pincode = tester.getTopLeft(
+          find.widgetWithText(TextFormField, 'Pincode'),
+        );
+        final locate = tester.getTopLeft(find.text('Current Location'));
+        expect((pincode.dy - locate.dy).abs(), lessThan(40));
+        expect(locate.dx, greaterThan(pincode.dx));
+
+        // Device location is a stub for now, and says so.
+        await tester.tap(find.text('Current Location'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Device location is not connected yet'),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('the ABHA number groups itself as it is typed', (tester) async {
       await pump(tester, const ManagePatientsScreen());
@@ -316,8 +399,8 @@ void main() {
       await tester.pumpAndSettle();
       await fill(tester, 'Full name', 'Asha');
       await fill(tester, 'Mobile number', '9000012345');
-      await fill(tester, 'Address', '12 Lake View Road, Kochi');
       await pickDob(tester);
+      await fillAddress(tester);
       await fill(tester, 'ABHA ID', '1234');
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
@@ -340,9 +423,14 @@ void main() {
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Required'), findsNWidgets(2));
+      // The patient's own name, the house and area fields, and the
+      // receiver's first name.
+      expect(find.text('Required'), findsNWidgets(4));
       expect(find.text('Mobile number is required'), findsOneWidget);
       expect(find.text('Select a date of birth'), findsOneWidget);
+      expect(find.text('Enter a 6-digit pincode'), findsOneWidget);
+      // The receiver's own number is checked separately from the patient's.
+      expect(find.text('Enter a valid 10-digit number'), findsOneWidget);
       expect(PatientBook.instance.isEmpty, isTrue);
     });
 
@@ -353,7 +441,7 @@ void main() {
       await tester.pumpAndSettle();
       await fill(tester, 'Full name', 'Asha');
       await fill(tester, 'Mobile number', '12345');
-      await fill(tester, 'Address', '12 Lake View Road, Kochi');
+      await fillAddress(tester);
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
 
@@ -363,6 +451,20 @@ void main() {
 
     testWidgets('editing opens filled in and updates in place', (tester) async {
       final saved = seed(name: 'Asha', age: 32);
+      // The address the patient form itself would have put on file — seed()
+      // calls PatientBook directly and skips that step, so it is added here.
+      AddressBook.instance.upsertForPatient(
+        saved.id,
+        Address(
+          pincode: '682001',
+          house: '12 Lake View Road',
+          area: 'Kochi',
+          firstName: saved.name,
+          phone: saved.phone,
+          label: AddressLabel.home,
+          patientId: saved.id,
+        ),
+      );
       await pump(tester, const ManagePatientsScreen());
 
       await tester.tap(find.byTooltip('Edit Asha'));
@@ -370,7 +472,7 @@ void main() {
 
       expect(find.text('Edit patient'), findsOneWidget);
       expect(find.widgetWithText(TextFormField, 'Full name'), findsOneWidget);
-      // Opens filled in, the date and the number included.
+      // Opens filled in, the date, the number and the address on file.
       expect(find.text(formatDate(saved.dob)), findsOneWidget);
       expect(
         tester
@@ -384,15 +486,24 @@ void main() {
       expect(
         tester
             .widget<TextFormField>(
-              find.widgetWithText(TextFormField, 'Address'),
+              find.widgetWithText(TextFormField, 'House no / Floor / Building'),
             )
             .controller
             ?.text,
-        '12 Lake View Road, Kochi',
+        '12 Lake View Road',
+      );
+      expect(
+        tester
+            .widget<TextFormField>(
+              find.widgetWithText(TextFormField, 'Area / Locality'),
+            )
+            .controller
+            ?.text,
+        'Kochi',
       );
 
       await fill(tester, 'Full name', 'Asha Nair');
-      await fill(tester, 'Address', '34 New Street, Kochi');
+      await fill(tester, 'House no / Floor / Building', '34 New Street');
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
 
@@ -401,9 +512,18 @@ void main() {
       expect(PatientBook.instance.byId(saved.id)?.name, 'Asha Nair');
       expect(
         PatientBook.instance.byId(saved.id)?.address,
-        '34 New Street, Kochi',
+        '34 New Street, Kochi, 682001',
       );
       expect(PatientBook.instance.byId(saved.id)?.age, 32);
+      // The address on file for this patient was updated in place, not
+      // duplicated into a second entry.
+      expect(
+        AddressBook.instance.addresses
+            .where((a) => a.patientId == saved.id)
+            .length,
+        1,
+      );
+      expect(AddressBook.instance.forPatient(saved.id)?.house, '34 New Street');
     });
 
     testWidgets('removing asks first', (tester) async {
@@ -483,10 +603,15 @@ void main() {
 
       await fill(tester, 'Full name', 'Ravi');
       await fill(tester, 'Mobile number', '9000012345');
-      await fill(tester, 'Address', '7 Temple Road, Kochi');
       await pickDob(tester);
       await tester.tap(find.text('Child'));
       await tester.pumpAndSettle();
+      await fillAddress(
+        tester,
+        pincode: '682003',
+        house: '7 Temple Road',
+        area: 'Kochi',
+      );
       await tester.tap(find.text('Save patient'));
       await tester.pumpAndSettle();
 

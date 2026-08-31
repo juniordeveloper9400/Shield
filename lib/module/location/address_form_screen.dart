@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../theme/app_colors.dart';
 import 'address_book.dart';
+import 'address_fields.dart';
 
 /// "Add address details" — search or pincode, the address lines, a label, and
 /// receiver details, saved from a pinned bottom action.
@@ -101,7 +102,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
             Row(
               children: [
                 Expanded(
-                  child: _AddressField(
+                  child: AddressLineField(
                     hint: 'Pincode',
                     controller: _pincode,
                     keyboardType: TextInputType.number,
@@ -120,28 +121,31 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _CurrentLocationButton(onTap: _useCurrentLocation),
+                  child: CurrentLocationButton(onTap: _useCurrentLocation),
                 ),
               ],
             ),
             const SizedBox(height: 14),
-            _AddressField(
+            AddressLineField(
               hint: 'House no / Floor / Building',
               controller: _house,
               validator: (value) =>
                   (value == null || value.trim().isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: 14),
-            _AddressField(
+            AddressLineField(
               hint: 'Area / Locality',
               controller: _area,
               validator: (value) =>
                   (value == null || value.trim().isEmpty) ? 'Required' : null,
             ),
             const SizedBox(height: 14),
-            _AddressField(hint: 'Landmark (Optional)', controller: _landmark),
+            AddressLineField(
+              hint: 'Landmark (Optional)',
+              controller: _landmark,
+            ),
             const SizedBox(height: 18),
-            _LabelChips(
+            AddressLabelChips(
               selected: _label,
               onSelect: (label) => setState(() => _label = label),
             ),
@@ -269,59 +273,6 @@ class _OrDivider extends StatelessWidget {
   }
 }
 
-/// Plain hint-only field used for the address lines.
-class _AddressField extends StatelessWidget {
-  final String hint;
-  final TextEditingController controller;
-  final TextInputType? keyboardType;
-  final List<TextInputFormatter>? inputFormatters;
-  final String? Function(String?)? validator;
-
-  const _AddressField({
-    required this.hint,
-    required this.controller,
-    this.keyboardType,
-    this.inputFormatters,
-    this.validator,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      inputFormatters: inputFormatters,
-      validator: validator,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 15),
-        filled: true,
-        fillColor: AppColors.white,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 18,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.border),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: AppColors.brandBlue, width: 1.4),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFB4322F)),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFB4322F), width: 1.4),
-        ),
-      ),
-    );
-  }
-}
-
 /// Floating-label field used for the receiver block.
 class _LabelledField extends StatelessWidget {
   final String label;
@@ -376,138 +327,6 @@ class _LabelledField extends StatelessWidget {
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: Color(0xFFB4322F), width: 1.4),
-        ),
-      ),
-    );
-  }
-}
-
-class _CurrentLocationButton extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _CurrentLocationButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.offerTint,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: AppColors.brandBlue.withValues(alpha: 0.5),
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 18),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.my_location_rounded,
-                size: 19,
-                color: AppColors.brandBlue,
-              ),
-              const SizedBox(width: 7),
-              Flexible(
-                child: Text(
-                  'Current Location',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.brandBlue,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LabelChips extends StatelessWidget {
-  final AddressLabel selected;
-  final ValueChanged<AddressLabel> onSelect;
-
-  const _LabelChips({required this.selected, required this.onSelect});
-
-  static const Map<AddressLabel, IconData> _icons = {
-    AddressLabel.home: Icons.home_outlined,
-    AddressLabel.work: Icons.work_outline_rounded,
-    AddressLabel.other: Icons.location_on_outlined,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        for (final label in AddressLabel.values)
-          _Chip(
-            label: label.label,
-            icon: _icons[label]!,
-            isSelected: label == selected,
-            onTap: () => onSelect(label),
-          ),
-      ],
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _Chip({
-    required this.label,
-    required this.icon,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colour = isSelected ? AppColors.brandBlue : AppColors.textBody;
-
-    return Material(
-      color: isSelected ? AppColors.offerTint : AppColors.white,
-      borderRadius: BorderRadius.circular(30),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(30),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(
-              color: isSelected ? AppColors.brandBlue : AppColors.border,
-            ),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 18, color: colour),
-              const SizedBox(width: 7),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: colour,
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

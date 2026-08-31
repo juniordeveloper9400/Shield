@@ -19,7 +19,6 @@ class HealthArticle {
   final List<String> topics;
   final String author;
   final String date;
-  final String readTime;
   final IconData icon;
   final Color tint;
 
@@ -36,7 +35,6 @@ class HealthArticle {
     required this.topics,
     required this.author,
     required this.date,
-    required this.readTime,
     required this.icon,
     required this.tint,
     required this.heroKicker,
@@ -57,7 +55,6 @@ class HealthArticlesSection extends StatelessWidget {
       topics: ['Disease Management', 'Health Conditions'],
       author: 'Amatul Ameen',
       date: '27 May 2026',
-      readTime: '6 min read',
       icon: Icons.healing_rounded,
       tint: AppColors.panelBlue,
       heroKicker: 'Pain Relief & Its Impact on Liver and Kidneys',
@@ -127,7 +124,6 @@ class HealthArticlesSection extends StatelessWidget {
       topics: ['Diabetes', 'Lifestyle'],
       author: 'Dr. Neha Rao',
       date: '14 May 2026',
-      readTime: '4 min read',
       icon: Icons.monitor_heart_outlined,
       tint: AppColors.panelPink,
       heroKicker: 'Small daily choices that flatten the curve',
@@ -170,7 +166,6 @@ class HealthArticlesSection extends StatelessWidget {
       topics: ['Nutrition', 'Lab Tests'],
       author: 'Dr. Imran Qureshi',
       date: '2 May 2026',
-      readTime: '6 min read',
       icon: Icons.wb_sunny_outlined,
       tint: AppColors.panelCream,
       heroKicker: 'What the numbers on your vitamin D panel mean',
@@ -205,7 +200,6 @@ class HealthArticlesSection extends StatelessWidget {
       topics: ['Medicines', 'Savings'],
       author: 'Sana Kapoor',
       date: '21 April 2026',
-      readTime: '3 min read',
       icon: Icons.medication_outlined,
       tint: AppColors.panelBlue,
       heroKicker: 'How a generic can cost a fraction of the brand',
@@ -239,7 +233,6 @@ class HealthArticlesSection extends StatelessWidget {
       topics: ['Bone & Joint', 'Health Conditions'],
       author: 'Dr. Kavya Menon',
       date: '9 April 2026',
-      readTime: '5 min read',
       icon: Icons.accessibility_new_rounded,
       tint: AppColors.panelGreen,
       heroKicker: 'Early joint pain is a signal, not a life sentence',
@@ -273,7 +266,6 @@ class HealthArticlesSection extends StatelessWidget {
       topics: ['Lab Tests', 'Preventive Care'],
       author: 'Dr. Arjun Pillai',
       date: '28 March 2026',
-      readTime: '7 min read',
       icon: Icons.biotech_outlined,
       tint: AppColors.panelSlate,
       heroKicker: 'Inside a routine full body health package',
@@ -313,40 +305,15 @@ class HealthArticlesSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 8, 2),
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Health Articles',
-                    style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {},
-                  style: TextButton.styleFrom(
-                    minimumSize: Size.zero,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: const Text(
-                    'View all',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.brandBlue,
-                    ),
-                  ),
-                ),
-              ],
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 2),
+            child: Text(
+              'Health Articles',
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark,
+              ),
             ),
           ),
           const Padding(
@@ -437,7 +404,7 @@ class _ArticleCard extends StatelessWidget {
                         Expanded(
                           child: Text(
                             article.title,
-                            maxLines: 3,
+                            maxLines: 4,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontSize: 14,
@@ -446,28 +413,6 @@ class _ArticleCard extends StatelessWidget {
                               color: AppColors.textDark,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.schedule_rounded,
-                              size: 14,
-                              color: AppColors.textMuted,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                article.readTime,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.textMuted,
-                                ),
-                              ),
-                            ),
-                          ],
                         ),
                       ],
                     ),

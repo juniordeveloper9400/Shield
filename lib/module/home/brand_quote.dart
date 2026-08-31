@@ -18,12 +18,6 @@ class BrandQuote extends StatelessWidget {
   static const String support =
       'Doctor consults, lab tests and your medicines — handled in one place.';
 
-  static void _notReadyYet(BuildContext context, String label) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text('$label is coming soon')));
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -92,7 +86,7 @@ class BrandQuote extends StatelessWidget {
                   for (final network in SocialNetwork.values)
                     SocialIcon(
                       network: network,
-                      onTap: () => _notReadyYet(context, network.label),
+                      onTap: () => SocialLinks.open(context, network),
                     ),
                 ],
               ),

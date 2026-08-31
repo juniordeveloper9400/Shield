@@ -61,7 +61,7 @@ class ReferEarnScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _PlanCommissionCard(progress: progress),
+            child: const _PlanCommissionCard(),
           ),
           const SizedBox(height: 14),
           Padding(
@@ -112,9 +112,7 @@ class ReferEarnScreen extends StatelessWidget {
 /// alone, so bringing in somebody who never buys a plan still climbs; the
 /// commission is what makes the ones who do buy worth more.
 class _PlanCommissionCard extends StatefulWidget {
-  final ReferralProgress progress;
-
-  const _PlanCommissionCard({required this.progress});
+  const _PlanCommissionCard();
 
   @override
   State<_PlanCommissionCard> createState() => _PlanCommissionCardState();
@@ -208,10 +206,7 @@ class _PlanCommissionCardState extends State<_PlanCommissionCard> {
                     curve: Curves.easeOut,
                     alignment: Alignment.topCenter,
                     child: _expanded
-                        ? _CommissionDetail(
-                            progress: widget.progress,
-                            percent: percent,
-                          )
+                        ? _CommissionDetail(percent: percent)
                         : const SizedBox(width: double.infinity),
                   ),
                 ],
@@ -224,13 +219,12 @@ class _PlanCommissionCardState extends State<_PlanCommissionCard> {
   }
 }
 
-/// What the rate comes to: the rule in words, the three bands, and where the
-/// member stands on it. Hidden behind the arrow.
+/// What the rate comes to: the rule in words and the three bands. Hidden
+/// behind the arrow.
 class _CommissionDetail extends StatelessWidget {
-  final ReferralProgress progress;
   final int percent;
 
-  const _CommissionDetail({required this.progress, required this.percent});
+  const _CommissionDetail({required this.percent});
 
   @override
   Widget build(BuildContext context) {
@@ -278,8 +272,6 @@ class _CommissionDetail extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 11),
-        _CommissionStanding(progress: progress),
       ],
     );
   }
@@ -377,71 +369,6 @@ class _CommissionRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-/// Where the member stands on it: how many of the people they invited have
-/// taken a plan out, and what that has paid.
-///
-/// The figure comes with the count rather than being worked out from it. Two
-/// activations pay anywhere between ₹400 and ₹4,000 depending on which cards
-/// were bought, so a total multiplied out of the count would be the app
-/// inventing a number — see [ReferralProgress.sahakarMoney].
-class _CommissionStanding extends StatelessWidget {
-  final ReferralProgress progress;
-
-  const _CommissionStanding({required this.progress});
-
-  @override
-  Widget build(BuildContext context) {
-    final activated = progress.plansActivated;
-    final none = activated == 0;
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(
-          none ? Icons.hourglass_empty_rounded : Icons.check_circle_rounded,
-          size: 16,
-          color: none ? AppColors.textMuted : AppColors.brandGreenDeep,
-        ),
-        const SizedBox(width: 7),
-        Expanded(
-          child: Text(
-            none
-                ? 'None of your invites has activated a plan yet'
-                : '$activated of your ${progress.directReferrals} invites '
-                      'activated a plan',
-            style: TextStyle(
-              fontSize: 12.5,
-              height: 1.3,
-              fontWeight: none ? FontWeight.w500 : FontWeight.w700,
-              color: none ? AppColors.textMuted : AppColors.textDark,
-            ),
-          ),
-        ),
-        if (!none) ...[
-          const SizedBox(width: 8),
-          // The running total of Sahakar money, which is what this whole card
-          // is describing the source of.
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.brandGreenDeep,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              progress.sahakarMoneyLabel,
-              style: const TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: AppColors.white,
-              ),
-            ),
-          ),
-        ],
-      ],
     );
   }
 }

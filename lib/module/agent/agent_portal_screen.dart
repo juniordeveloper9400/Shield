@@ -41,7 +41,7 @@ class AgentPortalScreen extends StatelessWidget {
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
         children: [
           _AgentStrip(agent: agent),
           const SizedBox(height: 16),
@@ -61,8 +61,33 @@ class AgentPortalScreen extends StatelessWidget {
           AgentTeamSalesCard(agent: agent),
           const SizedBox(height: 18),
           AgentTeamRosterSection(agent: agent),
-          const SizedBox(height: 18),
-          SizedBox(
+        ],
+      ),
+      // Pinned to the bottom, always in reach however far the portal is
+      // scrolled — the team tree is the screen's main way onward.
+      bottomNavigationBar: _MyTeamBar(agent: agent),
+    );
+  }
+}
+
+/// The always-visible "My Team" bar under the portal's scroll area.
+class _MyTeamBar extends StatelessWidget {
+  final Agent agent;
+
+  const _MyTeamBar({required this.agent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.pageTint,
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          child: SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () => Navigator.of(context).push(
@@ -84,7 +109,7 @@ class AgentPortalScreen extends StatelessWidget {
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }

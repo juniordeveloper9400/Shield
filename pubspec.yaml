@@ -10,11 +10,18 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.8
+  # Member sign-in: Firebase Phone Auth (SMS OTP). Config is pulled from the
+  # `shield-zabnix` project by `flutterfire configure` — see AuthService.
+  firebase_core: ^3.8.0
+  firebase_auth: ^5.3.4
   share_plus: ^13.3.0
   image_picker: ^1.2.3
   # Opens the platform dialer for the call-to-order number.
   url_launcher: ^6.3.2
   video_player: ^2.11.1
+  # Direct client connection to the Neon Postgres backend. Native only
+  # (Android / iOS / desktop) — dart:io sockets, so not Flutter web.
+  postgres: ^3.5.12
 
 dev_dependencies:
   flutter_test:

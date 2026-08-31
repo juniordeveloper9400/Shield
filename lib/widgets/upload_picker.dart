@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
@@ -79,6 +81,11 @@ class UploadSourceTile extends StatelessWidget {
 /// Green while it is fine and red once it is over the cap, because a file
 /// that will be refused on submit should say so at the moment it is chosen
 /// rather than at the moment the member presses the button.
+///
+/// When [previewBytes] is given the leading status icon is replaced by a
+/// thumbnail of the image itself — a name and a size do not tell the member
+/// whether they photographed the right piece of paper. Pair it with [onView]
+/// to let them open the picture full-screen and check before they commit to it.
 class UploadedFileCard extends StatelessWidget {
   final String name;
   final int bytes;
@@ -95,6 +102,17 @@ class UploadedFileCard extends StatelessWidget {
   final String removeLabel;
   final VoidCallback onRemove;
 
+  /// The picked image's bytes, for the thumbnail. Null falls back to the
+  /// status icon — a PDF, or a form that never read the bytes.
+  final Uint8List? previewBytes;
+
+  /// Opens the picture full-screen. Null hides the "view" affordance and
+  /// leaves the thumbnail as a plain preview.
+  final VoidCallback? onView;
+
+  /// The word on the "view" affordance — localised by the caller.
+  final String viewLabel;
+
   const UploadedFileCard({
     super.key,
     required this.name,
@@ -104,11 +122,15 @@ class UploadedFileCard extends StatelessWidget {
     required this.removeLabel,
     required this.onRemove,
     this.readyLabel = 'ready to upload',
+    this.previewBytes,
+    this.onView,
+    this.viewLabel = 'View',
   });
 
   @override
   Widget build(BuildContext context) {
     final size = readableBytes(bytes);
+    final accent = tooLarge ? AppColors.danger : AppColors.brandGreenDeep;
 
     return Container(
       decoration: BoxDecoration(
@@ -121,11 +143,7 @@ class UploadedFileCard extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          Icon(
-            tooLarge ? Icons.error_outline_rounded : Icons.check_circle_outline,
-            size: 22,
-            color: tooLarge ? AppColors.danger : AppColors.brandGreenDeep,
-          ),
+          _leading(accent),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -153,6 +171,35 @@ class UploadedFileCard extends StatelessWidget {
                     color: tooLarge ? AppColors.danger : AppColors.textBody,
                   ),
                 ),
+                if (onView != null) ...[
+                  const SizedBox(height: 4),
+                  InkWell(
+                    onTap: onView,
+                    borderRadius: BorderRadius.circular(4),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.visibility_outlined,
+                            size: 15,
+                            color: AppColors.brandBlue,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            viewLabel,
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.brandBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -164,6 +211,70 @@ class UploadedFileCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// A thumbnail of the picked image when its bytes are to hand, otherwise the
+  /// pass/fail status icon the card has always shown. The thumbnail carries a
+  /// small badge in the same pass/fail colour so the state still reads at a
+  /// glance, and opens the full-screen view on tap when [onView] is set.
+  Widget _leading(Color accent) {
+    final preview = previewBytes;
+    if (preview == null) {
+      return Icon(
+        tooLarge ? Icons.error_outline_rounded : Icons.check_circle_outline,
+        size: 22,
+        color: accent,
+      );
+    }
+
+    final thumb = ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.memory(
+        preview,
+        width: 44,
+        height: 44,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => Container(
+          width: 44,
+          height: 44,
+          color: AppColors.pageTint,
+          child: Icon(Icons.image_not_supported_outlined, size: 20, color: accent),
+        ),
+      ),
+    );
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: accent),
+          ),
+          child: onView == null
+              ? thumb
+              : GestureDetector(onTap: onView, child: thumb),
+        ),
+        Positioned(
+          right: -4,
+          bottom: -4,
+          child: Container(
+            decoration: BoxDecoration(
+              color: tooLarge ? AppColors.dangerTint : AppColors.greenTint,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              tooLarge
+                  ? Icons.error_outline_rounded
+                  : Icons.check_circle_outline,
+              size: 16,
+              color: accent,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

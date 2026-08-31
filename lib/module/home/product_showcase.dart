@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import '../cart/cart_control.dart';
+import '../product/product_detail_screen.dart';
 import 'product_collection_screen.dart';
 
 /// A titled, horizontally scrolling row of product cards.
@@ -135,123 +136,135 @@ class _ProductCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.border),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            children: [
-              // No background of its own: the product sits directly on the
-              // card's pure white surface. Square to match the artwork, which
-              // a shorter box was letterboxing down to its own height.
-              AspectRatio(
-                aspectRatio: 1,
-                child: Padding(
-                  padding: product.image != null
-                      ? const EdgeInsets.all(6)
-                      : EdgeInsets.zero,
-                  child: Center(
-                    child: AppImage(
-                      image: product.image,
-                      fallbackIcon: product.icon,
-                      iconSize: 56,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ),
-              if (product.discountLabel != null)
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.brandGreenDark,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      product.discountLabel!,
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.white,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+      // The whole card opens the details page; the ADD / quantity control on
+      // top keeps its own taps, so a shopper still adds without leaving.
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ProductDetailScreen(product: product),
+            ),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Stack(
                 children: [
-                  Text(
-                    product.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13.5,
-                      height: 1.25,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    product.pack,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                  const Spacer(),
-                  Row(
-                    children: [
-                      Text(
-                        '₹${product.price}',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textDark,
+                  // No background of its own: the product sits directly on the
+                  // card's pure white surface. Square to match the artwork, which
+                  // a shorter box was letterboxing down to its own height.
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: Padding(
+                      padding: product.image != null
+                          ? const EdgeInsets.all(6)
+                          : EdgeInsets.zero,
+                      child: Center(
+                        child: AppImage(
+                          image: product.image,
+                          fallbackIcon: product.icon,
+                          iconSize: 56,
+                          fit: BoxFit.contain,
                         ),
                       ),
-                      const SizedBox(width: 5),
-                      Flexible(
+                    ),
+                  ),
+                  if (product.discountLabel != null)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.brandGreenDark,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                         child: Text(
-                          '₹${product.mrp}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          product.discountLabel!,
                           style: const TextStyle(
-                            fontSize: 12.5,
-                            color: AppColors.textMuted,
-                            decoration: TextDecoration.lineThrough,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.white,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  // Same control as the category listing: ADD, then an inline
-                  // quantity stepper backed by the shared cart.
-                  CartControl(
-                    name: product.name,
-                    pack: product.pack,
-                    price: product.price,
-                    mrp: product.mrp,
-                    image: product.image,
-                  ),
+                    ),
                 ],
               ),
-            ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          height: 1.25,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        product.pack,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Text(
+                            '₹${product.price}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              '₹${product.mrp}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                color: AppColors.textMuted,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Same control as the category listing: ADD, then an inline
+                      // quantity stepper backed by the shared cart.
+                      CartControl(
+                        name: product.name,
+                        pack: product.pack,
+                        price: product.price,
+                        mrp: product.mrp,
+                        image: product.image,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

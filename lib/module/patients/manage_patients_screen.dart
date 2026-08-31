@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/neon/patient_repository.dart';
 import '../../theme/app_colors.dart';
 import 'patient_book.dart';
 import 'patient_form_sheet.dart';
@@ -46,6 +49,10 @@ class ManagePatientsScreen extends StatelessWidget {
     );
 
     if (confirmed == true) {
+      final remoteId = patient.remoteId;
+      if (remoteId != null) {
+        unawaited(PatientRepository.instance.softDelete(remoteId));
+      }
       PatientBook.instance.remove(patient.id);
     }
   }

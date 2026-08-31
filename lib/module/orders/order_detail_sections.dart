@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../money.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/social_glyphs.dart';
 import '../auth/auth_service.dart';
 import '../location/address_book.dart';
 import 'order_contact_service.dart';
@@ -753,11 +754,20 @@ class SocialMediaCard extends StatelessWidget {
           const Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _SocialIcon(icon: Icons.facebook_rounded, name: 'Facebook'),
+              _SocialIcon(
+                icon: Icons.facebook_rounded,
+                network: SocialNetwork.facebook,
+              ),
               SizedBox(width: 20),
-              _SocialIcon(icon: Icons.smart_display_rounded, name: 'YouTube'),
+              _SocialIcon(
+                icon: Icons.smart_display_rounded,
+                network: SocialNetwork.youtube,
+              ),
               SizedBox(width: 20),
-              _SocialIcon(icon: Icons.camera_alt_rounded, name: 'Instagram'),
+              _SocialIcon(
+                icon: Icons.camera_alt_rounded,
+                network: SocialNetwork.instagram,
+              ),
             ],
           ),
           const SizedBox(height: 2),
@@ -769,9 +779,9 @@ class SocialMediaCard extends StatelessWidget {
 
 class _SocialIcon extends StatelessWidget {
   final IconData icon;
-  final String name;
+  final SocialNetwork network;
 
-  const _SocialIcon({required this.icon, required this.name});
+  const _SocialIcon({required this.icon, required this.network});
 
   @override
   Widget build(BuildContext context) {
@@ -780,7 +790,7 @@ class _SocialIcon extends StatelessWidget {
       shape: const CircleBorder(),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => _toast(context, 'Opening $name'),
+        onTap: () => SocialLinks.open(context, network),
         child: SizedBox(
           width: 42,
           height: 42,
@@ -799,112 +809,193 @@ class _SocialIcon extends StatelessWidget {
 class LabPackagePromoCard extends StatelessWidget {
   const LabPackagePromoCard({super.key});
 
+  static const int _price = 999;
+  static const int _listPrice = 2498;
+
+  // Whole-percent, rounded down the same way every other discount in the app
+  // is — a promise is not overstated by a rounding rule.
+  static int get _percentOff =>
+      ((_listPrice - _price) * 100 ~/ _listPrice);
+
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.creamTint,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.goldAccent.withValues(alpha: 0.35)),
       ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Column(
+          // A faint watermark of what the card is selling, the same touch
+          // the wallet and earnings cards use behind their own headline.
+          Positioned(
+            right: -14,
+            bottom: -18,
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: 0.08,
+                child: Icon(
+                  Icons.science_rounded,
+                  size: 96,
+                  color: AppColors.goldAccent,
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Full body packages from ₹999',
+                    // The offer icon: a tag rather than the flask — this
+                    // badge is what says "discount", the flask watermark
+                    // behind the card is what says "lab test".
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppColors.goldAccent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.local_offer_rounded,
+                        size: 21,
+                        color: AppColors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Full body packages from ₹999',
+                            style: TextStyle(
+                              fontSize: 15,
+                              height: 1.25,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Diabetes, Thyroid, Heart, Vitamin & more tests',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: AppColors.textBody,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.goldAccent,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'BEST SELLER',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          color: AppColors.white,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.greenTint,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: AppColors.brandGreenDeep.withValues(
+                            alpha: 0.4,
+                          ),
+                        ),
+                      ),
+                      child: Text(
+                        '$_percentOff% OFF',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          color: AppColors.brandGreenDeep,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    const Text(
+                      '₹$_price',
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: 17,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textDark,
                       ),
                     ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Diabetes, Thyroid, Heart, Vitamin & more tests',
-                      style: TextStyle(fontSize: 12.5, color: AppColors.textBody),
+                    const SizedBox(width: 6),
+                    const Text(
+                      '₹$_listPrice',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: AppColors.textMuted,
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                    const Spacer(),
+                    const Icon(
+                      Icons.groups_2_outlined,
+                      size: 14,
+                      color: AppColors.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      '10,000+ booked',
+                      style: TextStyle(fontSize: 11, color: AppColors.textMuted),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: AppColors.goldTint,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.science_rounded,
-                  size: 22,
-                  color: AppColors.goldAccent,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: AppColors.goldAccent,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'BEST SELLER',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.4,
-                    color: AppColors.white,
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () =>
+                      _toast(context, 'Lab packages open in Lab Tests'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.brandBlue,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text(
+                    'Book Now',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                   ),
                 ),
-              ),
-              const Spacer(),
-              const Text(
-                '₹999',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(width: 6),
-              const Text(
-                '₹2,498',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: AppColors.textMuted,
-                  decoration: TextDecoration.lineThrough,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton(
-            onPressed: () => _toast(context, 'Lab packages open in Lab Tests'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.brandBlue,
-              side: const BorderSide(color: AppColors.brandBlue),
-              padding: const EdgeInsets.symmetric(vertical: 11),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Book Now',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+              ],
             ),
           ),
         ],

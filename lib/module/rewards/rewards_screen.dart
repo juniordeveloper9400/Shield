@@ -6,7 +6,6 @@ import '../categories/categories_screen.dart';
 import '../home/points_badge.dart' show RewardCoin;
 import '../refer/refer_earn_screen.dart';
 import '../registration/registration_service.dart';
-import '../wallet/wallet_screen.dart';
 
 /// The reward-points home, opened from the coin in the header.
 ///
@@ -138,10 +137,10 @@ void _toast(BuildContext context, String message) {
     ..showSnackBar(SnackBar(content: Text(message)));
 }
 
-/// The coloured head of the screen: the back row, the `Coins` link, and the
-/// headline figure. The redeem card that notches into its lower edge is drawn
-/// by the list that hosts this, not from here — keeping the overlap a plain
-/// paint shift rather than a stack of guessed offsets.
+/// The coloured head of the screen: the back row and the headline figure. The
+/// redeem card that notches into its lower edge is drawn by the list that
+/// hosts this, not from here — keeping the overlap a plain paint shift rather
+/// than a stack of guessed offsets.
 class _Hero extends StatelessWidget {
   final int points;
 
@@ -168,49 +167,14 @@ class _Hero extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
           child: Column(
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(Icons.arrow_back_rounded),
-                    color: AppColors.white,
-                    tooltip: 'Back',
-                  ),
-                  const Spacer(),
-                  // The ledger side of the balance — where redeemed points
-                  // land and can be traced. The hero shows the number; this
-                  // is the way to what is behind it.
-                  InkWell(
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const WalletScreen(),
-                      ),
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    child: const Padding(
-                      padding: EdgeInsets.fromLTRB(10, 6, 6, 6),
-                      child: Row(
-                        children: [
-                          Text(
-                            'Coins',
-                            style: TextStyle(
-                              color: AppColors.white,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          SizedBox(width: 5),
-                          RewardCoin(size: 17),
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            color: AppColors.white,
-                            size: 20,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+              Align(
+                alignment: Alignment.centerLeft,
+                child: IconButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  color: AppColors.white,
+                  tooltip: 'Back',
+                ),
               ),
               const SizedBox(height: 4),
               Text(

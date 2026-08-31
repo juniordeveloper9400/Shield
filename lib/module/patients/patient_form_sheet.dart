@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/neon/patient_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/age_badge.dart';
 import '../auth/auth_service.dart';
+import '../location/address_book.dart';
+import '../location/address_fields.dart';
 import 'patient_book.dart';
 
 /// Add or edit a patient.
@@ -43,14 +48,20 @@ class PatientFormSheet extends StatefulWidget {
 
 class _PatientFormSheetState extends State<PatientFormSheet> {
   final _formKey = GlobalKey<FormState>();
+
+  /// The address already on file for this patient, when editing one who has
+  /// been through this form before — the address section opens filled in
+  /// from this rather than from anything on [Patient] itself, which only
+  /// ever carries a one-line summary of it.
+  late final Address? _existingAddress = widget.existing == null
+      ? null
+      : AddressBook.instance.forPatient(widget.existing!.id);
+
   late final TextEditingController _name = TextEditingController(
     text: widget.existing?.name ?? '',
   );
   late final TextEditingController _phone = TextEditingController(
     text: widget.existing?.phone ?? '',
-  );
-  late final TextEditingController _address = TextEditingController(
-    text: widget.existing?.address ?? '',
   );
 
   /// Filled by the picker only — see the field below.
@@ -60,6 +71,35 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
 
   late final TextEditingController _abha = TextEditingController(
     text: widget.existing == null ? '' : widget.existing!.abhaLabel,
+  );
+
+  // ---- Address details — the section at the foot of the form ----
+
+  late final TextEditingController _pincode = TextEditingController(
+    text: _existingAddress?.pincode ?? '',
+  );
+  late final TextEditingController _house = TextEditingController(
+    text: _existingAddress?.house ?? '',
+  );
+  late final TextEditingController _area = TextEditingController(
+    text: _existingAddress?.area ?? '',
+  );
+  late final TextEditingController _landmark = TextEditingController(
+    text: _existingAddress?.landmark ?? '',
+  );
+  late AddressLabel _addressLabel = _existingAddress?.label ?? AddressLabel.home;
+
+  // ---- Receiver details — who actually takes the delivery, which is not
+  // always the patient themselves (a child's parent, say). ----
+
+  late final TextEditingController _receiverFirst = TextEditingController(
+    text: _existingAddress?.firstName ?? '',
+  );
+  late final TextEditingController _receiverLast = TextEditingController(
+    text: _existingAddress?.lastName ?? '',
+  );
+  late final TextEditingController _receiverPhone = TextEditingController(
+    text: _existingAddress?.phone ?? '',
   );
 
   late DateTime? _dob = widget.existing?.dob;
@@ -75,9 +115,15 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
   void dispose() {
     _name.dispose();
     _phone.dispose();
-    _address.dispose();
     _dobText.dispose();
     _abha.dispose();
+    _pincode.dispose();
+    _house.dispose();
+    _area.dispose();
+    _landmark.dispose();
+    _receiverFirst.dispose();
+    _receiverLast.dispose();
+    _receiverPhone.dispose();
     super.dispose();
   }
 
@@ -109,6 +155,16 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
     }
   }
 
+  /// Same stub the standalone address form shows — device location is not wired
+  /// up yet, so the button says so rather than doing nothing.
+  void _useCurrentLocation() {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Device location is not connected yet')),
+      );
+  }
+
   void _save() {
     setState(() => _submitted = true);
     final dob = _dob;
@@ -120,11 +176,30 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
     final abha = _abha.text.replaceAll(RegExp(r'\D'), '');
     final existing = widget.existing;
 
+    // Built without a patient id yet — [summary] does not need one, and the
+    // id a new patient gets is not known until [book.add] returns below.
+    //
+    // The receiver is its own set of fields rather than the patient's own
+    // name and number — whoever answers the door for a child's delivery is
+    // not the patient themselves.
+    Address addressFor(String patientId) => Address(
+      pincode: _pincode.text.trim(),
+      house: _house.text.trim(),
+      area: _area.text.trim(),
+      landmark: _landmark.text.trim(),
+      firstName: _receiverFirst.text.trim(),
+      lastName: _receiverLast.text.trim(),
+      phone: _receiverPhone.text.trim(),
+      label: _addressLabel,
+      patientId: patientId,
+    );
+    final addressSummary = addressFor('').summary;
+
     final saved = existing == null
         ? book.add(
             name: _name.text,
             phone: _phone.text,
-            address: _address.text,
+            address: addressSummary,
             dob: dob,
             gender: _gender,
             abhaId: abha,
@@ -133,7 +208,7 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
         : existing.copyWith(
             name: _name.text.trim(),
             phone: _phone.text.trim(),
-            address: _address.text.trim(),
+            address: addressSummary,
             dob: dob,
             gender: _gender,
             abhaId: abha,
@@ -143,7 +218,48 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
     if (existing != null) {
       book.update(saved);
     }
+    // The address section is the same information under a different id now
+    // that [saved] exists — replaces whatever this patient had on file
+    // rather than adding a second entry for them.
+    AddressBook.instance.upsertForPatient(saved.id, addressFor(saved.id));
+
+    // Write the patient through to `app.patient` on the backend. Fire and
+    // forget: [PatientBook] is what the app reads, the call no-ops when the
+    // build has no database, and the sheet must close now rather than wait on
+    // a round trip. The returned row uuid is pinned back onto the record so a
+    // later edit or removal updates the same row.
+    _persist(saved);
+
     Navigator.of(context).pop(saved);
+  }
+
+  /// Best-effort durable copy of [saved]. Skipped when signed out — there is no
+  /// account to hang the patient off — and silently on any database error.
+  void _persist(Patient saved) {
+    final account = AuthService.instance.currentUser.value;
+    if (account == null) {
+      return;
+    }
+    unawaited(
+      PatientRepository.instance
+          .upsert(
+            uuid: saved.remoteId,
+            memberPhone: account.phone,
+            memberName: account.name,
+            name: saved.name,
+            phone: saved.phone,
+            address: saved.address,
+            dob: saved.dob,
+            gender: saved.gender,
+            relation: saved.relation,
+            abhaId: saved.abhaId,
+          )
+          .then((uuid) {
+            if (uuid != null && uuid != saved.remoteId) {
+              PatientBook.instance.attachRemoteId(saved.id, uuid);
+            }
+          }),
+    );
   }
 
   @override
@@ -215,23 +331,6 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: TextFormField(
-                    controller: _address,
-                    textCapitalization: TextCapitalization.sentences,
-                    keyboardType: TextInputType.streetAddress,
-                    minLines: 2,
-                    maxLines: 3,
-                    decoration: _decoration(
-                      'Address',
-                      hint: 'House, street, area, city',
-                    ),
-                    validator: (value) =>
-                        (value ?? '').trim().isEmpty ? 'Required' : null,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: TextFormField(
                     controller: _dobText,
                     // Read-only and opening the picker: a typed date invites
                     // every format under the sun, and the age is derived from
@@ -293,6 +392,163 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
                   selected: _relation,
                   labelOf: (value) => value.label,
                   onSelect: (value) => setState(() => _relation = value),
+                ),
+                const SizedBox(height: 22),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, 0),
+                  child: Divider(height: 1, color: AppColors.border),
+                ),
+                const SizedBox(height: 16),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, 0),
+                  child: Text(
+                    'Address details',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  // Pincode and "Current Location" side by side, the same row
+                  // the standalone address form opens with.
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: AddressLineField(
+                          hint: 'Pincode',
+                          controller: _pincode,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            LengthLimitingTextInputFormatter(6),
+                          ],
+                          validator: (value) {
+                            final text = value?.trim() ?? '';
+                            if (text.length != 6) {
+                              return 'Enter a 6-digit pincode';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: CurrentLocationButton(onTap: _useCurrentLocation),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: AddressLineField(
+                    hint: 'House no / Floor / Building',
+                    controller: _house,
+                    validator: (value) => (value == null || value.trim().isEmpty)
+                        ? 'Required'
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: AddressLineField(
+                    hint: 'Area / Locality',
+                    controller: _area,
+                    validator: (value) => (value == null || value.trim().isEmpty)
+                        ? 'Required'
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: AddressLineField(
+                    hint: 'Landmark (Optional)',
+                    controller: _landmark,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: AddressLabelChips(
+                    selected: _addressLabel,
+                    onSelect: (value) => setState(() => _addressLabel = value),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, 0),
+                  child: Divider(height: 1, color: AppColors.border),
+                ),
+                const SizedBox(height: 16),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, 0),
+                  child: Text(
+                    'Receiver details',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _receiverFirst,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: _decoration('First name'),
+                          validator: (value) =>
+                              (value ?? '').trim().isEmpty ? 'Required' : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _receiverLast,
+                          textCapitalization: TextCapitalization.words,
+                          decoration: _decoration('Last name'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: TextFormField(
+                    controller: _receiverPhone,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.digitsOnly,
+                      LengthLimitingTextInputFormatter(10),
+                    ],
+                    decoration: _decoration('Mobile Number'),
+                    validator: (value) {
+                      final text = (value ?? '').trim();
+                      return text.length == 10
+                          ? null
+                          : 'Enter a valid 10-digit number';
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    "We'll share delivery related updates on this number",
+                    style: TextStyle(fontSize: 13.5, color: AppColors.textBody),
+                  ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),

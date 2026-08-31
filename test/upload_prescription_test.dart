@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -624,6 +626,70 @@ void main() {
         ),
       );
       expect(button.onPressed, isNull);
+    });
+
+    testWidgets(
+      'a picked image shows a thumbnail and opens full-screen on View',
+      (tester) async {
+        // A 1×1 PNG — real bytes, so Image.memory decodes without complaint.
+        final png = base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk'
+          '+P+/HgAFhAJ/wlseKgAAAABJRU5ErkJggg==',
+        );
+        final form = PrescriptionFormController();
+        addTearDown(() {
+          try {
+            form.dispose();
+          } catch (_) {}
+        });
+        form.setFile(XFile('rx.png'), png.length, preview: png);
+
+        tester.view.physicalSize = const Size(400, 2000);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          MaterialApp(home: UploadPrescriptionScreen(initialForm: form)),
+        );
+        await tester.pumpAndSettle();
+
+        // The card carries the picture itself, its name, and a way in.
+        expect(find.text('rx.png'), findsOneWidget);
+        expect(find.byType(Image), findsWidgets);
+        expect(find.text('View'), findsOneWidget);
+
+        await tester.tap(find.text('View'));
+        await tester.pumpAndSettle();
+
+        // Full-screen, pinch-zoomable, titled by the file.
+        expect(find.byType(InteractiveViewer), findsOneWidget);
+        expect(find.text('rx.png'), findsWidgets);
+      },
+    );
+
+    testWidgets('a pick with no readable bytes falls back to the plain card', (
+      tester,
+    ) async {
+      final form = PrescriptionFormController();
+      addTearDown(() {
+        try {
+          form.dispose();
+        } catch (_) {}
+      });
+      form.setFile(XFile('rx.jpg'), 2048);
+
+      tester.view.physicalSize = const Size(400, 2000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        MaterialApp(home: UploadPrescriptionScreen(initialForm: form)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('rx.jpg'), findsOneWidget);
+      expect(find.text('View'), findsNothing);
+      expect(find.byType(Image), findsNothing);
     });
   });
   group('intake codes', () {

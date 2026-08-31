@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/location/address_book.dart';
+import 'package:shield/module/location/address_form_screen.dart';
 import 'package:shield/module/orders/order_track_screen.dart';
 import 'package:shield/module/orders/orders_screen.dart';
 import 'package:shield/module/orders/purchase_service.dart';
@@ -181,6 +182,39 @@ void main() {
 
       expect(find.byType(OrderTrackScreen), findsOneWidget);
       expect(find.byType(PrescriptionOrderPlacedScreen), findsNothing);
+    });
+
+    testWidgets('the basket carries the delivery address section', (
+      tester,
+    ) async {
+      PrescriptionCartService.instance.add(fileRecord());
+      await pumpBasket(tester);
+
+      // The same "DELIVER TO" section the product checkout shows, with the
+      // address that resetAll put on file.
+      expect(find.text('DELIVER TO'), findsOneWidget);
+      expect(
+        find.textContaining('Ghatkopar East'),
+        findsOneWidget,
+      );
+      expect(find.text('Change'), findsOneWidget);
+    });
+
+    testWidgets('the basket offers to add a delivery address when none is set', (
+      tester,
+    ) async {
+      AddressBook.instance.reset();
+      PrescriptionCartService.instance.add(fileRecord());
+      await pumpBasket(tester);
+
+      final add = find.text('Add delivery address');
+      expect(add, findsOneWidget);
+
+      await tester.ensureVisible(add);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AddressFormScreen), findsOneWidget);
     });
   });
 

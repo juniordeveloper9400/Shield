@@ -206,7 +206,7 @@ class _QuantityStepperState extends State<QuantityStepper> {
                       keyboardType: TextInputType.number,
                       inputFormatters: [
                         FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(2),
+                        LengthLimitingTextInputFormatter(3),
                       ],
                       onSubmitted: (_) => _commitTyped(),
                       onTapOutside: (_) {
@@ -248,7 +248,7 @@ class _QuantityStepperState extends State<QuantityStepper> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Type a number or pick one below · up to $_max',
+              'Type any amount up to $_max, or pick one below',
               style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
           ],
@@ -260,9 +260,10 @@ class _QuantityStepperState extends State<QuantityStepper> {
 
 /// Centred dialog for changing the quantity of a line already in the cart.
 ///
-/// A [QuantityStepper] at the top over a radio list of every quantity up to
-/// [CartService.maxLineQty], with a "Remove item" row beneath. The stepper
-/// edits the line in place; a tap on a list row picks that quantity and closes.
+/// A [QuantityStepper] at the top — which types or steps up to
+/// [CartService.maxLineQty] — over a radio list of the first
+/// [CartService.quickPickQty] quantities, with a "Remove item" row beneath. The
+/// stepper edits the line in place; a tap on a list row picks it and closes.
 class _QuantityDialog extends StatelessWidget {
   final String name;
 
@@ -277,6 +278,9 @@ class _QuantityDialog extends StatelessWidget {
   }
 
   static const int _max = CartService.maxLineQty;
+
+  /// The shortcut list runs to here; larger amounts are typed in the stepper.
+  static const int _listMax = CartService.quickPickQty;
 
   @override
   Widget build(BuildContext context) {
@@ -347,13 +351,13 @@ class _QuantityDialog extends StatelessWidget {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            for (var qty = 1; qty <= _max; qty++) ...[
+                            for (var qty = 1; qty <= _listMax; qty++) ...[
                               _QuantityRow(
                                 quantity: qty,
                                 selectedQuantity: selected,
                                 onTap: () => pick(qty),
                               ),
-                              if (qty != _max)
+                              if (qty != _listMax)
                                 const Divider(
                                   height: 1,
                                   color: AppColors.border,

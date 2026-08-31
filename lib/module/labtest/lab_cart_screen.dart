@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/neon/order_repository.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_flow.dart';
+import '../auth/auth_service.dart';
+import '../location/address_book.dart';
 import 'lab_cart_service.dart';
 import 'lab_package.dart';
 import 'patient_count_sheet.dart';
@@ -322,6 +327,46 @@ class _BillRow extends StatelessWidget {
 class _CheckoutBar extends StatelessWidget {
   const _CheckoutBar();
 
+  /// Files the basket as `app.lab_booking` rows (status `REQUESTED`) on the
+  /// same guarded tap that moves on to slot selection. Best-effort: a missing
+  /// or unreachable database leaves the flow exactly as it was.
+  void _selectSlot(BuildContext context) {
+    AuthFlow.guard(context, () {
+      final cart = LabCartService.instance;
+      final phone = AuthService.instance.currentUser.value?.phone;
+      if (phone != null && !cart.isEmpty) {
+        unawaited(
+          OrderRepository.instance.saveLabBookings(
+            phone: phone,
+            address: AddressBook.instance.deliverTo?.toDeliveryInput(),
+            bookings: [
+              for (final booking in cart.bookings)
+                LabBookingInput(
+                  name: booking.package.name,
+                  testCount: booking.package.testCount,
+                  profileCount: booking.package.profileCount,
+                  rating: booking.package.rating,
+                  booked: booking.package.booked,
+                  reportIn: booking.package.reportIn,
+                  unitPrice: booking.package.priceValue,
+                  mrp: booking.package.mrpValue,
+                  patients: booking.patients,
+                  forWhom: booking.package.forWhom,
+                  ageRange: booking.package.ageRange,
+                  preparation: booking.package.preparation,
+                  sample: booking.package.sample,
+                  about: booking.package.about,
+                ),
+            ],
+          ),
+        );
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choosing a slot')),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final cart = LabCartService.instance;
@@ -358,12 +403,7 @@ class _CheckoutBar extends StatelessWidget {
                 child: FilledButton(
                   // Same rule as the medicine cart: browsing and building the
                   // basket stay open, booking a visit needs an account.
-                  onPressed: () => AuthFlow.guard(
-                    context,
-                    () => ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Choosing a slot')),
-                    ),
-                  ),
+                  onPressed: () => _selectSlot(context),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.brandBlue,
                     padding: const EdgeInsets.symmetric(vertical: 16),

@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../dates.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
 import '../orders/purchase_service.dart';
+import '../wallet/wallet_service.dart';
+import 'member_earnings.dart';
 
 /// Dedicated screen displaying the comprehensive breakdown of member earnings & savings.
 class EarningsDetailScreen extends StatelessWidget {
@@ -34,11 +37,15 @@ class EarningsDetailScreen extends StatelessWidget {
         ),
       ),
       body: ListenableBuilder(
-        listenable: PurchaseService.instance,
+        listenable: Listenable.merge([
+          PurchaseService.instance,
+          WalletService.instance,
+        ]),
         builder: (context, _) {
           final orders = PurchaseService.instance;
-          final earned = orders.savedTotal;
+          final earned = MemberEarnings.saved;
           final purchases = orders.purchases.where((p) => p.status.counts).toList();
+          final plans = MemberEarnings.plans;
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
@@ -161,7 +168,7 @@ class EarningsDetailScreen extends StatelessWidget {
                             child: Text(
                               earned == 0
                                   ? 'Buy at SHIELD prices and the difference is yours.'
-                                  : 'You saved ${orders.savedPercentLabel} overall, keeping ₹${formatRupees(earned)} out of ${orders.mrpLabel} printed prices.',
+                                  : 'You saved ${MemberEarnings.savedPercentLabel} overall, keeping ₹${formatRupees(earned)} out of ₹${formatRupees(MemberEarnings.totalPrice)} total price.',
                               style: const TextStyle(
                                 fontSize: 13,
                                 height: 1.4,
@@ -185,8 +192,8 @@ class EarningsDetailScreen extends StatelessWidget {
                   Expanded(
                     child: _DetailStatCard(
                       icon: Icons.local_offer_outlined,
-                      label: 'Printed price',
-                      value: orders.mrpLabel,
+                      label: 'Total price',
+                      value: '₹${formatRupees(MemberEarnings.totalPrice)}',
                       color: AppColors.textDark,
                     ),
                   ),
@@ -195,7 +202,7 @@ class EarningsDetailScreen extends StatelessWidget {
                     child: _DetailStatCard(
                       icon: Icons.payments_outlined,
                       label: 'You paid',
-                      value: orders.paidLabel,
+                      value: '₹${formatRupees(MemberEarnings.paid)}',
                       color: AppColors.brandBlue,
                     ),
                   ),
@@ -203,8 +210,8 @@ class EarningsDetailScreen extends StatelessWidget {
                   Expanded(
                     child: _DetailStatCard(
                       icon: Icons.savings_outlined,
-                      label: 'You earned',
-                      value: orders.savedLabel,
+                      label: 'You saved',
+                      value: '₹${formatRupees(earned)}',
                       color: AppColors.brandGreenDeep,
                     ),
                   ),
@@ -322,9 +329,126 @@ class EarningsDetailScreen extends StatelessWidget {
                                     color: AppColors.brandGreenDark,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 3),
+                                Text(
+                                  'Bill ${order.mrpLabel}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    color: AppColors.textMuted,
+                                    decoration: TextDecoration.lineThrough,
+                                  ),
+                                ),
+                                const SizedBox(height: 1),
                                 Text(
                                   'Paid ${order.paidLabel}',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textBody,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+
+              // The other way SHIELD gives money back: not a discount on an
+              // order, but the 10% SHIELD adds the moment a privilege plan is
+              // activated. Its own section rather than folded into the order
+              // list above — a plan is not an order, and "activated" is not
+              // the same fact as "delivered".
+              if (plans.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                const Text(
+                  'Privilege Plan Bonus',
+                  style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'The 10% SHIELD added when you activated each plan.',
+                  style: TextStyle(fontSize: 13, color: AppColors.textMuted),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: plans.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(height: 1, color: AppColors.border),
+                    itemBuilder: (context, index) {
+                      final card = plans[index];
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: AppColors.goldTint,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.workspace_premium_outlined,
+                                size: 20,
+                                color: AppColors.goldAccent,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    card.name,
+                                    style: const TextStyle(
+                                      fontSize: 14.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.textDark,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${formatDate(card.issuedOn)} · activated',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '+₹${formatRupees(card.load.bonus)}',
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: AppColors.brandGreenDark,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '10% · loaded ${card.load.amountLabel}',
                                   style: const TextStyle(
                                     fontSize: 11.5,
                                     color: AppColors.textMuted,
@@ -338,6 +462,7 @@ class EarningsDetailScreen extends StatelessWidget {
                     },
                   ),
                 ),
+              ],
 
               const SizedBox(height: 20),
 
@@ -360,7 +485,7 @@ class EarningsDetailScreen extends StatelessWidget {
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Earnings reflect the direct savings earned on all your SHIELD orders, computed as the difference between printed MRP and the discounted member price you paid.',
+                        'Earnings add up the direct savings on every SHIELD order — printed MRP less the discounted member price you paid — and the 10% bonus SHIELD credits when you activate a privilege plan.',
                         style: TextStyle(
                           fontSize: 12,
                           height: 1.4,

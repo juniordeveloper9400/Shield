@@ -179,12 +179,13 @@ void main() {
 
       expect(find.byType(QuantityStepper), findsOneWidget);
 
-      // The typed field, inside the stepper, sets the quantity and clamps.
+      // The typed field, inside the stepper, sets the quantity and clamps
+      // anything over the ceiling back down to it.
       final field = find.descendant(
         of: find.byType(QuantityStepper),
         matching: find.byType(TextField),
       );
-      await tester.enterText(field, '99');
+      await tester.enterText(field, '9999');
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
       expect(CartService.instance.lines.single.qty, CartService.maxLineQty);

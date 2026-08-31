@@ -22,6 +22,10 @@ class OtpField extends StatefulWidget {
 
   final bool autofocus;
 
+  /// Supply one to drive focus from the parent — e.g. to put the keyboard back
+  /// after a rejected code. When null the field owns a node of its own.
+  final FocusNode? focusNode;
+
   const OtpField({
     super.key,
     required this.controller,
@@ -29,6 +33,7 @@ class OtpField extends StatefulWidget {
     this.hasError = false,
     this.onCompleted,
     this.autofocus = true,
+    this.focusNode,
   });
 
   @override
@@ -36,7 +41,11 @@ class OtpField extends StatefulWidget {
 }
 
 class _OtpFieldState extends State<OtpField> {
-  final FocusNode _focusNode = FocusNode();
+  /// Used only when the parent did not pass a [FocusNode] of its own.
+  FocusNode? _ownFocusNode;
+
+  FocusNode get _focusNode =>
+      widget.focusNode ?? (_ownFocusNode ??= FocusNode());
 
   /// The last code [onCompleted] fired for, so re-focusing a full field does
   /// not submit it a second time.
@@ -50,10 +59,20 @@ class _OtpFieldState extends State<OtpField> {
   }
 
   @override
+  void didUpdateWidget(OtpField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusNode != widget.focusNode) {
+      oldWidget.focusNode?.removeListener(_repaint);
+      _focusNode.addListener(_repaint);
+    }
+  }
+
+  @override
   void dispose() {
     widget.controller.removeListener(_handleChange);
-    _focusNode
-      ..removeListener(_repaint)
+    widget.focusNode?.removeListener(_repaint);
+    _ownFocusNode
+      ?..removeListener(_repaint)
       ..dispose();
     super.dispose();
   }
@@ -113,6 +132,8 @@ class _OtpFieldState extends State<OtpField> {
                 autofocus: widget.autofocus,
                 keyboardType: TextInputType.number,
                 textInputAction: TextInputAction.done,
+                // Lets Android surface the code from the SMS it just received.
+                autofillHints: const [AutofillHints.oneTimeCode],
                 showCursor: false,
                 enableInteractiveSelection: false,
                 cursorColor: AppColors.transparent,

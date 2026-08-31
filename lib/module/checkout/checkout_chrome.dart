@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
+import '../registration/shield_store.dart';
 
 // The furniture both checkout steps share.
 //
@@ -235,6 +236,115 @@ class ComingSoonPill extends StatelessWidget {
           color: AppColors.goldAccent,
         ),
       ),
+    );
+  }
+}
+
+/// The member's fixed branch, shown read-only.
+///
+/// Registration and privilege-plan activation are the two places a member
+/// chooses their SHIELD store. Every product and pharmacy order after that is
+/// served by it, so those checkouts show it here locked rather than as a
+/// picker — only the privilege activation offers the choice.
+class LockedStoreCard extends StatelessWidget {
+  final ShieldStore store;
+
+  /// A line under the card saying where the fixed value came from, or null
+  /// when there is nothing to explain.
+  final String? note;
+
+  const LockedStoreCard({super.key, required this.store, this.note});
+
+  @override
+  Widget build(BuildContext context) {
+    final note = this.note;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: AppColors.pageTint,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: AppColors.border),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.storefront_rounded,
+                size: 20,
+                color: AppColors.brandBlue,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Your store',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      store.name,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      store.addressLine,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        height: 1.3,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.lock_outline_rounded,
+                size: 16,
+                color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+        if (note != null) ...[
+          const SizedBox(height: 7),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.verified_user_outlined,
+                size: 14,
+                color: AppColors.brandGreenDark,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  note,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    height: 1.3,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

@@ -32,10 +32,17 @@ class AgentRegistrationScreen extends StatefulWidget {
   /// The parent selected when the screen opens.
   final Agent initialParent;
 
+  /// The tier to pre-select — the level of the open position the recruiter
+  /// tapped. Null when the flow is opened without a specific slot in mind
+  /// (the toolbar button), in which case it falls back to the first tier
+  /// below [initialParent].
+  final AgentLevel? initialLevel;
+
   const AgentRegistrationScreen({
     super.key,
     required this.scopeRoot,
     required this.initialParent,
+    this.initialLevel,
   });
 
   @override
@@ -65,11 +72,16 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
   /// place it is ever set — the agent's detail screen shows it read-only.
   Uint8List? _photo;
 
-  bool _active = true;
   bool _submitted = false;
 
   late Agent _parent = widget.initialParent;
-  late AgentLevel _level = _levelsUnder(_parent).first;
+  late AgentLevel _level = _initialLevel();
+
+  AgentLevel _initialLevel() {
+    final levels = _levelsUnder(_parent);
+    final wanted = widget.initialLevel;
+    return wanted != null && levels.contains(wanted) ? wanted : levels.first;
+  }
 
   _Step _step = _Step.details;
   bool _busy = false;
@@ -250,7 +262,6 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
       place: _place.text,
       accountNumber: _account.text,
       photoBytes: _photo,
-      active: _active,
     );
     if (failure != null) {
       // Something the field checks let through — send them back to fix it.
@@ -553,27 +564,8 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 6),
-        SwitchListTile(
-          value: _active,
-          onChanged: (value) => setState(() => _active = value),
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Active',
-            style: TextStyle(
-              fontSize: 14.5,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textDark,
-            ),
-          ),
-          subtitle: const Text(
-            'Turn off to register them as inactive',
-            style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
-          ),
-          activeThumbColor: AppColors.brandGreenDark,
-        ),
         if (_error != null) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           AuthErrorNote(message: _error!),
         ],
         const SizedBox(height: 18),

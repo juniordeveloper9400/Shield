@@ -18,6 +18,8 @@ import '../module/home/home_hero_banner.dart';
 import '../module/home/prescription_card.dart';
 import '../module/home/product_showcase.dart';
 import '../module/home/refer_earn_card.dart';
+import '../module/investor/investor_access_card.dart';
+import '../module/investor/investor_service.dart';
 import '../module/privilege/privilege_card.dart';
 import '../module/search/search_screen.dart';
 
@@ -60,6 +62,21 @@ class HomeScreen extends StatelessWidget {
                         return agent == null
                             ? const ReferEarnCard()
                             : AgentPortalCard(agent: agent);
+                      },
+                    ),
+                    // Alongside whichever of those just showed, never in its
+                    // place — an investor number is its own thing, not a
+                    // stand-in for being a member or an agent. Not a general
+                    // invitation to everyone else either: this section is
+                    // only ever for the one recognised investor number.
+                    ValueListenableBuilder<AuthUser?>(
+                      valueListenable: AuthService.instance.currentUser,
+                      builder: (context, user, _) {
+                        final investor = InvestorService.instance
+                            .investorForPhone(user?.phone);
+                        return investor == null
+                            ? const SizedBox.shrink()
+                            : InvestorAccessCard(investor: investor);
                       },
                     ),
 

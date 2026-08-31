@@ -5,15 +5,19 @@ import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/auth/login_screen.dart';
 import 'package:shield/module/auth/otp_field.dart';
 import 'package:shield/module/cart/cart_screen.dart';
+import 'package:shield/module/checkout/checkout_screen.dart';
 import 'package:shield/module/cart/cart_service.dart';
 import 'package:shield/module/registration/registration_service.dart';
 import 'package:shield/screens/app_shell.dart';
 import 'package:shield/screens/root_screen.dart';
 import 'package:shield/screens/splash_screen.dart';
 
+import 'support/fake_auth_gateway.dart';
+
 void main() {
   setUp(() {
     AuthService.instance.reset();
+    AuthService.instance.useGateway(FakeAuthGateway());
     CartService.instance.reset();
     RegistrationService.instance.reset();
   });
@@ -108,27 +112,27 @@ void main() {
   }
 
   group('auth service', () {
-    test('a requested code signs the member in once verified', () {
+    test('a requested code signs the member in once verified', () async {
       final auth = AuthService.instance;
 
-      expect(auth.requestOtp(name: name, phone: phone), isNull);
+      expect(await auth.requestOtp(name: name, phone: phone), isNull);
       expect(auth.hasPendingOtp, isTrue);
       expect(auth.pendingName, name);
       expect(auth.pendingPhone, phone);
       expect(auth.isSignedIn, isFalse, reason: 'the code is not verified yet');
 
-      expect(auth.verifyOtp(AuthService.demoOtp), isNull);
+      expect(await auth.verifyOtp(FakeAuthGateway.code), isNull);
       expect(auth.isSignedIn, isTrue);
       expect(auth.currentUser.value?.name, name);
       expect(auth.currentUser.value?.phone, phone);
       expect(auth.hasPendingOtp, isFalse);
     });
 
-    test('a wrong code keeps the member out and the request alive', () {
+    test('a wrong code keeps the member out and the request alive', () async {
       final auth = AuthService.instance;
-      auth.requestOtp(name: name, phone: phone);
+      await auth.requestOtp(name: name, phone: phone);
 
-      expect(auth.verifyOtp('000000'), OtpError.wrongOtp);
+      expect(await auth.verifyOtp('000000'), OtpError.wrongOtp);
       expect(auth.isSignedIn, isFalse);
       expect(
         auth.hasPendingOtp,
@@ -136,59 +140,68 @@ void main() {
         reason: 'a mistyped code must not force the number to be re-entered',
       );
 
-      expect(auth.verifyOtp(AuthService.demoOtp), isNull);
+      expect(await auth.verifyOtp(FakeAuthGateway.code), isNull);
       expect(auth.isSignedIn, isTrue);
     });
 
-    test('verifying without a request is refused', () {
+    test('verifying without a request is refused', () async {
       expect(
-        AuthService.instance.verifyOtp(AuthService.demoOtp),
+        await AuthService.instance.verifyOtp(FakeAuthGateway.code),
         OtpError.noPendingRequest,
       );
       expect(AuthService.instance.isSignedIn, isFalse);
     });
 
-    test('a bad name or number never reaches the code step', () {
+    test('a bad name or number never reaches the code step', () async {
       final auth = AuthService.instance;
 
-      expect(auth.requestOtp(name: 'A', phone: phone), OtpError.invalidName);
       expect(
-        auth.requestOtp(name: name, phone: '12345'),
+        await auth.requestOtp(name: 'A', phone: phone),
+        OtpError.invalidName,
+      );
+      expect(
+        await auth.requestOtp(name: name, phone: '12345'),
         OtpError.invalidPhone,
       );
       expect(
-        auth.requestOtp(name: name, phone: '1234567890'),
+        await auth.requestOtp(name: name, phone: '1234567890'),
         OtpError.invalidPhone,
         reason: 'mobile numbers start with 6-9',
       );
       expect(auth.hasPendingOtp, isFalse);
     });
 
-    test('the name and number are trimmed on the way in', () {
-      AuthService.instance.requestOtp(name: '  Asha Nair  ', phone: ' $phone ');
-      AuthService.instance.verifyOtp(AuthService.demoOtp);
+    test('the name and number are trimmed on the way in', () async {
+      await AuthService.instance.requestOtp(
+        name: '  Asha Nair  ',
+        phone: ' $phone ',
+      );
+      await AuthService.instance.verifyOtp(FakeAuthGateway.code);
 
       expect(AuthService.instance.currentUser.value?.name, name);
       expect(AuthService.instance.currentUser.value?.phone, phone);
     });
 
-    test('signing out clears the session and anything half-finished', () {
+    test('signing out clears the session and anything half-finished', () async {
       final auth = AuthService.instance;
       auth.signInAs();
       expect(auth.isSignedIn, isTrue);
 
-      auth.logOut();
+      await auth.logOut();
       expect(auth.isSignedIn, isFalse);
       expect(auth.hasPendingOtp, isFalse);
     });
 
-    test('going back from the code step drops the pending request', () {
+    test('going back from the code step drops the pending request', () async {
       final auth = AuthService.instance;
-      auth.requestOtp(name: name, phone: phone);
+      await auth.requestOtp(name: name, phone: phone);
       auth.cancelOtp();
 
       expect(auth.hasPendingOtp, isFalse);
-      expect(auth.verifyOtp(AuthService.demoOtp), OtpError.noPendingRequest);
+      expect(
+        await auth.verifyOtp(FakeAuthGateway.code),
+        OtpError.noPendingRequest,
+      );
     });
 
     test('a member is displayed by their initials and number', () {
@@ -288,7 +301,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await requestCode(tester);
-      await enterCode(tester, AuthService.demoOtp);
+      await enterCode(tester, FakeAuthGateway.code);
 
       expect(AuthService.instance.isSignedIn, isTrue);
       expect(find.byType(LoginScreen), findsNothing);
@@ -372,7 +385,7 @@ void main() {
       await pumpLogin(tester);
       await requestCode(tester);
 
-      await enterCode(tester, AuthService.demoOtp);
+      await enterCode(tester, FakeAuthGateway.code);
 
       expect(AuthService.instance.isSignedIn, isTrue);
       expect(AuthService.instance.currentUser.value?.name, name);
@@ -393,17 +406,6 @@ void main() {
         AuthService.instance.hasPendingOtp,
         isTrue,
         reason: 'the member should be able to retype the code, not restart',
-      );
-    });
-
-    testWidgets('the demo code is spelled out on screen', (tester) async {
-      await pumpLogin(tester);
-      await requestCode(tester);
-
-      expect(
-        find.textContaining(AuthService.demoOtp),
-        findsWidgets,
-        reason: 'there is no SMS behind this build',
       );
     });
 
@@ -454,7 +456,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(LoginScreen), findsOneWidget);
-      expect(find.text('Payment checkout'), findsNothing);
+      expect(find.byType(CheckoutScreen), findsNothing);
     });
 
     testWidgets('signing in there continues the checkout', (tester) async {
@@ -463,11 +465,11 @@ void main() {
       await tester.pumpAndSettle();
 
       await requestCode(tester);
-      await enterCode(tester, AuthService.demoOtp);
+      await enterCode(tester, FakeAuthGateway.code);
 
       expect(find.byType(LoginScreen), findsNothing);
       expect(AuthService.instance.isSignedIn, isTrue);
-      expect(find.text('Payment checkout'), findsOneWidget);
+      expect(find.byType(CheckoutScreen), findsOneWidget);
     });
 
     testWidgets('a signed-in checkout never stops', (tester) async {
@@ -478,7 +480,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(LoginScreen), findsNothing);
-      expect(find.text('Payment checkout'), findsOneWidget);
+      expect(find.byType(CheckoutScreen), findsOneWidget);
     });
   });
 }
