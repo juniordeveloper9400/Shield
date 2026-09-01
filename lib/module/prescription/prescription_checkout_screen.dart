@@ -122,11 +122,12 @@ class _PrescriptionCheckoutScreenState
       // Write the prescription chain — patient, prescription, medicines and a
       // kind:PRESCRIPTION order — through to Neon before the basket is cleared.
       // Best-effort: a missing or unreachable database must not stop the order.
-      final phone = AuthService.instance.currentUser.value?.phone;
-      if (phone != null) {
+      final user = AuthService.instance.currentUser.value;
+      if (user != null) {
         unawaited(
           OrderRepository.instance.savePrescriptionOrder(
-            phone: phone,
+            phone: user.phone,
+            name: user.name,
             orderCode: id,
             storeCode: _store.id,
             paymentMethodCode: _method.id,
@@ -163,6 +164,7 @@ class _PrescriptionCheckoutScreenState
   static PrescriptionInput _prescriptionInput(PrescriptionRecord record) {
     final patient = record.patient;
     return PrescriptionInput(
+      remoteUuid: record.remoteId,
       code: record.number,
       fileName: record.fileName,
       doctor: record.doctor,

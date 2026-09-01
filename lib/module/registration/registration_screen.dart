@@ -5,6 +5,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/age_badge.dart';
 import '../../widgets/labelled_field.dart';
 import '../auth/auth_service.dart';
+import 'registration_celebration.dart';
 import 'registration_service.dart';
 import 'shield_store.dart';
 
@@ -169,7 +170,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _leave(false);
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _submitted = true);
 
@@ -193,19 +194,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       ),
     );
 
-    final store = StoreDirectory.byId(_storeId);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.isEditing
-                ? 'Registration updated · ${store?.name ?? 'store assigned'}'
-                : 'Registered · ${RegistrationService.rewardPoints} reward '
-                      'points added',
-          ),
-        ),
-      );
+    // Show the confirmation on this route while it is still up, then close the
+    // form once the member dismisses it.
+    await showRegistrationCelebration(context, isEditing: widget.isEditing);
+    if (!mounted) {
+      return;
+    }
     _leave(true);
   }
 

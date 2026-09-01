@@ -119,11 +119,12 @@ class _CartScreenState extends State<CartScreen> {
             // Write the order through to Neon while the cart lines are still
             // here to copy. Best-effort: a database that is absent (tests, a
             // build with no DATABASE_URL) or down must not stop the order.
-            final phone = AuthService.instance.currentUser.value?.phone;
-            if (phone != null) {
+            final user = AuthService.instance.currentUser.value;
+            if (user != null) {
               unawaited(
                 OrderRepository.instance.saveStandardOrder(
-                  phone: phone,
+                  phone: user.phone,
+                  name: user.name,
                   code: id,
                   lines: [
                     for (final line in _cart.lines)
@@ -146,7 +147,7 @@ class _CartScreenState extends State<CartScreen> {
                       : receipt.bankReference,
                   address: AddressBook.instance.deliverTo?.toDeliveryInput(),
                   receipt: OrderReceiptInput(
-                    payerName: AuthService.instance.currentUser.value?.name,
+                    payerName: user.name,
                     reference: receipt.bankReference,
                     amount: _cart.payable,
                     fileName: receipt.fileName,

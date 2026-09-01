@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
+import '../../data/neon/prescription_repository.dart';
+import '../auth/auth_service.dart';
 import 'prescription_record.dart';
 
 /// Stands in for the pharmacy counter until a backend takes over.
@@ -30,11 +34,30 @@ class PharmacyDesk {
     if (PrescriptionBook.instance.indexOf(record.id) == -1) {
       return;
     }
+    final doctor = prescriberFor(record.id);
+    final medicines = medicinesFor(record.id);
     PrescriptionBook.instance.fillFromPharmacy(
       record.id,
-      doctor: prescriberFor(record.id),
-      medicines: medicinesFor(record.id),
+      doctor: doctor,
+      medicines: medicines,
     );
+
+    // Mirror the counter's read onto the durable row so the admin console
+    // shows the medicines and the AWAITING_REVIEW → READ move. Best-effort;
+    // [record] is the live book object, so its remoteId is current if the
+    // upload write has returned.
+    final phone = AuthService.instance.currentUser.value?.phone;
+    if (phone != null) {
+      unawaited(
+        PrescriptionRepository.instance.syncPharmacyRead(
+          memberPhone: phone,
+          prescriptionUuid: record.remoteId,
+          fileName: record.fileName,
+          doctor: doctor,
+          medicines: medicines,
+        ),
+      );
+    }
   }
 
   /// Two or three lines, chosen from the counter's shelf by the record's own

@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/neon/appointment_repository.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
+import '../auth/auth_service.dart';
 import 'dietitian.dart';
 
 /// The Dietitian destination: who you can talk to, and what it costs.

@@ -22,14 +22,14 @@ is a single safe statement (`DROP SCHEMA app CASCADE`) that cannot reach
 | External id | `uuid NOT NULL DEFAULT gen_random_uuid()` on rows an API hands out |
 | Money | `numeric(12,2)`, whole rupees |
 | Timestamps | `created_at` / `updated_at timestamptz DEFAULT now()`; `updated_at` moved by trigger |
-| Soft delete | `deleted_at timestamptz` on `member`, `member_address`, `patient`, `prescription` |
+| Soft delete | `deleted_at timestamptz` on `users`, `member_address`, `patient`, `prescription` |
 | Closed sets | Postgres enums under `app.` (`app.order_status`, `app.agent_level`, …) |
 
 ## Module → table map
 
 | App module (`lib/module/…`) | Tables |
 |---|---|
-| `auth`, `registration`, `account` | `member` (identity = phone), `reward_point_transaction` |
+| `auth`, `registration`, `account` | `users` (identity = phone), `reward_point_transaction` |
 | `location` | `member_address` |
 | `patients` | `patient` |
 | `registration/shield_store` | `shield_store` |
@@ -49,7 +49,7 @@ is a single safe statement (`DROP SCHEMA app CASCADE`) that cannot reach
 
 ## Notable modelling choices
 
-- **`member`** is the hub, keyed by `phone` (unique). `firebase_uid` links the
+- **`users`** is the hub, keyed by `phone` (unique). `firebase_uid` links the
   Firebase phone-auth identity. `home_store_id` is the assigned branch;
   `referral_code` / `referred_by_member_id` carry the invite graph.
 - **`agent`** and **`investor`** are personas resolved by phone in the app

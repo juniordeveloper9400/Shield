@@ -184,6 +184,9 @@ class _LoginScreenState extends State<LoginScreen> {
         return 'Too many attempts from this device. Try again later.';
       case OtpError.quotaExceeded:
         return 'Verification is temporarily unavailable. Try again later.';
+      case OtpError.configError:
+        return 'SMS verification is not set up for this app yet. '
+            'Please contact support.';
       case OtpError.network:
         return 'No connection. Check your network and try again.';
       case OtpError.timeout:

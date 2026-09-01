@@ -179,6 +179,13 @@ class PrescriptionRecord {
   /// so instead of offering to send them twice.
   bool inCart;
 
+  /// The `uuid` of this prescription's row in `app.prescription` on the
+  /// backend, once one has been written. Null when the record has only ever
+  /// lived in memory — a build with no `DATABASE_URL`, or a save made while
+  /// the database was unreachable. Carried so the pharmacy read and, later,
+  /// the order update the same row instead of inserting another.
+  String? remoteId;
+
   PrescriptionRecord({
     required this.id,
     required this.patient,
@@ -189,6 +196,7 @@ class PrescriptionRecord {
     this.recurring,
     List<PrescriptionMedicine>? medicines,
     this.inCart = false,
+    this.remoteId,
   }) : medicines = medicines ?? <PrescriptionMedicine>[];
 
   /// "RX-0004" — the prescription's number, as it is quoted at the counter
@@ -287,6 +295,18 @@ class PrescriptionBook extends ChangeNotifier {
   }
 
   int indexOf(String id) => _records.indexWhere((record) => record.id == id);
+
+  /// Pins the backend row's [remoteId] onto the in-memory record once the
+  /// upload write returns. A no-op when the id is unknown (the record was
+  /// deleted again before the round trip finished).
+  void attachRemoteId(String id, String remoteId) {
+    final index = indexOf(id);
+    if (index == -1) {
+      return;
+    }
+    _records[index].remoteId = remoteId;
+    notifyListeners();
+  }
 
   void remove(String id) {
     _records.removeWhere((record) => record.id == id);

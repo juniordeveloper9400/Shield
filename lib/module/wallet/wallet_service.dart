@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import '../../data/neon/wallet_repository.dart';
 import '../../dates.dart';
 import '../../money.dart';
 import '../privilege/privilege_tier.dart';
@@ -52,12 +53,17 @@ class WalletCard {
   /// checkout. Null on plans activated before the branch was recorded.
   final ShieldStore? store;
 
+  /// The `app.wallet_card.uuid` this card was approved from, when it came back
+  /// from the console rather than being activated straight away in a test.
+  final String? remoteId;
+
   const WalletCard({
     required this.load,
     required this.issuedOn,
     required this.rechargedOn,
     this.recharged = 0,
     this.store,
+    this.remoteId,
   });
 
   String get name => load.name;
@@ -159,6 +165,61 @@ class WalletCard {
     rechargedOn: date,
     recharged: recharged + amount,
     store: store,
+    remoteId: remoteId,
+  );
+}
+
+/// Where a submitted privilege card sits before it is on the wallet.
+enum PendingCardStatus {
+  /// Waiting for a Super Admin to check the receipt in the console.
+  awaitingApproval,
+
+  /// Turned down. [PendingWalletCard.note] carries the reason.
+  rejected,
+}
+
+/// A privilege card the member submitted that is not (yet) crediting the
+/// wallet: either waiting on the console, or rejected with a reason. An
+/// approved card stops being one of these and becomes a real [WalletCard].
+@immutable
+class PendingWalletCard {
+  final PrivilegeLoad load;
+  final ShieldStore? store;
+
+  /// The `app.wallet_card.uuid`, once the submit write has returned. Null while
+  /// the row is still being written, or in a build with no database.
+  final String? remoteId;
+
+  final DateTime submittedAt;
+  final PendingCardStatus status;
+
+  /// The Super Admin's reason — set only when [status] is [PendingCardStatus.rejected].
+  final String note;
+
+  const PendingWalletCard({
+    required this.load,
+    this.store,
+    this.remoteId,
+    required this.submittedAt,
+    this.status = PendingCardStatus.awaitingApproval,
+    this.note = '',
+  });
+
+  String get name => load.name;
+
+  bool get isRejected => status == PendingCardStatus.rejected;
+
+  PendingWalletCard copyWith({
+    String? remoteId,
+    PendingCardStatus? status,
+    String? note,
+  }) => PendingWalletCard(
+    load: load,
+    store: store,
+    remoteId: remoteId ?? this.remoteId,
+    submittedAt: submittedAt,
+    status: status ?? this.status,
+    note: note ?? this.note,
   );
 }
 
@@ -203,6 +264,12 @@ class WalletService extends ChangeNotifier {
   /// still closed.
   final List<WalletCard> _cards = [];
 
+  /// Cards the member has submitted that a Super Admin has not approved yet
+  /// (or has rejected). They credit nothing — the wallet stays closed on a
+  /// pending-only account — and are shown on the wallet screen so the member
+  /// knows the plan is with the counter.
+  final List<PendingWalletCard> _pending = [];
+
   int get balance => _balance;
   int get rewardPoints => _rewardPoints;
 
@@ -223,8 +290,166 @@ class WalletService extends ChangeNotifier {
   /// the wallet, and the wallet spends it. Nothing moves before that, so the
   /// flag is checked here as well as being drawn in the UI — a locked wallet
   /// that could still be topped up through some other path would not be
-  /// locked at all.
+  /// locked at all. A card that is only submitted, not approved, does not
+  /// count: it has credited nothing.
   bool get isActivated => _cards.isNotEmpty;
+
+  /// Cards submitted and not yet on the wallet — awaiting approval or rejected.
+  /// Newest first, the order the wallet screen lists them.
+  List<PendingWalletCard> get pendingCards =>
+      List.unmodifiable(_pending.reversed);
+
+  /// Whether a submission is with the counter, so the "activate" call to action
+  /// can stand down rather than invite a second one.
+  bool get hasPendingSubmission =>
+      _pending.any((card) => card.status == PendingCardStatus.awaitingApproval);
+
+  /// Records a privilege card the member just submitted. It credits nothing —
+  /// a Super Admin approves it in the console, and [applyRemoteCards] turns it
+  /// into a real [WalletCard] then.
+  void submitPending(
+    PrivilegeLoad load, {
+    ShieldStore? store,
+    String? remoteId,
+    DateTime? on,
+  }) {
+    _pending.add(
+      PendingWalletCard(
+        load: load,
+        store: store,
+        remoteId: remoteId,
+        submittedAt: on ?? DateTime.now(),
+      ),
+    );
+    notifyListeners();
+  }
+
+  /// Pins the `app.wallet_card.uuid` onto the pending card once the submit
+  /// write returns, so a later refresh matches this exact submission.
+  void attachPendingRemoteId(DateTime submittedAt, String remoteId) {
+    final index = _pending.indexWhere(
+      (card) => card.remoteId == null && card.submittedAt == submittedAt,
+    );
+    if (index == -1) {
+      return;
+    }
+    _pending[index] = _pending[index].copyWith(remoteId: remoteId);
+    notifyListeners();
+  }
+
+  /// Merges what the console has decided into the wallet: approves credit the
+  /// balance and become real cards, rejections carry their reason, and a
+  /// pending row the app had lost (a restart before approval) is re-created.
+  ///
+  /// Called when the wallet screen opens and when the app returns to the
+  /// foreground — the app has no push channel, so this is how an approval made
+  /// at the counter reaches the member.
+  void applyRemoteCards(List<RemoteWalletCard> remote) {
+    var changed = false;
+
+    for (final row in remote) {
+      final known = _cards.any((card) => card.remoteId == row.uuid);
+
+      if (row.isApproved) {
+        if (known) {
+          continue;
+        }
+        final load = PrivilegeProgramme.loadFor(row.amount);
+        if (load == null) {
+          continue;
+        }
+        _cards.add(
+          WalletCard(
+            load: load,
+            issuedOn: row.issuedOn,
+            rechargedOn: row.issuedOn,
+            recharged: row.rechargedExtra,
+            store: StoreDirectory.byId(row.storeCode),
+            remoteId: row.uuid,
+          ),
+        );
+        _credit(
+          amount: row.amount,
+          bonus: row.bonus,
+          label: '${load.name} activation',
+          bonusLabel: '${load.name} bonus · 10%',
+          date: formatDate(row.issuedOn),
+        );
+        _pending.removeWhere(
+          (card) => card.remoteId == row.uuid || _sameLoad(card, row),
+        );
+        changed = true;
+        continue;
+      }
+
+      // PENDING or REJECTED — keep it visible, matched by uuid or, for a row
+      // the app has not seen an id for yet, by its load and tier.
+      final status = row.isRejected
+          ? PendingCardStatus.rejected
+          : PendingCardStatus.awaitingApproval;
+      final index = _pending.indexWhere(
+        (card) => card.remoteId == row.uuid || _sameLoad(card, row),
+      );
+      if (index == -1) {
+        final load = PrivilegeProgramme.loadFor(row.amount);
+        if (load == null) {
+          continue;
+        }
+        _pending.add(
+          PendingWalletCard(
+            load: load,
+            store: StoreDirectory.byId(row.storeCode),
+            remoteId: row.uuid,
+            submittedAt: row.submittedAt,
+            status: status,
+            note: row.reviewerNote,
+          ),
+        );
+        changed = true;
+      } else {
+        final current = _pending[index];
+        if (current.status != status ||
+            current.note != row.reviewerNote ||
+            current.remoteId != row.uuid) {
+          _pending[index] = current.copyWith(
+            remoteId: row.uuid,
+            status: status,
+            note: row.reviewerNote,
+          );
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      notifyListeners();
+    }
+  }
+
+  /// Pulls the member's privilege cards from Neon and applies any approvals or
+  /// rejections. Best-effort: a no-op without a database or on a failed read.
+  Future<void> refreshFromDatabase(String memberPhone) async {
+    final remote = await WalletRepository.instance.fetchCards(
+      memberPhone: memberPhone,
+    );
+    if (remote != null) {
+      applyRemoteCards(remote);
+    }
+  }
+
+  /// Drops a rejected card once the member has read the reason.
+  void dismissRejected(String remoteId) {
+    final before = _pending.length;
+    _pending.removeWhere(
+      (card) => card.remoteId == remoteId && card.isRejected,
+    );
+    if (_pending.length != before) {
+      notifyListeners();
+    }
+  }
+
+  static bool _sameLoad(PendingWalletCard card, RemoteWalletCard row) =>
+      card.load.tier.kind == row.tierKind && card.load.amount == row.amount;
 
   /// What comes due this month across every card that has come round.
   ///
@@ -445,6 +670,7 @@ class WalletService extends ChangeNotifier {
   @visibleForTesting
   void reset() {
     _cards.clear();
+    _pending.clear();
     _balance = openingBalance;
     _rewardPoints = openingRewardPoints;
     _redeemed = 0;

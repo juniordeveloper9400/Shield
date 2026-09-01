@@ -26,7 +26,8 @@ class PrivilegeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: WalletService.instance,
-      builder: (context, _) => WalletService.instance.isActivated
+      builder: (context, _) => WalletService.instance.isActivated ||
+              WalletService.instance.hasPendingSubmission
           ? const SizedBox.shrink()
           : const _PrivilegeCallToActivate(),
     );

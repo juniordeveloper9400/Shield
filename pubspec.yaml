@@ -22,6 +22,10 @@ dependencies:
   # Direct client connection to the Neon Postgres backend. Native only
   # (Android / iOS / desktop) — dart:io sockets, so not Flutter web.
   postgres: ^3.5.12
+  # The member-facing writes (sign-in, registration) go over Neon's HTTP SQL
+  # endpoint instead of the socket above: plain HTTPS on 443, same behaviour in
+  # debug and release, reliable from a phone. See data/neon/neon_http.dart.
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

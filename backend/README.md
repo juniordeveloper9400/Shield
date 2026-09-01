@@ -12,9 +12,26 @@ that talk to it. (A separate admin website will live in its own folder later.)
 - **Data API (PostgREST):** `https://ep-billowing-star-aozk27aq.apirest.c-2.ap-southeast-1.aws.neon.tech/neondb/rest/v1`
 
 The connection string lives in `.env` at the repo root (git-ignored). Copy
-`.env.example` and paste the value from the Neon console. It is also what the
-Flutter app reads via `NeonDatabase` (`lib/data/neon/neon_database.dart`) when
-run with `flutter run --dart-define-from-file=.env`.
+`.env.example` and paste the value from the Neon console. The Dart tools in
+`backend/db/` read `.env` directly.
+
+**The Flutter app compiles the value in from a git-ignored source file, not
+from `--dart-define`.** The URL contains `&`; `flutter.bat` runs under cmd.exe
+on Windows, which treats `&` on the command line as a statement separator, so
+every `--dart-define=DATABASE_URL=…&…` (and the file variants that expand to it)
+arrived truncated or empty and every Neon write no-oped. Instead:
+
+```
+dart run tool/gen_neon_secret.dart     # writes lib/data/neon/neon_secret.dart from .env (git-ignored)
+flutter run
+flutter build apk --release            # or: powershell -File build_apk.ps1
+```
+
+Re-run `gen_neon_secret.dart` whenever `.env` changes. `neon_secret.dart` holds
+the DB password — it is git-ignored; `neon_secret.example.dart` is the checked-in
+template. The app reads it via `NeonHttp` (`lib/data/neon/neon_http.dart`, HTTPS)
+for the member writes and `NeonDatabase` (`neon_database.dart`, socket) for the
+rest; both fall back to `--dart-define=DATABASE_URL` where the shell is safe.
 
 ## Schemas
 

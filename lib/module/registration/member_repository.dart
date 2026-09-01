@@ -1,15 +1,13 @@
-import 'package:postgres/postgres.dart';
-
-import '../../data/neon/neon_database.dart';
+import '../../data/neon/neon_http.dart';
 import 'registration_service.dart';
 
-/// Persists the member profile behind a completed registration to Neon
-/// (`app.member`).
+/// Persists the user profile behind a completed registration to Neon
+/// (`app.users`), over the HTTP SQL endpoint.
 ///
-/// [RegistrationService] stays the in-memory source of truth the UI listens
-/// to; this is the write-through to the database. It is a no-op when the app
-/// was built without a `DATABASE_URL` (tests, or any build that left it out —
-/// see [NeonDatabase.isConfigured]), so the registration flow keeps working
+/// [RegistrationService] stays the in-memory source of truth the UI listens to;
+/// this is the write-through. It is a no-op when the app was built without a
+/// `DATABASE_URL` (tests, or a build that left `--dart-define-from-file=.env`
+/// off — see [NeonHttp.isConfigured]), so the registration flow keeps working
 /// with or without a backend.
 class MemberRepository {
   MemberRepository._();
@@ -17,11 +15,11 @@ class MemberRepository {
   static final MemberRepository instance = MemberRepository._();
 
   /// Whether a write would actually reach a database.
-  bool get isAvailable => NeonDatabase.isConfigured;
+  bool get isAvailable => NeonHttp.isConfigured;
 
   /// Inserts the member, or updates the existing row with the same [phone].
   ///
-  /// Identity is the 10-digit mobile number (`app.member.phone` is unique and
+  /// Identity is the 10-digit mobile number (`app.users.phone` is unique and
   /// carries no `+91`). The assigned branch is resolved from
   /// [Registration.storeId] — the app's stable store code — to the
   /// `app.shield_store` primary key. [rewardPoints] is the member's current
@@ -36,50 +34,50 @@ class MemberRepository {
       return;
     }
 
-    final conn = await NeonDatabase.instance.connection();
-    await conn.execute(
-      Sql.named('''
-        insert into app.member (
+    await NeonHttp.instance.query(
+      '''
+        INSERT INTO app.users (
           phone, name, email, gender, dob,
           address, place, pincode, state,
           home_store_id, reward_points, registration_completed_at
         )
-        values (
-          @phone, @name, @email, @gender::app.gender, @dob::date,
-          @address, @place, @pincode, @state,
-          (select id from app.shield_store where code = @storeCode),
-          @rewardPoints, now()
+        VALUES (
+          \$1, \$2, \$3, \$4::app.gender, \$5::date,
+          \$6, \$7, \$8, \$9,
+          (SELECT id FROM app.shield_store WHERE code = \$10),
+          \$11, now()
         )
-        on conflict (phone) do update set
-          name                      = excluded.name,
-          email                     = excluded.email,
-          gender                    = excluded.gender,
-          dob                       = excluded.dob,
-          address                   = excluded.address,
-          place                     = excluded.place,
-          pincode                   = excluded.pincode,
-          state                     = excluded.state,
-          home_store_id             = excluded.home_store_id,
-          reward_points             = excluded.reward_points,
-          registration_completed_at = coalesce(
-            app.member.registration_completed_at,
-            excluded.registration_completed_at
+        ON CONFLICT (phone) DO UPDATE SET
+          name                      = EXCLUDED.name,
+          email                     = EXCLUDED.email,
+          gender                    = EXCLUDED.gender,
+          dob                       = EXCLUDED.dob,
+          address                   = EXCLUDED.address,
+          place                     = EXCLUDED.place,
+          pincode                   = EXCLUDED.pincode,
+          state                     = EXCLUDED.state,
+          home_store_id             = EXCLUDED.home_store_id,
+          reward_points             = EXCLUDED.reward_points,
+          registration_completed_at = COALESCE(
+            app.users.registration_completed_at,
+            EXCLUDED.registration_completed_at
           )
-      '''),
-      parameters: {
-        'phone': registration.phone,
-        'name': registration.name,
-        'email': registration.email.isEmpty ? null : registration.email,
-        'gender': registration.gender.name.toUpperCase(),
-        'dob': _isoDate(registration.dob),
-        'address': registration.address,
-        'place': registration.place,
-        'pincode': registration.pincode,
-        'state': registration.state,
-        'storeCode': registration.storeId,
-        'rewardPoints': rewardPoints,
-      },
+      ''',
+      [
+        registration.phone,
+        registration.name,
+        registration.email.isEmpty ? null : registration.email,
+        registration.gender.name.toUpperCase(),
+        _isoDate(registration.dob),
+        registration.address,
+        registration.place,
+        registration.pincode,
+        registration.state,
+        registration.storeId,
+        rewardPoints,
+      ],
     );
+    NeonHttp.log('upsertRegistration: saved ${registration.phone}');
   }
 
   /// `1994-09-04` — an unambiguous value for a `date` column.

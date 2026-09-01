@@ -333,11 +333,12 @@ class _CheckoutBar extends StatelessWidget {
   void _selectSlot(BuildContext context) {
     AuthFlow.guard(context, () {
       final cart = LabCartService.instance;
-      final phone = AuthService.instance.currentUser.value?.phone;
-      if (phone != null && !cart.isEmpty) {
+      final user = AuthService.instance.currentUser.value;
+      if (user != null && !cart.isEmpty) {
         unawaited(
           OrderRepository.instance.saveLabBookings(
-            phone: phone,
+            phone: user.phone,
+            name: user.name,
             address: AddressBook.instance.deliverTo?.toDeliveryInput(),
             bookings: [
               for (final booking in cart.bookings)

@@ -182,7 +182,7 @@ class RegistrationService extends ChangeNotifier {
   /// edit is not a second reward.
   ///
   /// The in-memory update happens synchronously so the UI and the reward land
-  /// immediately; the profile is then written through to `app.member` in the
+  /// immediately; the profile is then written through to `app.users` in the
   /// background. A failed or unconfigured database write is logged, never
   /// thrown — registration is an offer, not a gate, and must not break here.
   void save(Registration registration) {
@@ -196,7 +196,7 @@ class RegistrationService extends ChangeNotifier {
     unawaited(_persist(registration));
   }
 
-  /// Write-through to Neon (`app.member`). Best-effort: see [save].
+  /// Write-through to Neon (`app.users`). Best-effort: see [save].
   Future<void> _persist(Registration registration) async {
     if (!MemberRepository.instance.isAvailable) {
       return;

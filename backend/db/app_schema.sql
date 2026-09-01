@@ -372,11 +372,11 @@ CREATE TABLE app.investment_plan_point (
 );
 
 -- ===========================================================================
---  2 · Member & profile
+--  2 · Users & profile
 -- ===========================================================================
 
 -- The account. Identity is the mobile number (Firebase phone auth).
-CREATE TABLE app.member (
+CREATE TABLE app.users (
     id                      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid                    uuid NOT NULL DEFAULT gen_random_uuid(),
     phone                   text NOT NULL UNIQUE,          -- 10 digits, no +91
@@ -392,7 +392,7 @@ CREATE TABLE app.member (
     home_store_id           bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
     reward_points           integer NOT NULL DEFAULT 0,
     referral_code           text UNIQUE,                   -- this member's own invite code
-    referred_by_member_id   bigint REFERENCES app.member(id) ON DELETE SET NULL,
+    referred_by_member_id   bigint REFERENCES app.users(id) ON DELETE SET NULL,
     registration_completed_at timestamptz,
     registration_prompt_dismissed boolean NOT NULL DEFAULT false,
     last_login_at           timestamptz,
@@ -405,7 +405,7 @@ CREATE TABLE app.member (
 CREATE TABLE app.member_address (
     id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid         uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id    bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id    bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     label        app.address_label NOT NULL DEFAULT 'HOME',
     house        text NOT NULL,
     area         text NOT NULL,
@@ -428,7 +428,7 @@ CREATE INDEX member_address_member_idx ON app.member_address(member_id) WHERE de
 CREATE TABLE app.patient (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid        uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id   bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id   bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     name        text NOT NULL,
     phone       text NOT NULL DEFAULT '',
     address     text NOT NULL DEFAULT '',
@@ -450,7 +450,7 @@ ALTER TABLE app.member_address
 CREATE TABLE app.device_push_token (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid        uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id   bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id   bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     token       text NOT NULL,
     platform    app.push_platform NOT NULL,
     device_label text,
@@ -463,7 +463,7 @@ CREATE TABLE app.device_push_token (
 CREATE TABLE app.notification (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid        uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id   bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id   bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     title       text NOT NULL,
     body        text NOT NULL DEFAULT '',
     channel     text NOT NULL DEFAULT 'PUSH',
@@ -482,7 +482,7 @@ CREATE INDEX notification_member_idx ON app.notification(member_id, created_at D
 -- One live cart per member.
 CREATE TABLE app.cart (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    member_id   bigint NOT NULL UNIQUE REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id   bigint NOT NULL UNIQUE REFERENCES app.users(id) ON DELETE CASCADE,
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -507,7 +507,7 @@ CREATE INDEX cart_line_cart_idx ON app.cart_line(cart_id);
 CREATE TABLE app."order" (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid                uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id           bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id           bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     code                text NOT NULL UNIQUE,             -- 'SH-100423'
     kind                app.order_kind NOT NULL DEFAULT 'STANDARD',
     status              app.order_status NOT NULL DEFAULT 'PROCESSING',
@@ -570,8 +570,12 @@ CREATE TABLE app.order_receipt (
 CREATE TABLE app.prescription (
     id                bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid              uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id         bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id         bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     patient_id        bigint NOT NULL REFERENCES app.patient(id) ON DELETE RESTRICT,
+    -- Branch the script is filled at. Set by the app at upload (registered
+    -- store → nearest by pincode → first branch), so a Pharmacy Admin sees it
+    -- even when the member never registered a home store.
+    store_id          bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
     code              text NOT NULL UNIQUE,               -- 'RX-0004'
     file_name         text NOT NULL DEFAULT '',
     storage_path      text,
@@ -587,6 +591,7 @@ CREATE TABLE app.prescription (
     deleted_at        timestamptz
 );
 CREATE INDEX prescription_member_idx ON app.prescription(member_id) WHERE deleted_at IS NULL;
+CREATE INDEX prescription_store_idx  ON app.prescription(store_id);
 
 -- Lines the pharmacy keyed in after reading the file. Dose is morning-afternoon-night.
 CREATE TABLE app.prescription_medicine (
@@ -622,7 +627,7 @@ ALTER TABLE app.cart_line
 CREATE TABLE app.approval (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid             uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id        bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id        bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     order_id         bigint REFERENCES app."order"(id) ON DELETE SET NULL,
     prescription_id  bigint REFERENCES app.prescription(id) ON DELETE SET NULL,
     code             text NOT NULL UNIQUE,               -- 'APR-0007'
@@ -654,7 +659,7 @@ CREATE TABLE app.approval_item (
 -- One SHIELD wallet per member; opened by activating a privilege card.
 CREATE TABLE app.wallet (
     id                   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    member_id            bigint NOT NULL UNIQUE REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id            bigint NOT NULL UNIQUE REFERENCES app.users(id) ON DELETE CASCADE,
     balance              numeric(12,2) NOT NULL DEFAULT 0,
     reward_points        integer NOT NULL DEFAULT 0,
     redeemed_this_month  numeric(12,2) NOT NULL DEFAULT 0,
@@ -664,6 +669,10 @@ CREATE TABLE app.wallet (
 );
 
 -- A privilege card on the wallet. amount = load; bonus = 10%; credited = sum.
+--
+-- A card is submitted from the app as `PENDING` and credits nothing; a Super
+-- Admin in the console approves it (→ the ledger lines and the balance move) or
+-- rejects it with a note the member sees in the wallet.
 CREATE TABLE app.wallet_card (
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid           uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -674,6 +683,12 @@ CREATE TABLE app.wallet_card (
     recharged_extra numeric(12,2) NOT NULL DEFAULT 0,
     card_number    text,
     store_id       bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
+    status         app.approval_status NOT NULL DEFAULT 'PENDING',
+    submitted_at   timestamptz NOT NULL DEFAULT now(),
+    reviewed_at    timestamptz,
+    reviewer_note  text NOT NULL DEFAULT '',
+    receipt_reference text,                               -- the 'PV-…' ref / bank UTR
+    receipt_file_name text,
     issued_on      date NOT NULL DEFAULT current_date,
     recharged_on   date NOT NULL DEFAULT current_date,
     expires_on     date NOT NULL,
@@ -681,6 +696,7 @@ CREATE TABLE app.wallet_card (
     created_at     timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX wallet_card_wallet_idx ON app.wallet_card(wallet_id);
+CREATE INDEX wallet_card_status_idx ON app.wallet_card(status, submitted_at DESC);
 
 ALTER TABLE app."order"
     ADD CONSTRAINT order_billed_wallet_card_fk
@@ -703,7 +719,7 @@ CREATE INDEX wallet_entry_wallet_idx ON app.wallet_entry(wallet_id, created_at D
 -- Reward-point ledger (registration bonus, referral rungs, redemptions).
 CREATE TABLE app.reward_point_transaction (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    member_id   bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id   bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     points      integer NOT NULL,                        -- signed
     reason      app.reward_txn_reason NOT NULL,
     ref_type    text,
@@ -717,8 +733,8 @@ CREATE INDEX reward_point_member_idx ON app.reward_point_transaction(member_id, 
 CREATE TABLE app.referral (
     id                  bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid                uuid NOT NULL DEFAULT gen_random_uuid(),
-    inviter_member_id   bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
-    invitee_member_id   bigint REFERENCES app.member(id) ON DELETE SET NULL,
+    inviter_member_id   bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
+    invitee_member_id   bigint REFERENCES app.users(id) ON DELETE SET NULL,
     invitee_phone       text,
     code_used           text,
     status              app.referral_status NOT NULL DEFAULT 'SHARED',
@@ -738,7 +754,7 @@ CREATE INDEX referral_inviter_idx ON app.referral(inviter_member_id);
 CREATE TABLE app.lab_booking (
     id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid            uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id       bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id       bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     lab_package_id  bigint NOT NULL REFERENCES app.lab_package(id) ON DELETE RESTRICT,
     patients_count  integer NOT NULL DEFAULT 1,
     unit_price      numeric(12,2) NOT NULL DEFAULT 0,
@@ -762,7 +778,7 @@ CREATE TABLE app.lab_booking_patient (
 CREATE TABLE app.appointment (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid          uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id     bigint NOT NULL REFERENCES app.member(id) ON DELETE CASCADE,
+    member_id     bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
     kind          app.appointment_kind NOT NULL DEFAULT 'CLINIC',
     clinic_id     bigint REFERENCES app.clinic(id) ON DELETE SET NULL,
     dietitian_id  bigint REFERENCES app.dietitian(id) ON DELETE SET NULL,
@@ -784,7 +800,7 @@ CREATE INDEX appointment_member_idx ON app.appointment(member_id, created_at DES
 CREATE TABLE app.agent (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid             uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id        bigint REFERENCES app.member(id) ON DELETE SET NULL,
+    member_id        bigint REFERENCES app.users(id) ON DELETE SET NULL,
     code             text NOT NULL UNIQUE,               -- 'SHD-NAT-001'
     name             text NOT NULL,
     phone            text NOT NULL,
@@ -825,7 +841,7 @@ CREATE TABLE app.agent_customer (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid        uuid NOT NULL DEFAULT gen_random_uuid(),
     agent_id    bigint NOT NULL REFERENCES app.agent(id) ON DELETE CASCADE,
-    member_id   bigint REFERENCES app.member(id) ON DELETE SET NULL,
+    member_id   bigint REFERENCES app.users(id) ON DELETE SET NULL,
     name        text NOT NULL,
     phone       text NOT NULL DEFAULT '',
     created_at  timestamptz NOT NULL DEFAULT now()
@@ -869,7 +885,7 @@ CREATE TABLE app.agent_wallet_transfer (
 CREATE TABLE app.investor (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid             uuid NOT NULL DEFAULT gen_random_uuid(),
-    member_id        bigint REFERENCES app.member(id) ON DELETE SET NULL,
+    member_id        bigint REFERENCES app.users(id) ON DELETE SET NULL,
     code             text NOT NULL UNIQUE,               -- 'SHD-INV-001'
     name             text NOT NULL,
     phone            text NOT NULL,
@@ -892,6 +908,32 @@ CREATE TABLE app.investor_plan_change_request (
     note              text,
     created_at        timestamptz NOT NULL DEFAULT now(),
     resolved_at       timestamptz
+);
+
+-- ===========================================================================
+--  9 · Admin console (shieldweb/) logins
+-- ===========================================================================
+--  Also created by backend/db/migrations/0001_admin_user.sql (idempotent) so
+--  an existing database can pick it up without a full rebuild.
+
+CREATE TYPE app.admin_role AS ENUM
+    ('SUPERADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS');
+
+-- One row per staff login. Identity is a Firebase Email/Password account; this
+-- row says which role it holds and, for a Pharmacy Admin, which branch.
+CREATE TABLE app.admin_user (
+    id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    uuid          uuid NOT NULL DEFAULT gen_random_uuid(),
+    firebase_uid  text UNIQUE,
+    email         text NOT NULL UNIQUE,
+    name          text NOT NULL,
+    role          app.admin_role NOT NULL DEFAULT 'PHARMACY',
+    store_id      bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
+    avatar_color  text NOT NULL DEFAULT '#2c57a6',
+    is_active     boolean NOT NULL DEFAULT true,
+    last_login_at timestamptz,
+    created_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at    timestamptz NOT NULL DEFAULT now()
 );
 
 -- ===========================================================================

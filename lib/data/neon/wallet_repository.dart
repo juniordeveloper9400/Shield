@@ -1,225 +1,235 @@
-import 'package:flutter/foundation.dart';
-import 'package:postgres/postgres.dart';
-
 import '../../module/privilege/privilege_tier.dart';
-import 'neon_database.dart';
+import 'neon_http.dart';
 
-/// Writes a privilege-card activation to the `app.wallet`, `app.wallet_card`
-/// and `app.wallet_entry` tables on Neon.
+/// A privilege card as it stands on Neon — what the app reads back to learn
+/// whether a submitted plan has been approved yet.
+class RemoteWalletCard {
+  final String uuid;
+
+  /// `PENDING` · `APPROVED` · `REJECTED` (the `app.approval_status` tokens).
+  final String status;
+  final PrivilegeCardKind tierKind;
+  final int amount;
+  final int bonus;
+  final int rechargedExtra;
+  final String? storeCode;
+  final DateTime issuedOn;
+  final DateTime expiresOn;
+  final DateTime submittedAt;
+
+  /// The Super Admin's reason, set only when [status] is `REJECTED`.
+  final String reviewerNote;
+
+  const RemoteWalletCard({
+    required this.uuid,
+    required this.status,
+    required this.tierKind,
+    required this.amount,
+    required this.bonus,
+    required this.rechargedExtra,
+    required this.storeCode,
+    required this.issuedOn,
+    required this.expiresOn,
+    required this.submittedAt,
+    required this.reviewerNote,
+  });
+
+  bool get isPending => status == 'PENDING';
+  bool get isApproved => status == 'APPROVED';
+  bool get isRejected => status == 'REJECTED';
+
+  /// What lands on the balance once the card is approved: the load, its bonus
+  /// and anything recharged onto it since.
+  int get credited => amount + bonus + rechargedExtra;
+}
+
+/// Submits privilege-card activations to Neon and reads their approval state
+/// back. Over [NeonHttp] (HTTPS) so it behaves the same in a `--release` build.
 ///
-/// Mirrors [MemberRepository] / [PatientRepository]: every method is
-/// best-effort. When the app was built without a `DATABASE_URL` (tests, a
-/// public release, Flutter web) or the database is unreachable, the call
-/// no-ops and returns null rather than throwing. Activating a plan must never
-/// fail because the database is down — [WalletService] stays the source of
-/// truth for the running session, and these rows are the durable copy.
+/// Every method is best-effort, the same contract as the other repositories:
+/// no `DATABASE_URL` (tests, a build without `--dart-define-from-file=.env`) or
+/// an unreachable endpoint → the call no-ops. Submitting a plan must never fail
+/// because the database is down.
 ///
-/// `app.wallet.member_id` is `NOT NULL`, so [activateCard] resolves the owning
-/// `app.member` row from the signed-in mobile number first, inserting a minimal
-/// member if sign-in has not already written one.
+/// A submitted card lands as `PENDING` and credits nothing. The console
+/// approves it — that is where the `ACTIVATION` / `BONUS` ledger lines and the
+/// balance move — or rejects it with a note.
 class WalletRepository {
   const WalletRepository._();
 
   static const WalletRepository instance = WalletRepository._();
 
-  /// Records an activation: opens the member's wallet if it is not open yet,
-  /// issues (or recharges) the `app.wallet_card` for [tierKind] + [amount],
-  /// writes the `ACTIVATION` and `BONUS` ledger lines, and moves the wallet
-  /// balance — the same effect [WalletService.activate] has in memory.
+  bool get isAvailable => NeonHttp.isConfigured;
+
+  /// Files a privilege-card activation for review. Opens the member's wallet
+  /// row (without stamping `opened_at` — that waits for the first approval),
+  /// then inserts the `app.wallet_card` as `PENDING`.
   ///
-  /// Re-activating a load the wallet already holds recharges that card
-  /// (`recharged_extra += credited`) instead of issuing a second one, matching
-  /// the in-memory behaviour.
-  ///
-  /// Returns the `app.wallet_card` row's `uuid`, or null when nothing was
-  /// written.
-  Future<String?> activateCard({
+  /// Returns the new card's `uuid`, or null when nothing was written.
+  Future<String?> submitCardForApproval({
     required String memberPhone,
     required String memberName,
     required PrivilegeCardKind tierKind,
     required int amount,
     required int bonus,
-    required int credited,
     required String cardNumber,
     String? storeCode,
-    DateTime? issuedOn,
+    String? receiptReference,
+    String? receiptFileName,
   }) {
-    return _run('activateCard', (conn) async {
-      final issued = (issuedOn ?? DateTime.now()).toIso8601String().split('T').first;
-      final kind = tierKind.name.toUpperCase();
-
-      return conn.runTx((tx) async {
-        // 1 · The owning member — insert a minimal row if sign-in has not
-        // already written one, matching the CTE idiom in PatientRepository.
-        final ownerRows = await tx.execute(
-          Sql.named('''
-            INSERT INTO app.member (phone, name)
-            VALUES (@phone, @name)
+    return _run('submitCardForApproval', () async {
+      final memberId = _rowId(
+        await NeonHttp.instance.query(
+          '''
+            INSERT INTO app.users (phone, name)
+            VALUES (\$1, \$2)
             ON CONFLICT (phone) DO UPDATE SET updated_at = now()
             RETURNING id
-          '''),
-          parameters: {'phone': memberPhone, 'name': memberName},
-        );
-        final memberId = ownerRows.first.first as int;
+          ''',
+          [memberPhone, memberName],
+        ),
+      );
+      if (memberId == null) {
+        return null;
+      }
 
-        // 2 · The wallet — one per member (member_id is UNIQUE). Opening it is
-        // idempotent; opened_at is stamped once and kept.
-        final walletRows = await tx.execute(
-          Sql.named('''
-            INSERT INTO app.wallet (member_id, opened_at)
-            VALUES (@member_id, now())
-            ON CONFLICT (member_id) DO UPDATE SET
-              opened_at  = COALESCE(app.wallet.opened_at, now()),
-              updated_at = now()
+      final walletId = _rowId(
+        await NeonHttp.instance.query(
+          '''
+            INSERT INTO app.wallet (member_id)
+            VALUES (\$1)
+            ON CONFLICT (member_id) DO UPDATE SET updated_at = now()
             RETURNING id
-          '''),
-          parameters: {'member_id': memberId},
-        );
-        final walletId = walletRows.first.first as int;
+          ''',
+          [memberId],
+        ),
+      );
+      if (walletId == null) {
+        return null;
+      }
 
-        // 3 · The tier, and how long a card issued on it stays live.
-        final tierRows = await tx.execute(
-          Sql.named('''
-            SELECT id, validity_months FROM app.membership_tier
-            WHERE kind = @kind::app.privilege_card_kind
-          '''),
-          parameters: {'kind': kind},
-        );
-        if (tierRows.isEmpty) {
-          // Reference data missing — nothing to hang the card off.
-          return null;
-        }
-        final tierId = tierRows.first[0] as int;
-        final validityMonths = tierRows.first[1] as int;
+      final tierRows = await NeonHttp.instance.query(
+        '''
+          SELECT id, validity_months FROM app.membership_tier
+          WHERE kind = \$1::app.privilege_card_kind
+        ''',
+        [tierKind.name.toUpperCase()],
+      );
+      if (tierRows.isEmpty) {
+        return null; // reference data not seeded
+      }
+      final tierId = _int(tierRows.first['id']);
+      final validityMonths = _int(tierRows.first['validity_months'], 12);
 
-        // 4 · The activation branch, resolved from ShieldStore.id == code.
-        int? storeId;
-        if (storeCode != null && storeCode.isNotEmpty) {
-          final storeRows = await tx.execute(
-            Sql.named('SELECT id FROM app.shield_store WHERE code = @code'),
-            parameters: {'code': storeCode},
-          );
-          if (storeRows.isNotEmpty) {
-            storeId = storeRows.first.first as int;
-          }
-        }
-
-        // 5 · The card — recharge the matching load if the wallet already
-        // holds it, otherwise issue a new one.
-        final existing = await tx.execute(
-          Sql.named('''
-            SELECT id FROM app.wallet_card
-            WHERE wallet_id = @wallet_id AND tier_id = @tier_id AND amount = @amount
-            LIMIT 1
-          '''),
-          parameters: {
-            'wallet_id': walletId,
-            'tier_id': tierId,
-            'amount': amount,
-          },
-        );
-
-        final String cardUuid;
-        final int cardId;
-        if (existing.isNotEmpty) {
-          cardId = existing.first.first as int;
-          final updated = await tx.execute(
-            Sql.named('''
-              UPDATE app.wallet_card SET
-                recharged_extra = recharged_extra + @credited,
-                recharged_on    = @issued::date
-              WHERE id = @id
-              RETURNING uuid
-            '''),
-            parameters: {'id': cardId, 'credited': credited, 'issued': issued},
-          );
-          cardUuid = updated.first.first.toString();
-        } else {
-          final inserted = await tx.execute(
-            Sql.named('''
-              INSERT INTO app.wallet_card
-                (wallet_id, tier_id, amount, bonus, card_number, store_id,
-                 issued_on, recharged_on, expires_on)
-              VALUES
-                (@wallet_id, @tier_id, @amount, @bonus, @card_number, @store_id,
-                 @issued::date, @issued::date,
-                 @issued::date + make_interval(months => @months))
-              RETURNING id, uuid
-            '''),
-            parameters: {
-              'wallet_id': walletId,
-              'tier_id': tierId,
-              'amount': amount,
-              'bonus': bonus,
-              'card_number': cardNumber,
-              'store_id': storeId,
-              'issued': issued,
-              'months': validityMonths,
-            },
-          );
-          cardId = inserted.first[0] as int;
-          cardUuid = inserted.first[1].toString();
-        }
-
-        // 6 · The ledger — the activation credit and its bonus as two lines,
-        // the same labels WalletService writes in memory.
-        final tierName = _tierName(tierKind);
-        await tx.execute(
-          Sql.named('''
-            INSERT INTO app.wallet_entry
-              (wallet_id, kind, label, amount, occurred_on, wallet_card_id)
-            VALUES
-              (@wallet_id, 'ACTIVATION', @activation_label, @amount, @issued::date, @card_id),
-              (@wallet_id, 'BONUS',      @bonus_label,      @bonus,  @issued::date, @card_id)
-          '''),
-          parameters: {
-            'wallet_id': walletId,
-            'card_id': cardId,
-            'activation_label': '$tierName activation',
-            'bonus_label': '$tierName bonus · 10%',
-            'amount': amount,
-            'bonus': bonus,
-            'issued': issued,
-          },
-        );
-
-        // 7 · Move the balance by what actually landed.
-        await tx.execute(
-          Sql.named('''
-            UPDATE app.wallet SET balance = balance + @credited, updated_at = now()
-            WHERE id = @wallet_id
-          '''),
-          parameters: {'wallet_id': walletId, 'credited': credited},
-        );
-
-        return cardUuid;
-      });
+      final inserted = await NeonHttp.instance.query(
+        '''
+          INSERT INTO app.wallet_card (
+            wallet_id, tier_id, amount, bonus, card_number, store_id,
+            status, submitted_at, issued_on, recharged_on, expires_on,
+            receipt_reference, receipt_file_name
+          )
+          VALUES (
+            \$1, \$2, \$3, \$4, \$5,
+            (SELECT id FROM app.shield_store WHERE code = \$6),
+            'PENDING', now(), current_date, current_date,
+            current_date + make_interval(months => \$7),
+            \$8, \$9
+          )
+          RETURNING uuid
+        ''',
+        [
+          walletId,
+          tierId,
+          amount,
+          bonus,
+          cardNumber,
+          storeCode,
+          validityMonths,
+          receiptReference,
+          receiptFileName,
+        ],
+      );
+      return inserted.isEmpty ? null : inserted.first['uuid']?.toString();
     });
   }
 
-  /// The tier's display name, matching `app.membership_tier.name` and the
-  /// labels [WalletService] uses (`PrivilegeProgramme.<tier>.name`).
-  static String _tierName(PrivilegeCardKind kind) => switch (kind) {
-        PrivilegeCardKind.silver => PrivilegeProgramme.silver.name,
-        PrivilegeCardKind.gold => PrivilegeProgramme.gold.name,
-        PrivilegeCardKind.platinum => PrivilegeProgramme.platinum.name,
+  /// Every privilege card on the member's wallet, oldest first — pending,
+  /// approved and rejected. The app merges this into [WalletService] to reflect
+  /// what the console has decided. Returns null when nothing could be read.
+  Future<List<RemoteWalletCard>?> fetchCards({required String memberPhone}) {
+    return _run('fetchCards', () async {
+      final rows = await NeonHttp.instance.query(
+        '''
+          SELECT wc.uuid, wc.status,
+                 wc.amount, wc.bonus, wc.recharged_extra,
+                 wc.issued_on, wc.expires_on, wc.submitted_at, wc.reviewer_note,
+                 mt.kind AS tier_kind,
+                 s.code  AS store_code
+          FROM app.wallet_card wc
+          JOIN app.wallet w           ON w.id  = wc.wallet_id
+          JOIN app.users u            ON u.id  = w.member_id
+          JOIN app.membership_tier mt ON mt.id = wc.tier_id
+          LEFT JOIN app.shield_store s ON s.id = wc.store_id
+          WHERE u.phone = \$1
+          ORDER BY wc.submitted_at, wc.id
+        ''',
+        [memberPhone],
+      );
+      return [
+        for (final r in rows)
+          if (_kindFor(r['tier_kind']?.toString()) case final kind?)
+            RemoteWalletCard(
+              uuid: r['uuid'].toString(),
+              status: (r['status'] ?? 'PENDING').toString(),
+              tierKind: kind,
+              amount: _int(r['amount']),
+              bonus: _int(r['bonus']),
+              rechargedExtra: _int(r['recharged_extra']),
+              storeCode: r['store_code']?.toString(),
+              issuedOn: _date(r['issued_on']) ?? DateTime.now(),
+              expiresOn: _date(r['expires_on']) ?? DateTime.now(),
+              submittedAt: _date(r['submitted_at']) ?? DateTime.now(),
+              reviewerNote: (r['reviewer_note'] ?? '').toString(),
+            ),
+      ];
+    });
+  }
+
+  static PrivilegeCardKind? _kindFor(String? token) => switch (token) {
+        'SILVER' => PrivilegeCardKind.silver,
+        'GOLD' => PrivilegeCardKind.gold,
+        'PLATINUM' => PrivilegeCardKind.platinum,
+        _ => null,
       };
 
-  /// Runs [action] against the shared connection, swallowing everything: a
-  /// missing `DATABASE_URL`, a socket error, a SQL error. Returns null on any
-  /// of them.
-  Future<T?> _run<T>(
-    String label,
-    Future<T?> Function(Connection conn) action,
-  ) async {
-    if (!NeonDatabase.isConfigured) {
+  static int _int(Object? value, [int fallback = 0]) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    final parsed = num.tryParse(value?.toString() ?? '');
+    return parsed?.toInt() ?? fallback;
+  }
+
+  static DateTime? _date(Object? value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
+  }
+
+  static int? _rowId(List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) return null;
+    final value = rows.first['id'] ?? rows.first.values.firstOrNull;
+    if (value == null) return null;
+    return value is int ? value : int.tryParse(value.toString());
+  }
+
+  Future<T?> _run<T>(String label, Future<T?> Function() action) async {
+    if (!NeonHttp.isConfigured) {
       return null;
     }
     try {
-      final conn = await NeonDatabase.instance.connection();
-      return await action(conn);
+      return await action();
     } catch (error) {
-      debugPrint('WalletRepository.$label: $error');
+      NeonHttp.log('WalletRepository.$label failed', error: error);
       return null;
     }
   }

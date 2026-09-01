@@ -83,9 +83,24 @@ void main() {
     await pickState(tester, 'Kerala');
   }
 
-  Future<void> submit(WidgetTester tester) async {
+  /// Taps submit but leaves the "you're registered" confirmation dialog up.
+  Future<void> submitRaw(WidgetTester tester) async {
     await tester.tap(find.textContaining('Register & earn'));
     await tester.pumpAndSettle();
+  }
+
+  /// Submits and clears the confirmation the form now shows on success, so the
+  /// caller is back on whatever screen the form was pushed over.
+  Future<void> submit(WidgetTester tester) async {
+    await submitRaw(tester);
+    for (final label in const ['Start exploring', 'Done']) {
+      final ack = find.text(label);
+      if (ack.evaluate().isNotEmpty) {
+        await tester.tap(ack);
+        await tester.pumpAndSettle();
+        break;
+      }
+    }
   }
 
   group('the store directory', () {
@@ -422,6 +437,71 @@ void main() {
       );
     });
 
+    testWidgets('a completed form confirms the reward before closing', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+      await completeForm(tester);
+      await submitRaw(tester);
+
+      // The confirmation dialog is up, and it names the reward just earned.
+      final dialog = find.byType(Dialog);
+      expect(dialog, findsOneWidget);
+      expect(
+        find.descendant(of: dialog, matching: find.text("You're registered 🎉")),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: dialog,
+          matching: find.textContaining(
+            '${RegistrationService.rewardPoints} reward points',
+          ),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Start exploring'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsNothing);
+    });
+
+    testWidgets('editing confirms with no second reward', (tester) async {
+      RegistrationService.instance.save(
+        Registration(
+          name: 'Asha Nair',
+          phone: '9000012345',
+          email: 'asha@example.com',
+          gender: Gender.female,
+          dob: DateTime(1994, 9, 4),
+          address: '12/A Palm Grove',
+          place: 'Melattur',
+          pincode: '679326',
+          state: 'Kerala',
+          storeId: 'SHD-MEL',
+        ),
+      );
+
+      await pumpForm(tester, isEditing: true);
+      await tester.tap(find.text('Save changes'));
+      await tester.pumpAndSettle();
+
+      final dialog = find.byType(Dialog);
+      expect(
+        find.descendant(of: dialog, matching: find.text('Profile updated')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: dialog, matching: find.textContaining('reward')),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+      expect(find.byType(Dialog), findsNothing);
+    });
+
     testWidgets('a branch chosen by hand survives a pincode change', (
       tester,
     ) async {
@@ -671,8 +751,7 @@ void main() {
       await submit(tester);
 
       expect(RegistrationService.instance.isRegistered, isTrue);
-      expect(find.textContaining('Registered ·'), findsOneWidget);
-
+      expect(find.byType(RegistrationScreen), findsNothing);
       expect(find.text('Payment checkout'), findsOneWidget);
     });
 

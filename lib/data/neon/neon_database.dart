@@ -1,19 +1,15 @@
 import 'package:postgres/postgres.dart';
 
-/// The Neon Postgres connection string, injected at build time and never
-/// committed:
-///
-/// ```
-/// flutter run --dart-define-from-file=.env
-/// ```
-///
-/// with a git-ignored `.env` holding the value copied from the Neon console
-/// ("Connection string" — it already has this shape):
-///
-/// ```
-/// DATABASE_URL=postgresql://USER:PASSWORD@HOST/neondb?sslmode=require
-/// ```
-const String _databaseUrl = String.fromEnvironment('DATABASE_URL');
+import 'neon_secret.dart';
+
+/// The Neon Postgres connection string. Comes from the git-ignored
+/// `lib/data/neon/neon_secret.dart` ([kNeonDatabaseUrl]), which
+/// `dart run tool/gen_neon_secret.dart` writes from `.env`; falls back to
+/// `--dart-define=DATABASE_URL` where the command line is safe (not Windows —
+/// `flutter.bat` runs under cmd.exe and eats the `&` in the URL).
+const String _databaseUrl = kNeonDatabaseUrl != ''
+    ? kNeonDatabaseUrl
+    : String.fromEnvironment('DATABASE_URL');
 
 /// The application name Postgres records for connections from this app, so the
 /// Neon dashboard can tell them apart from an admin tool or a migration run.

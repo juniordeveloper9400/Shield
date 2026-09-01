@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../../dates.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
+import '../auth/auth_service.dart';
 import '../privilege/privilege_cards_launch.dart';
 import '../privilege/privilege_screen.dart';
 import '../privilege/privilege_tier.dart';
@@ -28,8 +30,39 @@ class WalletScreen extends StatefulWidget {
   State<WalletScreen> createState() => _WalletScreenState();
 }
 
-class _WalletScreenState extends State<WalletScreen> {
+class _WalletScreenState extends State<WalletScreen>
+    with WidgetsBindingObserver {
   TransactionFilter _selectedFilter = TransactionFilter.all;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // The app has no push channel, so a plan approved at the counter reaches
+    // the member by this screen re-reading the wallet — on open, and again
+    // whenever the app comes back to the foreground.
+    _refreshFromDatabase();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshFromDatabase();
+    }
+  }
+
+  void _refreshFromDatabase() {
+    final phone = AuthService.instance.currentUser.value?.phone;
+    if (phone != null) {
+      WalletService.instance.refreshFromDatabase(phone);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +104,8 @@ class _WalletScreenState extends State<WalletScreen> {
               allEntries.where((e) => !e.isCredit).toList(),
           };
 
+          final pending = WalletService.instance.pendingCards;
+
           if (card == null) {
             // Every way into the programme from a shut wallet takes the cards
             // out of the pocket first, the way the home strip does: the lock
@@ -79,6 +114,11 @@ class _WalletScreenState extends State<WalletScreen> {
               builder: (context, fan, open) => ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
                 children: [
+                  if (pending.isNotEmpty) ...[
+                    for (final entry in pending)
+                      _PendingCardTile(card: entry),
+                    const SizedBox(height: 18),
+                  ],
                   _LockedWalletCard(onActivate: open),
                   const SizedBox(height: 18),
                   _ActivatePanel(fan: fan, onOpen: open),
@@ -90,6 +130,10 @@ class _WalletScreenState extends State<WalletScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
             children: [
+              for (final entry in pending) ...[
+                _PendingCardTile(card: entry),
+                const SizedBox(height: 12),
+              ],
               // The wallet card, and the two things that can be done with
               // what is on it. The actions sit under the card rather than on
               // it: a card that turns over when tapped cannot also carry
@@ -207,6 +251,100 @@ class _WalletScreenState extends State<WalletScreen> {
       case TransactionFilter.outTxn:
         return 'No outgoing transactions';
     }
+  }
+}
+
+/// A privilege card the member has submitted that is not on the wallet yet:
+/// waiting on the counter, or turned down with a reason.
+class _PendingCardTile extends StatelessWidget {
+  final PendingWalletCard card;
+
+  const _PendingCardTile({required this.card});
+
+  @override
+  Widget build(BuildContext context) {
+    final rejected = card.isRejected;
+    final accent = rejected ? AppColors.danger : const Color(0xFFB4761A);
+    final tint = rejected ? const Color(0xFFFBEBEB) : const Color(0xFFFDF3E0);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: BoxDecoration(
+        color: tint,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                rejected
+                    ? Icons.cancel_outlined
+                    : Icons.hourglass_bottom_rounded,
+                size: 18,
+                color: accent,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  rejected
+                      ? '${card.name} · Not approved'
+                      : '${card.name} · Awaiting approval',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            rejected
+                ? (card.note.isEmpty
+                      ? 'The counter did not approve this submission.'
+                      : card.note)
+                : '${card.load.creditedLabel} is added to your wallet once the '
+                      'counter approves your receipt. Submitted '
+                      '${formatDate(card.submittedAt)}.',
+            style: const TextStyle(
+              fontSize: 12.5,
+              height: 1.4,
+              color: AppColors.textBody,
+            ),
+          ),
+          if (rejected && card.remoteId != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () =>
+                    WalletService.instance.dismissRejected(card.remoteId!),
+                style: TextButton.styleFrom(
+                  minimumSize: Size.zero,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text(
+                  'Dismiss',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.danger,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

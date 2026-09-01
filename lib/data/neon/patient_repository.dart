@@ -14,8 +14,8 @@ import 'neon_database.dart';
 /// is the durable copy.
 ///
 /// `app.patient.member_id` is `NOT NULL`, so [upsert] resolves the owning
-/// `app.member` row from the signed-in mobile number first, inserting a minimal
-/// member if sign-in has not already written one.
+/// `app.users` row from the signed-in mobile number first, inserting a minimal
+/// user if sign-in has not already written one.
 class PatientRepository {
   const PatientRepository._();
 
@@ -87,7 +87,7 @@ class PatientRepository {
       final inserted = await conn.execute(
         Sql.named('''
           WITH owner AS (
-            INSERT INTO app.member (phone, name)
+            INSERT INTO app.users (phone, name)
             VALUES (@member_phone, @member_name)
             ON CONFLICT (phone) DO UPDATE SET updated_at = now()
             RETURNING id

@@ -158,34 +158,40 @@ class _PrivilegeScreenState extends State<PrivilegeScreen> {
               ],
             ),
             onComplete: (receipt) async {
-              // Activation, not a top-up: this is what opens the wallet, and
-              // the wallet keeps the card it was opened on — along with the
-              // branch it was activated against, so a member holding more than
-              // one plan can bill a later order to that branch by picking this
-              // plan at checkout.
-              WalletService.instance.activate(
+              // A submission, not an activation: the card is filed for review
+              // and credits nothing yet. It shows on the wallet as "awaiting
+              // approval"; a Super Admin approves it in the console — that is
+              // where the ledger lines and the balance move — and the wallet
+              // picks the approval up on its next refresh. The branch chosen
+              // here rides along so the approved plan is served by it.
+              final submittedAt = DateTime.now();
+              WalletService.instance.submitPending(
                 load,
                 store: StoreDirectory.byId(receipt.storeId),
+                on: submittedAt,
               );
-              // The durable copy on Neon: the wallet, the card and its two
-              // ledger lines. Best-effort and fire-and-forget — a build with
-              // no DATABASE_URL, or an unreachable database, must not stop the
-              // activation the member just paid for. AuthFlow.guard above has
-              // already ensured someone is signed in.
+              // The durable copy on Neon. Best-effort — a build with no
+              // DATABASE_URL, or an unreachable database, must not stop the
+              // submission. AuthFlow.guard above has ensured someone is signed
+              // in. Awaited only to pin the row's uuid onto the pending card.
               final user = AuthService.instance.currentUser.value;
               if (user != null) {
-                unawaited(
-                  WalletRepository.instance.activateCard(
-                    memberPhone: user.phone,
-                    memberName: user.name,
-                    tierKind: load.tier.kind,
-                    amount: load.amount,
-                    bonus: load.bonus,
-                    credited: load.credited,
-                    cardNumber: load.cardNumber,
-                    storeCode: receipt.storeId,
-                  ),
+                final uuid =
+                    await WalletRepository.instance.submitCardForApproval(
+                  memberPhone: user.phone,
+                  memberName: user.name,
+                  tierKind: load.tier.kind,
+                  amount: load.amount,
+                  bonus: load.bonus,
+                  cardNumber: load.cardNumber,
+                  storeCode: receipt.storeId,
+                  receiptReference: receipt.bankReference,
+                  receiptFileName: receipt.fileName,
                 );
+                if (uuid != null) {
+                  WalletService.instance
+                      .attachPendingRemoteId(submittedAt, uuid);
+                }
               }
               // Pin the branch chosen on the checkout to the account, so every
               // product and pharmacy order from here is locked to it. A repeat
@@ -210,8 +216,9 @@ class _PrivilegeScreenState extends State<PrivilegeScreen> {
         ..showSnackBar(
           SnackBar(
             content: Text(
-              'Receipt submitted · ${load.name} activated and '
-              '${load.creditedLabel} added to your wallet',
+              'Receipt submitted · ${load.name} is with the counter for '
+              'approval. ${load.creditedLabel} lands in your wallet once it is '
+              'approved.',
             ),
           ),
         );

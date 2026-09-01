@@ -49,7 +49,7 @@ class InvestorRepository {
               (member_id, code, name, phone, invested_store_id, total_units,
                unit_price, invested_since, roi_percent, plan_type)
             VALUES
-              ((SELECT id FROM app.member WHERE phone = @phone),
+              ((SELECT id FROM app.users WHERE phone = @phone),
                @code, @name, @phone,
                (SELECT id FROM app.shield_store WHERE code = @store),
                @units, @price, @since::date, @roi,

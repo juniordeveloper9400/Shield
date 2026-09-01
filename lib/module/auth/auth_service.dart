@@ -64,6 +64,12 @@ enum OtpError {
   /// has no configured options (only Android is wired; see FIREBASE_SETUP.md).
   unavailable,
 
+  /// The Firebase project itself is not set up to send this SMS and retrying
+  /// will not help: the Phone provider is disabled, the project is still on
+  /// the no-billing Spark plan, or this build's SHA fingerprints are not
+  /// registered. See FIREBASE_SETUP.md.
+  configError,
+
   /// Anything Firebase reported that does not map to one of the above.
   unknown,
 }
@@ -116,7 +122,20 @@ class AuthService {
   /// Set between [requestOtp] and [verifyOtp] — the half-finished sign-in.
   _PendingLogin? _pending;
 
+  /// The member from the most recent *active* sign-in, held until the shell
+  /// reads it once with [consumeFreshSignIn]. A session restored at launch does
+  /// not set this, so the welcome shows only when someone actually signs in.
+  AuthUser? _freshSignIn;
+
   bool get isSignedIn => currentUser.value != null;
+
+  /// Returns the just-signed-in member once, then forgets them. The app shell
+  /// calls this on first build to decide whether to greet the member.
+  AuthUser? consumeFreshSignIn() {
+    final user = _freshSignIn;
+    _freshSignIn = null;
+    return user;
+  }
 
   /// True once a code has been sent and not yet verified or abandoned.
   bool get hasPendingOtp => _pending != null;
@@ -141,10 +160,11 @@ class AuthService {
     _afterSignIn(user);
   }
 
-  /// Persists the freshly signed-in member: writes the name onto the Firebase
+  /// Persists the freshly signed-in user: writes the name onto the Firebase
   /// profile so the next launch has it, and records the account in the
-  /// `app.member` table. Both are best-effort and never block the sign-in.
+  /// `app.users` table. Both are best-effort and never block the sign-in.
   void _afterSignIn(AuthUser user) {
+    _freshSignIn = user;
     unawaited(_activeGateway.saveDisplayName(user.name));
     unawaited(
       MemberRepository.instance.upsertOnSignIn(
@@ -289,6 +309,7 @@ class AuthService {
 
   Future<void> logOut() async {
     _pending = null;
+    _freshSignIn = null;
     await _gateway?.signOut();
     currentUser.value = null;
   }
@@ -306,6 +327,7 @@ class AuthService {
   @visibleForTesting
   void reset() {
     _pending = null;
+    _freshSignIn = null;
     _gateway = null;
     currentUser.value = null;
   }
@@ -485,6 +507,13 @@ class FirebaseAuthGateway implements AuthGateway {
   Future<void> signOut() => _auth.signOut();
 
   OtpError _map(fb.FirebaseAuthException e) {
+    // Always surface the raw failure — without this every send/verify error
+    // collapses to one vague line and there is no way to tell a billing block
+    // from a bad SHA from a real quota hit. Check `flutter run` / `adb logcat`.
+    debugPrint(
+      'FirebaseAuth: code="${e.code}" message="${e.message}" '
+      'plugin="${e.plugin}"',
+    );
     switch (e.code) {
       case 'invalid-verification-code':
         return OtpError.wrongOtp;
@@ -496,21 +525,33 @@ class FirebaseAuthGateway implements AuthGateway {
       case 'too-many-requests':
         return OtpError.tooManyRequests;
       case 'quota-exceeded':
-      case 'missing-client-identifier':
         return OtpError.quotaExceeded;
       case 'network-request-failed':
         return OtpError.network;
+      case 'captcha-check-failed':
+      case 'web-context-cancelled':
+        // The reCAPTCHA fallback was shown and failed or was dismissed. On a
+        // debug build this fires when Play Integrity can't vouch for the app.
+        return OtpError.timeout;
       case 'operation-not-allowed':
-        // Phone sign-in is off in the Firebase console
-        // (Authentication → Sign-in method → Phone).
+      case 'billing-not-enabled':
+      case 'missing-client-identifier':
+      case 'app-not-authorized':
+      case 'internal-error':
+        // Permanent, project-side misconfiguration rather than a transient
+        // limit: Phone provider off, project still on the Spark (no-billing)
+        // plan, SHA-1/SHA-256 not registered, or the API key restricted.
+        // None of these clear by retrying — see FIREBASE_SETUP.md.
         assert(() {
           debugPrint(
-            'Firebase: enable the Phone provider in the console — '
-            'Authentication → Sign-in method → Phone.',
+            'FirebaseAuth: "${e.code}" is a console-side misconfiguration. '
+            'Phone Auth needs the Blaze plan for real numbers (or a test '
+            'number), the Phone provider enabled, and this build\'s '
+            'SHA-1/SHA-256 registered on the shield-zabnix Android app.',
           );
           return true;
         }());
-        return OtpError.quotaExceeded;
+        return OtpError.configError;
       default:
         return OtpError.unknown;
     }

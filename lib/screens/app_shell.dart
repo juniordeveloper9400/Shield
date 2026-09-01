@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../module/account/account_screen.dart';
 import '../module/appointment/clinics_screen.dart';
+import '../module/auth/auth_service.dart';
 import '../module/health/health_section.dart';
 import '../module/menu/menu_drawer.dart';
 import '../module/orders/orders_screen.dart';
 import '../module/registration/register_bar.dart';
+import '../widgets/app_messenger.dart';
 import '../widgets/bottom_nav.dart';
 import 'app_tabs.dart';
 import 'home_screen.dart';
@@ -23,6 +25,24 @@ class _AppShellState extends State<AppShell> {
   // Opens on Home, which now leads the bar.
   int _index = AppTab.home.index;
   HealthSubTab _healthSubTab = HealthSubTab.labsTests;
+
+  @override
+  void initState() {
+    super.initState();
+    // A fresh sign-in (not a session restored at launch) gets a one-time
+    // greeting once the shell is on screen.
+    final signedIn = AuthService.instance.consumeFreshSignIn();
+    if (signedIn != null) {
+      final firstName = signedIn.name.trim().split(RegExp(r'\s+')).first;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showAppSnackBar(
+          firstName.isEmpty ? 'Signed in' : 'Welcome, $firstName 👋',
+          celebratory: true,
+          icon: Icons.check_circle_outline,
+        );
+      });
+    }
+  }
 
   bool get _inHealthSection => _index == AppTab.lab.index;
 
