@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../module/agent/agent_portal_card.dart';
-import '../module/agent/agent_service.dart';
+import '../../shieldweb/shield agent_invester/agent/agent_portal_card.dart';
+import '../../shieldweb/shield agent_invester/agent/agent_service.dart';
 import '../module/auth/auth_service.dart';
 import '../module/cart/cart_badge.dart';
 import '../module/cart/cart_bar.dart';

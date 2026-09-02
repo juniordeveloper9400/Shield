@@ -190,6 +190,67 @@ void main() {
 
       expect(PatientBook.instance.patients.single.name, 'Ravi');
     });
+
+    test('replaceRemote loads the account\'s saved patients', () {
+      Patient remote(String uuid, String name) => Patient(
+        id: 'remote-$uuid',
+        remoteId: uuid,
+        name: name,
+        phone: '9000012345',
+        address: '',
+        dob: dobFor(30),
+        gender: PatientGender.male,
+        relation: PatientRelation.self,
+      );
+
+      PatientBook.instance.replaceRemote([remote('a', 'Muz'), remote('b', 'Ravi')]);
+
+      final names = PatientBook.instance.patients.map((p) => p.name).toList();
+      expect(names, ['Muz', 'Ravi']);
+      expect(
+        PatientBook.instance.patients.every((p) => p.remoteId != null),
+        isTrue,
+      );
+    });
+
+    test('replaceRemote collapses exact-duplicate remote rows', () {
+      Patient dup(String uuid) => Patient(
+        id: 'remote-$uuid',
+        remoteId: uuid,
+        name: 'Muza',
+        phone: '9484040484',
+        address: '',
+        dob: dobFor(24),
+        gender: PatientGender.male,
+        relation: PatientRelation.self,
+      );
+
+      PatientBook.instance.replaceRemote([dup('x'), dup('y')]);
+
+      expect(PatientBook.instance.length, 1);
+    });
+
+    test('replaceRemote keeps an unsynced local patient, drops a synced dupe',
+        () {
+      final local = seed(name: 'Local Only'); // no remoteId
+      expect(local.remoteId, isNull);
+
+      PatientBook.instance.replaceRemote([
+        Patient(
+          id: 'remote-1',
+          remoteId: '1',
+          name: 'From DB',
+          phone: '9111111111',
+          address: '',
+          dob: dobFor(40),
+          gender: PatientGender.female,
+          relation: PatientRelation.parent,
+        ),
+      ]);
+
+      final names = PatientBook.instance.patients.map((p) => p.name).toSet();
+      expect(names, {'From DB', 'Local Only'});
+    });
   });
 
   group('manage patients', () {
