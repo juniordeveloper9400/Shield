@@ -23,7 +23,14 @@ import 'package:shield/module/home/customer_testimonials.dart';
 import 'package:shield/screens/home_screen.dart';
 import 'package:shield/widgets/social_glyphs.dart';
 
+import 'support/fake_catalogue.dart';
+
 void main() {
+  // The home product rows read from CatalogueService, which has no database in
+  // a test — seed it with the fixture catalogue so the rows have products.
+  setUp(seedFakeCatalogue);
+  tearDown(resetFakeCatalogue);
+
   // A tall surface forces every home section to lay out in one pass, including
   // the ones a normal viewport would leave unbuilt. Any RenderFlex overflow or
   // missing asset surfaces as a test failure.

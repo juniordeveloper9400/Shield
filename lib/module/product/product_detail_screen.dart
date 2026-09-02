@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/neon/product_repository.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import '../cart/cart_bar.dart';
@@ -15,16 +16,43 @@ import 'product_detail_content.dart';
 /// The card in a grid or a home row shows the six things that fit — name, pack,
 /// price, MRP, discount, artwork. Everything a shopper wants before committing
 /// — what it is, what it treats, how to take it, what to watch for — lives
-/// here. The prose is composed by [ProductDetail] from the same fixture the
-/// card was built from, so this screen needs no catalogue of its own.
-class ProductDetailScreen extends StatelessWidget {
+/// here. Whatever the pharmacy admin filled in for the product in the console
+/// (`app.product_detail` / `app.product_faq`) is shown; every field they left
+/// blank is composed by [ProductDetail] from the product's name and pack, so
+/// the page is always complete.
+class ProductDetailScreen extends StatefulWidget {
   final Product product;
 
   const ProductDetailScreen({super.key, required this.product});
 
   @override
+  State<ProductDetailScreen> createState() => _ProductDetailScreenState();
+}
+
+class _ProductDetailScreenState extends State<ProductDetailScreen> {
+  Product get product => widget.product;
+
+  /// Admin-entered content, once fetched. Null until the load settles or when
+  /// the product has no id / the database is off — the page then renders fully
+  /// generated.
+  ProductDetailData? _content;
+
+  @override
+  void initState() {
+    super.initState();
+    final id = product.id;
+    if (id != null && id.isNotEmpty) {
+      ProductRepository.instance.detailFor(id).then((data) {
+        if (mounted && data != null) {
+          setState(() => _content = data);
+        }
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final detail = ProductDetail.of(product);
+    final detail = ProductDetail.of(product, content: _content);
 
     return Scaffold(
       backgroundColor: AppColors.pageTint,
