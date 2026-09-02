@@ -60,5 +60,8 @@ shield-neon-ok.apk
 # Neon connection string (compiled in, holds the DB password)
 lib/data/neon/neon_secret.dart
 
-# The admin web console is its own repository now — github.com/juniordeveloper9400/shield-web
+# Separate repositories, tracked on their own remotes — not part of this repo.
+# github.com/juniordeveloper9400/shield-web
 /shieldweb/
+# github.com/juniordeveloper9400/shield-webapp  (Flutter Web build: agent + investor)
+/shield agent_invester/
