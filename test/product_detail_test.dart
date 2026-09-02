@@ -10,9 +10,19 @@ import 'package:shield/module/home/product_showcase.dart';
 import 'package:shield/module/product/product_detail_content.dart';
 import 'package:shield/module/product/product_detail_screen.dart';
 
+import 'support/fake_catalogue.dart';
+
 void main() {
-  setUp(CartService.instance.reset);
-  tearDown(CartService.instance.reset);
+  setUp(() {
+    CartService.instance.reset();
+    // The "Customers also bought" rail and listing screens read from
+    // CatalogueService, which has no database in a test.
+    seedFakeCatalogue();
+  });
+  tearDown(() {
+    CartService.instance.reset();
+    resetFakeCatalogue();
+  });
 
   const dolo = Product(
     name: 'Dolo 650mg Tablet',

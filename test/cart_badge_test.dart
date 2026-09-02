@@ -6,9 +6,19 @@ import 'package:shield/module/cart/cart_service.dart';
 import 'package:shield/module/categories/category_catalogue.dart';
 import 'package:shield/module/categories/category_listing_screen.dart';
 
+import 'support/fake_catalogue.dart';
+
 void main() {
-  setUp(CartService.instance.reset);
-  tearDown(CartService.instance.reset);
+  setUp(() {
+    CartService.instance.reset();
+    // The listing screen's products come from CatalogueService, which has no
+    // database in a test.
+    seedFakeCatalogue();
+  });
+  tearDown(() {
+    CartService.instance.reset();
+    resetFakeCatalogue();
+  });
 
   Future<void> pumpProductPage(
     WidgetTester tester, {

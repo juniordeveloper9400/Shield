@@ -8,7 +8,13 @@ import 'package:shield/module/search/search_catalogue.dart';
 import 'package:shield/module/search/search_screen.dart';
 import 'package:shield/screens/home_screen.dart';
 
+import 'support/fake_catalogue.dart';
+
 void main() {
+  // Search runs against CatalogueService, which has no database in a test.
+  setUp(seedFakeCatalogue);
+  tearDown(resetFakeCatalogue);
+
   group('the search catalogue', () {
     test('a blank query turns up nothing', () {
       expect(SearchCatalogue.search(''), isEmpty);
@@ -32,8 +38,9 @@ void main() {
       );
     });
 
-    test('a product repeated across sections is only counted once', () {
-      // Accu-Chek Test Strips sits in a home showcase and in Diabetes Care.
+    test('the catalogue lists each product once', () {
+      // The catalogue is the single `app.product` list, so a name resolves to
+      // exactly one row — a search never doubles it up.
       final results = SearchCatalogue.search('Accu-Chek Test Strips');
       expect(
         results.where((p) => p.name == 'Accu-Chek Test Strips'),

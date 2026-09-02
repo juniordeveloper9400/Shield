@@ -10,8 +10,16 @@ import 'package:shield/module/categories/category_listing_screen.dart';
 import 'package:shield/module/categories/listing_catalogue.dart';
 import 'package:shield/module/categories/listing_filter.dart';
 
+import 'support/fake_catalogue.dart';
+
 void main() {
-  setUp(CartService.instance.reset);
+  setUp(() {
+    CartService.instance.reset();
+    // The listing screens read from CatalogueService, which has no database
+    // in a test — seed it with the fixture catalogue.
+    seedFakeCatalogue();
+  });
+  tearDown(resetFakeCatalogue);
 
   final personalCare = CategoryCatalogue.groups.firstWhere(
     (group) => group.title == 'Personal Care',
@@ -48,19 +56,18 @@ void main() {
       );
     });
 
-    test('uncurated sub-categories still name their section', () {
-      final surgical = ListingCatalogue.forSubCategory(
-        CategoryCatalogue.groups
-            .firstWhere((group) => group.title == 'Surgicals')
-            .items
-            .first,
-      );
-      expect(surgical, isNotEmpty);
-      for (final product in surgical) {
+    test('a sub-category lists only the products filed under it', () {
+      final glovesAndMasks = CategoryCatalogue.groups
+          .firstWhere((group) => group.title == 'Surgicals')
+          .items
+          .first;
+      final listed = ListingCatalogue.forSubCategory(glovesAndMasks);
+      expect(listed, isNotEmpty);
+      for (final product in listed) {
         expect(
-          product.name,
-          contains('Gloves & Masks'),
-          reason: 'generated stock must belong to the section it opened from',
+          product.subcategoryLabel,
+          glovesAndMasks.label,
+          reason: 'a product only shows under the sub-category it was filed in',
         );
       }
     });

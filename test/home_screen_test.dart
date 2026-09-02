@@ -25,6 +25,9 @@ import 'package:shield/widgets/social_glyphs.dart';
 
 import 'support/fake_catalogue.dart';
 
+/// A [Product.price] string ("1,999") as a number, for ordering assertions.
+int _rupees(String price) => int.parse(price.replaceAll(',', '').trim());
+
 void main() {
   // The home product rows read from CatalogueService, which has no database in
   // a test — seed it with the fixture catalogue so the rows have products.
@@ -439,7 +442,9 @@ void main() {
       find.text('${ProductCatalogue.dealsYouLove.length} items'),
       findsOneWidget,
     );
-    expect(find.text('Soft Soles Foot Cream'), findsOneWidget);
+    // Every product in that row is on the grid, including ones past where the
+    // horizontal feed row stopped.
+    expect(find.text(ProductCatalogue.dealsYouLove.last.name), findsOneWidget);
   });
 
   group('the "View all" collection screen', () {
@@ -484,10 +489,12 @@ void main() {
       await tester.tap(find.text('Apply'));
       await tester.pumpAndSettle();
 
-      // Soft Soles (₹165) is the cheapest in the row and now leads it; Protein
-      // Powder (₹1,999) is the dearest and sits below.
-      final cheapest = tester.getTopLeft(find.text('Soft Soles Foot Cream')).dy;
-      final dearest = tester.getTopLeft(find.text('Protein Powder Chocolate')).dy;
+      // Sorted low-to-high, the catalogue's cheapest deal leads the grid and
+      // its dearest sits below.
+      final byPrice = [...ProductCatalogue.dealsYouLove]
+        ..sort((a, b) => _rupees(a.price).compareTo(_rupees(b.price)));
+      final cheapest = tester.getTopLeft(find.text(byPrice.first.name)).dy;
+      final dearest = tester.getTopLeft(find.text(byPrice.last.name)).dy;
       expect(cheapest, lessThan(dearest));
 
       // The pill now carries its active count, the same as the category

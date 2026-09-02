@@ -10,7 +10,14 @@ import 'package:shield/module/categories/category_catalogue.dart';
 import 'package:shield/module/categories/category_listing_screen.dart';
 import 'package:shield/module/home/category_section.dart';
 
+import 'support/fake_catalogue.dart';
+
 void main() {
+  // The listing screens read from CatalogueService, which has no database in a
+  // test — seed it with the fixture catalogue.
+  setUp(seedFakeCatalogue);
+  tearDown(resetFakeCatalogue);
+
   Future<void> pumpCategories(
     WidgetTester tester, {
     Size size = const Size(400, 2000),
