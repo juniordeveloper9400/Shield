@@ -7,17 +7,15 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:shield/dates.dart';
 import 'package:shield/module/cart/cart_service.dart';
-import 'package:shield/module/prescription/prescription_cart_service.dart';
 import 'package:shield/module/home/prescription_card.dart';
 import 'package:shield/module/location/address_book.dart';
 import 'package:shield/module/location/address_form_screen.dart';
 import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/phone.dart';
 import 'package:shield/module/prescription/medicine_duration.dart';
-import 'package:shield/module/prescription/pharmacy_desk.dart';
+import 'package:shield/module/prescription/prescription_checkout_screen.dart';
 import 'package:shield/module/prescription/prescription_copy.dart';
 import 'package:shield/module/prescription/prescription_form.dart';
-import 'package:shield/module/prescription/prescription_form_sheet.dart';
 import 'package:shield/module/prescription/prescription_record.dart';
 import 'package:shield/module/prescription/upload_prescription_screen.dart';
 import 'package:shield/theme/app_colors.dart';
@@ -856,7 +854,6 @@ void main() {
       PatientBook.instance.reset();
       PrescriptionBook.instance.reset();
       CartService.instance.reset();
-      PrescriptionCartService.instance.reset();
       AddressBook.instance.reset();
       asha = PatientBook.instance.add(
         name: 'Asha Menon',
@@ -871,21 +868,27 @@ void main() {
       PatientBook.instance.reset();
       PrescriptionBook.instance.reset();
       CartService.instance.reset();
-      PrescriptionCartService.instance.reset();
       AddressBook.instance.reset();
     });
 
+    /// An uploaded script. [ordered] mirrors the fulfilment order having been
+    /// placed; [medicines] mirrors the pharmacist having sent the intake card.
     PrescriptionRecord seedRecord({
       List<PrescriptionMedicine>? medicines,
       RecurringSchedule? recurring,
+      bool ordered = false,
     }) {
-      return PrescriptionBook.instance.add(
+      final record = PrescriptionBook.instance.add(
         patient: asha,
         fileName: 'prescription.jpg',
         duration: MedicineDuration.oneMonth,
         recurring: recurring,
         medicines: medicines,
       );
+      if (ordered) {
+        PrescriptionBook.instance.markOrdered(record.id);
+      }
+      return record;
     }
 
     testWidgets('one uploaded turns the screen into the list', (tester) async {
@@ -897,10 +900,10 @@ void main() {
       expect(find.text('prescription.jpg'), findsOneWidget);
       expect(find.text('Asha Menon'), findsOneWidget);
 
-      // The upload form has stood down; it is reached from the button now.
+      // The upload form has stood down; and a not-yet-ordered script offers
+      // the way to delivery.
       expect(find.text('Use\nCamera'), findsNothing);
-      expect(find.text(copy.proceed), findsNothing);
-      expect(find.text(copy.addNewPrescription), findsOneWidget);
+      expect(find.text(copy.proceedToDelivery), findsOneWidget);
     });
 
     testWidgets('the list asks for delivery details once something is up', (
@@ -910,8 +913,7 @@ void main() {
       await pumpUpload(tester);
 
       const copy = PrescriptionCopy.english;
-      expect(find.text(copy.deliveryDetails), findsOneWidget);
-      // Nothing saved yet, so the prompt and its add button are shown.
+      expect(find.text(copy.deliveryDetails), findsWidgets);
       expect(find.text(copy.addDeliveryAddress), findsOneWidget);
       expect(find.text(copy.changeAddress), findsNothing);
     });
@@ -935,7 +937,6 @@ void main() {
       expect(find.text(copy.addDeliveryAddress), findsNothing);
       expect(find.text(copy.changeAddress), findsOneWidget);
       expect(find.text('Home'), findsOneWidget);
-      expect(find.text('Asha Menon'), findsWidgets);
       expect(find.textContaining('4B, Sea View'), findsOneWidget);
     });
 
@@ -951,29 +952,35 @@ void main() {
       expect(find.byType(AddressFormScreen), findsOneWidget);
     });
 
-    testWidgets('the card names its three columns', (tester) async {
-      seedRecord(
-        medicines: [
-          PrescriptionMedicine(
-            name: 'Dolo 650',
-            intake: IntakePattern(night: 1),
-          ),
-        ],
-      );
+    testWidgets('before the order the card says to place it, with no table', (
+      tester,
+    ) async {
+      seedRecord();
       await pumpUpload(tester);
 
       const copy = PrescriptionCopy.english;
-      expect(find.text(copy.product), findsOneWidget);
-      expect(find.text(copy.intake), findsOneWidget);
-      expect(find.text(copy.total), findsOneWidget);
-      expect(find.text(copy.patientRow), findsOneWidget);
-      expect(find.text(copy.doctorRow), findsOneWidget);
+      expect(find.text(copy.beforeOrderNote), findsOneWidget);
+      expect(find.text(copy.product), findsNothing);
+      expect(find.text(copy.total), findsNothing);
     });
 
-    testWidgets('the code the pharmacy keyed in is shown with its total', (
+    testWidgets('once ordered the card waits on the pharmacist', (tester) async {
+      seedRecord(ordered: true);
+      await pumpUpload(tester);
+
+      const copy = PrescriptionCopy.english;
+      expect(find.text(copy.orderPlacedTitle), findsOneWidget);
+      expect(find.text(copy.orderPlacedDetail), findsOneWidget);
+      expect(find.byIcon(Icons.hourglass_top_rounded), findsOneWidget);
+      // No table yet — the pharmacist has not sent the intake card.
+      expect(find.text(copy.product), findsNothing);
+    });
+
+    testWidgets('the intake card the pharmacist sent expands to the table', (
       tester,
     ) async {
       seedRecord(
+        ordered: true,
         medicines: [
           PrescriptionMedicine(
             name: 'Dolo 650mg Tablet',
@@ -984,31 +991,46 @@ void main() {
       );
       await pumpUpload(tester);
 
+      const copy = PrescriptionCopy.english;
+      expect(find.text(copy.intakeCardReady), findsOneWidget);
+      // Collapsed to begin with.
+      expect(find.text(copy.product), findsNothing);
+
+      await tester.tap(find.text(copy.intakeCardReady));
+      await tester.pumpAndSettle();
+
+      expect(find.text(copy.product), findsOneWidget);
+      expect(find.text(copy.intake), findsOneWidget);
+      expect(find.text(copy.total), findsOneWidget);
       expect(find.text('Dolo 650mg Tablet'), findsOneWidget);
       expect(find.text('101'), findsOneWidget);
       // Two a day over the thirty days the prescription was uploaded for.
       expect(find.text('60'), findsOneWidget);
-      expect(
-        find.textContaining('Strip of 15 tablets · Morning & night'),
-        findsOneWidget,
-      );
-      // And it is shown, not offered for editing.
+      // Shown, never offered for editing.
       expect(find.byType(TextField), findsNothing);
     });
 
-    testWidgets('an unread prescription says so instead of showing a table', (
+    testWidgets("the pharmacist's own unit figure wins over the derived one", (
       tester,
     ) async {
-      seedRecord();
+      seedRecord(
+        ordered: true,
+        medicines: [
+          PrescriptionMedicine(
+            name: 'Metformin 500mg Tablet',
+            intake: IntakePattern(morning: 1, night: 1),
+            totalUnits: 45,
+          ),
+        ],
+      );
       await pumpUpload(tester);
 
-      const copy = PrescriptionCopy.english;
-      expect(find.text(copy.awaitingReview), findsOneWidget);
-      expect(find.byIcon(Icons.hourglass_top_rounded), findsOneWidget);
-      // No columns yet: an empty table would read as a prescription with
-      // nothing on it rather than one nobody has read.
-      expect(find.text(copy.product), findsNothing);
-      expect(find.text(copy.total), findsNothing);
+      await tester.tap(find.text(PrescriptionCopy.english.intakeCardReady));
+      await tester.pumpAndSettle();
+
+      // 45, not 60 (2 × 30 days).
+      expect(find.text('45'), findsOneWidget);
+      expect(find.text('60'), findsNothing);
     });
 
     testWidgets('a repeat says its dates on the card', (tester) async {
@@ -1021,171 +1043,33 @@ void main() {
       expect(find.textContaining('never expires'), findsOneWidget);
     });
 
-    testWidgets('the prescriber the pharmacy read is shown, not asked for', (
-      tester,
-    ) async {
-      final record = seedRecord();
-      await pumpUpload(tester);
-
-      const copy = PrescriptionCopy.english;
-      // Nothing read yet, so nothing claimed.
-      expect(find.text('—'), findsOneWidget);
-
-      PrescriptionBook.instance.fillFromPharmacy(
-        record.id,
-        doctor: 'Dr. Anitha Menon',
-        medicines: [
-          PrescriptionMedicine(
-            name: 'Pan 40mg Tablet',
-            intake: IntakePattern(morning: 1),
-          ),
-        ],
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text(copy.doctorRow), findsOneWidget);
-      expect(find.text('Dr. Anitha Menon'), findsOneWidget);
-      expect(find.text(copy.awaitingReview), findsNothing);
-    });
-
-    testWidgets('nothing goes to the cart while the counter is still on it', (
+    testWidgets('Proceed to delivery opens the checkout for the new script', (
       tester,
     ) async {
       seedRecord();
       await pumpUpload(tester);
 
-      const copy = PrescriptionCopy.english;
-      // byWidgetPredicate, not byType: FilledButton.icon builds a private
-      // subclass, which an exact runtime-type match walks straight past.
-      final button = tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.text(copy.addToCart),
-          matching: find.byWidgetPredicate((widget) => widget is FilledButton),
-        ),
-      );
-      // An unread prescription says nothing about what to dispense.
-      expect(button.onPressed, isNull);
+      await tester.tap(find.text(PrescriptionCopy.english.proceedToDelivery));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PrescriptionCheckoutScreen), findsOneWidget);
+      expect(find.text('Place order'), findsOneWidget);
     });
 
-    testWidgets('the whole prescription goes as one order, under its number', (
+    testWidgets('with everything ordered the bar adds a new prescription', (
       tester,
     ) async {
-      final record = seedRecord(
-        medicines: [
-          PrescriptionMedicine(
-            name: 'Dolo 650',
-            pack: 'Strip of 15 tablets',
-            intake: IntakePattern(morning: 1, night: 1),
-          ),
-          // No dose keyed in, and so left behind rather than sent as a blank.
-          PrescriptionMedicine(name: 'Shelcal'),
-        ],
-      );
+      seedRecord(ordered: true);
       await pumpUpload(tester);
 
-      const copy = PrescriptionCopy.english;
-      await tester.tap(find.text(copy.addToCart));
-      await tester.pumpAndSettle();
-
-      // One order for the paper, not one line per medicine. A prescription
-      // is filled as a unit and is identified by its number.
-      final orders = PrescriptionCartService.instance.orders;
-      expect(orders, hasLength(1));
-      expect(orders.single.number, record.number);
-      expect(orders.single.record.id, record.id);
-
-      // The incomplete row is left behind, and the complete one carries its
-      // whole run: two a day over thirty days.
-      expect(orders.single.medicineCount, 1);
-      expect(orders.single.unitCount, 60);
-
-      // Priced by the pharmacist, not guessed at here.
-      expect(orders.single.isPriced, isFalse);
-
-      // And nothing lands in the medicine cart, which is for things picked
-      // off a shelf.
-      expect(CartService.instance.lines, isEmpty);
-      expect(CartService.instance.itemCount, 0);
-
-      expect(record.inCart, isTrue);
-      expect(find.text(copy.inCart), findsNWidgets(2));
-    });
-
-    testWidgets('the number is the id in the form a member can read out', (
-      tester,
-    ) async {
-      final record = seedRecord(
-        medicines: [
-          PrescriptionMedicine(
-            name: 'Dolo 650',
-            intake: IntakePattern(night: 1),
-          ),
-        ],
+      expect(
+        find.text(PrescriptionCopy.english.addNewPrescription),
+        findsOneWidget,
       );
-      await pumpUpload(tester);
-
-      // Built from the id rather than stored beside it, so the two can never
-      // name different prescriptions.
-      expect(record.id, 'rx1');
-      expect(record.number, 'RX-0001');
-    });
-
-    testWidgets('a prescription in the cart is not sent twice', (tester) async {
-      seedRecord(
-        medicines: [
-          PrescriptionMedicine(
-            name: 'Dolo 650',
-            intake: IntakePattern(night: 1),
-          ),
-        ],
+      expect(
+        find.text(PrescriptionCopy.english.proceedToDelivery),
+        findsNothing,
       );
-      await pumpUpload(tester);
-
-      const copy = PrescriptionCopy.english;
-      await tester.tap(find.text(copy.addToCart));
-      await tester.pumpAndSettle();
-
-      final button = tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.text(copy.inCart).last,
-          matching: find.byWidgetPredicate((widget) => widget is FilledButton),
-        ),
-      );
-      expect(button.onPressed, isNull);
-
-      // One order, however many times it is sent: a prescription can only be
-      // dispensed once.
-      expect(PrescriptionCartService.instance.orderCount, 1);
-      expect(PrescriptionCartService.instance.medicineCount, 1);
-    });
-
-    testWidgets('deleting a prescription takes it out of the basket', (
-      tester,
-    ) async {
-      seedRecord(
-        medicines: [
-          PrescriptionMedicine(
-            name: 'Dolo 650',
-            intake: IntakePattern(night: 1),
-          ),
-        ],
-      );
-      await pumpUpload(tester);
-
-      const copy = PrescriptionCopy.english;
-      await tester.tap(find.text(copy.addToCart));
-      await tester.pumpAndSettle();
-      expect(PrescriptionCartService.instance.orderCount, 1);
-
-      // The basket cannot go on holding a prescription that no longer exists.
-      await tester.tap(find.text(copy.delete));
-      await tester.pumpAndSettle();
-      expect(PrescriptionCartService.instance.isEmpty, isTrue);
-
-      // And undoing the delete puts it back, basket and all.
-      await tester.tap(find.text(copy.undo));
-      await tester.pumpAndSettle();
-      expect(PrescriptionCartService.instance.orderCount, 1);
     });
 
     testWidgets('deleting offers the way back', (tester) async {
@@ -1231,61 +1115,24 @@ void main() {
       expect(PrescriptionBook.instance.records.last.fileName, 'second.jpg');
     });
 
-    testWidgets('the counter filling a card in redraws it in place', (
-      tester,
-    ) async {
-      final record = seedRecord();
-      await pumpUpload(tester);
-
-      const copy = PrescriptionCopy.english;
-      expect(record.isAwaitingReview, isTrue);
-      expect(find.text(copy.awaitingReview), findsOneWidget);
-
-      PharmacyDesk.reviewDelay = Duration.zero;
-      addTearDown(PharmacyDesk.resetForTest);
-      await PharmacyDesk.review(record);
-      await tester.pumpAndSettle();
-
-      expect(record.isAwaitingReview, isFalse);
-      expect(find.text(copy.awaitingReview), findsNothing);
-      expect(find.text(copy.product), findsOneWidget);
-      for (final medicine in record.medicines) {
-        expect(find.text(medicine.name), findsOneWidget, reason: medicine.name);
-      }
-    });
-
     testWidgets('add new prescription opens the upload form over the list', (
       tester,
     ) async {
-      seedRecord();
+      seedRecord(ordered: true);
       await pumpUpload(tester);
 
-      const copy = PrescriptionCopy.english;
-      await tester.tap(find.text(copy.addNewPrescription));
+      await tester.tap(find.text(PrescriptionCopy.english.addNewPrescription));
       await tester.pumpAndSettle();
 
-      expect(find.byType(PrescriptionFormSheet), findsOneWidget);
-      expect(find.text(copy.newPrescription), findsOneWidget);
-      // The same form, not a second one written for the sheet.
-      expect(find.text('Use\nCamera'), findsOneWidget);
-      expect(find.text('Use\nGallery'), findsOneWidget);
-      expect(find.text(copy.patientHint), findsOneWidget);
-      expect(find.text(copy.recurringHeading), findsOneWidget);
-
-      // Nothing has been picked, so there is nothing to file yet.
-      final button = tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.text(copy.addPrescription),
-          matching: find.byType(FilledButton),
-        ),
-      );
-      expect(button.onPressed, isNull);
+      // The sheet form is up, over the list.
+      expect(find.text('Use\nCamera'), findsWidgets);
     });
 
     testWidgets('the card lays out on a narrow screen, in either language', (
       tester,
     ) async {
       seedRecord(
+        ordered: true,
         medicines: [
           PrescriptionMedicine(
             name: 'Dolo 650mg Tablet',
@@ -1299,6 +1146,8 @@ void main() {
       // is the assertion.
       await pumpUpload(tester, size: const Size(320, 3200));
 
+      await tester.tap(find.text(PrescriptionCopy.english.intakeCardReady));
+      await tester.pumpAndSettle();
       expect(find.text('90'), findsOneWidget);
 
       await tester.tap(find.text('മ'));
@@ -1308,55 +1157,11 @@ void main() {
         find.text(PrescriptionCopy.malayalam.yourPrescriptions),
         findsOneWidget,
       );
-      expect(find.text('90'), findsOneWidget);
     });
-
-    test('the counter answers the same way for the same prescription', () {
-      // A record read twice must not come back as two different courses of
-      // treatment.
-      expect(
-        PharmacyDesk.medicinesFor('rx3').map((line) => line.name),
-        PharmacyDesk.medicinesFor('rx3').map((line) => line.name),
-      );
-      expect(
-        PharmacyDesk.prescriberFor('rx3'),
-        PharmacyDesk.prescriberFor('rx3'),
-      );
-
-      // And two prescriptions do not both come back as the same one.
-      expect(
-        PharmacyDesk.medicinesFor('rx1').first.name,
-        isNot(PharmacyDesk.medicinesFor('rx2').first.name),
-      );
-    });
-
-    test('every line the counter files is ready to dispense', () {
-      for (final id in ['rx1', 'rx2', 'rx3', 'rx4']) {
-        final lines = PharmacyDesk.medicinesFor(id);
-        expect(lines, isNotEmpty, reason: id);
-        for (final line in lines) {
-          expect(line.isComplete, isTrue, reason: '$id · ${line.name}');
-          expect(line.pack, isNotEmpty, reason: '$id · ${line.name}');
-        }
-      }
-    });
-
-    test(
-      'a prescription deleted before the answer comes back stays gone',
-      () async {
-        final record = seedRecord();
-        PrescriptionBook.instance.remove(record.id);
-
-        PharmacyDesk.reviewDelay = Duration.zero;
-        addTearDown(PharmacyDesk.resetForTest);
-        await PharmacyDesk.review(record);
-
-        expect(PrescriptionBook.instance.isEmpty, isTrue);
-      },
-    );
 
     test('the totals across a card only count the lines that are ready', () {
       final record = seedRecord(
+        ordered: true,
         medicines: [
           PrescriptionMedicine(
             name: 'Dolo 650',

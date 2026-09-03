@@ -9,8 +9,6 @@ import 'package:shield/module/orders/orders_screen.dart';
 import 'package:shield/module/orders/purchase_service.dart';
 import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/prescription/medicine_duration.dart';
-import 'package:shield/module/prescription/prescription_cart_screen.dart';
-import 'package:shield/module/prescription/prescription_cart_service.dart';
 import 'package:shield/module/prescription/prescription_checkout_screen.dart';
 import 'package:shield/module/prescription/prescription_order_placed_screen.dart';
 import 'package:shield/module/prescription/prescription_record.dart';
@@ -30,7 +28,6 @@ void main() {
   }
 
   void resetAll() {
-    PrescriptionCartService.instance.reset();
     PrescriptionBook.instance.reset();
     PatientBook.instance.reset();
     PurchaseService.instance.clear();
@@ -44,7 +41,6 @@ void main() {
 
   setUp(resetAll);
   tearDown(() {
-    PrescriptionCartService.instance.reset();
     PrescriptionBook.instance.reset();
     PatientBook.instance.reset();
     PurchaseService.instance.reset();
@@ -52,6 +48,8 @@ void main() {
     AuthService.instance.reset();
   });
 
+  /// An uploaded script with no medicines yet — the pharmacist builds the
+  /// intake card after the order is placed.
   PrescriptionRecord fileRecord({String patient = 'Asha Menon'}) {
     final person = PatientBook.instance.add(
       name: patient,
@@ -64,41 +62,31 @@ void main() {
       patient: person,
       fileName: 'prescription.jpg',
       duration: MedicineDuration.oneMonth,
-      medicines: [
-        PrescriptionMedicine(
-          name: 'Dolo 650',
-          pack: 'Strip of 15 tablets',
-          intake: IntakePattern(morning: 1, night: 1),
-        ),
-        PrescriptionMedicine(
-          name: 'Shelcal 500',
-          pack: 'Strip of 15 tablets',
-          intake: IntakePattern(night: 1),
-        ),
-      ],
     );
     record.doctor = 'Dr. Menon';
     return record;
   }
 
-  Future<void> pumpBasket(WidgetTester tester) async {
+  Future<void> pumpCheckout(
+    WidgetTester tester, {
+    List<PrescriptionRecord>? records,
+  }) async {
     tester.view.physicalSize = const Size(400, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(const MaterialApp(home: PrescriptionCartScreen()));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PrescriptionCheckoutScreen(records: records ?? [fileRecord()]),
+      ),
+    );
     await tester.pumpAndSettle();
   }
 
   group('prescription checkout', () {
-    testWidgets('the basket proceeds to a checkout with payment options', (
+    testWidgets('the checkout carries payment options and a place-order bar', (
       tester,
     ) async {
-      PrescriptionCartService.instance.add(fileRecord());
-      await pumpBasket(tester);
-
-      expect(find.text('Proceed to checkout'), findsOneWidget);
-      await tester.tap(find.text('Proceed to checkout'));
-      await tester.pumpAndSettle();
+      await pumpCheckout(tester);
 
       expect(find.byType(PrescriptionCheckoutScreen), findsOneWidget);
       expect(find.text('Payment method'), findsOneWidget);
@@ -108,10 +96,7 @@ void main() {
     });
 
     testWidgets('a method that is not wired up says so', (tester) async {
-      PrescriptionCartService.instance.add(fileRecord());
-      await pumpBasket(tester);
-      await tester.tap(find.text('Proceed to checkout'));
-      await tester.pumpAndSettle();
+      await pumpCheckout(tester);
 
       await tester.tap(find.text('Google Pay'));
       await tester.pump();
@@ -121,13 +106,10 @@ void main() {
       expect(find.byIcon(Icons.radio_button_checked_rounded), findsOneWidget);
     });
 
-    testWidgets('Place order files it in My Orders and empties the basket', (
-      tester,
-    ) async {
-      PrescriptionCartService.instance.add(fileRecord());
-      await pumpBasket(tester);
-      await tester.tap(find.text('Proceed to checkout'));
-      await tester.pumpAndSettle();
+    testWidgets('Place order files it in My Orders and marks the script ordered',
+        (tester) async {
+      final record = fileRecord();
+      await pumpCheckout(tester, records: [record]);
 
       await tester.tap(find.text('Place order'));
       await tester.pumpAndSettle();
@@ -135,8 +117,8 @@ void main() {
       final purchases = PurchaseService.instance.purchases;
       expect(purchases, hasLength(1));
       expect(purchases.first.status, OrderStatus.processing);
-      expect(purchases.first.itemCount, 2, reason: 'two dispensable medicines');
-      expect(PrescriptionCartService.instance.isEmpty, isTrue);
+      expect(purchases.first.itemCount, 1, reason: 'one prescription');
+      expect(record.ordered, isTrue);
 
       // The checkout is gone; a confirmation with a tick has taken its place.
       expect(find.byType(PrescriptionCheckoutScreen), findsNothing);
@@ -150,10 +132,7 @@ void main() {
       tester,
     ) async {
       AddressBook.instance.reset();
-      PrescriptionCartService.instance.add(fileRecord());
-      await pumpBasket(tester);
-      await tester.tap(find.text('Proceed to checkout'));
-      await tester.pumpAndSettle();
+      await pumpCheckout(tester);
 
       expect(find.text('Add a delivery address first'), findsOneWidget);
 
@@ -161,7 +140,6 @@ void main() {
       await tester.tap(find.text('Place order'), warnIfMissed: false);
       await tester.pumpAndSettle();
 
-      // Nothing was filed and the checkout is still up.
       expect(PurchaseService.instance.purchases, isEmpty);
       expect(find.byType(PrescriptionCheckoutScreen), findsOneWidget);
       expect(find.byType(PrescriptionOrderPlacedScreen), findsNothing);
@@ -170,10 +148,7 @@ void main() {
     testWidgets('the confirmation tracks the order that was just placed', (
       tester,
     ) async {
-      PrescriptionCartService.instance.add(fileRecord());
-      await pumpBasket(tester);
-      await tester.tap(find.text('Proceed to checkout'));
-      await tester.pumpAndSettle();
+      await pumpCheckout(tester);
       await tester.tap(find.text('Place order'));
       await tester.pumpAndSettle();
 
@@ -184,28 +159,21 @@ void main() {
       expect(find.byType(PrescriptionOrderPlacedScreen), findsNothing);
     });
 
-    testWidgets('the basket carries the delivery address section', (
+    testWidgets('the checkout carries the delivery address section', (
       tester,
     ) async {
-      PrescriptionCartService.instance.add(fileRecord());
-      await pumpBasket(tester);
+      await pumpCheckout(tester);
 
-      // The same "DELIVER TO" section the product checkout shows, with the
-      // address that resetAll put on file.
-      expect(find.text('DELIVER TO'), findsOneWidget);
-      expect(
-        find.textContaining('Ghatkopar East'),
-        findsOneWidget,
-      );
+      expect(find.text('Delivery address'), findsOneWidget);
+      expect(find.textContaining('Ghatkopar East'), findsOneWidget);
       expect(find.text('Change'), findsOneWidget);
     });
 
-    testWidgets('the basket offers to add a delivery address when none is set', (
+    testWidgets('offers to add a delivery address when none is set', (
       tester,
     ) async {
       AddressBook.instance.reset();
-      PrescriptionCartService.instance.add(fileRecord());
-      await pumpBasket(tester);
+      await pumpCheckout(tester);
 
       final add = find.text('Add delivery address');
       expect(add, findsOneWidget);
@@ -224,7 +192,7 @@ void main() {
     PurchaseService.instance.record(
       id: 'SHD-100500',
       placedOn: '27 Aug 2026',
-      itemCount: 2,
+      itemCount: 1,
       mrpTotal: 0,
       paidTotal: 0,
       status: OrderStatus.processing,
