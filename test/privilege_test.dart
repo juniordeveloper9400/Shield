@@ -566,6 +566,48 @@ void main() {
       expect(waiting.style?.color, AppColors.planWaiting);
     });
 
+    testWidgets('an expired plan reads "Expired" on the back, greyed', (
+      tester,
+    ) async {
+      // Issued long enough ago that its one-year validity has run out
+      // (isExpired is measured against the wall clock, not asOf).
+      final cards = [
+        WalletCard(
+          load: PrivilegeProgramme.loadFor(10000)!,
+          issuedOn: DateTime(2020, 3, 4),
+          rechargedOn: DateTime(2020, 3, 4),
+        ),
+      ];
+      expect(cards.single.isExpired, isTrue);
+
+      await pump(
+        tester,
+        Scaffold(
+          body: WalletFlipCard(
+            cards: cards,
+            balance: 0,
+            monthlyRedeemable: 916,
+            redeemed: 0,
+            monthlyBalance: 0,
+            asOf: DateTime(2026, 9, 24),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(WalletFlipCard));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Expired'), findsOneWidget);
+      expect(find.text('Active'), findsNothing);
+      expect(find.text('Waiting'), findsNothing);
+      expect(
+        find.textContaining('Expired 04 Mar'),
+        findsOneWidget,
+      );
+      final expired = tester.widget<Text>(find.text('Expired'));
+      expect(expired.style?.color, const Color(0xFF6B7B95));
+    });
+
     testWidgets('the back turns itself to the release page', (tester) async {
       final cards = [
         WalletCard(
