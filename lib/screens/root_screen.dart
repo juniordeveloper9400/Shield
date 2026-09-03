@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../module/auth/auth_service.dart';
 import '../module/auth/login_screen.dart';
+import '../module/auth/persona_gate.dart';
 import 'app_shell.dart';
+import 'persona_web_only_screen.dart';
 import 'splash_screen.dart';
 
 /// App entry point: the splash, then the sign-in gate, then the shell.
@@ -12,6 +14,11 @@ import 'splash_screen.dart';
 /// The gate is a gate, not an offer — nothing below it is reachable without a
 /// session. Because it is driven by [AuthService.currentUser] rather than a
 /// pushed route, signing out anywhere in the app drops straight back to it.
+///
+/// One more gate sits under the sign-in one: [PersonaGate]. A member the admin
+/// console has turned into an agent or investor is shown
+/// [PersonaWebOnlyScreen] instead of the shell — those personas belong on the
+/// web portal.
 class RootScreen extends StatefulWidget {
   /// How long the splash stays up.
   final Duration splashDuration;
@@ -37,6 +44,9 @@ class _RootScreenState extends State<RootScreen> {
         setState(() => _showSplash = false);
       }
     });
+    // A session may already be restored (see main()); kick the persona check
+    // off now so it overlaps the splash rather than adding to it.
+    unawaited(PersonaGate.instance.ensureChecked());
   }
 
   @override
@@ -57,9 +67,25 @@ class _RootScreenState extends State<RootScreen> {
         if (user == null) {
           return const LoginScreen();
         }
-        // Keyed on the session so signing out clears the previous member's
-        // tab and scroll state instead of carrying it over to the next one.
-        return AppShell(key: ValueKey(user.phone));
+        // A fresh sign-in needs its own persona check before the shell shows.
+        unawaited(PersonaGate.instance.ensureChecked());
+        return AnimatedBuilder(
+          animation: PersonaGate.instance,
+          builder: (context, _) {
+            final gate = PersonaGate.instance;
+            if (!gate.isSettled) {
+              // Brief — one Neon read — so hold the splash rather than flash
+              // the shell and snatch it back.
+              return const SplashScreen();
+            }
+            if (gate.isBlocked) {
+              return PersonaWebOnlyScreen(status: gate.status);
+            }
+            // Keyed on the session so signing out clears the previous member's
+            // tab and scroll state instead of carrying it over to the next one.
+            return AppShell(key: ValueKey(user.phone));
+          },
+        );
       },
     );
   }

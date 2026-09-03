@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'data/neon/neon_http.dart';
 import 'firebase_options.dart';
 import 'module/auth/auth_service.dart';
+import 'module/auth/persona_gate.dart';
 import 'module/catalogue/catalogue_service.dart';
 import 'screens/root_screen.dart';
 import 'theme/app_colors.dart';
@@ -37,6 +38,12 @@ Future<void> main() async {
   } catch (error) {
     debugPrint('restoreSession failed — starting signed out: $error');
   }
+
+  // If that restored a member, find out straight away whether the admin
+  // console has since made them an agent or investor — those personas are sent
+  // to the web app, not the shell. Fire-and-forget: it overlaps the splash and
+  // RootScreen waits on it.
+  unawaited(PersonaGate.instance.ensureChecked());
 
   // Warm the storefront catalogue so the home rows have products on first
   // paint rather than popping in a beat later. Fire-and-forget — the home,
