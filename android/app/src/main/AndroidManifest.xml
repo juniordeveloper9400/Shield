@@ -3,6 +3,10 @@
          own manifests. Firebase Phone Auth, the Neon backend and every remote
          image or video all talk over the network. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Optional: the "Your SHIELD store" map offers to rank branches by how
+         close they are. Registration still works without it (pincode ranking). -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 
     <application
         android:label="SHIELD"

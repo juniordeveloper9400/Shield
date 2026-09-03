@@ -26,6 +26,12 @@ dependencies:
   # endpoint instead of the socket above: plain HTTPS on 443, same behaviour in
   # debug and release, reliable from a phone. See data/neon/neon_http.dart.
   http: ^1.6.0
+  # "Your SHIELD store" branch picker map. OpenStreetMap tiles (no API key, no
+  # billing); geolocator adds the optional "nearest to me" ranking. Renders the
+  # same on the APK and the web build. See registration/store_map_view.dart.
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  geolocator: ^13.0.4
   # Resizes an uploaded prescription photo to a small JPEG data URI before it
   # is written to app.prescription.image, so the pharmacy console can view it.
   # Also used by tool/whiten_product_backgrounds.dart.

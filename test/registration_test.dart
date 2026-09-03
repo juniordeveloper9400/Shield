@@ -9,6 +9,7 @@ import 'package:shield/module/registration/register_bar.dart';
 import 'package:shield/module/registration/registration_screen.dart';
 import 'package:shield/module/registration/registration_service.dart';
 import 'package:shield/module/registration/shield_store.dart';
+import 'package:shield/module/registration/store_map_view.dart';
 import 'package:shield/dates.dart';
 import 'package:shield/screens/app_shell.dart';
 import 'package:shield/widgets/age_badge.dart';
@@ -21,11 +22,16 @@ void main() {
     AuthService.instance.signInAs(name: 'Asha Nair', phone: '9000012345');
     RegistrationService.instance.reset();
     CartService.instance.reset();
+    // The branch-picker map fetches OpenStreetMap tiles and drives timers that
+    // pumpAndSettle cannot drain; the pincode-ranked list under it is what the
+    // form tests exercise. Real builds render the map.
+    StoreMapView.renderMap = false;
   });
   tearDown(() {
     AuthService.instance.reset();
     RegistrationService.instance.reset();
     CartService.instance.reset();
+    StoreMapView.renderMap = true;
   });
 
   // Tall enough to lay the whole form out in one pass, so an overflow

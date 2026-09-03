@@ -8,6 +8,8 @@ import '../auth/auth_service.dart';
 import 'registration_celebration.dart';
 import 'registration_service.dart';
 import 'shield_store.dart';
+import 'store_locator.dart';
+import 'store_map_view.dart';
 
 /// The registration form: profile, address, and the branch that will serve it.
 ///
@@ -49,6 +51,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   bool _showAllStores = false;
   bool _submitted = false;
+
+  /// A location fix, once the member taps "Use my location" on the store map.
+  /// Null until then — the list falls back to pincode ranking.
+  StoreLocationResult? _located;
 
   RegistrationService get _service => RegistrationService.instance;
 
@@ -93,9 +99,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   // ---- Stores ----
 
-  List<ShieldStore> get _ranked => StoreDirectory.nearest(_pincode.text);
+  List<ShieldStore> get _ranked => _located?.ok == true
+      ? _located!.ranked
+      : StoreDirectory.nearest(_pincode.text);
 
-  ShieldStore? get _suggested => StoreDirectory.suggestFor(_pincode.text);
+  ShieldStore? get _suggested =>
+      _located?.nearest ?? StoreDirectory.suggestFor(_pincode.text);
 
   void _onPincodeChanged() {
     if (!mounted) {
@@ -434,11 +443,35 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
     return _Section(
       title: 'Your SHIELD store',
-      subtitle: suggested == null
-          ? 'Enter your pincode above and we will put the nearest branch first.'
-          : 'Nearest to ${_pincode.text} is pre-selected. Change it if another '
-                'branch suits you better.',
+      subtitle: _located?.ok == true
+          ? 'Nearest to you is pre-selected. Tap a pin or a branch to change it.'
+          : suggested == null
+              ? 'Enter your pincode above, or use the map, and we will put the '
+                    'nearest branch first.'
+              : 'Nearest to ${_pincode.text} is pre-selected. Change it if '
+                    'another branch suits you better.',
       children: [
+        // The branches on a map: each a red pin with its name above it, the
+        // chosen one deeper red. "Use my location" is optional — the list
+        // below works on its own.
+        StoreMapView(
+          selectedId: _storeId,
+          focusOn: suggested,
+          onSelected: (store) => setState(() {
+            _storeId = store.id;
+            _storePickedByHand = true;
+          }),
+          onLocated: (result) {
+            if (!mounted) return;
+            setState(() {
+              _located = result;
+              if (!_storePickedByHand && result.nearest != null) {
+                _storeId = result.nearest!.id;
+              }
+            });
+          },
+        ),
+        const SizedBox(height: 12),
         for (final store in visible) ...[
           _StoreCard(
             store: store,
