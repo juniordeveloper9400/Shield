@@ -439,7 +439,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   Widget _buildStorePicker() {
     final ranked = _ranked;
     final suggested = _suggested;
-    final visible = _showAllStores ? ranked : ranked.take(4).toList();
+    // The chosen branch always sits at the top of the list, so collapsing
+    // it back to four never hides the one the member actually picked.
+    final ordered = _storeId == null
+        ? ranked
+        : [
+            for (final s in ranked) if (s.id == _storeId) s,
+            for (final s in ranked) if (s.id != _storeId) s,
+          ];
+    final visible =
+        _showAllStores ? ordered : ordered.take(4).toList();
 
     return _Section(
       title: 'Your SHIELD store',
@@ -484,7 +493,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           ),
           const SizedBox(height: 10),
         ],
-        if (ranked.length > visible.length || _showAllStores)
+        if (ordered.length > visible.length || _showAllStores)
           Align(
             alignment: Alignment.centerLeft,
             child: TextButton(
@@ -498,7 +507,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               child: Text(
                 _showAllStores
                     ? 'Show fewer stores'
-                    : 'Show all ${ranked.length} stores',
+                    : 'Show all ${ordered.length} stores',
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w700,
