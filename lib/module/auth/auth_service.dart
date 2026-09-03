@@ -245,13 +245,16 @@ class AuthService {
 
   /// Sends a code to [phone] and holds the details until it is verified.
   /// Returns null when the code went out, otherwise the reason it did not.
+  ///
+  /// [name] is given on the sign-up path and left null on the sign-in path —
+  /// a returning member's name is read back from `app.users` in [verifyOtp].
   Future<OtpError?> requestOtp({
-    required String name,
+    String? name,
     required String phone,
   }) async {
-    final cleanName = name.trim();
+    final cleanName = name?.trim() ?? '';
     final cleanPhone = phone.trim();
-    if (validateName(cleanName) != null) {
+    if (name != null && validateName(cleanName) != null) {
       return OtpError.invalidName;
     }
     if (validatePhone(cleanPhone) != null) {
@@ -295,7 +298,21 @@ class AuthService {
     }
 
     _pending = null;
-    final user = AuthUser(name: pending.name, phone: pending.phone);
+
+    // Sign-up carries the name; sign-in does not, so read the returning
+    // member's name back from `app.users`, falling back to a neutral
+    // placeholder that registration will overwrite.
+    var name = pending.name.trim();
+    if (name.isEmpty) {
+      name = (await MemberRepository.instance.nameByPhone(pending.phone))
+              ?.trim() ??
+          '';
+    }
+
+    final user = AuthUser(
+      name: name.isEmpty ? 'Member' : name,
+      phone: pending.phone,
+    );
     currentUser.value = user;
     _afterSignIn(user);
     return null;
@@ -381,6 +398,15 @@ class FirebaseAuthGateway implements AuthGateway {
   String? _verificationId;
   int? _resendToken;
 
+  /// Web only. `verifyPhoneNumber`'s callback API is unreliable in a browser —
+  /// when the reCAPTCHA step fails (most often the deploy origin is not in the
+  /// Firebase project's Authorized domains) none of its callbacks fire and the
+  /// send just hangs to the client deadline. `signInWithPhoneNumber` runs the
+  /// same reCAPTCHA but returns a [fb.ConfirmationResult] and throws a typed
+  /// error instead of stalling, so web uses it and keeps the handle here to
+  /// pair with the typed code in [confirmCode].
+  fb.ConfirmationResult? _webConfirmation;
+
   /// How long to wait for Firebase to call back before giving up. Covers the
   /// case where the reCAPTCHA fallback web page opens and never resolves, which
   /// otherwise leaves [sendCode] hanging and the "Get OTP" button spinning.
@@ -391,6 +417,10 @@ class FirebaseAuthGateway implements AuthGateway {
 
   @override
   Future<OtpError?> sendCode(String e164Phone) async {
+    if (kIsWeb) {
+      return _sendCodeWeb(e164Phone);
+    }
+
     final result = Completer<OtpError?>();
 
     await _auth.verifyPhoneNumber(
@@ -445,8 +475,46 @@ class FirebaseAuthGateway implements AuthGateway {
     );
   }
 
+  /// Web send path: [fb.FirebaseAuth.signInWithPhoneNumber] runs the reCAPTCHA
+  /// and returns a [fb.ConfirmationResult], throwing a typed
+  /// [fb.FirebaseAuthException] on failure rather than leaving the call hanging
+  /// the way `verifyPhoneNumber`'s browser callbacks do.
+  Future<OtpError?> _sendCodeWeb(String e164Phone) async {
+    try {
+      _webConfirmation = await _auth
+          .signInWithPhoneNumber(e164Phone)
+          .timeout(_callbackDeadline);
+      return null;
+    } on TimeoutException {
+      return OtpError.timeout;
+    } on fb.FirebaseAuthException catch (e) {
+      return _map(e);
+    } catch (error) {
+      debugPrint('signInWithPhoneNumber (web): $error');
+      return OtpError.unknown;
+    }
+  }
+
   @override
   Future<OtpError?> confirmCode(String code) async {
+    if (kIsWeb) {
+      final confirmation = _webConfirmation;
+      if (confirmation == null) {
+        return OtpError.noPendingRequest;
+      }
+      try {
+        await confirmation.confirm(code).timeout(_verifyDeadline);
+        _webConfirmation = null;
+        return null;
+      } on TimeoutException {
+        return OtpError.timeout;
+      } on fb.FirebaseAuthException catch (e) {
+        return _map(e);
+      } catch (_) {
+        return OtpError.unknown;
+      }
+    }
+
     final verificationId = _verificationId;
     if (verificationId == null) {
       return OtpError.noPendingRequest;
@@ -501,6 +569,7 @@ class FirebaseAuthGateway implements AuthGateway {
   @override
   void discard() {
     _verificationId = null;
+    _webConfirmation = null;
   }
 
   @override
@@ -530,24 +599,33 @@ class FirebaseAuthGateway implements AuthGateway {
         return OtpError.network;
       case 'captcha-check-failed':
       case 'web-context-cancelled':
-        // The reCAPTCHA fallback was shown and failed or was dismissed. On a
-        // debug build this fires when Play Integrity can't vouch for the app.
+      case 'web-context-already-presented':
+      case 'missing-app-credential':
+      case 'invalid-app-credential':
+        // The reCAPTCHA step was shown and failed, was dismissed, or handed
+        // back a token Firebase rejected. On a debug Android build this fires
+        // when Play Integrity can't vouch for the app; on web it is a failed or
+        // abandoned reCAPTCHA. Retrying (Resend) gets a fresh challenge.
         return OtpError.timeout;
       case 'operation-not-allowed':
       case 'billing-not-enabled':
       case 'missing-client-identifier':
       case 'app-not-authorized':
+      case 'unauthorized-domain':
       case 'internal-error':
         // Permanent, project-side misconfiguration rather than a transient
         // limit: Phone provider off, project still on the Spark (no-billing)
-        // plan, SHA-1/SHA-256 not registered, or the API key restricted.
-        // None of these clear by retrying — see FIREBASE_SETUP.md.
+        // plan, SHA-1/SHA-256 not registered, the API key restricted, or — on
+        // web — the page's origin missing from the project's Authorized
+        // domains. None of these clear by retrying — see FIREBASE_SETUP.md.
         assert(() {
           debugPrint(
             'FirebaseAuth: "${e.code}" is a console-side misconfiguration. '
             'Phone Auth needs the Blaze plan for real numbers (or a test '
-            'number), the Phone provider enabled, and this build\'s '
-            'SHA-1/SHA-256 registered on the shield-zabnix Android app.',
+            'number) and the Phone provider enabled. On Android also register '
+            "this build's SHA-1/SHA-256 on the shield-zabnix app; on web add "
+            'the deploy origin (the Vercel domain) under Authentication → '
+            'Settings → Authorized domains.',
           );
           return true;
         }());
