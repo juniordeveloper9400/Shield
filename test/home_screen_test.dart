@@ -10,6 +10,7 @@ import 'package:shield/module/home/home_header.dart';
 import 'package:shield/module/home/points_badge.dart';
 import 'package:shield/module/refer/refer_earn_screen.dart';
 import 'package:shield/module/registration/registration_service.dart';
+import 'package:shield/module/rewards/rewards_service.dart';
 import 'package:shield/module/rewards/rewards_screen.dart';
 import 'package:shield/money.dart';
 import 'package:shield/module/home/home_hero_banner.dart';
@@ -29,10 +30,18 @@ import 'support/fake_catalogue.dart';
 int _rupees(String price) => int.parse(price.replaceAll(',', '').trim());
 
 void main() {
-  // The home product rows read from CatalogueService, which has no database in
-  // a test — seed it with the fixture catalogue so the rows have products.
-  setUp(seedFakeCatalogue);
-  tearDown(resetFakeCatalogue);
+  // The home product rows read from CatalogueService and the coin reads its
+  // balance from RewardsService — both are backed by a database the test does
+  // not have, so seed them.
+  const seededBalance = 1240;
+  setUp(() {
+    seedFakeCatalogue();
+    RewardsService.instance.debugSet(seededBalance);
+  });
+  tearDown(() {
+    resetFakeCatalogue();
+    RewardsService.instance.debugReset();
+  });
 
   // A tall surface forces every home section to lay out in one pass, including
   // the ones a normal viewport would leave unbuilt. Any RenderFlex overflow or
@@ -129,7 +138,7 @@ void main() {
       // The opening balance, printed where a member can see it without
       // opening the menu — which is the whole reason it is here.
       expect(
-        find.text(formatRupees(RegistrationService.openingPoints)),
+        find.text(formatRupees(seededBalance)),
         findsOneWidget,
       );
 
@@ -172,23 +181,12 @@ void main() {
     ) async {
       await pumpHome(tester, const Size(400, 1200));
 
-      const opening = RegistrationService.openingPoints;
+      const opening = seededBalance;
       expect(find.text(formatRupees(opening)), findsOneWidget);
 
-      // Registering credits the reward, and the coin has to be seen to move.
-      RegistrationService.instance.save(
-        Registration(
-          name: 'Asha Nair',
-          phone: '9000012345',
-          email: 'asha@example.com',
-          gender: Gender.female,
-          dob: DateTime(1994, 9, 4),
-          address: '12/A Palm Grove',
-          place: 'Perinthalmanna',
-          pincode: '679322',
-          state: 'Kerala',
-          storeId: 'SHD-MEL',
-        ),
+      // A credit lands on the ledger; the coin listens and has to redraw.
+      RewardsService.instance.debugSet(
+        opening + RegistrationService.rewardPoints,
       );
       await tester.pump();
 

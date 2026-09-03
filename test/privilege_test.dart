@@ -9,6 +9,7 @@ import 'package:shield/module/privilege/privilege_screen.dart';
 import 'package:shield/module/privilege/privilege_wallet.dart';
 import 'package:shield/module/privilege/privilege_tier.dart';
 import 'package:shield/module/registration/registration_service.dart';
+import 'package:shield/module/rewards/rewards_service.dart';
 import 'package:shield/module/registration/shield_store.dart';
 import 'package:shield/module/wallet/wallet_flip_card.dart';
 import 'package:shield/module/wallet/wallet_screen.dart';
@@ -21,11 +22,13 @@ void main() {
     WalletService.instance.reset();
     AuthService.instance.reset();
     RegistrationService.instance.reset();
+    RewardsService.instance.debugReset();
   });
   tearDown(() {
     WalletService.instance.reset();
     AuthService.instance.reset();
     RegistrationService.instance.reset();
+    RewardsService.instance.debugReset();
   });
 
   Future<void> pump(
@@ -277,21 +280,18 @@ void main() {
       );
     });
 
-    test('nothing can be added to a closed wallet', () {
+    test('nothing can be added to a closed wallet', () async {
       final before = WalletService.instance.balance;
       final entries = WalletService.instance.entries.length;
 
       expect(WalletService.instance.topUp(amount: 500), isFalse);
-      expect(WalletService.instance.redeemPoints(), isFalse);
+      expect(await WalletService.instance.redeemPoints(), isFalse);
 
       // Not merely hidden in the UI: the service refuses, so no other path
       // into it can move money either.
       expect(WalletService.instance.balance, before);
       expect(WalletService.instance.entries.length, entries);
-      expect(
-        WalletService.instance.rewardPoints,
-        WalletService.openingRewardPoints,
-      );
+      expect(WalletService.instance.rewardPoints, 0);
     });
 
     test('a top-up with no bonus posts one line, once the wallet is open', () {

@@ -201,23 +201,19 @@ void main() {
       storeId: storeId,
     );
 
-    test('registering credits the reward once, and only once', () {
+    test('registering marks the profile; editing is not a re-registration', () {
+      // The reward bonus is now a server-side ledger row
+      // (RewardsService.awardRegistrationBonus), guarded once-only and a
+      // no-op without a database, so this covers only the profile side.
       final service = RegistrationService.instance;
-      expect(service.points, RegistrationService.openingPoints);
+      expect(service.isRegistered, isFalse);
 
       service.save(sample());
       expect(service.isRegistered, isTrue);
-      expect(
-        service.points,
-        RegistrationService.openingPoints + RegistrationService.rewardPoints,
-      );
 
-      // Editing is not a second reward.
+      // Editing keeps one profile, updated in place.
       service.save(sample(storeId: 'SHD-MJR'));
-      expect(
-        service.points,
-        RegistrationService.openingPoints + RegistrationService.rewardPoints,
-      );
+      expect(service.isRegistered, isTrue);
       expect(service.profile?.storeId, 'SHD-MJR');
     });
 
@@ -228,11 +224,6 @@ void main() {
       service.dismissPrompt();
       expect(service.shouldPrompt, isFalse);
       expect(service.isRegistered, isFalse);
-      expect(
-        service.points,
-        RegistrationService.openingPoints,
-        reason: 'nothing was earned',
-      );
     });
 
     test('a profile names its store and reads back as an address', () {
@@ -437,40 +428,25 @@ void main() {
       expect(profile.pincode, '679326');
       expect(profile.state, 'Kerala');
       expect(profile.storeId, 'SHD-MEL');
-      expect(
-        service.points,
-        RegistrationService.openingPoints + RegistrationService.rewardPoints,
-      );
     });
 
-    testWidgets('a completed form confirms the reward before closing', (
+    testWidgets('a completed form celebrates the reward before closing', (
       tester,
     ) async {
       await pumpForm(tester);
       await completeForm(tester);
-      await submitRaw(tester);
+      await tester.tap(find.textContaining('Register & earn'));
+      await tester.pump(); // build the celebration route
+      await tester.pump(const Duration(milliseconds: 120));
 
-      // The confirmation dialog is up, and it names the reward just earned.
-      final dialog = find.byType(Dialog);
-      expect(dialog, findsOneWidget);
-      expect(
-        find.descendant(of: dialog, matching: find.text("You're registered 🎉")),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: dialog,
-          matching: find.textContaining(
-            '${RegistrationService.rewardPoints} reward points',
-          ),
-        ),
-        findsOneWidget,
-      );
+      // The full-screen reward celebration is up (a first registration earns
+      // the bonus), captioned with the welcome line.
+      expect(find.textContaining('welcome to SHIELD'), findsOneWidget);
 
-      await tester.tap(find.text('Start exploring'));
+      // It plays out and dismisses itself; the form is left registered.
       await tester.pumpAndSettle();
-
-      expect(find.byType(Dialog), findsNothing);
+      expect(find.textContaining('welcome to SHIELD'), findsNothing);
+      expect(RegistrationService.instance.isRegistered, isTrue);
     });
 
     testWidgets('editing confirms with no second reward', (tester) async {

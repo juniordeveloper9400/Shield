@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 import 'module/auth/auth_service.dart';
 import 'module/auth/persona_gate.dart';
 import 'module/catalogue/catalogue_service.dart';
+import 'module/rewards/rewards_service.dart';
 import 'screens/root_screen.dart';
 import 'theme/app_colors.dart';
 import 'widgets/app_messenger.dart';
@@ -44,6 +45,11 @@ Future<void> main() async {
   // to the web app, not the shell. Fire-and-forget: it overlaps the splash and
   // RootScreen waits on it.
   unawaited(PersonaGate.instance.ensureChecked());
+
+  // Follow the session for the reward-points balance: load the ledger
+  // (app.reward_point_transaction) on sign-in, clear it on sign-out. The header
+  // coin, the rewards screen and the menu all read RewardsService.balance.
+  RewardsService.instance.attach();
 
   // Warm the storefront catalogue so the home rows have products on first
   // paint rather than popping in a beat later. Fire-and-forget — the home,
