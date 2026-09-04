@@ -11,14 +11,13 @@ void main() {
     expect(NeonDatabase.isConfigured, isFalse);
   });
 
-  test('WalletRepository.activateCard no-ops and returns null unconfigured', () async {
-    final result = await WalletRepository.instance.activateCard(
+  test('WalletRepository.submitCardForApproval no-ops and returns null unconfigured', () async {
+    final result = await WalletRepository.instance.submitCardForApproval(
       memberPhone: '9000000002',
       memberName: 'Rahul Nair',
       tierKind: PrivilegeCardKind.silver,
       amount: 10000,
       bonus: 1000,
-      credited: 11000,
       cardNumber: '9010 8801 0010 4821',
       storeCode: 'SHD-MEL',
     );
