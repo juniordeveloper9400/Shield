@@ -107,7 +107,8 @@ class StoreLocator {
             ? ranked.first
             : null,
       );
-    } catch (_) {
+    } catch (error) {
+      debugPrint('StoreLocator: could not get a fix — $error');
       return const StoreLocationResult(outcome: LocationOutcome.failed);
     }
   }
@@ -118,5 +119,27 @@ class StoreLocator {
       return '${(km * 1000).round()} m';
     }
     return '${km.toStringAsFixed(1)} km';
+  }
+
+  /// A one-line reason for the SnackBar when [locate] did not return `ok`.
+  /// Mirrors [DeviceLocation.message] but keeps the branch list usable in the
+  /// wording, since — unlike the address form — this picker never blocks.
+  static String message(LocationOutcome outcome) {
+    switch (outcome) {
+      case LocationOutcome.ok:
+        return '';
+      case LocationOutcome.denied:
+        return 'Location permission was declined. Allow it to rank branches '
+            'by distance — the list below still works.';
+      case LocationOutcome.deniedForever:
+        return 'Location is blocked for this app. Turn it on in Settings to '
+            'rank branches by distance.';
+      case LocationOutcome.serviceOff:
+        return 'Location is switched off on this device. Turn it on to rank '
+            'branches by distance.';
+      case LocationOutcome.failed:
+        return 'Could not get your location. Check your connection and try '
+            'again — the list below still works.';
+    }
   }
 }

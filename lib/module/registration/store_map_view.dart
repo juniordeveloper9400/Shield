@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../theme/app_colors.dart';
@@ -88,10 +89,19 @@ class _StoreMapViewState extends State<StoreMapView> {
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Could not get your location. The list below still works.',
-            ),
+          SnackBar(
+            content: Text(StoreLocator.message(result.outcome)),
+            action: switch (result.outcome) {
+              LocationOutcome.deniedForever => SnackBarAction(
+                  label: 'Settings',
+                  onPressed: Geolocator.openAppSettings,
+                ),
+              LocationOutcome.serviceOff => SnackBarAction(
+                  label: 'Settings',
+                  onPressed: Geolocator.openLocationSettings,
+                ),
+              _ => null,
+            },
           ),
         );
     }
