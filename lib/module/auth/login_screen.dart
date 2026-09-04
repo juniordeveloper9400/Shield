@@ -166,6 +166,26 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
 
+    // Sign in is for numbers that already have an account. An unknown number
+    // belongs on Create account — don't fire an OTP at it. If the check can't
+    // reach the database it returns null and we carry on, so a real member is
+    // never blocked by a blip.
+    if (_mode == _Mode.signIn) {
+      final exists = await AuthService.instance.hasAccount(_phone.text);
+      if (!mounted) {
+        return;
+      }
+      if (exists == false) {
+        setState(() {
+          _busy = false;
+          _mode = _Mode.signUp;
+          _error =
+              "That number doesn't have an account yet — create one to continue.";
+        });
+        return;
+      }
+    }
+
     final failure = await AuthService.instance.requestOtp(
       name: _nameArg,
       phone: _phone.text,
