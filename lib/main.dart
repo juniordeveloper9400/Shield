@@ -9,6 +9,7 @@ import 'module/auth/auth_service.dart';
 import 'module/auth/persona_gate.dart';
 import 'module/catalogue/catalogue_service.dart';
 import 'module/home/customer_reviews_service.dart';
+import 'module/refer/referral_service.dart';
 import 'module/rewards/rewards_service.dart';
 import 'screens/root_screen.dart';
 import 'theme/app_colors.dart';
@@ -51,6 +52,11 @@ Future<void> main() async {
   // (app.reward_point_transaction) on sign-in, clear it on sign-out. The header
   // coin, the rewards screen and the menu all read RewardsService.balance.
   RewardsService.instance.attach();
+
+  // Same idea for the refer-and-earn standing: load `app.referral` +
+  // `app.users.referral_code` on sign-in, clear on sign-out. The home card
+  // and the refer & earn screen both read ReferralService.progress / .code.
+  ReferralService.instance.attach();
 
   // Warm the storefront catalogue so the home rows have products on first
   // paint rather than popping in a beat later. Fire-and-forget — the home,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -5,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/age_badge.dart';
 import '../../widgets/labelled_field.dart';
 import '../auth/auth_service.dart';
+import '../refer/referral_service.dart';
 import 'registration_celebration.dart';
 import 'registration_service.dart';
 import 'shield_store.dart';
@@ -36,6 +39,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _address = TextEditingController();
   final _place = TextEditingController();
   final _pincode = TextEditingController();
+
+  /// Who sent them, if anyone. Only ever asked on a first registration — see
+  /// [_buildAboutYou] — so a member is attributed to an inviter once.
+  final _referralCode = TextEditingController();
 
   /// Filled by the picker only, never typed into — see the field below.
   final _dobText = TextEditingController();
@@ -93,6 +100,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _address.dispose();
     _place.dispose();
     _pincode.dispose();
+    _referralCode.dispose();
     _dobText.dispose();
     super.dispose();
   }
@@ -188,6 +196,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       return;
     }
 
+    final isFirstRegistration = !_service.isRegistered;
     _service.save(
       Registration(
         name: _name.text.trim(),
@@ -202,6 +211,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         storeId: _storeId!,
       ),
     );
+
+    // The referral edge is only ever recorded on a first registration — an
+    // edit carries no code field to read one from (see _buildAboutYou).
+    // Best-effort and fire-and-forget: a bad or reused code must not hold up
+    // the celebration screen below.
+    final referralCode = _referralCode.text.trim();
+    if (isFirstRegistration && referralCode.isNotEmpty) {
+      unawaited(ReferralService.instance.recordSignupCode(referralCode));
+    }
 
     // Show the confirmation on this route while it is still up, then close the
     // form once the member dismisses it.
@@ -364,6 +382,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         ),
         if (_submitted && _dob == null)
           const _FieldError('Date of birth is required'),
+        // Only asked once, on a first registration — editing a saved profile
+        // has nothing left to attribute.
+        if (!widget.isEditing) ...[
+          const SizedBox(height: 14),
+          LabelledField(
+            label: 'Referral code (optional)',
+            hint: "A friend's invite code",
+            controller: _referralCode,
+            icon: Icons.card_giftcard_outlined,
+            textCapitalization: TextCapitalization.characters,
+          ),
+        ],
       ],
     );
   }

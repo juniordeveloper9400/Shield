@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../money.dart';
 import '../../theme/app_colors.dart';
+import '../refer/referral_service.dart';
 import '../rewards/rewards_service.dart';
 
 /// Where an order has got to.
@@ -180,6 +181,10 @@ class PurchaseService extends ChangeNotifier {
       unawaited(
         RewardsService.instance.awardForOrder(code: id, paidRupees: paidTotal),
       );
+      // If somebody referred this member, their first paid order is the
+      // "transacted" step the ladder actually asks for — see
+      // ReferralLadder.stepsFor. A no-op for a member nobody referred.
+      unawaited(ReferralService.instance.markTransacted());
     }
 
     notifyListeners();
