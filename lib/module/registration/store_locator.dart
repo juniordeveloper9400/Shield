@@ -90,10 +90,15 @@ class StoreLocator {
         return const StoreLocationResult(outcome: LocationOutcome.denied);
       }
 
+      // High accuracy, matching DeviceLocation's address-form request: on
+      // Android, medium accuracy can resolve to a coarse WiFi/cell-tower fix
+      // that lands hundreds of metres to a couple of kilometres off — enough
+      // to visibly wrong-foot the "X km away" figure and the ranking, even
+      // though the distance math itself is correct.
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 12),
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
         ),
       );
 
