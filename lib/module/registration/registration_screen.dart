@@ -486,6 +486,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
             store: store,
             selected: store.id == _storeId,
             isNearest: suggested != null && store.id == suggested.id,
+            distanceKm: _located?.kmTo(store),
             onTap: () => setState(() {
               _storeId = store.id;
               _storePickedByHand = true;
@@ -776,12 +777,17 @@ class _StoreCard extends StatelessWidget {
   final ShieldStore store;
   final bool selected;
   final bool isNearest;
+
+  /// Distance from the member's shared location, or null when no fix has
+  /// been taken (the pincode-only ranking has no real distance to show).
+  final double? distanceKm;
   final VoidCallback onTap;
 
   const _StoreCard({
     required this.store,
     required this.selected,
     required this.isNearest,
+    required this.distanceKm,
     required this.onTap,
   });
 
@@ -857,6 +863,15 @@ class _StoreCard extends StatelessWidget {
                                 fontWeight: FontWeight.w800,
                                 color: AppColors.white,
                               ),
+                            ),
+                          ),
+                        if (distanceKm != null)
+                          Text(
+                            '${StoreLocator.label(distanceKm!)} away',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.brandBlue,
                             ),
                           ),
                         Text(

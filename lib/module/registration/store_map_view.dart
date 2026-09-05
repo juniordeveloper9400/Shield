@@ -185,9 +185,14 @@ class _StoreMapViewState extends State<StoreMapView> {
             Positioned(
               right: 8,
               bottom: 8,
-              child: _RoundButton(
+              child: _LocateButton(
                 busy: _busy,
-                icon: Icons.my_location_rounded,
+                // Once a fix has landed the "you are here" dot on the map
+                // already says so; a bare icon is enough to re-locate from
+                // there. Before that, an icon alone is too easy to miss, so
+                // it carries a label — this is the only way to trigger the
+                // location permission prompt on this screen.
+                label: _loc == null ? 'Enable location' : null,
                 onTap: _locate,
               ),
             ),
@@ -293,38 +298,70 @@ class _StorePin extends StatelessWidget {
   }
 }
 
-class _RoundButton extends StatelessWidget {
-  final IconData icon;
+/// The map's location control. With [label] set it is a pill wide enough to
+/// read as a real button — the only way to trigger the permission prompt on
+/// this screen, so it needs to say what it does rather than rely on a bare
+/// icon. Once a fix lands the caller drops the label and it shrinks to an
+/// icon-only circle for re-centering.
+class _LocateButton extends StatelessWidget {
   final bool busy;
+  final String? label;
   final VoidCallback onTap;
 
-  const _RoundButton({
-    required this.icon,
+  const _LocateButton({
     required this.busy,
+    required this.label,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final text = label;
     return Material(
       color: Colors.white,
-      shape: const CircleBorder(),
+      shape: StadiumBorder(
+        side: BorderSide(color: AppColors.border.withValues(alpha: 0.8)),
+      ),
       elevation: 2,
       child: InkWell(
-        customBorder: const CircleBorder(),
+        customBorder: const StadiumBorder(),
         onTap: busy ? null : onTap,
         child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: busy
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
+          padding: EdgeInsets.symmetric(
+            horizontal: text == null ? 8 : 12,
+            vertical: 8,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (busy)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     color: AppColors.brandBlue,
                   ),
                 )
-              : Icon(icon, size: 20, color: AppColors.brandBlue),
+              else
+                const Icon(
+                  Icons.my_location_rounded,
+                  size: 18,
+                  color: AppColors.brandBlue,
+                ),
+              if (text != null) ...[
+                const SizedBox(width: 6),
+                Text(
+                  busy ? 'Locating…' : text,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.brandBlue,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
