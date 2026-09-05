@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../dates.dart';
+import '../../module/orders/purchase_service.dart';
 import 'neon_http.dart';
 
 /// One line of a placed order — a product name, how it is sold, the two prices
@@ -213,6 +215,66 @@ class OrderRepository {
 
   /// Whether a write would actually reach a database.
   bool get isAvailable => NeonHttp.isConfigured;
+
+  /// Every order [phone] has placed, newest first — the real order book
+  /// behind "My Orders", reading the same `app."order"` rows the checkout
+  /// screens write through [saveStandardOrder] / [savePrescriptionOrder].
+  ///
+  /// Returns `null` (not an empty list) when the database is off or
+  /// unreachable, so [PurchaseService.loadFromServer] can tell "this member
+  /// has no orders yet" from "could not load them" and leave whatever is
+  /// already on screen alone rather than blanking it on a network blip.
+  Future<List<Purchase>?> listForMember(String phone) async {
+    if (!NeonHttp.isConfigured) {
+      return null;
+    }
+    try {
+      final rows = await NeonHttp.instance.query(
+        r'''
+          SELECT o.code, o.kind::text AS kind, o.status::text AS status,
+                 o.item_count, o.mrp_total, o.paid_total, o.placed_at
+          FROM app."order" o
+          JOIN app.users u ON u.id = o.member_id
+          WHERE u.phone = $1
+          ORDER BY o.placed_at DESC
+        ''',
+        [phone],
+      );
+      return rows.map(_toPurchase).toList();
+    } catch (error) {
+      NeonHttp.log('OrderRepository.listForMember failed', error: error);
+      return null;
+    }
+  }
+
+  /// One `app."order"` row → a [Purchase]. Neon's `/sql` endpoint returns
+  /// every value as text, so the numeric and timestamp columns are parsed
+  /// back out here rather than trusted to arrive typed.
+  static Purchase _toPurchase(Map<String, dynamic> row) {
+    final placedAt =
+        DateTime.tryParse((row['placed_at'] ?? '').toString()) ??
+            DateTime.now();
+    return Purchase(
+      id: (row['code'] ?? '').toString(),
+      placedOn: formatDate(placedAt),
+      itemCount: int.tryParse(row['item_count']?.toString() ?? '') ?? 0,
+      mrpTotal:
+          double.tryParse(row['mrp_total']?.toString() ?? '')?.round() ?? 0,
+      paidTotal:
+          double.tryParse(row['paid_total']?.toString() ?? '')?.round() ?? 0,
+      status: _statusFrom(row['status']?.toString()),
+      kind: row['kind']?.toString() == 'PRESCRIPTION'
+          ? OrderKind.prescription
+          : OrderKind.standard,
+    );
+  }
+
+  static OrderStatus _statusFrom(String? label) => switch (label) {
+        'OUT_FOR_DELIVERY' => OrderStatus.outForDelivery,
+        'DELIVERED' => OrderStatus.delivered,
+        'CANCELLED' => OrderStatus.cancelled,
+        _ => OrderStatus.processing,
+      };
 
   /// Files a standard product checkout: one `app."order"` row, one
   /// `app.order_line` per cart line, the initial `app.order_track_step` graph

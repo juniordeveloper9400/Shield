@@ -38,6 +38,41 @@ class OrdersScreen extends StatelessWidget {
         listenable: PurchaseService.instance,
         builder: (context, _) {
           final orders = PurchaseService.instance.purchases;
+          if (orders.isEmpty) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.receipt_long_outlined,
+                      size: 44,
+                      color: AppColors.textMuted,
+                    ),
+                    SizedBox(height: 10),
+                    Text(
+                      'No orders yet',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Orders you place will show up here.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             itemCount: orders.length,

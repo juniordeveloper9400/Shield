@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../module/account/account_screen.dart';
 import '../module/appointment/clinics_screen.dart';
+import '../data/neon/order_repository.dart';
 import '../data/neon/patient_repository.dart';
 import '../module/auth/auth_service.dart';
 import '../module/health/health_section.dart';
 import '../module/menu/menu_drawer.dart';
 import '../module/orders/orders_screen.dart';
+import '../module/orders/purchase_service.dart';
 import '../module/patients/patient_book.dart';
 import '../module/registration/register_bar.dart';
+import '../module/registration/registration_service.dart';
 import '../widgets/app_messenger.dart';
 import '../widgets/bottom_nav.dart';
 import 'app_tabs.dart';
@@ -56,6 +59,25 @@ class _AppShellState extends State<AppShell> {
           PatientBook.instance.replaceRemote(remote);
         }
       });
+
+      // Same idea for "My Orders": read the real order book back from
+      // `app."order"` rather than showing whatever this app process has
+      // placed itself this session. A transient failure returns null and
+      // leaves the in-memory list (built up from this session's own
+      // checkouts, if any) untouched rather than blanking it.
+      OrderRepository.instance.listForMember(phone).then((remote) {
+        if (remote != null && mounted) {
+          PurchaseService.instance.replaceRemote(remote);
+        }
+      });
+
+      // Same idea for a completed registration: read it back from
+      // `app.users` so the register bar shows the member's saved details
+      // straight away, rather than nagging someone who already registered
+      // just because this app process started with nothing in memory (a
+      // fresh launch, or a log-in after another account signed out on this
+      // device). See [RegistrationService.loadForSignedInMember].
+      RegistrationService.instance.loadForSignedInMember(phone);
     }
   }
 

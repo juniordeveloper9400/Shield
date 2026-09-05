@@ -98,9 +98,7 @@ class Purchase {
 ///
 /// In memory only; a backend would replace this class wholesale.
 class PurchaseService extends ChangeNotifier {
-  PurchaseService._() {
-    seedSampleOrders();
-  }
+  PurchaseService._();
 
   static final PurchaseService instance = PurchaseService._();
 
@@ -186,6 +184,22 @@ class PurchaseService extends ChangeNotifier {
 
     notifyListeners();
     return purchase;
+  }
+
+  /// Swaps in the member's real order book, as read from `app."order"` —
+  /// called once at sign-in / launch (see `AppShell`), the same way
+  /// `PatientBook.replaceRemote` seeds the saved-patients list.
+  ///
+  /// A straight replace, not a merge: every order this service's own
+  /// [record] ever creates is written through to the database in the same
+  /// checkout call, so there is no local-only order to preserve — the server
+  /// is simply the newer, authoritative copy of what [record] already wrote.
+  /// Already sorted newest-first by the query this reads.
+  void replaceRemote(List<Purchase> remote) {
+    _purchases
+      ..clear()
+      ..addAll(remote);
+    notifyListeners();
   }
 
   @visibleForTesting
