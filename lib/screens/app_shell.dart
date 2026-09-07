@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../module/account/account_screen.dart';
 import '../module/appointment/clinics_screen.dart';
+import '../data/neon/address_repository.dart';
 import '../data/neon/order_repository.dart';
 import '../data/neon/patient_repository.dart';
 import '../module/auth/auth_service.dart';
 import '../module/health/health_section.dart';
+import '../module/location/address_book.dart';
 import '../module/menu/menu_drawer.dart';
 import '../module/orders/orders_screen.dart';
 import '../module/orders/purchase_service.dart';
@@ -78,6 +80,15 @@ class _AppShellState extends State<AppShell> {
       // fresh launch, or a log-in after another account signed out on this
       // device). See [RegistrationService.loadForSignedInMember].
       RegistrationService.instance.loadForSignedInMember(phone);
+
+      // Same idea for saved delivery addresses: read them back from
+      // `app.member_address` so "Manage addresses" and checkout offer what
+      // is actually on the account, on a fresh launch or a second device.
+      AddressRepository.instance.listForMember(phone).then((remote) {
+        if (remote != null && mounted) {
+          AddressBook.instance.replaceRemote(remote);
+        }
+      });
     }
   }
 

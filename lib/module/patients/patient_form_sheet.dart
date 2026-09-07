@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../data/neon/address_repository.dart';
 import '../../data/neon/patient_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
@@ -282,8 +283,15 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
     Navigator.of(context).pop(saved);
   }
 
-  /// Best-effort durable copy of [saved]. Skipped when signed out — there is no
-  /// account to hang the patient off — and silently on any database error.
+  /// Best-effort durable copy of [saved] and the address section under it.
+  /// Skipped when signed out — there is no account to hang either off — and
+  /// silently on any database error.
+  ///
+  /// The address write waits on the patient's own, rather than firing
+  /// alongside it: `app.member_address.patient_id` is a foreign key, so
+  /// linking it to a brand-new patient needs that patient's row id, which
+  /// only exists once the write above returns a uuid. Still fire-and-forget
+  /// overall — the sheet has already closed by the time either resolves.
   void _persist(Patient saved) {
     final account = AuthService.instance.currentUser.value;
     if (account == null) {
@@ -307,6 +315,29 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
             if (uuid != null && uuid != saved.remoteId) {
               PatientBook.instance.attachRemoteId(saved.id, uuid);
             }
+            final patientUuid = uuid ?? saved.remoteId;
+            final address = AddressBook.instance.forPatient(saved.id);
+            if (address == null) {
+              return Future<void>.value();
+            }
+            final withPatient = patientUuid == null
+                ? address
+                : address.copyWith(patientId: 'remote-$patientUuid');
+            return AddressRepository.instance
+                .upsert(
+                  uuid: address.remoteId,
+                  memberPhone: account.phone,
+                  memberName: account.name,
+                  address: withPatient,
+                )
+                .then((addressUuid) {
+                  if (addressUuid != null && addressUuid != address.remoteId) {
+                    AddressBook.instance.attachRemoteId(
+                      address.id,
+                      addressUuid,
+                    );
+                  }
+                });
           }),
     );
   }

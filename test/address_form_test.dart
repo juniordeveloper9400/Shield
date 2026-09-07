@@ -6,6 +6,7 @@ import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/location/address_book.dart';
 import 'package:shield/module/location/address_form_screen.dart';
 import 'package:shield/module/location/location_sheet.dart';
+import 'package:shield/module/location/manage_addresses_screen.dart';
 import 'package:shield/screens/app_shell.dart';
 
 void main() {
@@ -198,7 +199,9 @@ void main() {
   });
 
   group('entry points', () {
-    testWidgets('the location sheet opens the form', (tester) async {
+    testWidgets('the location sheet opens address management', (
+      tester,
+    ) async {
       tester.view.physicalSize = const Size(400, 1400);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -211,8 +214,8 @@ void main() {
       await tester.tap(find.text('Manage addresses'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(AddressFormScreen), findsOneWidget);
-      // The sheet closed rather than sitting under the form.
+      expect(find.byType(ManageAddressesScreen), findsOneWidget);
+      // The sheet closed rather than sitting under the screen.
       expect(find.text('Choose your location'), findsNothing);
     });
 
@@ -235,7 +238,9 @@ void main() {
       await tester.tap(find.text('Manage addresses'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(AddressFormScreen), findsOneWidget);
+      expect(find.byType(ManageAddressesScreen), findsOneWidget);
+      // The real management screen, not the add form straight away.
+      expect(find.text('Saved Addresses'), findsOneWidget);
     });
   });
 
@@ -308,10 +313,12 @@ void main() {
 
       expect(find.text('400079, Mumbai'), findsOneWidget);
 
-      // Location sheet → Manage addresses → fill in → Save.
+      // Location sheet → Manage addresses → Add address → fill in → Save.
       await tester.tap(find.text('400079, Mumbai'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Manage addresses'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add address'));
       await tester.pumpAndSettle();
 
       await fillHint(tester, 'Pincode', '682001');
@@ -328,10 +335,152 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
-      // Back on home, showing the pincode and place that were just saved.
+      // Saving lands back on "Saved Addresses", not straight on home — the
+      // new entry shows there as the one being delivered to.
       expect(find.byType(AddressFormScreen), findsNothing);
+      expect(find.byType(ManageAddressesScreen), findsOneWidget);
+      expect(find.text('12B, Marine Drive, 682001'), findsOneWidget);
+      expect(find.text('Delivering here'), findsOneWidget);
+
+      // Back out to home, showing the pincode and place that were just saved.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+
       expect(find.text('682001, Marine Drive'), findsOneWidget);
       expect(find.text('400079, Mumbai'), findsNothing);
+    });
+  });
+
+  group('manage addresses', () {
+    Future<void> pumpScreen(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(400, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        const MaterialApp(home: ManageAddressesScreen()),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Address seed({String house = '12B', String area = 'Ghatkopar East'}) {
+      return AddressBook.instance.add(
+        Address(
+          pincode: '400079',
+          house: house,
+          area: area,
+          firstName: 'Althaf',
+          lastName: 'M',
+          phone: '9895357101',
+          label: AddressLabel.home,
+        ),
+      );
+    }
+
+    testWidgets('empty until an address is added', (tester) async {
+      await pumpScreen(tester);
+
+      expect(find.text('No saved addresses yet'), findsOneWidget);
+    });
+
+    testWidgets('adding through the FAB lists it, delivering to it at once', (
+      tester,
+    ) async {
+      await pumpScreen(tester);
+
+      await tester.tap(find.text('Add address'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddressFormScreen), findsOneWidget);
+
+      await fillHint(tester, 'Pincode', '400079');
+      await fillHint(tester, 'House no / Floor / Building', '12B');
+      await fillHint(tester, 'Area / Locality', 'Ghatkopar East');
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'First name'),
+        'Althaf',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Last name'),
+        'M',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextFormField, 'Mobile Number'),
+        '9895357101',
+      );
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AddressFormScreen), findsNothing);
+      expect(find.text('Althaf M'), findsOneWidget);
+      expect(find.text('12B, Ghatkopar East, 400079'), findsOneWidget);
+      // Saving an address starts delivering to it at once.
+      expect(find.text('Delivering here'), findsOneWidget);
+    });
+
+    testWidgets('editing opens filled in and updates in place', (
+      tester,
+    ) async {
+      seed();
+      await pumpScreen(tester);
+
+      await tester.tap(find.byTooltip('Edit address'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Edit address details'), findsOneWidget);
+      expect(find.widgetWithText(TextFormField, '12B'), findsOneWidget);
+
+      await fillHint(tester, 'House no / Floor / Building', '14C');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      // The one entry changed in place — not a second row alongside it.
+      expect(AddressBook.instance.addresses, hasLength(1));
+      expect(find.text('14C, Ghatkopar East, 400079'), findsOneWidget);
+      expect(find.text('12B, Ghatkopar East, 400079'), findsNothing);
+    });
+
+    testWidgets('removing asks first', (tester) async {
+      seed();
+      await pumpScreen(tester);
+
+      await tester.tap(find.byTooltip('Remove address'));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove address?'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(AddressBook.instance.addresses, hasLength(1));
+
+      await tester.tap(find.byTooltip('Remove address'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove'));
+      await tester.pumpAndSettle();
+
+      expect(AddressBook.instance.isEmpty, isTrue);
+      expect(find.text('No saved addresses yet'), findsOneWidget);
+    });
+
+    testWidgets('tapping a different address switches delivery to it', (
+      tester,
+    ) async {
+      seed(house: '12B', area: 'Ghatkopar East');
+      seed(house: '4A', area: 'Marine Drive');
+      await pumpScreen(tester);
+
+      // The second one added is the one currently delivering.
+      expect(
+        AddressBook.instance.deliverTo?.summary,
+        '4A, Marine Drive, 400079',
+      );
+      expect(find.text('Delivering here'), findsOneWidget);
+
+      await tester.tap(find.text('12B, Ghatkopar East, 400079'));
+      await tester.pumpAndSettle();
+
+      expect(
+        AddressBook.instance.deliverTo?.summary,
+        '12B, Ghatkopar East, 400079',
+      );
     });
   });
 }

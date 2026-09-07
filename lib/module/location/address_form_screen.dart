@@ -1,16 +1,25 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../data/neon/address_repository.dart';
 import '../../theme/app_colors.dart';
+import '../auth/auth_service.dart';
 import 'address_book.dart';
 import 'address_fields.dart';
 import 'device_location.dart';
 
-/// "Add address details" — search or pincode, the address lines, a label, and
-/// receiver details, saved from a pinned bottom action.
+/// "Add address details" (or, given [existing], "Edit address details") —
+/// search or pincode, the address lines, a label, and receiver details,
+/// saved from a pinned bottom action.
 class AddressFormScreen extends StatefulWidget {
-  const AddressFormScreen({super.key});
+  /// The address being edited, opening the fields filled in. Null when
+  /// adding.
+  final Address? existing;
+
+  const AddressFormScreen({super.key, this.existing});
 
   @override
   State<AddressFormScreen> createState() => _AddressFormScreenState();
@@ -19,15 +28,29 @@ class AddressFormScreen extends StatefulWidget {
 class _AddressFormScreenState extends State<AddressFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _search = TextEditingController();
-  final _pincode = TextEditingController();
-  final _house = TextEditingController();
-  final _area = TextEditingController();
-  final _landmark = TextEditingController();
-  final _firstName = TextEditingController();
-  final _lastName = TextEditingController();
-  final _phone = TextEditingController();
+  late final TextEditingController _pincode = TextEditingController(
+    text: widget.existing?.pincode ?? '',
+  );
+  late final TextEditingController _house = TextEditingController(
+    text: widget.existing?.house ?? '',
+  );
+  late final TextEditingController _area = TextEditingController(
+    text: widget.existing?.area ?? '',
+  );
+  late final TextEditingController _landmark = TextEditingController(
+    text: widget.existing?.landmark ?? '',
+  );
+  late final TextEditingController _firstName = TextEditingController(
+    text: widget.existing?.firstName ?? '',
+  );
+  late final TextEditingController _lastName = TextEditingController(
+    text: widget.existing?.lastName ?? '',
+  );
+  late final TextEditingController _phone = TextEditingController(
+    text: widget.existing?.phone ?? '',
+  );
 
-  AddressLabel _label = AddressLabel.home;
+  late AddressLabel _label = widget.existing?.label ?? AddressLabel.home;
   bool _locating = false;
 
   @override
@@ -48,7 +71,13 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
       return;
     }
 
+    final existing = widget.existing;
+    // Carries the existing record's identity forward on an edit — its local
+    // id, so the book replaces the same entry rather than adding a second
+    // one, and its remote uuid, so the write-through below updates the same
+    // `app.member_address` row instead of inserting a duplicate.
     final address = Address(
+      id: existing?.id ?? '',
       pincode: _pincode.text.trim(),
       house: _house.text.trim(),
       area: _area.text.trim(),
@@ -57,13 +86,50 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
       lastName: _lastName.text.trim(),
       phone: _phone.text.trim(),
       label: _label,
+      patientId: existing?.patientId,
+      remoteId: existing?.remoteId,
     );
-    AddressBook.instance.add(address);
 
-    Navigator.of(context).pop(address);
+    final Address saved;
+    if (existing == null) {
+      saved = AddressBook.instance.add(address);
+    } else {
+      AddressBook.instance.update(address);
+      saved = address;
+    }
+    _persist(saved);
+
+    Navigator.of(context).pop(saved);
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text('${_label.label} address saved')));
+  }
+
+  /// Best-effort durable copy of [saved] in `app.member_address`. Skipped
+  /// when signed out — there is no account to hang the address off — and
+  /// silently on any database error, the same contract as
+  /// `PatientFormSheet._persist`. [AddressBook] is what the app reads; this
+  /// is the write-through so the address survives a relaunch or a second
+  /// device.
+  void _persist(Address saved) {
+    final account = AuthService.instance.currentUser.value;
+    if (account == null) {
+      return;
+    }
+    unawaited(
+      AddressRepository.instance
+          .upsert(
+            uuid: saved.remoteId,
+            memberPhone: account.phone,
+            memberName: account.name,
+            address: saved,
+          )
+          .then((uuid) {
+            if (uuid != null && uuid != saved.remoteId) {
+              AddressBook.instance.attachRemoteId(saved.id, uuid);
+            }
+          }),
+    );
   }
 
   Future<void> _useCurrentLocation() async {
@@ -128,9 +194,9 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
         backgroundColor: AppColors.white,
         surfaceTintColor: AppColors.white,
         elevation: 0,
-        title: const Text(
-          'Add address details',
-          style: TextStyle(
+        title: Text(
+          widget.existing == null ? 'Add address details' : 'Edit address details',
+          style: const TextStyle(
             fontSize: 19,
             fontWeight: FontWeight.w700,
             color: AppColors.textDark,

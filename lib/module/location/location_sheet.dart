@@ -4,8 +4,8 @@ import 'package:geolocator/geolocator.dart';
 
 import '../../theme/app_colors.dart';
 import 'address_book.dart';
-import 'address_form_screen.dart';
 import 'device_location.dart';
+import 'manage_addresses_screen.dart';
 
 /// Bottom sheet for choosing the delivery location.
 ///
@@ -177,11 +177,13 @@ class _LocationSheetState extends State<LocationSheet> {
               label: 'Manage addresses',
               trailing: Icons.chevron_right_rounded,
               onTap: () {
-                // Closes the sheet first, so the form is not stacked on it.
+                // Closes the sheet first, so the screen is not stacked on it.
                 final navigator = Navigator.of(context);
                 navigator.pop();
                 navigator.push(
-                  MaterialPageRoute(builder: (_) => const AddressFormScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const ManageAddressesScreen(),
+                  ),
                 );
               },
             ),

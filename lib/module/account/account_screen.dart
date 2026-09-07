@@ -6,7 +6,7 @@ import '../auth/auth_service.dart';
 import '../cart/cart_screen.dart';
 import '../investor/investor_portal_screen.dart';
 import '../investor/investor_service.dart';
-import '../location/address_form_screen.dart';
+import '../location/manage_addresses_screen.dart';
 import '../patients/manage_patients_screen.dart';
 import '../refer/refer_earn_screen.dart';
 import '../registration/registration_flow.dart';
@@ -109,7 +109,9 @@ class AccountScreen extends StatelessWidget {
                 icon: Icons.location_on_outlined,
                 label: 'Manage addresses',
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const AddressFormScreen()),
+                  MaterialPageRoute(
+                    builder: (_) => const ManageAddressesScreen(),
+                  ),
                 ),
               ),
               _MenuItem(
