@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../diagnostics/debug_log.dart';
+import '../../diagnostics/debug_report_screen.dart';
 import '../../money.dart';
 import '../../screens/app_tabs.dart';
 import '../../theme/app_colors.dart';
@@ -165,8 +167,11 @@ class MenuDrawer extends StatelessWidget {
                         _MenuRow(
                           label: 'Account',
                           transparent: true,
-                          showDivider: false,
                           onTap: () => _go(context, AppTab.account.index),
+                        ),
+                        _DebugReportRow(
+                          onTap: () =>
+                              _push(context, const DebugReportScreen()),
                         ),
                       ],
                     ),
@@ -295,13 +300,11 @@ class _MenuRow extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
   final bool transparent;
-  final bool showDivider;
 
   const _MenuRow({
     required this.label,
     required this.onTap,
     this.transparent = false,
-    this.showDivider = true,
   });
 
   @override
@@ -311,11 +314,9 @@ class _MenuRow extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          decoration: showDivider
-              ? const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: AppColors.border)),
-                )
-              : null,
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppColors.border)),
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 17),
           child: Row(
             children: [
@@ -332,6 +333,82 @@ class _MenuRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 24,
+                color: AppColors.textMuted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "Debug report" — a download icon, the label, and a red count when the app
+/// has caught something going wrong this run. Opens [DebugReportScreen], where
+/// the member can download the captured errors to send to support.
+class _DebugReportRow extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _DebugReportRow({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.download_rounded,
+                size: 22,
+                color: AppColors.brandBlue,
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Debug report',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.textDark,
+                  ),
+                ),
+              ),
+              ValueListenableBuilder<int>(
+                valueListenable: DebugLog.instance.issueCount,
+                builder: (context, count, _) {
+                  if (count == 0) {
+                    return const SizedBox.shrink();
+                  }
+                  return Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 7,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFB4322F),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      count > 99 ? '99+' : '$count',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.white,
+                      ),
+                    ),
+                  );
+                },
+              ),
               const Icon(
                 Icons.chevron_right_rounded,
                 size: 24,

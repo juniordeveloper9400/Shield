@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
 import 'data/neon/neon_http.dart';
+import 'diagnostics/debug_log.dart';
 import 'firebase_options.dart';
 import 'module/auth/auth_service.dart';
 import 'module/auth/persona_gate.dart';
@@ -17,6 +18,12 @@ import 'widgets/app_messenger.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Capture framework errors, uncaught async errors and debugPrint output into
+  // a rolling buffer + file, so a member who hits a bug can download a report
+  // from the menu and send it to support. First thing after the binding, so
+  // anything that goes wrong during startup is in the report too.
+  DebugLog.instance.install();
 
   // Member sign-in is Firebase Phone Auth with no demo or offline fallback.
   // Bring Firebase up before the app starts; if the current platform has no
