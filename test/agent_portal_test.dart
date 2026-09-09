@@ -44,6 +44,8 @@ void main() {
     String pincode = '682001',
     String account = '123456789012',
     String region = 'North',
+    String? state,
+    String? district,
   }) {
     final atLevel = level ?? service.allowedChildLevels(parent).first;
     return service.registerAgent(
@@ -59,9 +61,15 @@ void main() {
       pincode: pincode,
       place: 'Wayanad',
       accountNumber: account,
-      // The named slot the agent fills — the six-zone pick the form makes
-      // mandatory at region level; left to the place at other tiers.
-      area: atLevel == AgentLevel.region ? region : null,
+      // The named slot the agent fills — a zone at region level, a state at
+      // state level, a district at district level; left to the place where
+      // the caller does not name one.
+      area: switch (atLevel) {
+        AgentLevel.region => region,
+        AgentLevel.state => state,
+        AgentLevel.district => district,
+        _ => null,
+      },
     );
   }
 
@@ -109,6 +117,27 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Picks a district from the state's fixed district dropdown — the one that
+  /// appears once a district-level agent has a known state that names its
+  /// districts (Kerala). A no-op when it is not on screen.
+  Future<void> pickDistrictIfShown(
+    WidgetTester tester,
+    String district,
+  ) async {
+    final field = find.ancestor(
+      of: find.text('Pick a district'),
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
+    if (field.evaluate().isEmpty) {
+      return;
+    }
+    await tester.ensureVisible(field);
+    await tester.tap(field, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(district).last);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> submitRegistrationForm(
     WidgetTester tester, {
     required String first,
@@ -136,6 +165,7 @@ void main() {
     await tester.pumpAndSettle();
     await pickRegionIfShown(tester);
     await pickStateIfShown(tester, 'Kerala');
+    await pickDistrictIfShown(tester, 'Ernakulam');
     await tester.ensureVisible(find.text('Send OTP'));
     await tester.tap(find.text('Send OTP'));
     await tester.pumpAndSettle();
@@ -185,6 +215,30 @@ void main() {
       expect(service.openPositionsUnder(national), 0);
       // No seventh zone to open.
       expect(register(national, region: 'North'), isNotNull);
+    });
+
+    test('a Kerala state agent opens its fourteen named district slots', () {
+      register(national, level: AgentLevel.region, region: 'South');
+      final south = service.childrenOf(national.id).first;
+      register(south, level: AgentLevel.state, state: 'Kerala');
+      final kerala = service.childrenOf(south.id).first;
+
+      expect(agentStateDistricts['Kerala']!.length, 14);
+      expect(service.slotLabelsUnder(kerala), agentStateDistricts['Kerala']);
+      expect(service.openPositionsUnder(kerala), 14);
+
+      register(kerala, level: AgentLevel.district, district: 'Ernakulam');
+      expect(service.openPositionsUnder(kerala), 13);
+    });
+
+    test('a state with no named districts falls back to the doubling shape', () {
+      register(national, level: AgentLevel.region, region: 'North');
+      final north = service.childrenOf(national.id).first;
+      register(north, level: AgentLevel.state, state: 'Punjab');
+      final punjab = service.childrenOf(north.id).first;
+
+      expect(service.slotLabelsUnder(punjab), isEmpty);
+      expect(service.openPositionsUnder(punjab), 2);
     });
 
     test('allowed child levels are every tier below the parent, not just the next one', () {
@@ -1002,6 +1056,48 @@ void main() {
       );
     });
 
+    testWidgets('a Kerala state card opens onto its fourteen named districts', (
+      tester,
+    ) async {
+      register(
+        national,
+        level: AgentLevel.region,
+        region: 'South',
+        first: 'Sara',
+        last: 'Roy',
+      );
+      final south = service.childrenOf(national.id).first;
+      register(
+        south,
+        level: AgentLevel.state,
+        state: 'Kerala',
+        first: 'Bea',
+        last: 'Nair',
+      );
+      await pumpTree(tester);
+
+      await tester.tap(find.byTooltip('Expand ${national.name}'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Expand Sara Roy'));
+      await tester.pumpAndSettle();
+      // South's five state slots — Kerala among them filled by Bea Nair.
+      expect(
+        find.byTooltip('Add a state agent here'),
+        findsNWidgets(agentRegionStates['South']!.length - 1),
+      );
+      expect(find.byTooltip('Add a district agent here'), findsNothing);
+
+      await tester.tap(find.byTooltip('Expand Bea Nair'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byTooltip('Add a district agent here'),
+        findsNWidgets(agentStateDistricts['Kerala']!.length),
+      );
+      for (final district in agentStateDistricts['Kerala']!) {
+        expect(find.text(district), findsOneWidget);
+      }
+    });
+
     testWidgets('the toolbar add button also opens registration for the root', (
       tester,
     ) async {
@@ -1252,6 +1348,62 @@ void main() {
       },
     );
 
+    testWidgets('a district agent cascades region → state → district', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      // Drop to the District tier under national.
+      await tester.tap(find.byType(DropdownButtonFormField<AgentLevel>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('District').last);
+      await tester.pumpAndSettle();
+
+      // The district picker only appears after a state that names its
+      // districts has been chosen.
+      await pickRegionIfShown(tester, 'South');
+      expect(find.text('Pick a district'), findsNothing);
+      await pickStateIfShown(tester, 'Kerala');
+
+      await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+      await tester.pumpAndSettle();
+      for (final district in agentStateDistricts['Kerala']!) {
+        expect(find.text(district), findsWidgets);
+      }
+      await tester.tap(find.text('Ernakulam').last);
+      await tester.pumpAndSettle();
+
+      await fillField(tester, 'First name', 'Deepa');
+      await fillField(tester, 'Last name', 'Rao');
+      await fillField(tester, '10-digit mobile number', '9812345670');
+      await fillField(tester, '12-digit Aadhaar', '123412341234');
+      await fillField(tester, 'ABCDE1234F', 'ABCDE1234F');
+      await fillField(tester, 'House / street / locality', '4 Fort Road');
+      await fillField(tester, '6 digits', '682001');
+      await fillField(tester, 'Town / village', 'Fort Kochi');
+      await fillField(
+        tester,
+        'Account the commission is paid into',
+        '123456789012',
+      );
+      await tester.ensureVisible(find.byIcon(Icons.event_rounded));
+      await tester.tap(find.byIcon(Icons.event_rounded));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Send OTP'));
+      await tester.tap(find.text('Send OTP'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), AuthService.demoOtp);
+      await tester.pumpAndSettle();
+
+      final added = service
+          .childrenOf(national.id)
+          .firstWhere((a) => a.name == 'Deepa Rao');
+      expect(added.level, AgentLevel.district);
+      expect(added.area, 'Ernakulam');
+    });
+
     testWidgets('the level field offers every tier below the parent, not just the next one', (
       tester,
     ) async {
@@ -1289,7 +1441,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
-      await pickRegionIfShown(tester);
+      // A district agent is placed through the region → state cascade; the
+      // state picked (Delhi) names no districts of its own, so that is as far
+      // as the cascade goes.
+      await pickRegionIfShown(tester, 'North');
+      await pickStateIfShown(tester, 'Delhi');
+      expect(find.text('Pick a district'), findsNothing);
       await tester.ensureVisible(find.text('Send OTP'));
       await tester.tap(find.text('Send OTP'));
       await tester.pumpAndSettle();
@@ -1300,7 +1457,8 @@ void main() {
           .childrenOf(national.id)
           .firstWhere((a) => a.name == 'Priya Menon');
       expect(added.level, AgentLevel.district);
-      // No region or state was seeded along the way.
+      // Picking a region and state to scope the form seeds no agents for
+      // those tiers — only the district agent is added.
       expect(service.descendantsOf(national.id), [added]);
     });
 
