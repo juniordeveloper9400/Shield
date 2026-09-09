@@ -347,6 +347,45 @@ void main() {
       );
     });
 
+    test('Varkala names its six panchayats + municipality, and its 34 wards', () {
+      expect(
+        agentSlotLabelsUnder(level: AgentLevel.assembly, area: 'Varkala'),
+        [
+          'Chemmaruthy', 'Edava', 'Elakamon', 'Madavoor', 'Pallickal',
+          'Vettoor', 'Varkala Municipality',
+        ],
+      );
+      expect(agentSlotCode('Chemmaruthy'), 'AC124-L1');
+      expect(agentSlotCode('Varkala Municipality'), 'AC124-L7');
+
+      final wards = agentSlotLabelsUnder(
+        level: AgentLevel.lsgd,
+        area: 'Varkala Municipality',
+      );
+      expect(wards, hasLength(34));
+      expect(wards.first, 'Vilakkulam');
+      expect(wards.last, 'Kurakkanni');
+      expect(agentSlotCode('Vilakkulam'), 'AC124-L7-W001');
+      expect(agentSlotCode('Kurakkanni'), 'AC124-L7-W034');
+
+      // A grama panchayat still gets generic numbered wards.
+      final chemmaruthy = agentSlotLabelsUnder(
+        level: AgentLevel.lsgd,
+        area: 'Chemmaruthy',
+      );
+      expect(chemmaruthy, hasLength(12));
+      expect(chemmaruthy.first, 'Chemmaruthy Ward 01');
+    });
+
+    test('childLevelOf reads the successor tier straight from the data', () {
+      final geo = AgentGeo.current;
+      expect(geo.childLevelOf('South'), AgentLevel.state);
+      expect(geo.childLevelOf('Kerala'), AgentLevel.district);
+      expect(geo.childLevelOf('Varkala'), AgentLevel.lsgd);
+      expect(geo.childLevelOf('Varkala Municipality'), AgentLevel.ward);
+      expect(geo.childLevelOf('Vilakkulam'), isNull); // a leaf ward
+    });
+
     test('every coded slot carries its printed code', () {
       expect(agentSlotCode('Kovalam'), 'AC136');
       expect(agentSlotCode('Thiruvananthapuram Corporation'), 'TVC');
