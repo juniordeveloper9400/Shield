@@ -46,6 +46,7 @@ void main() {
     String region = 'North',
     String? state,
     String? district,
+    String? assembly,
   }) {
     final atLevel = level ?? service.allowedChildLevels(parent).first;
     return service.registerAgent(
@@ -62,12 +63,13 @@ void main() {
       place: 'Wayanad',
       accountNumber: account,
       // The named slot the agent fills — a zone at region level, a state at
-      // state level, a district at district level; left to the place where
-      // the caller does not name one.
+      // state level, a district at district level, an assembly one below
+      // that; left to the place where the caller does not name one.
       area: switch (atLevel) {
         AgentLevel.region => region,
         AgentLevel.state => state,
         AgentLevel.district => district,
+        AgentLevel.assembly => assembly,
         _ => null,
       },
     );
@@ -138,6 +140,27 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Picks an assembly from the district's fixed assembly dropdown — shown
+  /// once an assembly-level agent has a known district that names its
+  /// assemblies (Thiruvananthapuram). A no-op when it is not on screen.
+  Future<void> pickAssemblyIfShown(
+    WidgetTester tester,
+    String assembly,
+  ) async {
+    final field = find.ancestor(
+      of: find.text('Pick an assembly'),
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
+    if (field.evaluate().isEmpty) {
+      return;
+    }
+    await tester.ensureVisible(field);
+    await tester.tap(field, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(assembly).last);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> submitRegistrationForm(
     WidgetTester tester, {
     required String first,
@@ -166,6 +189,7 @@ void main() {
     await pickRegionIfShown(tester);
     await pickStateIfShown(tester, 'Kerala');
     await pickDistrictIfShown(tester, 'Ernakulam');
+    await pickAssemblyIfShown(tester, 'Kovalam');
     await tester.ensureVisible(find.text('Send OTP'));
     await tester.tap(find.text('Send OTP'));
     await tester.pumpAndSettle();
@@ -239,6 +263,44 @@ void main() {
 
       expect(service.slotLabelsUnder(punjab), isEmpty);
       expect(service.openPositionsUnder(punjab), 2);
+    });
+
+    test('a Thiruvananthapuram district agent opens its 13 assemblies + 1 corporation', () {
+      register(national, level: AgentLevel.region, region: 'South');
+      final south = service.childrenOf(national.id).first;
+      register(south, level: AgentLevel.state, state: 'Kerala');
+      final kerala = service.childrenOf(south.id).first;
+      register(
+        kerala,
+        level: AgentLevel.district,
+        district: 'Thiruvananthapuram',
+      );
+      final tvm = service.childrenOf(kerala.id).first;
+
+      final slots = agentDistrictAssemblies['Thiruvananthapuram']!;
+      expect(slots.length, 14);
+      expect(slots.where((s) => s.endsWith('Corporation')).length, 1);
+      expect(service.slotLabelsUnder(tvm), slots);
+      expect(service.openPositionsUnder(tvm), 14);
+
+      register(
+        tvm,
+        level: AgentLevel.assembly,
+        assembly: 'Thiruvananthapuram Corporation',
+      );
+      expect(service.openPositionsUnder(tvm), 13);
+    });
+
+    test('a district with no named assemblies falls back to the doubling shape', () {
+      register(national, level: AgentLevel.region, region: 'South');
+      final south = service.childrenOf(national.id).first;
+      register(south, level: AgentLevel.state, state: 'Kerala');
+      final kerala = service.childrenOf(south.id).first;
+      register(kerala, level: AgentLevel.district, district: 'Ernakulam');
+      final ernakulam = service.childrenOf(kerala.id).first;
+
+      expect(service.slotLabelsUnder(ernakulam), isEmpty);
+      expect(service.openPositionsUnder(ernakulam), 2);
     });
 
     test('allowed child levels are every tier below the parent, not just the next one', () {
@@ -842,10 +904,14 @@ void main() {
   });
 
   group('my team', () {
-    Future<void> pumpTree(WidgetTester tester) async {
+    Future<void> pumpTree(
+      WidgetTester tester, {
+      Size size = const Size(1400, 1600),
+    }) async {
       // Wide enough for the left-to-right mind-map to fan a couple of tiers
-      // out without the deeper cards landing past the viewport edge.
-      tester.view.physicalSize = const Size(1400, 1600);
+      // out without the deeper cards landing past the viewport edge; a deeper
+      // chain passes a wider size.
+      tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
       await tester.pumpWidget(
@@ -1097,6 +1163,53 @@ void main() {
         expect(find.text(district), findsOneWidget);
       }
     });
+
+    testWidgets(
+      'a Thiruvananthapuram district card opens onto its assemblies and corporation',
+      (tester) async {
+        register(
+          national,
+          level: AgentLevel.region,
+          region: 'South',
+          first: 'Sara',
+          last: 'Roy',
+        );
+        final south = service.childrenOf(national.id).first;
+        register(
+          south,
+          level: AgentLevel.state,
+          state: 'Kerala',
+          first: 'Bea',
+          last: 'Nair',
+        );
+        final kerala = service.childrenOf(south.id).first;
+        register(
+          kerala,
+          level: AgentLevel.district,
+          district: 'Thiruvananthapuram',
+          first: 'Ravi',
+          last: 'Menon',
+        );
+        await pumpTree(tester, size: const Size(2600, 2200));
+
+        await tester.tap(find.byTooltip('Expand ${national.name}'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Expand Sara Roy'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Expand Bea Nair'));
+        await tester.pumpAndSettle();
+        expect(find.byTooltip('Add a assembly agent here'), findsNothing);
+
+        await tester.tap(find.byTooltip('Expand Ravi Menon'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byTooltip('Add a assembly agent here'),
+          findsNWidgets(agentDistrictAssemblies['Thiruvananthapuram']!.length),
+        );
+        expect(find.text('Thiruvananthapuram Corporation'), findsOneWidget);
+        expect(find.text('Kovalam'), findsOneWidget);
+      },
+    );
 
     testWidgets('the toolbar add button also opens registration for the root', (
       tester,
@@ -1403,6 +1516,76 @@ void main() {
       expect(added.level, AgentLevel.district);
       expect(added.area, 'Ernakulam');
     });
+
+    testWidgets(
+      'an assembly agent under a Kerala state agent cascades district → assembly',
+      (tester) async {
+        register(national, level: AgentLevel.region, region: 'South');
+        final south = service.childrenOf(national.id).first;
+        register(south, level: AgentLevel.state, state: 'Kerala');
+        final kerala = service.childrenOf(south.id).first;
+
+        tester.view.physicalSize = const Size(460, 3600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AgentRegistrationScreen(
+              scopeRoot: national,
+              initialParent: kerala,
+              initialLevel: AgentLevel.assembly,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Region and state are pinned by the parent — no picker for them.
+        expect(find.text('Pick a region'), findsNothing);
+        expect(find.text('Pick a state'), findsNothing);
+        // The assembly picker waits on a district being chosen first.
+        expect(find.text('Pick a district'), findsOneWidget);
+        expect(find.text('Pick an assembly'), findsNothing);
+
+        await pickDistrictIfShown(tester, 'Thiruvananthapuram');
+        await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+        await tester.pumpAndSettle();
+        for (final slot in agentDistrictAssemblies['Thiruvananthapuram']!) {
+          expect(find.text(slot), findsWidgets);
+        }
+        await tester.tap(find.text('Thiruvananthapuram Corporation').last);
+        await tester.pumpAndSettle();
+
+        await fillField(tester, 'First name', 'Meera');
+        await fillField(tester, 'Last name', 'Das');
+        await fillField(tester, '10-digit mobile number', '9812345670');
+        await fillField(tester, '12-digit Aadhaar', '123412341234');
+        await fillField(tester, 'ABCDE1234F', 'ABCDE1234F');
+        await fillField(tester, 'House / street / locality', '4 Fort Road');
+        await fillField(tester, '6 digits', '682001');
+        await fillField(tester, 'Town / village', 'Fort Kochi');
+        await fillField(
+          tester,
+          'Account the commission is paid into',
+          '123456789012',
+        );
+        await tester.ensureVisible(find.byIcon(Icons.event_rounded));
+        await tester.tap(find.byIcon(Icons.event_rounded));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Send OTP'));
+        await tester.tap(find.text('Send OTP'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), AuthService.demoOtp);
+        await tester.pumpAndSettle();
+
+        final added = service
+            .childrenOf(kerala.id)
+            .firstWhere((a) => a.name == 'Meera Das');
+        expect(added.level, AgentLevel.assembly);
+        expect(added.area, 'Thiruvananthapuram Corporation');
+      },
+    );
 
     testWidgets('the level field offers every tier below the parent, not just the next one', (
       tester,
