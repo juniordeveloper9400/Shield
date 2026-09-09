@@ -6,6 +6,7 @@ import 'package:shield/money.dart';
 import 'package:shield/module/agent/agent_customer_detail_screen.dart';
 import 'package:shield/module/agent/agent_detail_screen.dart';
 import 'package:shield/module/agent/agent_direct_sale.dart';
+import 'package:shield/data/neon/agent_geo_repository.dart';
 import 'package:shield/module/agent/agent_directory.dart';
 import 'package:shield/module/agent/agent_earnings_card.dart';
 import 'package:shield/module/agent/agent_model.dart';
@@ -29,6 +30,7 @@ void main() {
   tearDown(() {
     AuthService.instance.reset();
     service.reset();
+    AgentGeo.instance.resetToSeed();
   });
 
   /// Registers a valid agent under [parent]. Returns the error string (null on
@@ -301,6 +303,140 @@ void main() {
 
       expect(service.slotLabelsUnder(ernakulam), isEmpty);
       expect(service.openPositionsUnder(ernakulam), 2);
+    });
+
+    test('an assembly segment opens LSGD slots; an LSGD opens ward slots', () {
+      final kovalamLsgds = agentSlotLabelsUnder(
+        level: AgentLevel.assembly,
+        area: 'Kovalam',
+      );
+      expect(kovalamLsgds, [
+        'Kovalam Panchayat 1',
+        'Kovalam Panchayat 2',
+        'Kovalam Panchayat 3',
+      ]);
+
+      final panchayatWards = agentSlotLabelsUnder(
+        level: AgentLevel.lsgd,
+        area: 'Kovalam Panchayat 1',
+      );
+      expect(panchayatWards, hasLength(12));
+      expect(panchayatWards.first, 'Kovalam Panchayat 1 Ward 01');
+
+      // The corporation is one LSGD of a hundred wards.
+      final corpLsgds = agentSlotLabelsUnder(
+        level: AgentLevel.assembly,
+        area: 'Thiruvananthapuram Corporation',
+      );
+      expect(corpLsgds, ['Thiruvananthapuram Municipal Corporation']);
+      expect(
+        agentSlotLabelsUnder(
+          level: AgentLevel.lsgd,
+          area: 'Thiruvananthapuram Municipal Corporation',
+        ),
+        hasLength(100),
+      );
+
+      // A ward heads nobody.
+      expect(
+        agentSlotLabelsUnder(
+          level: AgentLevel.ward,
+          area: 'Kovalam Panchayat 1 Ward 01',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('every coded slot carries its printed code', () {
+      expect(agentSlotCode('Kovalam'), 'AC136');
+      expect(agentSlotCode('Thiruvananthapuram Corporation'), 'TVC');
+      expect(agentSlotCode('Kovalam Panchayat 1'), 'AC136-L1');
+      expect(agentSlotCode('Kovalam Panchayat 1 Ward 05'), 'AC136-L1-W005');
+      expect(agentSlotCode('Thiruvananthapuram Municipal Corporation'),
+          'TVC-L1');
+      expect(agentSlotCode('Thiruvananthapuram Municipal Corporation Ward 07'),
+          'TVC-L1-W007');
+      // The tiers with no code.
+      expect(agentSlotCode('South'), isNull);
+      expect(agentSlotCode('Kerala'), isNull);
+      expect(agentSlotCode('Thiruvananthapuram'), isNull);
+    });
+
+    test('the whole chain builds down to a ward', () {
+      var parent = national;
+      final chain = [
+        ('South', AgentLevel.region),
+        ('Kerala', AgentLevel.state),
+        ('Thiruvananthapuram', AgentLevel.district),
+        ('Kovalam', AgentLevel.assembly),
+        ('Kovalam Panchayat 1', AgentLevel.lsgd),
+        ('Kovalam Panchayat 1 Ward 01', AgentLevel.ward),
+      ];
+      for (final (area, level) in chain) {
+        final error = service.registerAgent(
+          parent: parent,
+          level: level,
+          firstName: 'Agent',
+          lastName: level.label,
+          phone: '9812345670',
+          dob: DateTime(1990, 5, 4),
+          aadhaar: '123412341234',
+          pan: 'ABCDE1234F',
+          address: '12 MG Road',
+          pincode: '682001',
+          place: 'Wayanad',
+          accountNumber: '123456789012',
+          area: area,
+        );
+        expect(error, isNull, reason: level.label);
+        parent = service.childrenOf(parent.id).single;
+        expect(parent.level, level);
+        expect(parent.area, area);
+      }
+      expect(service.openPositionsUnder(parent), 0);
+    });
+
+    test('the hierarchy follows a database edit — a deleted district is gone', () {
+      // Stand in a database copy that drops Thiruvananthapuram from Kerala.
+      final trimmed = GeoHierarchy.fromNodes([
+        const GeoNode(
+          id: 'geo/south',
+          parentId: null,
+          level: AgentLevel.region,
+          name: 'South',
+          sort: 1,
+        ),
+        const GeoNode(
+          id: 'geo/south/kerala',
+          parentId: 'geo/south',
+          level: AgentLevel.state,
+          name: 'Kerala',
+          sort: 1,
+        ),
+        const GeoNode(
+          id: 'geo/south/kerala/kollam',
+          parentId: 'geo/south/kerala',
+          level: AgentLevel.district,
+          name: 'Kollam',
+          sort: 1,
+        ),
+      ]);
+      AgentGeo.instance.useHierarchy(trimmed);
+
+      expect(agentRegions, ['South']);
+      expect(
+        agentSlotLabelsUnder(level: AgentLevel.region, area: 'South'),
+        ['Kerala'],
+      );
+      expect(
+        agentSlotLabelsUnder(level: AgentLevel.state, area: 'Kerala'),
+        ['Kollam'],
+      );
+      // Thiruvananthapuram and everything under it is no longer offered.
+      expect(
+        agentSlotLabelsUnder(level: AgentLevel.state, area: 'Kerala'),
+        isNot(contains('Thiruvananthapuram')),
+      );
     });
 
     test('allowed child levels are every tier below the parent, not just the next one', () {
