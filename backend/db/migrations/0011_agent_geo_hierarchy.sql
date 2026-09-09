@@ -24,7 +24,9 @@
 --      the one "Thiruvananthapuram Municipal Corporation" LSGD
 --    · every panchayat LSGD → 12 wards; the corporation LSGD → 100 wards
 --
---  Idempotent — safe to run more than once:
+--  Plain set-based INSERTs — each statement is independent and idempotent
+--  (ON CONFLICT (id) DO NOTHING), safe to run more than once. Paste the whole
+--  file into a SQL client, or:
 --    dart run backend/db/apply_migration.dart backend/db/migrations/0011_agent_geo_hierarchy.sql --yes
 -- ============================================================================
 
@@ -51,131 +53,119 @@ CREATE INDEX IF NOT EXISTS agent_geo_node_parent_idx
 CREATE UNIQUE INDEX IF NOT EXISTS agent_geo_node_parent_name_idx
   ON app.agent_geo_node(COALESCE(parent_id, ''), name);
 
--- Small internal helper: a name → id-slug ("Kovalam Panchayat 1" → the
--- "kovalam-panchayat-1" tail of its node id).
-CREATE OR REPLACE FUNCTION app._geo_slug(t text) RETURNS text AS $fn$
-  SELECT lower(regexp_replace(trim(t), '[^a-zA-Z0-9]+', '-', 'g'));
-$fn$ LANGUAGE sql IMMUTABLE;
+-- ---- regions -------------------------------------------------------------
+INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
+SELECT 'geo/' || lower(regexp_replace(trim(r.name), '[^a-zA-Z0-9]+', '-', 'g')),
+       NULL, 'region', r.name, '', r.ord
+FROM (VALUES
+  ('North', 1), ('South', 2), ('East', 3),
+  ('West', 4), ('Central', 5), ('Northeast', 6)
+) AS r(name, ord)
+ON CONFLICT (id) DO NOTHING;
 
-DO $seed$
-DECLARE
-  regions       text[] := ARRAY[
-    'North','South','East','West','Central','Northeast'
-  ];
-  states        jsonb  := '{
-    "North":["Chandigarh","Delhi","Haryana","Himachal Pradesh","Jammu & Kashmir","Ladakh","Punjab","Rajasthan"],
-    "South":["Andhra Pradesh","Karnataka","Kerala","Tamil Nadu","Telangana"],
-    "East":["Bihar","Jharkhand","Odisha","West Bengal"],
-    "West":["Chhattisgarh","Goa","Gujarat","Maharashtra"],
-    "Central":["Madhya Pradesh","Uttar Pradesh","Uttarakhand"],
-    "Northeast":["Arunachal Pradesh","Assam","Manipur","Meghalaya","Mizoram","Nagaland","Sikkim","Tripura"]
-  }'::jsonb;
-  kerala_districts text[] := ARRAY[
-    'Thiruvananthapuram','Kollam','Pathanamthitta','Alappuzha','Kottayam',
-    'Idukki','Ernakulam','Thrissur','Palakkad','Malappuram','Kozhikode',
-    'Wayanad','Kannur','Kasaragod'
-  ];
-  tvm_assemblies jsonb := '[
-    ["Varkala","AC124"],["Attingal","AC125"],["Chirayinkeezhu","AC126"],
-    ["Nedumangad","AC127"],["Vamanapuram","AC128"],["Kazhakkoottam","AC129"],
-    ["Vattiyoorkavu","AC130"],["Nemom","AC132"],["Aruvikkara","AC133"],
-    ["Parassala","AC134"],["Kattakkada","AC135"],["Kovalam","AC136"],
-    ["Neyyattinkara","AC137"],["Thiruvananthapuram Corporation","TVC"]
-  ]'::jsonb;
+-- ---- states ------------------------------------------------------------
+INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
+SELECT 'geo/' || lower(regexp_replace(trim(s.region), '[^a-zA-Z0-9]+', '-', 'g'))
+         || '/' || lower(regexp_replace(trim(s.name), '[^a-zA-Z0-9]+', '-', 'g')),
+       'geo/' || lower(regexp_replace(trim(s.region), '[^a-zA-Z0-9]+', '-', 'g')),
+       'state', s.name, '', s.ord
+FROM (VALUES
+  ('North', 'Chandigarh', 1), ('North', 'Delhi', 2), ('North', 'Haryana', 3),
+  ('North', 'Himachal Pradesh', 4), ('North', 'Jammu & Kashmir', 5),
+  ('North', 'Ladakh', 6), ('North', 'Punjab', 7), ('North', 'Rajasthan', 8),
+  ('South', 'Andhra Pradesh', 1), ('South', 'Karnataka', 2), ('South', 'Kerala', 3),
+  ('South', 'Tamil Nadu', 4), ('South', 'Telangana', 5),
+  ('East', 'Bihar', 1), ('East', 'Jharkhand', 2), ('East', 'Odisha', 3),
+  ('East', 'West Bengal', 4),
+  ('West', 'Chhattisgarh', 1), ('West', 'Goa', 2), ('West', 'Gujarat', 3),
+  ('West', 'Maharashtra', 4),
+  ('Central', 'Madhya Pradesh', 1), ('Central', 'Uttar Pradesh', 2),
+  ('Central', 'Uttarakhand', 3),
+  ('Northeast', 'Arunachal Pradesh', 1), ('Northeast', 'Assam', 2),
+  ('Northeast', 'Manipur', 3), ('Northeast', 'Meghalaya', 4),
+  ('Northeast', 'Mizoram', 5), ('Northeast', 'Nagaland', 6),
+  ('Northeast', 'Sikkim', 7), ('Northeast', 'Tripura', 8)
+) AS s(region, name, ord)
+ON CONFLICT (id) DO NOTHING;
 
-  v_region      text;
-  v_state       text;
-  v_district    text;
-  v_assembly    jsonb;
-  v_aname       text;
-  v_acode       text;
-  v_lsgd        text;
-  v_lcode       text;
-  v_region_id   text;
-  v_state_id    text;
-  v_district_id text;
-  v_assembly_id text;
-  v_lsgd_id     text;
-  r_sort int; s_sort int; d_sort int; a_sort int; l_sort int;
-  n_lsgd int; n_ward int; i int; w int;
-BEGIN
-  r_sort := 0;
-  FOREACH v_region IN ARRAY regions LOOP
-    r_sort := r_sort + 1;
-    v_region_id := 'geo/' || app._geo_slug(v_region);
-    INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
-      VALUES (v_region_id, NULL, 'region', v_region, '', r_sort)
-      ON CONFLICT (id) DO NOTHING;
+-- ---- Kerala's districts ---------------------------------------------------
+INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
+SELECT 'geo/south/kerala/'
+         || lower(regexp_replace(trim(d.name), '[^a-zA-Z0-9]+', '-', 'g')),
+       'geo/south/kerala', 'district', d.name, '', d.ord
+FROM (VALUES
+  ('Thiruvananthapuram', 1), ('Kollam', 2), ('Pathanamthitta', 3),
+  ('Alappuzha', 4), ('Kottayam', 5), ('Idukki', 6), ('Ernakulam', 7),
+  ('Thrissur', 8), ('Palakkad', 9), ('Malappuram', 10), ('Kozhikode', 11),
+  ('Wayanad', 12), ('Kannur', 13), ('Kasaragod', 14)
+) AS d(name, ord)
+ON CONFLICT (id) DO NOTHING;
 
-    s_sort := 0;
-    FOR v_state IN SELECT jsonb_array_elements_text(states -> v_region) LOOP
-      s_sort := s_sort + 1;
-      v_state_id := v_region_id || '/' || app._geo_slug(v_state);
-      INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
-        VALUES (v_state_id, v_region_id, 'state', v_state, '', s_sort)
-        ON CONFLICT (id) DO NOTHING;
+-- ---- Thiruvananthapuram's assembly segments (13) + the corporation ------
+INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
+SELECT 'geo/south/kerala/thiruvananthapuram/'
+         || lower(regexp_replace(trim(a.name), '[^a-zA-Z0-9]+', '-', 'g')),
+       'geo/south/kerala/thiruvananthapuram', 'assembly', a.name, a.code, a.ord
+FROM (VALUES
+  ('Varkala', 'AC124', 1), ('Attingal', 'AC125', 2),
+  ('Chirayinkeezhu', 'AC126', 3), ('Nedumangad', 'AC127', 4),
+  ('Vamanapuram', 'AC128', 5), ('Kazhakkoottam', 'AC129', 6),
+  ('Vattiyoorkavu', 'AC130', 7), ('Nemom', 'AC132', 8),
+  ('Aruvikkara', 'AC133', 9), ('Parassala', 'AC134', 10),
+  ('Kattakkada', 'AC135', 11), ('Kovalam', 'AC136', 12),
+  ('Neyyattinkara', 'AC137', 13),
+  ('Thiruvananthapuram Corporation', 'TVC', 14)
+) AS a(name, code, ord)
+ON CONFLICT (id) DO NOTHING;
 
-      CONTINUE WHEN v_state <> 'Kerala';
+-- ---- LSGDs: 3 panchayats per assembly segment ---------------------------
+INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
+SELECT a.id || '/' || lower(regexp_replace(
+         a.name || ' Panchayat ' || g.n, '[^a-zA-Z0-9]+', '-', 'g')),
+       a.id, 'lsgd',
+       a.name || ' Panchayat ' || g.n,
+       a.code || '-L' || g.n,
+       g.n
+FROM app.agent_geo_node a
+CROSS JOIN generate_series(1, 3) AS g(n)
+WHERE a.level = 'assembly' AND a.code <> 'TVC'
+ON CONFLICT (id) DO NOTHING;
 
-      d_sort := 0;
-      FOREACH v_district IN ARRAY kerala_districts LOOP
-        d_sort := d_sort + 1;
-        v_district_id := v_state_id || '/' || app._geo_slug(v_district);
-        INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
-          VALUES (v_district_id, v_state_id, 'district', v_district, '', d_sort)
-          ON CONFLICT (id) DO NOTHING;
+-- ---- LSGD: the corporation's single local body -------------------------
+INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
+SELECT a.id || '/thiruvananthapuram-municipal-corporation',
+       a.id, 'lsgd', 'Thiruvananthapuram Municipal Corporation', 'TVC-L1', 1
+FROM app.agent_geo_node a
+WHERE a.level = 'assembly' AND a.code = 'TVC'
+ON CONFLICT (id) DO NOTHING;
 
-        CONTINUE WHEN v_district <> 'Thiruvananthapuram';
+-- ---- wards: 12 per panchayat LSGD -------------------------------------
+INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
+SELECT l.id || '/ward-' || lpad(g.n::text, 3, '0'),
+       l.id, 'ward',
+       l.name || ' Ward ' || lpad(g.n::text, 2, '0'),
+       l.code || '-W' || lpad(g.n::text, 3, '0'),
+       g.n
+FROM app.agent_geo_node l
+CROSS JOIN generate_series(1, 12) AS g(n)
+WHERE l.level = 'lsgd' AND l.code <> 'TVC-L1'
+ON CONFLICT (id) DO NOTHING;
 
-        a_sort := 0;
-        FOR v_assembly IN SELECT jsonb_array_elements(tvm_assemblies) LOOP
-          a_sort := a_sort + 1;
-          v_aname := v_assembly ->> 0;
-          v_acode := v_assembly ->> 1;
-          v_assembly_id := v_district_id || '/' || app._geo_slug(v_aname);
-          INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
-            VALUES (v_assembly_id, v_district_id, 'assembly', v_aname, v_acode, a_sort)
-            ON CONFLICT (id) DO NOTHING;
+-- ---- wards: 100 for the corporation LSGD -------------------------------
+INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
+SELECT l.id || '/ward-' || lpad(g.n::text, 3, '0'),
+       l.id, 'ward',
+       l.name || ' Ward ' || lpad(g.n::text, 2, '0'),
+       l.code || '-W' || lpad(g.n::text, 3, '0'),
+       g.n
+FROM app.agent_geo_node l
+CROSS JOIN generate_series(1, 100) AS g(n)
+WHERE l.level = 'lsgd' AND l.code = 'TVC-L1'
+ON CONFLICT (id) DO NOTHING;
 
-          IF v_acode = 'TVC' THEN
-            n_lsgd := 1;
-          ELSE
-            n_lsgd := 3;
-          END IF;
-
-          l_sort := 0;
-          FOR i IN 1..n_lsgd LOOP
-            l_sort := l_sort + 1;
-            IF v_acode = 'TVC' THEN
-              v_lsgd  := 'Thiruvananthapuram Municipal Corporation';
-              v_lcode := 'TVC-L1';
-              n_ward  := 100;
-            ELSE
-              v_lsgd  := v_aname || ' Panchayat ' || i;
-              v_lcode := v_acode || '-L' || i;
-              n_ward  := 12;
-            END IF;
-            v_lsgd_id := v_assembly_id || '/' || app._geo_slug(v_lsgd);
-            INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
-              VALUES (v_lsgd_id, v_assembly_id, 'lsgd', v_lsgd, v_lcode, l_sort)
-              ON CONFLICT (id) DO NOTHING;
-
-            FOR w IN 1..n_ward LOOP
-              INSERT INTO app.agent_geo_node (id, parent_id, level, name, code, sort)
-                VALUES (
-                  v_lsgd_id || '/ward-' || lpad(w::text, 3, '0'),
-                  v_lsgd_id,
-                  'ward',
-                  v_lsgd || ' Ward ' || lpad(w::text, 2, '0'),
-                  v_lcode || '-W' || lpad(w::text, 3, '0'),
-                  w
-                )
-                ON CONFLICT (id) DO NOTHING;
-            END LOOP;
-          END LOOP;
-        END LOOP;
-      END LOOP;
-    END LOOP;
-  END LOOP;
-END
-$seed$;
+-- Sanity check — expect region 6, state 34, district 14, assembly 14,
+-- lsgd 40, ward 568.
+-- SELECT level, count(*) FROM app.agent_geo_node
+--   GROUP BY level
+--   ORDER BY array_position(
+--     ARRAY['region','state','district','assembly','lsgd','ward'], level);
