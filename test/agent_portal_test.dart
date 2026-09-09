@@ -802,9 +802,12 @@ void main() {
       await tester.tap(find.byTooltip('Expand ${national.name}'));
       await tester.pumpAndSettle();
 
-      // The six zone positions under the root now show as open slots…
-      expect(find.text('Region'), findsNWidgets(6));
+      // The six zone positions under the root now show as open slots, each
+      // named for its zone…
       expect(find.byTooltip('Add a region agent here'), findsNWidgets(6));
+      for (final zone in agentRegions) {
+        expect(find.text(zone), findsOneWidget);
+      }
       // …and nothing a tier deeper has been revealed with them.
       expect(find.text('State'), findsNothing);
     });
@@ -879,15 +882,18 @@ void main() {
     testWidgets('a card folds its revealed tier away and back', (tester) async {
       await pumpTree(tester);
       await expandRoot(tester);
-      expect(find.text('Region'), findsNWidgets(6));
+      expect(find.byTooltip('Add a region agent here'), findsNWidgets(6));
+      expect(find.text('North'), findsOneWidget);
 
       await tester.tap(find.byTooltip('Collapse ${national.name}'));
       await tester.pumpAndSettle();
-      expect(find.text('Region'), findsNothing);
+      expect(find.byTooltip('Add a region agent here'), findsNothing);
+      expect(find.text('North'), findsNothing);
 
       await tester.tap(find.byTooltip('Expand ${national.name}'));
       await tester.pumpAndSettle();
-      expect(find.text('Region'), findsNWidgets(6));
+      expect(find.byTooltip('Add a region agent here'), findsNWidgets(6));
+      expect(find.text('North'), findsOneWidget);
     });
 
     testWidgets('a filled card shows the name, tier and agent code', (
