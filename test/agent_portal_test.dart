@@ -45,9 +45,10 @@ void main() {
     String account = '123456789012',
     String region = 'North',
   }) {
+    final atLevel = level ?? service.allowedChildLevels(parent).first;
     return service.registerAgent(
       parent: parent,
-      level: level ?? service.allowedChildLevels(parent).first,
+      level: atLevel,
       firstName: first,
       lastName: last,
       phone: phone,
@@ -58,9 +59,9 @@ void main() {
       pincode: pincode,
       place: 'Wayanad',
       accountNumber: account,
-      // Ignored unless the level being registered is region — the six-zone
-      // pick the form now makes mandatory there.
-      region: region,
+      // The named slot the agent fills — the six-zone pick the form makes
+      // mandatory at region level; left to the place at other tiers.
+      area: atLevel == AgentLevel.region ? region : null,
     );
   }
 
@@ -828,8 +829,8 @@ void main() {
     testWidgets('each tap reveals only the next tier, never the whole shape', (
       tester,
     ) async {
-      register(national, first: 'Ann', last: 'Raj');
-      register(national, first: 'Biju', last: 'Nair');
+      register(national, first: 'Ann', last: 'Raj', region: 'South');
+      register(national, first: 'Biju', last: 'Nair', region: 'East');
       await pumpTree(tester);
 
       // Closed on open.
@@ -842,11 +843,14 @@ void main() {
       expect(find.text('Biju Nair'), findsOneWidget);
       expect(find.byTooltip('Add a state agent here'), findsNothing);
 
-      // Tapping one region reveals just that region's state row; its sibling
-      // stays shut.
+      // Tapping one region reveals just that region's state row (South has
+      // five states); its sibling stays shut.
       await tester.tap(find.byTooltip('Expand Ann Raj'));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Add a state agent here'), findsNWidgets(2));
+      expect(
+        find.byTooltip('Add a state agent here'),
+        findsNWidgets(agentRegionStates['South']!.length),
+      );
       expect(find.byTooltip('Expand Biju Nair'), findsOneWidget);
     });
 
@@ -965,11 +969,15 @@ void main() {
       expect(find.text('Priya Menon'), findsOneWidget);
       // …the other five region slots are still open…
       expect(find.byTooltip('Add a region agent here'), findsNWidgets(5));
-      // …and the new agent's own tier waits for its own tap.
+      // …and the new agent's own tier waits for its own tap. Priya filled
+      // the first slot (North), which opens its eight state positions.
       expect(find.byTooltip('Add a state agent here'), findsNothing);
       await tester.tap(find.byTooltip('Expand Priya Menon'));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Add a state agent here'), findsNWidgets(2));
+      expect(
+        find.byTooltip('Add a state agent here'),
+        findsNWidgets(agentRegionStates['North']!.length),
+      );
     });
 
     testWidgets('the toolbar add button also opens registration for the root', (
@@ -998,11 +1006,14 @@ void main() {
       // Nothing below the region slots yet.
       expect(find.byTooltip('Add a state agent here'), findsNothing);
 
-      // Open one region position's own preview — states appear even though no
-      // region agent exists.
+      // Open one region position's own preview — the first slot is North, so
+      // its eight state positions appear even though no region agent exists.
       await tester.tap(find.byTooltip('Expand Region position').first);
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Add a state agent here'), findsNWidgets(2));
+      expect(
+        find.byTooltip('Add a state agent here'),
+        findsNWidgets(agentRegionStates['North']!.length),
+      );
       // The other five region slots' states stay hidden.
       expect(find.byTooltip('Expand Region position'), findsNWidgets(5));
     });
