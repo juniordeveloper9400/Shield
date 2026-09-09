@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
+import '../../widgets/app_messenger.dart';
 import '../../widgets/upload_picker.dart';
 import '../cart/cart_control.dart';
 import '../home/product_showcase.dart';
@@ -1401,7 +1403,13 @@ class _BankTransferPanel extends StatelessWidget {
           const CheckoutHeading('Transfer to this account'),
           const SizedBox(height: 10),
           _BankRow('Account name', account.accountName),
-          _BankRow('Account number', account.accountNumber),
+          _BankRow(
+            'Account number',
+            account.accountNumber,
+            // Spaces are only there so the digits read easily on screen; a
+            // banking app's account-number field wants them stripped out.
+            copyValue: account.accountNumber.replaceAll(' ', ''),
+          ),
           _BankRow('IFSC', account.ifsc),
           _BankRow('Bank', account.bank),
           _BankRow('Branch', account.branch),
@@ -1560,14 +1568,35 @@ class _AccountTile extends StatelessWidget {
   }
 }
 
+/// One line of the bank panel: a label, its value, and — the value is what a
+/// member has to retype correctly into their own banking app, so every row
+/// carries its own copy button rather than asking for a careful hand-copy.
 class _BankRow extends StatelessWidget {
   final String label;
   final String value;
 
-  const _BankRow(this.label, this.value);
+  /// What actually lands on the clipboard, when it needs to differ from
+  /// [value] as printed — the account number is spaced out for reading but
+  /// copies as bare digits, which is what a bank's own field expects.
+  final String? copyValue;
+
+  const _BankRow(this.label, this.value, {this.copyValue});
+
+  Future<void> _copy() async {
+    final text = copyValue ?? value;
+    if (text.trim().isEmpty) {
+      return;
+    }
+    // The web build's clipboard write only succeeds when it runs inside the
+    // click handler that triggered it — no `await` ahead of this call, same
+    // requirement the browser places on every Flutter Web build, APK or not.
+    await Clipboard.setData(ClipboardData(text: text));
+    showAppSnackBar('$label copied', icon: Icons.check_rounded);
+  }
 
   @override
   Widget build(BuildContext context) {
+    final text = value.trim();
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -1593,6 +1622,25 @@ class _BankRow extends StatelessWidget {
               ),
             ),
           ),
+          if (text.isNotEmpty) ...[
+            const SizedBox(width: 4),
+            Semantics(
+              button: true,
+              label: 'Copy $label',
+              child: InkWell(
+                onTap: _copy,
+                borderRadius: BorderRadius.circular(6),
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.copy_rounded,
+                    size: 16,
+                    color: AppColors.brandBlue,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
