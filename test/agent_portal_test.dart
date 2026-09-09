@@ -43,6 +43,7 @@ void main() {
     String pan = 'ABCDE1234F',
     String pincode = '682001',
     String account = '123456789012',
+    String region = 'North',
   }) {
     return service.registerAgent(
       parent: parent,
@@ -57,12 +58,35 @@ void main() {
       pincode: pincode,
       place: 'Wayanad',
       accountNumber: account,
+      // Ignored unless the level being registered is region — the six-zone
+      // pick the form now makes mandatory there.
+      region: region,
     );
   }
 
   /// Drives the registration form all the way through from wherever it has
   /// just been pushed — every KYC field, the date-of-birth picker, and the
   /// OTP step — the same path a real submission takes.
+  /// Picks a zone from the six-region dropdown when the form is registering a
+  /// region-level agent (its hint shows only then). A no-op otherwise.
+  Future<void> pickRegionIfShown(
+    WidgetTester tester, [
+    String region = 'North',
+  ]) async {
+    final field = find.ancestor(
+      of: find.text('Pick a region'),
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
+    if (field.evaluate().isEmpty) {
+      return;
+    }
+    await tester.ensureVisible(field);
+    await tester.tap(field, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(region).last);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> submitRegistrationForm(
     WidgetTester tester, {
     required String first,
@@ -88,6 +112,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
+    await pickRegionIfShown(tester);
     await tester.ensureVisible(find.text('Send OTP'));
     await tester.tap(find.text('Send OTP'));
     await tester.pumpAndSettle();
@@ -118,8 +143,9 @@ void main() {
   });
 
   group('the org shape', () {
-    test('childCapacity doubles every tier down to lsgd, and closes off at ward', () {
-      expect(AgentLevel.national.childCapacity, 2);
+    test('national heads the six zones; every tier below doubles, ward closes off', () {
+      expect(AgentLevel.national.childCapacity, agentRegions.length);
+      expect(agentRegions.length, 6);
       expect(AgentLevel.region.childCapacity, 2);
       expect(AgentLevel.state.childCapacity, 2);
       expect(AgentLevel.district.childCapacity, 2);
@@ -129,11 +155,13 @@ void main() {
     });
 
     test('openPositionsUnder counts down as positions fill, never below zero', () {
-      expect(service.openPositionsUnder(national), 2);
-      register(national);
-      expect(service.openPositionsUnder(national), 1);
-      register(national);
+      expect(service.openPositionsUnder(national), 6);
+      for (var i = 0; i < 6; i++) {
+        register(national, region: agentRegions[i]);
+      }
       expect(service.openPositionsUnder(national), 0);
+      // No seventh zone to open.
+      expect(register(national, region: 'North'), isNotNull);
     });
 
     test('allowed child levels are every tier below the parent, not just the next one', () {
@@ -280,11 +308,12 @@ void main() {
     });
 
     test('every position under a parent can be filled, and no more', () {
-      expect(register(national), isNull);
-      expect(register(national), isNull);
-      final error = register(national);
+      for (final region in agentRegions) {
+        expect(register(national, region: region), isNull);
+      }
+      final error = register(national, region: 'North');
       expect(error, 'Every position under ${national.name} is already filled');
-      expect(service.childrenOf(national.id).length, 2);
+      expect(service.childrenOf(national.id).length, agentRegions.length);
     });
 
     test('reset drops registered agents', () {
@@ -773,9 +802,9 @@ void main() {
       await tester.tap(find.byTooltip('Expand ${national.name}'));
       await tester.pumpAndSettle();
 
-      // The two region positions under the root now show as open slots…
-      expect(find.text('Region'), findsNWidgets(2));
-      expect(find.byTooltip('Add a region agent here'), findsNWidgets(2));
+      // The six zone positions under the root now show as open slots…
+      expect(find.text('Region'), findsNWidgets(6));
+      expect(find.byTooltip('Add a region agent here'), findsNWidgets(6));
       // …and nothing a tier deeper has been revealed with them.
       expect(find.text('State'), findsNothing);
     });
@@ -805,7 +834,7 @@ void main() {
 
       await tester.tap(find.byTooltip('Expand ${national.name}'));
       await tester.pumpAndSettle();
-      // The root's own two regions show — and nothing below them.
+      // The root's own regions show — and nothing below them.
       expect(find.text('Ann Raj'), findsOneWidget);
       expect(find.text('Biju Nair'), findsOneWidget);
       expect(find.byTooltip('Add a state agent here'), findsNothing);
@@ -850,7 +879,7 @@ void main() {
     testWidgets('a card folds its revealed tier away and back', (tester) async {
       await pumpTree(tester);
       await expandRoot(tester);
-      expect(find.text('Region'), findsNWidgets(2));
+      expect(find.text('Region'), findsNWidgets(6));
 
       await tester.tap(find.byTooltip('Collapse ${national.name}'));
       await tester.pumpAndSettle();
@@ -858,7 +887,7 @@ void main() {
 
       await tester.tap(find.byTooltip('Expand ${national.name}'));
       await tester.pumpAndSettle();
-      expect(find.text('Region'), findsNWidgets(2));
+      expect(find.text('Region'), findsNWidgets(6));
     });
 
     testWidgets('a filled card shows the name, tier and agent code', (
@@ -928,8 +957,8 @@ void main() {
 
       // Back on the tree, the root still open: the slot is now a filled card…
       expect(find.text('Priya Menon'), findsOneWidget);
-      // …the other region slot is still open…
-      expect(find.byTooltip('Add a region agent here'), findsOneWidget);
+      // …the other five region slots are still open…
+      expect(find.byTooltip('Add a region agent here'), findsNWidgets(5));
       // …and the new agent's own tier waits for its own tap.
       expect(find.byTooltip('Add a state agent here'), findsNothing);
       await tester.tap(find.byTooltip('Expand Priya Menon'));
@@ -968,8 +997,8 @@ void main() {
       await tester.tap(find.byTooltip('Expand Region position').first);
       await tester.pumpAndSettle();
       expect(find.byTooltip('Add a state agent here'), findsNWidgets(2));
-      // The other region slot's states stay hidden.
-      expect(find.byTooltip('Expand Region position'), findsOneWidget);
+      // The other five region slots' states stay hidden.
+      expect(find.byTooltip('Expand Region position'), findsNWidgets(5));
     });
 
     testWidgets('a deep open position registers under national, tier preset', (
@@ -1046,6 +1075,7 @@ void main() {
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
 
+      await pickRegionIfShown(tester);
       await tester.ensureVisible(find.text('Send OTP'));
       await tester.tap(find.text('Send OTP'));
       await tester.pumpAndSettle();
@@ -1072,8 +1102,9 @@ void main() {
     ) async {
       await pumpForm(tester);
 
-      // Defaults to the immediate next tier…
-      expect(find.text('Region'), findsOneWidget);
+      // Defaults to the immediate next tier — the Level value and the region
+      // field's own label both read "Region".
+      expect(find.text('Region'), findsWidgets);
 
       // …but every deeper tier is offered too, so national can recruit
       // straight into one of them without first seeding the tiers between.
@@ -1103,6 +1134,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
+      await pickRegionIfShown(tester);
       await tester.ensureVisible(find.text('Send OTP'));
       await tester.tap(find.text('Send OTP'));
       await tester.pumpAndSettle();
@@ -1140,6 +1172,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
+      await pickRegionIfShown(tester);
       await tester.ensureVisible(find.text('Send OTP'));
       await tester.tap(find.text('Send OTP'));
       await tester.pumpAndSettle();
@@ -1155,6 +1188,7 @@ void main() {
     testWidgets('incomplete details never reach the OTP step', (tester) async {
       await pumpForm(tester);
 
+      await pickRegionIfShown(tester);
       await tester.ensureVisible(find.text('Send OTP'));
       await tester.tap(find.text('Send OTP'));
       await tester.pumpAndSettle();
@@ -1192,6 +1226,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('OK'));
       await tester.pumpAndSettle();
+      await pickRegionIfShown(tester);
       await tester.ensureVisible(find.text('Send OTP'));
       await tester.tap(find.text('Send OTP'));
       await tester.pumpAndSettle();
