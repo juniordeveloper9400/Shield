@@ -88,6 +88,27 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Picks a state from the region's fixed state dropdown — the one that
+  /// appears once a state-level agent has a known zone. A no-op when it is
+  /// not on screen.
+  Future<void> pickStateIfShown(
+    WidgetTester tester,
+    String state,
+  ) async {
+    final field = find.ancestor(
+      of: find.text('Pick a state'),
+      matching: find.byType(DropdownButtonFormField<String>),
+    );
+    if (field.evaluate().isEmpty) {
+      return;
+    }
+    await tester.ensureVisible(field);
+    await tester.tap(field, warnIfMissed: false);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(state).last);
+    await tester.pumpAndSettle();
+  }
+
   Future<void> submitRegistrationForm(
     WidgetTester tester, {
     required String first,
@@ -114,6 +135,7 @@ void main() {
     await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
     await pickRegionIfShown(tester);
+    await pickStateIfShown(tester, 'Kerala');
     await tester.ensureVisible(find.text('Send OTP'));
     await tester.tap(find.text('Send OTP'));
     await tester.pumpAndSettle();
@@ -1113,6 +1135,122 @@ void main() {
       expect(added.place, 'Fort Kochi');
       expect(added.pincode, '682001');
     });
+
+    testWidgets('a state agent picks its region, then that region\'s state', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      // Move to the State tier — the region picker stays (national has no
+      // zone of its own), and no state picker shows until a zone is chosen.
+      await tester.tap(find.byType(DropdownButtonFormField<AgentLevel>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('State').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Pick a state'), findsNothing);
+
+      // Pick South — its five states are what the state dropdown now offers.
+      await pickRegionIfShown(tester, 'South');
+      await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+      await tester.pumpAndSettle();
+      for (final state in agentRegionStates['South']!) {
+        expect(find.text(state), findsWidgets);
+      }
+      await tester.tap(find.text('Kerala').last);
+      await tester.pumpAndSettle();
+
+      await fillField(tester, 'First name', 'Priya');
+      await fillField(tester, 'Last name', 'Menon');
+      await fillField(tester, '10-digit mobile number', '9812345670');
+      await fillField(tester, '12-digit Aadhaar', '123412341234');
+      await fillField(tester, 'ABCDE1234F', 'ABCDE1234F');
+      await fillField(tester, 'House / street / locality', '4 Fort Road');
+      await fillField(tester, '6 digits', '682001');
+      await fillField(tester, 'Town / village', 'Fort Kochi');
+      await fillField(
+        tester,
+        'Account the commission is paid into',
+        '123456789012',
+      );
+      await tester.ensureVisible(find.byIcon(Icons.event_rounded));
+      await tester.tap(find.byIcon(Icons.event_rounded));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Send OTP'));
+      await tester.tap(find.text('Send OTP'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), AuthService.demoOtp);
+      await tester.pumpAndSettle();
+
+      final added = service
+          .childrenOf(national.id)
+          .firstWhere((a) => a.name == 'Priya Menon');
+      expect(added.level, AgentLevel.state);
+      // The chosen state, not the free-text place, is what it heads.
+      expect(added.area, 'Kerala');
+    });
+
+    testWidgets(
+      'a state slot tapped under a region agent locks both region and state',
+      (tester) async {
+        register(national, level: AgentLevel.region, region: 'South');
+        final south = service
+            .childrenOf(national.id)
+            .firstWhere((a) => a.area == 'South');
+
+        tester.view.physicalSize = const Size(460, 3200);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AgentRegistrationScreen(
+              scopeRoot: national,
+              initialParent: south,
+              initialLevel: AgentLevel.state,
+              initialArea: 'Kerala',
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Both pickers show their fixed value and neither offers a hint to
+        // change it.
+        expect(find.text('Pick a region'), findsNothing);
+        expect(find.text('Pick a state'), findsNothing);
+        expect(find.text('Kerala'), findsWidgets);
+
+        await fillField(tester, 'First name', 'Anil');
+        await fillField(tester, 'Last name', 'Kumar');
+        await fillField(tester, '10-digit mobile number', '9812345670');
+        await fillField(tester, '12-digit Aadhaar', '123412341234');
+        await fillField(tester, 'ABCDE1234F', 'ABCDE1234F');
+        await fillField(tester, 'House / street / locality', '4 Fort Road');
+        await fillField(tester, '6 digits', '682001');
+        await fillField(tester, 'Town / village', 'Fort Kochi');
+        await fillField(
+          tester,
+          'Account the commission is paid into',
+          '123456789012',
+        );
+        await tester.ensureVisible(find.byIcon(Icons.event_rounded));
+        await tester.tap(find.byIcon(Icons.event_rounded));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('OK'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('Send OTP'));
+        await tester.tap(find.text('Send OTP'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), AuthService.demoOtp);
+        await tester.pumpAndSettle();
+
+        final added = service
+            .childrenOf(south.id)
+            .firstWhere((a) => a.name == 'Anil Kumar');
+        expect(added.level, AgentLevel.state);
+        expect(added.area, 'Kerala');
+      },
+    );
 
     testWidgets('the level field offers every tier below the parent, not just the next one', (
       tester,
