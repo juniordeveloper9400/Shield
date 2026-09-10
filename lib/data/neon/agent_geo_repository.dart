@@ -60,12 +60,19 @@ class GeoNode {
   }
 }
 
-/// Reads the agent geographic hierarchy — `app.agent_geo_node`, seeded and
-/// then maintained from the database — over the Neon HTTP SQL endpoint.
+/// Reads the agent geographic hierarchy over the Neon HTTP SQL endpoint.
+///
+/// The shape is one table per tier — `app.region` / `app.state` /
+/// `app.district` / `app.assembly` / `app.lsgd` / `app.ward` (migration
+/// 0014), linked child → parent by UUID foreign keys. This flattens all six
+/// into the `(id, parent_id, level, name, code, sort)` rows [GeoNode.fromRow]
+/// expects, so a region's `parent_id` is null and every deeper tier points at
+/// the row above it.
 ///
 /// Read-only and best-effort like the other Neon repositories: a missing
-/// `DATABASE_URL`, a network failure, or an empty table returns null, and the
-/// caller ([AgentGeo]) keeps the hierarchy bundled with the build.
+/// `DATABASE_URL`, a network failure, or empty tables return null, and the
+/// caller ([AgentGeo]) is left with an empty hierarchy rather than anything
+/// bundled.
 class AgentGeoRepository {
   const AgentGeoRepository._();
 
@@ -74,21 +81,32 @@ class AgentGeoRepository {
   bool get isAvailable => NeonHttp.isConfigured;
 
   /// Every geo node, ordered so a parent always precedes deeper tiers, or null
-  /// when the table cannot be read.
+  /// when the tables cannot be read.
   Future<List<GeoNode>?> fetchAll() async {
     if (!NeonHttp.isConfigured) {
       return null;
     }
     try {
       final rows = await NeonHttp.instance.query(r'''
-        SELECT id, parent_id, level, name, code, sort
-        FROM app.agent_geo_node
-        ORDER BY
-          array_position(
-            ARRAY['region','state','district','assembly','lsgd','ward'], level
-          ),
-          sort,
-          name
+        SELECT id::text, NULL::text AS parent_id, 'region' AS level,
+               name, code, sort, 1 AS tier
+        FROM app.region
+        UNION ALL
+        SELECT id::text, region_id::text, 'state', name, code, sort, 2
+        FROM app.state
+        UNION ALL
+        SELECT id::text, state_id::text, 'district', name, code, sort, 3
+        FROM app.district
+        UNION ALL
+        SELECT id::text, district_id::text, 'assembly', name, code, sort, 4
+        FROM app.assembly
+        UNION ALL
+        SELECT id::text, assembly_id::text, 'lsgd', name, code, sort, 5
+        FROM app.lsgd
+        UNION ALL
+        SELECT id::text, lsgd_id::text, 'ward', name, code, sort, 6
+        FROM app.ward
+        ORDER BY tier, sort, name
       ''');
       final nodes =
           rows.map(GeoNode.fromRow).whereType<GeoNode>().toList(growable: false);

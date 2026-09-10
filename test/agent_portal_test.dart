@@ -19,19 +19,32 @@ import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/home/refer_earn_card.dart';
 import 'package:shield/screens/home_screen.dart';
 
+import 'support/agent_geo_seed_fixture.dart';
+
 void main() {
   final national = AgentDirectory.national;
   final service = AgentService.instance;
+  final seedGeo = GeoHierarchy.fromNodes(buildAgentGeoSeedNodes());
 
   setUp(() {
     AuthService.instance.reset();
     service.reset();
+    // The app now starts with an empty hierarchy (the real tables load from
+    // Neon); these tests want the full fixture tree to exercise placement.
+    AgentGeo.instance.useHierarchy(seedGeo);
   });
   tearDown(() {
     AuthService.instance.reset();
     service.reset();
-    AgentGeo.instance.resetToSeed();
+    AgentGeo.instance.reset();
   });
+
+  /// The slot named [name] at [level] — resolved against the collision-free
+  /// seed fixture, where a name is unique enough for tests to pick one by.
+  /// Never do this against live data — see [GeoSlot]'s doc.
+  GeoSlot? slotNamed(AgentLevel level, String? name) => name == null
+      ? null
+      : AgentGeo.current.slotsAtLevel(level).where((s) => s.name == name).firstOrNull;
 
   /// Registers a valid agent under [parent]. Returns the error string (null on
   /// success).
@@ -67,13 +80,16 @@ void main() {
       // The named slot the agent fills — a zone at region level, a state at
       // state level, a district at district level, an assembly one below
       // that; left to the place where the caller does not name one.
-      area: switch (atLevel) {
-        AgentLevel.region => region,
-        AgentLevel.state => state,
-        AgentLevel.district => district,
-        AgentLevel.assembly => assembly,
-        _ => null,
-      },
+      slot: slotNamed(
+        atLevel,
+        switch (atLevel) {
+          AgentLevel.region => region,
+          AgentLevel.state => state,
+          AgentLevel.district => district,
+          AgentLevel.assembly => assembly,
+          _ => null,
+        },
+      ),
     );
   }
 
@@ -88,7 +104,7 @@ void main() {
   ]) async {
     final field = find.ancestor(
       of: find.text('Pick a region'),
-      matching: find.byType(DropdownButtonFormField<String>),
+      matching: find.byType(DropdownButtonFormField<GeoSlot>),
     );
     if (field.evaluate().isEmpty) {
       return;
@@ -109,7 +125,7 @@ void main() {
   ) async {
     final field = find.ancestor(
       of: find.text('Pick a state'),
-      matching: find.byType(DropdownButtonFormField<String>),
+      matching: find.byType(DropdownButtonFormField<GeoSlot>),
     );
     if (field.evaluate().isEmpty) {
       return;
@@ -130,7 +146,7 @@ void main() {
   ) async {
     final field = find.ancestor(
       of: find.text('Pick a district'),
-      matching: find.byType(DropdownButtonFormField<String>),
+      matching: find.byType(DropdownButtonFormField<GeoSlot>),
     );
     if (field.evaluate().isEmpty) {
       return;
@@ -151,7 +167,7 @@ void main() {
   ) async {
     final field = find.ancestor(
       of: find.text('Pick an assembly'),
-      matching: find.byType(DropdownButtonFormField<String>),
+      matching: find.byType(DropdownButtonFormField<GeoSlot>),
     );
     if (field.evaluate().isEmpty) {
       return;
@@ -250,7 +266,10 @@ void main() {
       final kerala = service.childrenOf(south.id).first;
 
       expect(agentStateDistricts['Kerala']!.length, 14);
-      expect(service.slotLabelsUnder(kerala), agentStateDistricts['Kerala']);
+      expect(
+        service.slotsUnder(kerala).map((s) => s.name),
+        agentStateDistricts['Kerala'],
+      );
       expect(service.openPositionsUnder(kerala), 14);
 
       register(kerala, level: AgentLevel.district, district: 'Ernakulam');
@@ -263,7 +282,7 @@ void main() {
       register(north, level: AgentLevel.state, state: 'Punjab');
       final punjab = service.childrenOf(north.id).first;
 
-      expect(service.slotLabelsUnder(punjab), isEmpty);
+      expect(service.slotsUnder(punjab), isEmpty);
       expect(service.openPositionsUnder(punjab), 2);
     });
 
@@ -282,7 +301,7 @@ void main() {
       final slots = agentDistrictAssemblies['Thiruvananthapuram']!;
       expect(slots.length, 14);
       expect(slots.where((s) => s.endsWith('Corporation')).length, 1);
-      expect(service.slotLabelsUnder(tvm), slots);
+      expect(service.slotsUnder(tvm).map((s) => s.name), slots);
       expect(service.openPositionsUnder(tvm), 14);
 
       register(
@@ -301,7 +320,7 @@ void main() {
       register(kerala, level: AgentLevel.district, district: 'Ernakulam');
       final ernakulam = service.childrenOf(kerala.id).first;
 
-      expect(service.slotLabelsUnder(ernakulam), isEmpty);
+      expect(service.slotsUnder(ernakulam), isEmpty);
       expect(service.openPositionsUnder(ernakulam), 2);
     });
 
@@ -425,7 +444,7 @@ void main() {
           pincode: '682001',
           place: 'Wayanad',
           accountNumber: '123456789012',
-          area: area,
+          slot: slotNamed(level, area),
         );
         expect(error, isNull, reason: level.label);
         parent = service.childrenOf(parent.id).single;
@@ -1535,7 +1554,7 @@ void main() {
 
       // Pick South — its five states are what the state dropdown now offers.
       await pickRegionIfShown(tester, 'South');
-      await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+      await tester.tap(find.byType(DropdownButtonFormField<GeoSlot>).last);
       await tester.pumpAndSettle();
       for (final state in agentRegionStates['South']!) {
         expect(find.text(state), findsWidgets);
@@ -1592,7 +1611,7 @@ void main() {
               scopeRoot: national,
               initialParent: south,
               initialLevel: AgentLevel.state,
-              initialArea: 'Kerala',
+              initialSlot: slotNamed(AgentLevel.state, 'Kerala'),
             ),
           ),
         );
@@ -1653,7 +1672,7 @@ void main() {
       expect(find.text('Pick a district'), findsNothing);
       await pickStateIfShown(tester, 'Kerala');
 
-      await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+      await tester.tap(find.byType(DropdownButtonFormField<GeoSlot>).last);
       await tester.pumpAndSettle();
       for (final district in agentStateDistricts['Kerala']!) {
         expect(find.text(district), findsWidgets);
@@ -1722,7 +1741,7 @@ void main() {
         expect(find.text('Pick an assembly'), findsNothing);
 
         await pickDistrictIfShown(tester, 'Thiruvananthapuram');
-        await tester.tap(find.byType(DropdownButtonFormField<String>).last);
+        await tester.tap(find.byType(DropdownButtonFormField<GeoSlot>).last);
         await tester.pumpAndSettle();
         for (final slot in agentDistrictAssemblies['Thiruvananthapuram']!) {
           expect(find.text(slot), findsWidgets);

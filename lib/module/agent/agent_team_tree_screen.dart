@@ -69,9 +69,15 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
       duration: const Duration(milliseconds: 420),
     );
     // Pull the live geographic hierarchy (regions … wards) from Neon; the
-    // bundled seed is what shows until it lands. Rebuild when it does.
+    // tree is empty until it lands. Rebuild when it does.
     AgentGeo.instance.addListener(_onGeoChanged);
     AgentGeo.instance.ensureLoaded();
+    // Same for the roster itself — every agent already registered in
+    // app.agent, so a fresh app launch (or a second device) shows who is
+    // really on the team rather than just the national seed persona.
+    // AgentService is already a ListenableBuilder above, so no separate
+    // listener is needed here.
+    AgentService.instance.ensureLoaded();
     WidgetsBinding.instance.addPostFrameCallback((_) => _openOnRoot());
   }
 
@@ -154,8 +160,17 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
   void _toggle(String id) {
     final opening = !_expanded.contains(id);
     setState(() {
-      if (!_expanded.remove(id)) {
+      if (opening) {
+        // Accordion: only one branch per tier stays open. Opening a card
+        // collapses everything that is not one of its own ancestors — its
+        // open siblings and their subtrees, and any other branch left open
+        // elsewhere — then opens this card.
+        final keep = _ancestorsOf(id);
+        _expanded.removeWhere((e) => !keep.contains(e));
         _expanded.add(id);
+      } else {
+        // Collapsing a card collapses everything beneath it too.
+        _expanded.removeWhere((e) => e == id || _ancestorsOf(e).contains(id));
       }
     });
     // Opening a card glides down to the tier it just revealed; closing one
@@ -163,6 +178,19 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
     // direction it points.
     final focus = opening ? id : (_parentId(id) ?? id);
     WidgetsBinding.instance.addPostFrameCallback((_) => _flowTo(focus));
+  }
+
+  /// Every id on the path from [id] up to the root, not including [id] itself.
+  /// Drives the accordion in [_toggle]: an id is kept open only while the card
+  /// being opened sits somewhere beneath it.
+  Set<String> _ancestorsOf(String id) {
+    final chain = <String>{};
+    var current = _parentId(id);
+    var guard = 0;
+    while (current != null && chain.add(current) && guard++ < 64) {
+      current = _parentId(current);
+    }
+    return chain;
   }
 
   /// The card a collapse should glide back to: a real agent's parent (or the
@@ -225,7 +253,7 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
   Future<void> _addUnder(
     Agent parent, [
     AgentLevel? level,
-    String? slotLabel,
+    GeoSlot? slot,
   ]) async {
     final added = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -233,7 +261,7 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
           scopeRoot: widget.root,
           initialParent: parent,
           initialLevel: level,
-          initialArea: slotLabel,
+          initialSlot: slot,
         ),
       ),
     );
@@ -355,7 +383,7 @@ class _MindNode extends StatelessWidget {
   final GlobalKey Function(String id) keyFor;
   final void Function(String id) onToggle;
   final void Function(Agent agent) onOpen;
-  final void Function(Agent parent, AgentLevel level, [String? slotLabel]) onAdd;
+  final void Function(Agent parent, AgentLevel level, [GeoSlot? slot]) onAdd;
 
   const _MindNode({
     required this.agent,
@@ -375,16 +403,20 @@ class _MindNode extends StatelessWidget {
     // The fixed named slots this agent's tier opens — the six zones under the
     // national agent, a zone's states under a region agent — or empty where
     // the tier just doubles. Named slots drive the capacity; otherwise it is
-    // the plain childCapacity budget.
-    final slotLabels = service.slotLabelsUnder(agent);
+    // the plain childCapacity budget. Id-keyed — see [Agent.areaId].
+    final slots = service.slotsUnder(agent);
     // Normally the enum successor, but read from the data so an irregular
-    // branch is honoured — Varkala's wards sit straight under the assembly.
-    final childLevel = (slotLabels.isEmpty
+    // branch is honoured — a ward sitting straight under an assembly, say.
+    // Never for the national agent itself, though: it heads no single real
+    // slot ([Agent.areaId] is null for it), so there is nothing to look up.
+    final childLevel = (agent.level == AgentLevel.national ||
+                agent.areaId == null ||
+                slots.isEmpty
             ? null
-            : AgentGeo.current.childLevelOf(agent.area)) ??
+            : AgentGeo.current.childLevelOfId(agent.areaId!)) ??
         agent.level.child;
     final capacity =
-        slotLabels.isNotEmpty ? slotLabels.length : agent.level.childCapacity;
+        slots.isNotEmpty ? slots.length : agent.level.childCapacity;
     final canExpand = capacity > 0;
     final isExpanded = canExpand && expanded.contains(agent.id);
 
@@ -407,7 +439,7 @@ class _MindNode extends StatelessWidget {
             agent.isApproved ? null : _ApprovalTag(status: agent.approvalStatus),
       ),
       children: isExpanded
-          ? _buildChildNodes(children, childLevel, slotLabels, capacity)
+          ? _buildChildNodes(children, childLevel, slots, capacity)
           : const [],
     );
   }
@@ -415,11 +447,13 @@ class _MindNode extends StatelessWidget {
   /// "Region · South", "Ward · AC136-L1-W005", or just the bare tier name for
   /// a slot with no code and no zone.
   static String _slotSubtitle(Agent agent) {
-    final code = agentSlotCode(agent.area);
+    final code = agent.areaId == null
+        ? null
+        : AgentGeo.current.codeForId(agent.areaId!);
     if (code != null) {
       return '${agent.level.label} · $code';
     }
-    if (agent.level == AgentLevel.region && agentRegions.contains(agent.area)) {
+    if (agent.level == AgentLevel.region && agent.areaId != null) {
       return '${agent.level.label} · ${agent.area}';
     }
     return agent.level.label;
@@ -435,13 +469,13 @@ class _MindNode extends StatelessWidget {
         onAdd: onAdd,
       );
 
-  _MindPlusNode _slot(AgentLevel level, String slotId, {String? label}) =>
+  _MindPlusNode _slot(AgentLevel level, String slotId, {GeoSlot? slot}) =>
       _MindPlusNode(
         level: level,
         depth: depth + 1,
         slotId: slotId,
         realParent: agent,
-        slotLabel: label,
+        slot: slot,
         expanded: expanded,
         keyFor: keyFor,
         onToggle: onToggle,
@@ -449,20 +483,20 @@ class _MindNode extends StatelessWidget {
       );
 
   /// The rows under an expanded agent: its filled reports, then the open
-  /// positions. With named slots ([slotLabels] — the zones, or a zone's
-  /// states) each slot is either the agent filling it (matched by area) or an
-  /// open "+ North" card; otherwise the plain "+ child" cards fill the
+  /// positions. With named slots ([slots] — the zones, or a zone's states)
+  /// each slot is either the agent filling it (matched by [Agent.areaId]) or
+  /// an open "+ North" card; otherwise the plain "+ child" cards fill the
   /// remaining [capacity].
   List<Widget> _buildChildNodes(
     List<Agent> children,
     AgentLevel? childLevel,
-    List<String> slotLabels,
+    List<GeoSlot> slots,
     int capacity,
   ) {
     if (childLevel == null) {
       return const [];
     }
-    if (slotLabels.isEmpty) {
+    if (slots.isEmpty) {
       return [
         for (final child in children) _child(child),
         for (var i = children.length; i < capacity; i++)
@@ -470,19 +504,19 @@ class _MindNode extends StatelessWidget {
       ];
     }
     final nodes = <Widget>[
-      for (final label in slotLabels)
-        if (children.where((c) => c.area == label).firstOrNull
+      for (final slot in slots)
+        if (children.where((c) => c.areaId == slot.id).firstOrNull
             case final Agent filled)
           _child(filled)
         else
           _slot(
             childLevel,
-            'slot/${agent.id}/${childLevel.name}/$label',
-            label: label,
+            'slot/${agent.id}/${childLevel.name}/${slot.id}',
+            slot: slot,
           ),
-      // Anyone whose area isn't one of the named slots still shows, after.
+      // Anyone whose slot isn't one of the named ones still shows, after.
       for (final child in children)
-        if (!slotLabels.contains(child.area)) _child(child),
+        if (!slots.any((s) => s.id == child.areaId)) _child(child),
     ];
     return nodes;
   }
@@ -507,14 +541,16 @@ class _MindPlusNode extends StatelessWidget {
   /// reports to.
   final Agent realParent;
 
-  /// The zone this slot stands for, when it is one of a national agent's six
-  /// region positions — shown on the card in place of "Region".
-  final String? slotLabel;
+  /// The named slot this position stands for — a region, a ward, and so on
+  /// — when it is one of a real parent's fixed named slots rather than a
+  /// plain doubling position. Shown on the card in place of the bare tier
+  /// name, and what a registration into it is placed against.
+  final GeoSlot? slot;
 
   final Set<String> expanded;
   final GlobalKey Function(String id) keyFor;
   final void Function(String id) onToggle;
-  final void Function(Agent parent, AgentLevel level, [String? slotLabel]) onAdd;
+  final void Function(Agent parent, AgentLevel level, [GeoSlot? slot]) onAdd;
 
   const _MindPlusNode({
     required this.level,
@@ -525,7 +561,7 @@ class _MindPlusNode extends StatelessWidget {
     required this.keyFor,
     required this.onToggle,
     required this.onAdd,
-    this.slotLabel,
+    this.slot,
   });
 
   @override
@@ -533,19 +569,16 @@ class _MindPlusNode extends StatelessWidget {
     final canExpand = level.childCapacity > 0;
     final isExpanded = canExpand && expanded.contains(slotId);
 
-    // If this open slot itself names a zone, its own preview positions are
-    // that zone's named states rather than the plain doubling shape.
-    final previewLabels = agentSlotLabelsUnder(
-      level: level,
-      area: slotLabel ?? '',
-    );
+    // If this open slot itself names a place, its own preview positions are
+    // that place's named children rather than the plain doubling shape.
+    final previewSlots = AgentGeo.current.slotsUnder(level, slot?.id);
     final previewCapacity =
-        previewLabels.isNotEmpty ? previewLabels.length : level.childCapacity;
+        previewSlots.isNotEmpty ? previewSlots.length : level.childCapacity;
     // The successor read from the data, so an irregular branch is honoured
     // (falls back to the enum successor for the regular tiers).
-    final childLevel = (previewLabels.isEmpty || slotLabel == null
+    final childLevel = (previewSlots.isEmpty || slot == null
             ? null
-            : AgentGeo.current.childLevelOf(slotLabel!)) ??
+            : AgentGeo.current.childLevelOfId(slot!.id)) ??
         level.child;
 
     return _MindBranch(
@@ -556,9 +589,10 @@ class _MindPlusNode extends StatelessWidget {
         depth: depth,
         toggleLabel: '${level.label} position',
         expanded: isExpanded,
-        onAdd: () => onAdd(realParent, level, slotLabel),
+        onAdd: () => onAdd(realParent, level, slot),
         onToggle: canExpand ? () => onToggle(slotId) : null,
-        slotLabel: slotLabel,
+        slotLabel: slot?.name,
+        slotCode: slot?.code,
       ),
       children: isExpanded
           ? [
@@ -568,7 +602,7 @@ class _MindPlusNode extends StatelessWidget {
                   depth: depth + 1,
                   slotId: '$slotId/${childLevel.name}/$i',
                   realParent: realParent,
-                  slotLabel: previewLabels.isNotEmpty ? previewLabels[i] : null,
+                  slot: previewSlots.isNotEmpty ? previewSlots[i] : null,
                   expanded: expanded,
                   keyFor: keyFor,
                   onToggle: onToggle,
@@ -708,6 +742,12 @@ class _MindPlusPill extends StatelessWidget {
   /// zones on a national agent's open region slots ("North", "South", …).
   final String? slotLabel;
 
+  /// The slot's own printed code (`AC136`, `TVC-L1`), passed straight from
+  /// the [GeoSlot] the caller already has — never re-derived from
+  /// [slotLabel] here, since a bare name is not enough to find the right
+  /// slot back out of the real hierarchy (see [Agent.areaId]).
+  final String? slotCode;
+
   const _MindPlusPill({
     required this.pillKey,
     required this.level,
@@ -717,6 +757,7 @@ class _MindPlusPill extends StatelessWidget {
     required this.onAdd,
     required this.onToggle,
     this.slotLabel,
+    this.slotCode,
   });
 
   @override
@@ -764,10 +805,9 @@ class _MindPlusPill extends StatelessWidget {
                             color: AppColors.textDark.withValues(alpha: 0.75),
                           ),
                         ),
-                        if (slotLabel != null &&
-                            agentSlotCode(slotLabel!) != null)
+                        if (slotCode != null && slotCode!.isNotEmpty)
                           Text(
-                            agentSlotCode(slotLabel!)!,
+                            slotCode!,
                             style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w600,

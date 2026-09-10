@@ -50,6 +50,11 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
+  # backend/db/seed_kerala_geo.dart only — reads the raw sheetN.xml /
+  # sharedStrings.xml out of the Suvida LSG xlsx. Dev-only so it never ships
+  # in the app.
+  xml: ^6.5.0
+  archive: ^4.0.2
 
 flutter:
   uses-material-design: true
