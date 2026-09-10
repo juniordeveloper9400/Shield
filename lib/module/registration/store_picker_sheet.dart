@@ -40,9 +40,35 @@ class StorePickerSheet extends StatefulWidget {
 }
 
 class _StorePickerSheetState extends State<StorePickerSheet> {
-  List<ShieldStore> _stores = StoreDirectory.all;
   StoreLocationResult? _location;
   bool _locating = false;
+
+  /// The list to show: distance-ranked once the member has shared their
+  /// location, otherwise directory order — which follows the database copy
+  /// [StoreCatalog] loads.
+  List<ShieldStore> get _stores {
+    final ranked = _location?.ranked;
+    return (ranked != null && ranked.isNotEmpty) ? ranked : StoreDirectory.all;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    StoreCatalog.instance.addListener(_onCatalogChanged);
+    StoreCatalog.instance.ensureLoaded();
+  }
+
+  @override
+  void dispose() {
+    StoreCatalog.instance.removeListener(_onCatalogChanged);
+    super.dispose();
+  }
+
+  void _onCatalogChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   Future<void> _useMyLocation() async {
     if (_locating) {
@@ -57,9 +83,6 @@ class _StorePickerSheetState extends State<StorePickerSheet> {
       _locating = false;
       if (result.ok) {
         _location = result;
-        if (result.ranked.isNotEmpty) {
-          _stores = result.ranked;
-        }
       }
     });
     if (!result.ok) {

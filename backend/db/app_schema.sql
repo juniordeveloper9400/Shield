@@ -820,7 +820,11 @@ CREATE TABLE app.agent (
     place            text NOT NULL DEFAULT '',
     account_number   text NOT NULL DEFAULT '',           -- payout bank account
     photo_path       text,
+    -- Default 'APPROVED' (admin-console-created agents); the app's registration
+    -- flow writes 'PENDING' explicitly and the Agent approvals screen decides it.
     approval_status  app.agent_approval NOT NULL DEFAULT 'APPROVED',
+    reviewed_at      timestamptz,                        -- migration 0018
+    reviewer_note    text NOT NULL DEFAULT '',           -- migration 0018 — rejection reason
     -- rolled-up money (whole rupees)
     earned           numeric(12,2) NOT NULL DEFAULT 0,
     redeemed         numeric(12,2) NOT NULL DEFAULT 0,
@@ -829,8 +833,9 @@ CREATE TABLE app.agent (
     created_at       timestamptz NOT NULL DEFAULT now(),
     updated_at       timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX agent_parent_idx ON app.agent(parent_id);
-CREATE INDEX agent_phone_idx  ON app.agent(phone);
+CREATE INDEX agent_parent_idx          ON app.agent(parent_id);
+CREATE INDEX agent_phone_idx           ON app.agent(phone);
+CREATE INDEX agent_approval_status_idx ON app.agent(approval_status, created_at DESC);
 
 ALTER TABLE app.wallet_card
     ADD CONSTRAINT wallet_card_sold_by_agent_fk

@@ -131,6 +131,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     // completing or editing registration while this screen is open still moves
     // it to the branch they signed up against.
     RegistrationService.instance.addListener(_onSourcesChanged);
+    // The branch list itself can arrive from Neon after this screen is up —
+    // re-resolve the store (and, on a selectable checkout, refresh the pick
+    // list) when it does.
+    StoreCatalog.instance.addListener(_onSourcesChanged);
+    StoreCatalog.instance.ensureLoaded();
     if (widget.order.requiresDelivery) {
       // So step one unlocks the moment an address is saved on the form pushed
       // over this screen — and the fallback store tracks that address.
@@ -257,6 +262,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _agent.dispose();
     _bankReference.dispose();
     RegistrationService.instance.removeListener(_onSourcesChanged);
+    StoreCatalog.instance.removeListener(_onSourcesChanged);
     if (widget.order.requiresDelivery) {
       AddressBook.instance.removeListener(_onSourcesChanged);
     }

@@ -22,6 +22,7 @@ void main() {
     AuthService.instance.signInAs(name: 'Asha Nair', phone: '9000012345');
     RegistrationService.instance.reset();
     CartService.instance.reset();
+    StoreCatalog.instance.reset();
     // The branch-picker map fetches OpenStreetMap tiles and drives timers that
     // pumpAndSettle cannot drain; the pincode-ranked list under it is what the
     // form tests exercise. Real builds render the map.
@@ -31,6 +32,7 @@ void main() {
     AuthService.instance.reset();
     RegistrationService.instance.reset();
     CartService.instance.reset();
+    StoreCatalog.instance.reset();
     StoreMapView.renderMap = true;
   });
 
@@ -184,6 +186,76 @@ void main() {
       expect(StoreDirectory.byId('SHD-TIR')?.area, 'Tirur');
       expect(StoreDirectory.byId('SHD-NOPE'), isNull);
       expect(StoreDirectory.byId(null), isNull);
+    });
+
+    test('the database copy replaces the seed once it loads', () {
+      // Before a load, the directory is the bundled seed.
+      expect(StoreDirectory.byId('SHD-MEL')?.name, 'SHIELD Pharmacy Melattur');
+      expect(StoreCatalog.instance.isFromDatabase, isFalse);
+
+      StoreCatalog.instance.useStores(const [
+        ShieldStore(
+          id: 'SHD-NEW',
+          name: 'SHIELD Pharmacy Nilambur',
+          area: 'Nilambur',
+          city: 'Malappuram',
+          state: 'Kerala',
+          pincode: '679329',
+          latitude: 11.276,
+          longitude: 76.223,
+          bankAccountNumber: '1111 2222 3333',
+          bankName: 'Federal Bank',
+          bankIfsc: 'FDRL0009999',
+        ),
+      ]);
+
+      // Every accessor now reads the admin's branch, not the seed.
+      expect(StoreDirectory.all.single.id, 'SHD-NEW');
+      expect(StoreDirectory.byId('SHD-MEL'), isNull);
+      expect(StoreDirectory.byId('SHD-NEW')?.area, 'Nilambur');
+      expect(StoreDirectory.suggestFor('679329')?.id, 'SHD-NEW');
+      expect(StoreCatalog.instance.isFromDatabase, isTrue);
+
+      // Real distance still comes off the live coordinates.
+      final km = StoreDirectory.byId('SHD-NEW')!.distanceKmFrom(11.0, 76.1);
+      expect(km, isNotNull);
+      expect(km!, greaterThan(0));
+    });
+
+    test('ShieldStore.fromRow maps an app.shield_store text row', () {
+      final store = ShieldStore.fromRow(<String, dynamic>{
+        'code': 'SHD-XYZ',
+        'name': 'SHIELD Pharmacy Somewhere',
+        'area': 'Somewhere',
+        'city': 'Malappuram',
+        'state': 'Kerala',
+        'pincode': '676123',
+        'latitude': '10.5',
+        'longitude': '76.2',
+        'maps_url': 'https://maps.app.goo.gl/x',
+        'bank_account_number': '9876 5432',
+      });
+      expect(store, isNotNull);
+      expect(store!.id, 'SHD-XYZ');
+      expect(store.latitude, 10.5);
+      expect(store.hasLocation, isTrue);
+      expect(store.hours, '8:00 AM – 10:00 PM'); // default when blank
+      expect(store.bankAccountNumber, '9876 5432');
+
+      // A blank coordinate stays null rather than becoming 0.
+      final noCoords = ShieldStore.fromRow(<String, dynamic>{
+        'code': 'SHD-NC',
+        'name': 'No Coords',
+        'latitude': '',
+        'longitude': null,
+      });
+      expect(noCoords!.hasLocation, isFalse);
+
+      // A row with no code is rejected.
+      expect(
+        ShieldStore.fromRow(<String, dynamic>{'name': 'Nameless'}),
+        isNull,
+      );
     });
   });
 
@@ -368,6 +440,19 @@ void main() {
       await pumpForm(tester);
 
       await fill(tester, 'you@example.com', 'asha-at-example');
+      await submit(tester);
+
+      expect(find.text('Enter a valid email address'), findsOneWidget);
+      expect(RegistrationService.instance.isRegistered, isFalse);
+    });
+
+    testWidgets('a well-formed-looking but junk email is refused', (
+      tester,
+    ) async {
+      await pumpForm(tester);
+
+      // Passed the old loose regex; the tightened one rejects a 1-char TLD.
+      await fill(tester, 'you@example.com', 'a@b.c');
       await submit(tester);
 
       expect(find.text('Enter a valid email address'), findsOneWidget);

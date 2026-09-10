@@ -88,12 +88,24 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _storePickedByHand = profile != null;
 
     _pincode.addListener(_onPincodeChanged);
+    // The branch list may still be loading from Neon — pull it, and re-run the
+    // nearest-branch suggestion once the admin's own branches land.
+    StoreCatalog.instance.addListener(_onStoresChanged);
+    StoreCatalog.instance.ensureLoaded();
     _syncSuggestedStore();
+  }
+
+  void _onStoresChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(_syncSuggestedStore);
   }
 
   @override
   void dispose() {
     _pincode.removeListener(_onPincodeChanged);
+    StoreCatalog.instance.removeListener(_onStoresChanged);
     _name.dispose();
     _phone.dispose();
     _email.dispose();
@@ -241,12 +253,22 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   // ---- Validators ----
 
+  /// A deliberately strict address check — the local part must start and end
+  /// with an alphanumeric, every domain label likewise, and the TLD must be at
+  /// least two letters. It cannot tell a well-formed fake from a real inbox
+  /// (only an emailed code could), but it rejects the junk that used to get
+  /// through: `a@b.c`, trailing dots, `name@localhost`, doubled dots.
+  static final RegExp _emailPattern = RegExp(
+    r'^[A-Za-z0-9](?:[A-Za-z0-9._%+-]*[A-Za-z0-9])?'
+    r'@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$',
+  );
+
   String? _validateEmail(String? value) {
     final text = (value ?? '').trim();
     if (text.isEmpty) {
       return 'Email is required';
     }
-    if (!RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(text)) {
+    if (text.contains('..') || !_emailPattern.hasMatch(text)) {
       return 'Enter a valid email address';
     }
     return null;

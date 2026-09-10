@@ -12,6 +12,7 @@ import 'module/agent/agent_geo.dart';
 import 'module/catalogue/catalogue_service.dart';
 import 'module/home/customer_reviews_service.dart';
 import 'module/refer/referral_service.dart';
+import 'module/registration/shield_store.dart';
 import 'module/rewards/rewards_service.dart';
 import 'screens/root_screen.dart';
 import 'theme/app_colors.dart';
@@ -80,6 +81,11 @@ Future<void> main() async {
   // Warm the agent geographic hierarchy (regions … wards) so "My Team" and
   // the agent registration form draw the database copy, not the bundled seed.
   unawaited(AgentGeo.instance.ensureLoaded());
+
+  // Warm the SHIELD branch list so registration, the branch map and checkout
+  // show the admin console's own branches (with their real coordinates) rather
+  // than the bundled seed.
+  unawaited(StoreCatalog.instance.ensureLoaded());
 
   // One line at launch — via dart:developer so it survives a release build —
   // saying whether the Neon write-through is live. A build started without

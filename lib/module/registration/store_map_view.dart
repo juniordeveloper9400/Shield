@@ -50,6 +50,27 @@ class _StoreMapViewState extends State<StoreMapView> {
   StoreLocationResult? _loc;
   bool _busy = false;
 
+  @override
+  void initState() {
+    super.initState();
+    StoreCatalog.instance.addListener(_onCatalogChanged);
+    StoreCatalog.instance.ensureLoaded();
+  }
+
+  @override
+  void dispose() {
+    StoreCatalog.instance.removeListener(_onCatalogChanged);
+    super.dispose();
+  }
+
+  // The branch list can be swapped in from Neon after this map is on screen —
+  // redraw the pins when it is.
+  void _onCatalogChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   /// Branches that have coordinates on record — the only ones that can be
   /// pinned.
   List<ShieldStore> get _located =>

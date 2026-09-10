@@ -129,6 +129,24 @@ abstract final class ShieldPayees {
     ],
   };
 
-  static List<StoreBankAccount> forStore(ShieldStore store) =>
-      _byStore[store.id] ?? [melatturPrimary];
+  static List<StoreBankAccount> forStore(ShieldStore store) {
+    // A branch loaded from the database carries its own published account —
+    // prefer that over the bundled map so an admin-added branch is payable
+    // straight away.
+    if (store.bankAccountNumber.isNotEmpty) {
+      return [
+        StoreBankAccount(
+          id: '${store.id.toLowerCase()}-store',
+          accountName: store.bankAccountName.isEmpty
+              ? store.name
+              : store.bankAccountName,
+          accountNumber: store.bankAccountNumber,
+          ifsc: store.bankIfsc,
+          bank: store.bankName,
+          branch: store.area,
+        ),
+      ];
+    }
+    return _byStore[store.id] ?? [melatturPrimary];
+  }
 }

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import '../../data/neon/store_repository.dart';
+
 /// A SHIELD outlet. Every registered member is assigned one, and it is the
 /// branch their orders are packed and dispatched from.
 @immutable
@@ -29,6 +31,19 @@ class ShieldStore {
   final double? latitude;
   final double? longitude;
 
+  /// The admin-published Google Maps share link (`app.shield_store.maps_url`),
+  /// or blank. Only set on branches that came from the database.
+  final String mapsUrl;
+
+  /// The branch's own bank account for manual transfers
+  /// (`app.shield_store.bank_*`), all blank until the admin fills them in.
+  /// [ShieldPayees.forStore] uses these in preference to its bundled map when
+  /// an account number is present.
+  final String bankAccountName;
+  final String bankAccountNumber;
+  final String bankIfsc;
+  final String bankName;
+
   const ShieldStore({
     required this.id,
     required this.name,
@@ -40,7 +55,48 @@ class ShieldStore {
     this.hours = '8:00 AM – 10:00 PM',
     this.latitude,
     this.longitude,
+    this.mapsUrl = '',
+    this.bankAccountName = '',
+    this.bankAccountNumber = '',
+    this.bankIfsc = '',
+    this.bankName = '',
   });
+
+  /// Builds a store from an `app.shield_store` row (the Neon `/sql` endpoint
+  /// hands every value back as text), or null when a required field is missing.
+  /// The `code` is the app-facing id — see [id].
+  static ShieldStore? fromRow(Map<String, dynamic> row) {
+    String str(Object? v) => (v ?? '').toString().trim();
+    double? coord(Object? v) {
+      final text = str(v);
+      return text.isEmpty ? null : double.tryParse(text);
+    }
+
+    final code = str(row['code']);
+    final name = str(row['name']);
+    if (code.isEmpty || name.isEmpty) {
+      return null;
+    }
+    return ShieldStore(
+      id: code,
+      name: name,
+      area: str(row['area']),
+      city: str(row['city']),
+      state: str(row['state']),
+      pincode: str(row['pincode']),
+      phone: str(row['phone']),
+      hours: str(row['hours']).isEmpty
+          ? '8:00 AM – 10:00 PM'
+          : str(row['hours']),
+      latitude: coord(row['latitude']),
+      longitude: coord(row['longitude']),
+      mapsUrl: str(row['maps_url']),
+      bankAccountName: str(row['bank_account_name']),
+      bankAccountNumber: str(row['bank_account_number']),
+      bankIfsc: str(row['bank_ifsc']),
+      bankName: str(row['bank_name']),
+    );
+  }
 
   bool get hasLocation => latitude != null && longitude != null;
 
@@ -68,15 +124,27 @@ class ShieldStore {
 }
 
 /// The published outlets, and the rule for picking the nearest one.
+///
+/// [all] is the live list: the ten [_seed] branches until [StoreCatalog] has
+/// pulled `app.shield_store` from Neon, then whatever the admin console has
+/// published. Everything else — [byId], [nearest], [nearestTo], [suggestFor],
+/// [closestTo] — reads [all], so an admin-added branch flows through with no
+/// other change.
 class StoreDirectory {
   const StoreDirectory._();
 
-  /// The branches, in the order SHIELD lists them.
+  /// The live branch list — the database copy once [StoreCatalog] has loaded
+  /// it, otherwise [_seed].
+  static List<ShieldStore> get all => StoreCatalog.instance.stores;
+
+  /// The bundled fallback: the branches SHIELD shipped with, in listing order.
+  /// Shown until (and if) the database copy loads, and the only list `flutter
+  /// test` ever sees (`NeonHttp.isConfigured` is false under test).
   ///
   /// All but Alanallur are in Malappuram; the pincode is the district's, so
   /// [nearest] ranks the whole list off a member's own code without any
-  /// geocoding. A branch that opens elsewhere only has to be added here.
-  static const List<ShieldStore> all = [
+  /// geocoding.
+  static const List<ShieldStore> _seed = [
     ShieldStore(
       id: 'SHD-MEL',
       name: 'SHIELD Pharmacy Melattur',
@@ -263,5 +331,89 @@ class StoreDirectory {
       count++;
     }
     return count;
+  }
+}
+
+/// Holds the branch list in force and swaps in the database copy once it has
+/// loaded. A [ChangeNotifier] so the registration store picker, the branch map
+/// and the checkout store panel rebuild when the real data arrives.
+///
+/// Mirrors `AgentGeo` / `CatalogueService`: warm it once at launch
+/// (`main.dart`), let every screen call [ensureLoaded] again in `initState`
+/// (they share one request), and fall back to the bundled seed whenever the
+/// endpoint is missing, unreachable, or the table is empty.
+class StoreCatalog extends ChangeNotifier {
+  StoreCatalog._();
+
+  static final StoreCatalog instance = StoreCatalog._();
+
+  List<ShieldStore> _live = StoreDirectory._seed;
+
+  /// The branches in force — the database copy once [ensureLoaded] has pulled
+  /// `app.shield_store`, otherwise the bundled seed.
+  List<ShieldStore> get stores => _live;
+
+  bool _loaded = false;
+  bool _fromDatabase = false;
+  bool _attempted = false;
+  Future<void>? _inFlight;
+
+  /// Whether [stores] is the database copy rather than the bundled seed.
+  bool get isFromDatabase => _fromDatabase;
+
+  /// True once a load has finished at least once — success, empty table, or
+  /// failure. Lets a screen tell "still loading" from "loaded, nothing there".
+  bool get hasAttempted => _attempted;
+
+  /// Loads the branch list from Neon once (best-effort). Safe to call from
+  /// every screen's `initState`; only the first call does work unless [force].
+  Future<void> ensureLoaded({bool force = false}) {
+    if (force) {
+      _loaded = false;
+      _inFlight = null;
+    }
+    if (_loaded) return Future<void>.value();
+    return _inFlight ??= _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final stores = await StoreRepository.instance.fetchAll();
+      if (stores != null && stores.isNotEmpty) {
+        _live = stores;
+        _fromDatabase = true;
+        _loaded = true;
+      }
+      // Otherwise nothing came back — endpoint not configured, or the table was
+      // empty. Leave [_loaded] false so the next ensureLoaded() retries instead
+      // of the session being stuck on the seed until relaunch.
+    } catch (error) {
+      debugPrint('StoreCatalog: branch list load failed — $error');
+    } finally {
+      _attempted = true;
+      _inFlight = null;
+      notifyListeners();
+    }
+  }
+
+  /// Test hook — stand in [stores] for what a database load would return.
+  @visibleForTesting
+  void useStores(List<ShieldStore> stores) {
+    _live = List<ShieldStore>.unmodifiable(stores);
+    _loaded = true;
+    _fromDatabase = true;
+    _attempted = true;
+    _inFlight = null;
+    notifyListeners();
+  }
+
+  /// Test hook — drop back to the bundled seed and forget any load.
+  @visibleForTesting
+  void reset() {
+    _live = StoreDirectory._seed;
+    _loaded = false;
+    _fromDatabase = false;
+    _attempted = false;
+    _inFlight = null;
   }
 }
