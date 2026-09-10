@@ -12,6 +12,7 @@ import '../auth/auth_service.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/otp_field.dart';
 import 'agent_model.dart';
+import 'agent_phone_verifier.dart';
 import 'agent_photo_picker.dart';
 import 'agent_service.dart';
 
@@ -323,6 +324,10 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
     _otp
       ..removeListener(_clearErrorOnEdit)
       ..dispose();
+    // Drop any half-finished phone check if the form is closed mid-flow.
+    if (AgentPhoneVerifier.instance.hasPendingCode) {
+      AgentPhoneVerifier.instance.discard();
+    }
     super.dispose();
   }
 
@@ -411,8 +416,19 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
       _busy = true;
       _error = null;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 400));
+
+    // Real Firebase Phone Auth, on a secondary app so it never touches the
+    // recruiter's own session — same SMS code the member sign-in sends.
+    final failure = await AgentPhoneVerifier.instance
+        .sendCode('+91${_phone.text.trim()}');
     if (!mounted) {
+      return;
+    }
+    if (failure != null) {
+      setState(() {
+        _busy = false;
+        _error = _sendErrorText(failure);
+      });
       return;
     }
 
@@ -422,17 +438,24 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
       _step = _Step.otp;
     });
     _startCooldown();
-    _announceCode();
   }
 
-  void _resend() {
+  Future<void> _resend() async {
     if (_secondsLeft > 0) {
       return;
     }
     _otp.clear();
     setState(() => _error = null);
+    final failure = await AgentPhoneVerifier.instance
+        .sendCode('+91${_phone.text.trim()}');
+    if (!mounted) {
+      return;
+    }
+    if (failure != null) {
+      setState(() => _error = _sendErrorText(failure));
+      return;
+    }
     _startCooldown();
-    _announceCode();
   }
 
   Future<void> _verify([String? completed]) async {
@@ -447,15 +470,16 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
       _busy = true;
       _error = null;
     });
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+
+    final otpFailure =
+        await AgentPhoneVerifier.instance.confirmCode(code.trim());
     if (!mounted) {
       return;
     }
-
-    if (code.trim() != AuthService.demoOtp) {
+    if (otpFailure != null) {
       setState(() {
         _busy = false;
-        _error = 'That code is incorrect. Check the SMS and try again.';
+        _error = _verifyErrorText(otpFailure);
       });
       return;
     }
@@ -498,6 +522,7 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
   void _backToDetails() {
     _cooldown?.cancel();
     _otp.clear();
+    AgentPhoneVerifier.instance.discard();
     setState(() {
       _step = _Step.details;
       _error = null;
@@ -520,17 +545,67 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
     });
   }
 
-  void _announceCode() {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 3),
-          content: Text(
-            'OTP sent to +91 ${_phone.text} · demo code ${AuthService.demoOtp}',
-          ),
-        ),
-      );
+  /// Why a `sendCode` call was refused, as a line for the form.
+  String _sendErrorText(OtpError failure) {
+    switch (failure) {
+      case OtpError.invalidPhone:
+      case OtpError.invalidName:
+        return 'Could not send the code. Check the mobile number.';
+      case OtpError.tooManyRequests:
+      case OtpError.throttled:
+        return 'Too many code requests. Try again later.';
+      case OtpError.quotaExceeded:
+        return 'Verification is temporarily unavailable. Try again later.';
+      case OtpError.configError:
+        return 'SMS verification is not set up for this app yet. '
+            'Please contact support.${_diagnosticSuffix()}';
+      case OtpError.network:
+        return 'No connection. Check your network and try again.';
+      case OtpError.timeout:
+        return 'Verification timed out before the code was sent. '
+            'Check your connection and tap Resend.${_diagnosticSuffix()}';
+      case OtpError.unavailable:
+        return 'Verification is unavailable on this device right now.';
+      case OtpError.noPendingRequest:
+      case OtpError.wrongOtp:
+      case OtpError.codeExpired:
+      case OtpError.unknown:
+        return 'Could not send the code. Please try again.${_diagnosticSuffix()}';
+    }
+  }
+
+  /// Why a `confirmCode` call was rejected, as a line for the form.
+  String _verifyErrorText(OtpError failure) {
+    switch (failure) {
+      case OtpError.wrongOtp:
+        return 'That code is incorrect. Check the SMS and try again.';
+      case OtpError.codeExpired:
+      case OtpError.noPendingRequest:
+        return 'That code has expired. Tap Resend for a new one.';
+      case OtpError.tooManyRequests:
+      case OtpError.throttled:
+        return 'Too many attempts. Try again later.';
+      case OtpError.network:
+        return 'No connection. Check your network and try again.';
+      case OtpError.timeout:
+        return 'The check timed out. Tap Resend and try again.';
+      case OtpError.unavailable:
+        return 'Verification is unavailable on this device right now.';
+      case OtpError.configError:
+      case OtpError.quotaExceeded:
+      case OtpError.invalidName:
+      case OtpError.invalidPhone:
+      case OtpError.unknown:
+        return 'Could not verify the code. Please try again.'
+            '${_diagnosticSuffix()}';
+    }
+  }
+
+  /// The raw Firebase code, appended in parentheses when there is one — turns
+  /// a support screenshot into a precise pointer at the console setting to fix.
+  String _diagnosticSuffix() {
+    final code = AgentPhoneVerifier.instance.lastDiagnostic;
+    return code == null || code.isEmpty ? '' : '\n($code)';
   }
 
   // ---- Build ----
@@ -840,23 +915,6 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
           label: 'Verify & submit',
           busy: _busy,
           onPressed: _verify,
-        ),
-        const SizedBox(height: 16),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.offerTint,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          child: Text(
-            'Demo mode · the code is ${AuthService.demoOtp}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: AppColors.brandBlue,
-            ),
-          ),
         ),
       ],
     );

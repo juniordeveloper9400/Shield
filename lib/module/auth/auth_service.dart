@@ -102,9 +102,10 @@ class AuthService {
 
   static final AuthService instance = AuthService._();
 
-  /// Stand-in code the agent registration screen's placeholder OTP step still
-  /// accepts (see `agent_registration_screen.dart`). The member sign-in flow
-  /// below does real Firebase verification and never uses this.
+  /// The fixed code [FakeAuthGateway] treats as correct, exposed here so
+  /// widget tests can type a known value into the OTP field. No production
+  /// path uses this any more — both member sign-in and agent registration
+  /// run real Firebase verification.
   static const String demoOtp = '123456';
 
   /// Digits in a code. The OTP field draws this many boxes.
@@ -438,14 +439,20 @@ abstract class AuthGateway {
 /// Firebase Phone Auth. Holds the `verificationId` from [sendCode] and pairs
 /// it with the typed code in [confirmCode].
 class FirebaseAuthGateway implements AuthGateway {
-  FirebaseAuthGateway({this.onResolved});
+  FirebaseAuthGateway({this.onResolved, fb.FirebaseAuth? auth})
+      : _auth = auth ?? fb.FirebaseAuth.instance;
 
   /// Called when Android instant verification or SMS auto-retrieval signs the
   /// member in before a code was ever typed, so [AuthService] can finish the
   /// pending sign-in itself.
   final void Function()? onResolved;
 
-  final fb.FirebaseAuth _auth = fb.FirebaseAuth.instance;
+  /// The Firebase Auth instance to run against. Defaults to the app's own
+  /// [fb.FirebaseAuth.instance] (the member session). The agent-registration
+  /// phone check passes an instance bound to a *secondary* Firebase app so
+  /// verifying a recruit's number never signs the recruiter out — see
+  /// `AgentPhoneVerifier`.
+  final fb.FirebaseAuth _auth;
 
   String? _verificationId;
   int? _resendToken;

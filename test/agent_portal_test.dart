@@ -10,6 +10,7 @@ import 'package:shield/data/neon/agent_geo_repository.dart';
 import 'package:shield/module/agent/agent_directory.dart';
 import 'package:shield/module/agent/agent_earnings_card.dart';
 import 'package:shield/module/agent/agent_model.dart';
+import 'package:shield/module/agent/agent_phone_verifier.dart';
 import 'package:shield/module/agent/agent_portal_card.dart';
 import 'package:shield/module/agent/agent_portal_screen.dart';
 import 'package:shield/module/agent/agent_registration_screen.dart';
@@ -20,6 +21,7 @@ import 'package:shield/module/home/refer_earn_card.dart';
 import 'package:shield/screens/home_screen.dart';
 
 import 'support/agent_geo_seed_fixture.dart';
+import 'support/fake_auth_gateway.dart';
 
 void main() {
   final national = AgentDirectory.national;
@@ -29,6 +31,9 @@ void main() {
   setUp(() {
     AuthService.instance.reset();
     service.reset();
+    // The registration form runs real Firebase phone verification; give it an
+    // in-memory gateway so tests can drive it with FakeAuthGateway.code.
+    AgentPhoneVerifier.instance.useGateway(FakeAuthGateway());
     // The app now starts with an empty hierarchy (the real tables load from
     // Neon); these tests want the full fixture tree to exercise placement.
     AgentGeo.instance.useHierarchy(seedGeo);
@@ -36,6 +41,7 @@ void main() {
   tearDown(() {
     AuthService.instance.reset();
     service.reset();
+    AgentPhoneVerifier.instance.reset();
     AgentGeo.instance.reset();
   });
 
