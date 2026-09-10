@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/dates.dart';
 import 'package:shield/money.dart';
+import 'package:shield/module/agent/agent_all_users_section.dart';
 import 'package:shield/module/agent/agent_customer_detail_screen.dart';
 import 'package:shield/module/agent/agent_detail_screen.dart';
 import 'package:shield/module/agent/agent_direct_sale.dart';
@@ -15,6 +16,7 @@ import 'package:shield/module/agent/agent_portal_card.dart';
 import 'package:shield/module/agent/agent_portal_screen.dart';
 import 'package:shield/module/agent/agent_registration_screen.dart';
 import 'package:shield/module/agent/agent_service.dart';
+import 'package:shield/module/agent/agent_team_roster_section.dart';
 import 'package:shield/module/agent/agent_team_tree_screen.dart';
 import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/home/refer_earn_card.dart';
@@ -263,6 +265,19 @@ void main() {
       expect(service.openPositionsUnder(national), 0);
       // No seventh zone to open.
       expect(register(national, region: 'North'), isNotNull);
+    });
+
+    test('a filled named slot is fixed — a second agent cannot take it', () {
+      expect(register(national, region: 'South'), isNull);
+      // Positions are still open elsewhere under national, but South itself
+      // is now taken — it stays with its agent until an admin moves them.
+      expect(service.openPositionsUnder(national), 5);
+      expect(
+        register(national, region: 'South'),
+        'That region position is already taken.',
+      );
+      // A different, free zone still goes through.
+      expect(register(national, region: 'North'), isNull);
     });
 
     test('a Kerala state agent opens its fourteen named district slots', () {
@@ -1003,7 +1018,16 @@ void main() {
       final team = service.teamOf(national);
       expect(team, isNotEmpty);
       for (final member in team) {
-        expect(find.text(member.name), findsOneWidget, reason: member.name);
+        // Scoped to the downline roster — the same agent also appears in the
+        // "All agents" directory further down the portal.
+        expect(
+          find.descendant(
+            of: find.byType(AgentTeamRosterSection),
+            matching: find.text(member.name),
+          ),
+          findsOneWidget,
+          reason: member.name,
+        );
         expect(
           find.text('${member.level.label} · ${member.agentCode}'),
           findsOneWidget,
@@ -1042,13 +1066,60 @@ void main() {
       await pumpPortal(tester, size: const Size(400, 6000));
 
       final member = service.teamOf(national).first;
-      await tester.ensureVisible(find.text(member.name));
+      // The roster's own row — the same agent is also in the "All agents"
+      // directory lower down.
+      final rosterRow = find.descendant(
+        of: find.byType(AgentTeamRosterSection),
+        matching: find.text(member.name),
+      );
+      await tester.ensureVisible(rosterRow);
       await tester.pumpAndSettle();
-      await tester.tap(find.text(member.name));
+      await tester.tap(rosterRow);
       await tester.pumpAndSettle();
 
       expect(find.byType(AgentDetailScreen), findsOneWidget);
       expect(find.text(member.agentCode), findsOneWidget);
+    });
+
+    testWidgets('the All agents directory lists every agent, downline or not', (
+      tester,
+    ) async {
+      register(national,
+          level: AgentLevel.region, region: 'North', first: 'Nita', last: 'Roy');
+      final north = service.childrenOf(national.id).single;
+      register(north,
+          level: AgentLevel.state,
+          state: 'Delhi',
+          first: 'Deep',
+          last: 'Sen');
+      final delhi = service.childrenOf(north.id).single;
+      register(national,
+          level: AgentLevel.region,
+          region: 'South',
+          first: 'Sara',
+          last: 'Iyer');
+      final south = service.childrenOf(national.id).last;
+
+      // Open the portal as the South agent — North and the Delhi agent under
+      // it are nowhere in South's own downline.
+      tester.view.physicalSize = const Size(400, 8000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(home: AgentPortalScreen(agent: south)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(service.teamOf(south), isEmpty);
+      final directory = find.byType(AgentAllUsersSection);
+      expect(directory, findsOneWidget);
+      for (final agent in [national, north, delhi, south]) {
+        expect(
+          find.descendant(of: directory, matching: find.text(agent.name)),
+          findsOneWidget,
+          reason: agent.name,
+        );
+      }
     });
   });
 

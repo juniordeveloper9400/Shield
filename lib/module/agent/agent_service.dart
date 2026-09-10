@@ -365,6 +365,19 @@ class AgentService extends ChangeNotifier {
         !AgentGeo.current.regions.any((r) => r.id == slot?.id)) {
       return 'Choose which region this agent heads';
     }
+    // A named slot holds exactly one agent. Once someone is registered into
+    // it, it is fixed to them — the app has no way to re-place or remove a
+    // filled position; only an admin (admin console) can move or delete an
+    // agent. So refuse a second registration into a slot that is already
+    // taken by a live (non-rejected) agent under the same parent.
+    if (slot != null &&
+        childrenOf(parent.id).any(
+          (c) =>
+              c.areaId == slot.id &&
+              c.approvalStatus != AgentApprovalStatus.rejected,
+        )) {
+      return 'That ${level.label.toLowerCase()} position is already taken.';
+    }
 
     final checks = <String?>[
       validateName(firstName, field: 'first name'),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../theme/app_colors.dart';
+import 'agent_all_users_section.dart';
 import 'agent_direct_sale.dart';
 import 'agent_earnings_card.dart';
 import 'agent_model.dart';
@@ -61,6 +62,8 @@ class AgentPortalScreen extends StatelessWidget {
           AgentTeamSalesCard(agent: agent),
           const SizedBox(height: 18),
           AgentTeamRosterSection(agent: agent),
+          const SizedBox(height: 22),
+          const AgentAllUsersSection(),
         ],
       ),
       // Pinned to the bottom, always in reach however far the portal is

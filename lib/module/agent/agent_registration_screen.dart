@@ -208,8 +208,25 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
   GeoSlot? _areaAt(AgentLevel tier) =>
       _parentAncestry[tier] ?? _areaPick[tier];
 
-  /// The fixed slots to choose from at [tier], drawn from the slot one tier up.
+  /// The fixed slots to choose from at [tier], drawn from the slot one tier
+  /// up — minus, at the tier being registered *into*, any slot already held
+  /// by a live agent under the chosen parent. A filled position is fixed to
+  /// its agent until an admin moves or removes them, so it is not offered
+  /// again here.
   List<GeoSlot> _optionsFor(AgentLevel tier) {
+    final all = _rawOptionsFor(tier);
+    if (tier != _level) {
+      return all;
+    }
+    final taken = AgentService.instance
+        .childrenOf(_parent.id)
+        .where((c) => c.approvalStatus != AgentApprovalStatus.rejected)
+        .map((c) => c.areaId)
+        .toSet();
+    return all.where((s) => !taken.contains(s.id)).toList();
+  }
+
+  List<GeoSlot> _rawOptionsFor(AgentLevel tier) {
     if (tier == AgentLevel.region) {
       return AgentGeo.current.regions;
     }
