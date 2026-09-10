@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/neon/wallet_repository.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/image_data_url.dart';
 import '../auth/auth_flow.dart';
 import '../auth/auth_service.dart';
 import '../checkout/checkout_order.dart';
@@ -176,6 +177,11 @@ class _PrivilegeScreenState extends State<PrivilegeScreen> {
               // in. Awaited only to pin the row's uuid onto the pending card.
               final user = AuthService.instance.currentUser.value;
               if (user != null) {
+                // Shrunk the same way a prescription script or a product
+                // order's receipt is, before it ever reaches Neon.
+                final receiptImage = receipt.imageBytes == null
+                    ? null
+                    : await compressImageDataUrl(receipt.imageBytes!);
                 final uuid =
                     await WalletRepository.instance.submitCardForApproval(
                   memberPhone: user.phone,
@@ -187,6 +193,7 @@ class _PrivilegeScreenState extends State<PrivilegeScreen> {
                   storeCode: receipt.storeId,
                   receiptReference: receipt.bankReference,
                   receiptFileName: receipt.fileName,
+                  receiptImage: receiptImage,
                 );
                 if (uuid != null) {
                   WalletService.instance

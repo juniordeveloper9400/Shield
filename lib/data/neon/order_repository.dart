@@ -63,11 +63,18 @@ class OrderReceiptInput {
   final double? amount;
   final String? fileName;
 
+  /// The receipt photo itself, as a small `data:` URI (see
+  /// [compressImageDataUrl]) — what the admin console's Orders section shows
+  /// alongside the claim. Null when the picker could not read the file; the
+  /// receipt row is still written on the other fields.
+  final String? image;
+
   const OrderReceiptInput({
     this.payerName,
     this.reference,
     this.amount,
     this.fileName,
+    this.image,
   });
 }
 
@@ -232,7 +239,8 @@ class OrderRepository {
       final rows = await NeonHttp.instance.query(
         r'''
           SELECT o.code, o.kind::text AS kind, o.status::text AS status,
-                 o.item_count, o.mrp_total, o.paid_total, o.placed_at
+                 o.item_count, o.mrp_total, o.paid_total, o.placed_at,
+                 o.bill_image, o.billed_at
           FROM app."order" o
           JOIN app.users u ON u.id = o.member_id
           WHERE u.phone = $1
@@ -266,6 +274,10 @@ class OrderRepository {
       kind: row['kind']?.toString() == 'PRESCRIPTION'
           ? OrderKind.prescription
           : OrderKind.standard,
+      billImage: (row['bill_image'] as String?)?.trim().isNotEmpty == true
+          ? row['bill_image'] as String
+          : null,
+      billedAt: DateTime.tryParse((row['billed_at'] ?? '').toString()),
     );
   }
 
@@ -379,8 +391,8 @@ class OrderRepository {
         await NeonHttp.instance.query(
           '''
             INSERT INTO app.order_receipt
-              (order_id, payer_name, reference, amount, file_name)
-            VALUES (\$1, \$2, \$3, \$4, \$5)
+              (order_id, payer_name, reference, amount, file_name, image)
+            VALUES (\$1, \$2, \$3, \$4, \$5, \$6)
           ''',
           [
             orderId,
@@ -388,6 +400,7 @@ class OrderRepository {
             receipt.reference,
             receipt.amount,
             receipt.fileName,
+            receipt.image,
           ],
         );
       }

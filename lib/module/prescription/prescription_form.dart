@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../data/neon/prescription_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/image_data_url.dart';
 import '../../widgets/upload_picker.dart';
 import '../auth/auth_service.dart';
 import '../location/address_book.dart';
@@ -16,7 +17,6 @@ import '../registration/registration_service.dart';
 import '../registration/shield_store.dart';
 import 'medicine_duration.dart';
 import 'prescription_copy.dart';
-import 'prescription_image.dart';
 import 'prescription_image_view.dart';
 import 'prescription_record.dart';
 
@@ -187,7 +187,7 @@ class PrescriptionFormController extends ChangeNotifier {
     final rawImage = preview;
     if (rawImage != null) {
       try {
-        image = await prescriptionImageDataUrl(rawImage);
+        image = await compressImageDataUrl(rawImage);
       } catch (error) {
         debugPrint('prescription: could not encode the script image — $error');
       }

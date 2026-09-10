@@ -18,6 +18,13 @@ class PaymentReceipt {
   final String fileName;
   final int bytes;
 
+  /// The receipt image's own content, when the picker could read it — what
+  /// actually reaches the store admin's order/activation review, compressed
+  /// and stored alongside the claim. Null when nothing could be read (an
+  /// unreadable file, or a test with no real picture to hand over): the
+  /// receipt still submits on [fileName] and [bankReference] alone.
+  final Uint8List? imageBytes;
+
   /// The bank's own reference for the transfer — a UTR or a transaction ID.
   /// Mandatory: it is what the checkout collects so a person settling the
   /// claim can match this picture to a line on the statement.
@@ -42,6 +49,7 @@ class PaymentReceipt {
     required this.method,
     required this.fileName,
     required this.bytes,
+    this.imageBytes,
     required this.orderReference,
     required this.storeId,
     required this.bankAccount,

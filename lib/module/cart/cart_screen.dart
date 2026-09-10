@@ -6,6 +6,7 @@ import '../../data/neon/order_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
+import '../../widgets/image_data_url.dart';
 import '../auth/auth_flow.dart';
 import '../auth/auth_service.dart';
 import '../checkout/checkout_order.dart';
@@ -121,6 +122,15 @@ class _CartScreenState extends State<CartScreen> {
             // build with no DATABASE_URL) or down must not stop the order.
             final user = AuthService.instance.currentUser.value;
             if (user != null) {
+              // Shrunk before it ever reaches Neon — same treatment a
+              // prescription script gets — so a full-resolution photo does
+              // not sit against the 5 MB cap on the HTTP endpoint's own
+              // request. Awaited here (off the main thread via `compute`) so
+              // the write below carries the picture on its first try, rather
+              // than firing without it and hoping a later save catches up.
+              final receiptImage = receipt.imageBytes == null
+                  ? null
+                  : await compressImageDataUrl(receipt.imageBytes!);
               unawaited(
                 OrderRepository.instance.saveStandardOrder(
                   phone: user.phone,
@@ -151,6 +161,7 @@ class _CartScreenState extends State<CartScreen> {
                     reference: receipt.bankReference,
                     amount: _cart.payable,
                     fileName: receipt.fileName,
+                    image: receiptImage,
                   ),
                 ),
               );

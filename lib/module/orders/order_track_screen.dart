@@ -98,6 +98,10 @@ class OrderTrackScreen extends StatelessWidget {
                 const NeedHelpCard(),
                 const SizedBox(height: 14),
                 const LabPackagePromoCard(),
+                if (order.hasBill) ...[
+                  const SizedBox(height: 14),
+                  StoreInvoiceCard(order: order),
+                ],
                 const SizedBox(height: 14),
                 BillDetailsCard(order: order),
                 const SizedBox(height: 14),

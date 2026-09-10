@@ -39,9 +39,8 @@ void main() {
     expect(find.text('Add more user details >'), findsOneWidget);
     expect(find.text('Medicines'), findsOneWidget);
 
-    // The dashboard panel and the investment call-out push the tail of the
-    // link list past the fold, so the later entries have to be scrolled to
-    // before they are built.
+    // The dashboard panel pushes the tail of the link list past the fold, so
+    // the later entries have to be scrolled to before they are built.
     await tester.scrollUntilVisible(
       find.text('Health Library'),
       160,
@@ -164,23 +163,16 @@ void main() {
     expect(find.text('Wallet locked'), findsOneWidget);
   });
 
-  testWidgets('investment plan row sits under the dashboard and opens', (
+  testWidgets('the menu no longer carries an investment plan entry', (
     tester,
   ) async {
     await pumpShell(tester);
     await openMenu(tester);
 
-    // The call-out row is visible without scrolling, right below the panel.
-    expect(find.text('Investment Plan'), findsOneWidget);
+    expect(find.text('Investment Plan'), findsNothing);
     expect(
       find.text('100% assured ROI on every unit share'),
-      findsOneWidget,
+      findsNothing,
     );
-
-    await tester.tap(find.text('Investment Plan'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Menu'), findsNothing);
-    expect(find.text('The Investment Plan'), findsOneWidget);
   });
 }

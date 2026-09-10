@@ -12,7 +12,6 @@ import '../cart/cart_screen.dart';
 import '../cart/cart_service.dart';
 import '../categories/categories_screen.dart';
 import '../health/health_section.dart';
-import '../investment/investment_plan_screen.dart';
 import '../labtest/lab_cart_screen.dart';
 import '../labtest/lab_cart_service.dart';
 import '../rewards/rewards_service.dart';
@@ -90,13 +89,6 @@ class MenuDrawer extends StatelessWidget {
                         _push(context, const LabCartScreen()),
                     onOpenOrders: () => _go(context, AppTab.orders.index),
                     onOpenRewards: () => _push(context, const RewardsScreen()),
-                  ),
-                  // Sits directly under the dashboard: its own call-out row
-                  // rather than one of the plain browse links, since it opens
-                  // a full feature screen and not a category listing.
-                  _InvestmentPlanRow(
-                    onTap: () =>
-                        _push(context, const InvestmentPlanScreen()),
                   ),
                   // Categories is no longer a tab, so the browse links push
                   // it as a route rather than switching to a destination that
@@ -409,82 +401,6 @@ class _DebugReportRow extends StatelessWidget {
                   );
                 },
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 24,
-                color: AppColors.textMuted,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Highlighted menu entry for the Investment Plan, pinned right below the
-/// dashboard. Tinted and iconned so it reads as a feature, not a browse link.
-class _InvestmentPlanRow extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _InvestmentPlanRow({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.pageTint,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: AppColors.border)),
-          ),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: const Icon(
-                  Icons.trending_up_rounded,
-                  size: 20,
-                  color: AppColors.brandBlue,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Investment Plan',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      '100% assured ROI on every unit share',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
               const Icon(
                 Icons.chevron_right_rounded,
                 size: 24,

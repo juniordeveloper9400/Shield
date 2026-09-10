@@ -12,17 +12,29 @@ const int kReceiptMaxBytes = 5 * 1024 * 1024;
 /// words never drift apart.
 const String kReceiptLimitLabel = '5 MB';
 
-/// A file that has been chosen, reduced to the two things the form needs.
+/// A file that has been chosen, reduced to what the form needs.
 ///
 /// Not an [XFile]: the form is driven in tests where there is no gallery to
-/// pick from and no file on disk to measure, and a plain pair of values is
+/// pick from and no file on disk to measure, and a plain set of values is
 /// something a test can hand over.
 @immutable
 class PickedFile {
   final String name;
+
+  /// The file's size, in bytes — what [ReceiptFormController.tooLarge] checks
+  /// against the cap. Not the length of [data]: a test hands this over
+  /// without any real content to measure.
   final int bytes;
 
-  const PickedFile({required this.name, required this.bytes});
+  /// The file's actual content, read once at pick time so it can travel all
+  /// the way to the order the receipt belongs to — a claim a person settles
+  /// has to show the picture it was made on, on the admin side too. Null in
+  /// every test (there is nothing to read bytes from), and best-effort in
+  /// production: a read that fails still leaves the size and the name to
+  /// submit, so a large or unreadable file does not block the receipt.
+  final Uint8List? data;
+
+  const PickedFile({required this.name, required this.bytes, this.data});
 }
 
 /// Opens the camera or the gallery.
@@ -48,7 +60,19 @@ class ReceiptPicker {
     if (picked == null) {
       return null;
     }
-    return PickedFile(name: picked.name, bytes: await picked.length());
+    Uint8List? data;
+    try {
+      data = await picked.readAsBytes();
+    } catch (error) {
+      // The size and the name still submit; only the picture itself is
+      // missing on the admin side for this one receipt.
+      debugPrint('ReceiptPicker: could not read the picked file — $error');
+    }
+    return PickedFile(
+      name: picked.name,
+      bytes: await picked.length(),
+      data: data,
+    );
   }
 }
 

@@ -58,6 +58,14 @@ class Purchase {
   /// existing call site and stored line keeps its meaning.
   final OrderKind kind;
 
+  /// The store's own invoice for this order, when one has been sent — a
+  /// small `data:` image the admin console attaches, not the receipt the
+  /// member themselves uploaded. Null until then.
+  final String? billImage;
+
+  /// When [billImage] was attached. Null until a bill has been sent.
+  final DateTime? billedAt;
+
   const Purchase({
     required this.id,
     required this.placedOn,
@@ -66,7 +74,11 @@ class Purchase {
     required this.paidTotal,
     required this.status,
     this.kind = OrderKind.standard,
+    this.billImage,
+    this.billedAt,
   });
+
+  bool get hasBill => billImage != null;
 
   /// A prescription order still waiting on money: priced or not, nothing has
   /// been paid and it has not been delivered or called off.
