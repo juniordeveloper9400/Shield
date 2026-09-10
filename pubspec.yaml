@@ -62,7 +62,6 @@ flutter:
   assets:
     - assets/logos/
     - assets/reviews/
-    - assets/products/
     - assets/categories/
     - assets/banners/
 

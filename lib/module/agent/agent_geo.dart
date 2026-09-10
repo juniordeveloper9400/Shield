@@ -87,18 +87,18 @@ class GeoHierarchy {
     required Map<String, AgentLevel> levelById,
     required Map<String, String> parentIdByChildId,
     required Map<String, AgentLevel> childLevelByParentId,
-  })  : _childrenByParentName = childrenByParentName,
-        _codeByName = codeByName,
-        _namesByLevel = namesByLevel,
-        _levelByName = levelByName,
-        _parentNameByChild = parentNameByChild,
-        _childLevelByParentName = childLevelByParentName,
-        _childrenByParentId = childrenByParentId,
-        _codeById = codeById,
-        _nameById = nameById,
-        _levelById = levelById,
-        _parentIdByChildId = parentIdByChildId,
-        _childLevelByParentId = childLevelByParentId;
+  }) : _childrenByParentName = childrenByParentName,
+       _codeByName = codeByName,
+       _namesByLevel = namesByLevel,
+       _levelByName = levelByName,
+       _parentNameByChild = parentNameByChild,
+       _childLevelByParentName = childLevelByParentName,
+       _childrenByParentId = childrenByParentId,
+       _codeById = codeById,
+       _nameById = nameById,
+       _levelById = levelById,
+       _parentIdByChildId = parentIdByChildId,
+       _childLevelByParentId = childLevelByParentId;
 
   /// The six regions, in order — the slots directly under the national agent.
   ///
@@ -184,9 +184,9 @@ class GeoHierarchy {
   /// name — see [GeoSlot]'s doc.
   @visibleForTesting
   List<GeoSlot> slotsAtLevel(AgentLevel level) => [
-        for (final entry in _levelById.entries)
-          if (entry.value == level) slotById(entry.key)!,
-      ];
+    for (final entry in _levelById.entries)
+      if (entry.value == level) slotById(entry.key)!,
+  ];
 
   // ---- name-keyed legacy API — test fixtures only, see [GeoSlot] ----------
   //
@@ -239,10 +239,10 @@ class GeoHierarchy {
   /// that has named children — the shape the old `agentRegionStates` /
   /// `agentStateDistricts` / `agentDistrictAssemblies` maps had.
   Map<String, List<String>> childMapFor(AgentLevel parentLevel) => {
-        for (final name in namesAt(parentLevel))
-          if ((_childrenByParentName[name] ?? const <String>[]).isNotEmpty)
-            name: _childrenByParentName[name]!,
-      };
+    for (final name in namesAt(parentLevel))
+      if ((_childrenByParentName[name] ?? const <String>[]).isNotEmpty)
+        name: _childrenByParentName[name]!,
+  };
 
   /// Builds a hierarchy from a flat node list ([AgentGeoRepository.fetchAll] or
   /// a test fixture).
@@ -346,10 +346,22 @@ class AgentGeo extends ChangeNotifier {
 
   bool _loaded = false;
   bool _fromDatabase = false;
+  bool _attempted = false;
+  Object? _lastError;
   Future<void>? _inFlight;
 
   /// Whether the database copy has replaced the bundled seed.
   bool get isFromDatabase => _fromDatabase;
+
+  /// True once a load has run to completion at least once — success, empty
+  /// tables, or failure. Lets a screen tell "still loading" from "loaded and
+  /// there is genuinely nothing".
+  bool get hasAttempted => _attempted;
+
+  /// The reason the last load failed (a transport / SQL error), or null when
+  /// it succeeded, is still running, or simply came back empty. "My Team"
+  /// surfaces this so an empty tree is explained rather than silent.
+  Object? get lastError => _lastError;
 
   /// Loads the hierarchy from Neon once (best-effort — a missing or
   /// unreachable database just leaves it empty). Safe to call from every
@@ -370,11 +382,20 @@ class AgentGeo extends ChangeNotifier {
       if (nodes != null && nodes.isNotEmpty) {
         _current = GeoHierarchy.fromNodes(nodes);
         _fromDatabase = true;
-        notifyListeners();
+        _loaded = true;
+        _lastError = null;
       }
+      // Otherwise nothing came back — the endpoint is not configured, or the
+      // region…ward tables were still empty. Leave [_loaded] false so the next
+      // `ensureLoaded()` retries rather than the session being stuck on an
+      // empty tree until the app is relaunched.
+    } catch (error) {
+      _lastError = error;
+      debugPrint('AgentGeo: hierarchy load failed — $error');
     } finally {
-      _loaded = true;
+      _attempted = true;
       _inFlight = null;
+      notifyListeners();
     }
   }
 
@@ -384,6 +405,8 @@ class AgentGeo extends ChangeNotifier {
     _current = GeoHierarchy.empty();
     _loaded = false;
     _fromDatabase = false;
+    _attempted = false;
+    _lastError = null;
     _inFlight = null;
   }
 
@@ -394,6 +417,8 @@ class AgentGeo extends ChangeNotifier {
     _current = hierarchy;
     _loaded = true;
     _fromDatabase = true;
+    _attempted = true;
+    _lastError = null;
     _inFlight = null;
     notifyListeners();
   }
@@ -439,10 +464,8 @@ Map<String, List<String>> get agentLsgdWards =>
 List<String> agentSlotLabelsUnder({
   required AgentLevel level,
   required String area,
-}) =>
-    AgentGeo.current.slotLabelsUnder(level, area);
+}) => AgentGeo.current.slotLabelsUnder(level, area);
 
 /// The printed code for a named slot that carries one (`AC136`, `TVC`,
 /// `AC136-L1`, `AC136-L1-W005`), or null otherwise.
 String? agentSlotCode(String name) => AgentGeo.current.codeFor(name);
-

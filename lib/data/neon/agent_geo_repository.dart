@@ -81,13 +81,16 @@ class AgentGeoRepository {
   bool get isAvailable => NeonHttp.isConfigured;
 
   /// Every geo node, ordered so a parent always precedes deeper tiers, or null
-  /// when the tables cannot be read.
+  /// when the endpoint is not configured or the tables are empty.
+  ///
+  /// A transport / SQL failure is **rethrown**, not swallowed — the caller
+  /// ([AgentGeo._load]) records the reason so "My Team" can show why the tree
+  /// is empty instead of silently rendering nothing.
   Future<List<GeoNode>?> fetchAll() async {
     if (!NeonHttp.isConfigured) {
       return null;
     }
-    try {
-      final rows = await NeonHttp.instance.query(r'''
+    final rows = await NeonHttp.instance.query(r'''
         SELECT id::text, NULL::text AS parent_id, 'region' AS level,
                name, code, sort, 1 AS tier
         FROM app.region
@@ -108,12 +111,10 @@ class AgentGeoRepository {
         FROM app.ward
         ORDER BY tier, sort, name
       ''');
-      final nodes =
-          rows.map(GeoNode.fromRow).whereType<GeoNode>().toList(growable: false);
-      return nodes.isEmpty ? null : nodes;
-    } catch (error) {
-      NeonHttp.log('AgentGeoRepository.fetchAll failed', error: error);
-      return null;
-    }
+    final nodes = rows
+        .map(GeoNode.fromRow)
+        .whereType<GeoNode>()
+        .toList(growable: false);
+    return nodes.isEmpty ? null : nodes;
   }
 }

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../../data/neon/neon_http.dart';
 import '../../theme/app_colors.dart';
 import 'agent_detail_screen.dart';
 import 'agent_model.dart';
@@ -58,8 +59,7 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
   /// True once the map has been positioned at least once.
   bool _fitted = false;
 
-  GlobalKey _keyFor(String id) =>
-      _pillKeys.putIfAbsent(id, () => GlobalKey());
+  GlobalKey _keyFor(String id) => _pillKeys.putIfAbsent(id, () => GlobalKey());
 
   @override
   void initState() {
@@ -69,9 +69,12 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
       duration: const Duration(milliseconds: 420),
     );
     // Pull the live geographic hierarchy (regions … wards) from Neon; the
-    // tree is empty until it lands. Rebuild when it does.
+    // tree is empty until it lands. Rebuild when it does. `force: true` — a
+    // fresh pull every time "My Team" is opened, so an admin's edit to a
+    // district or ward shows on the next visit, and a load that failed
+    // earlier in the session is retried rather than left stuck.
     AgentGeo.instance.addListener(_onGeoChanged);
-    AgentGeo.instance.ensureLoaded();
+    AgentGeo.instance.ensureLoaded(force: true);
     // Same for the roster itself — every agent already registered in
     // app.agent, so a fresh app launch (or a second device) shows who is
     // really on the team rather than just the national seed persona.
@@ -96,8 +99,7 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
   /// Where the screen opens: the root's card centred across the top, with the
   /// rest of the map free to fan out below it as branches are opened.
   void _openOnRoot() {
-    final chartBox =
-        _chartKey.currentContext?.findRenderObject() as RenderBox?;
+    final chartBox = _chartKey.currentContext?.findRenderObject() as RenderBox?;
     if (chartBox == null || !chartBox.hasSize || _viewportSize.isEmpty) {
       return;
     }
@@ -128,8 +130,7 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
   /// down to a single overview, however far the open branches have grown.
   void _fitToScreen() {
     _panController.stop();
-    final chartBox =
-        _chartKey.currentContext?.findRenderObject() as RenderBox?;
+    final chartBox = _chartKey.currentContext?.findRenderObject() as RenderBox?;
     if (chartBox == null || !chartBox.hasSize || _viewportSize.isEmpty) {
       return;
     }
@@ -142,8 +143,10 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
     final scaleY = (_viewportSize.height - 60) / chartSize.height;
     final scale = math.min(math.min(scaleX, scaleY), 1.0);
 
-    final dx =
-        math.max(24.0, (_viewportSize.width - chartSize.width * scale) / 2);
+    final dx = math.max(
+      24.0,
+      (_viewportSize.width - chartSize.width * scale) / 2,
+    );
     final dy = math.max(
       24.0,
       (_viewportSize.height - chartSize.height * scale) / 2,
@@ -215,8 +218,7 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
   void _flowTo(String id) {
     final pillBox =
         _pillKeys[id]?.currentContext?.findRenderObject() as RenderBox?;
-    final chartBox =
-        _chartKey.currentContext?.findRenderObject() as RenderBox?;
+    final chartBox = _chartKey.currentContext?.findRenderObject() as RenderBox?;
     if (pillBox == null ||
         chartBox == null ||
         !pillBox.hasSize ||
@@ -228,7 +230,8 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
     final topLeft = pillBox.localToGlobal(Offset.zero, ancestor: chartBox);
     final scale = _transform.value.getMaxScaleOnAxis();
 
-    final targetX = _viewportSize.width / 2 - (topLeft.dx + pillBox.size.width / 2) * scale;
+    final targetX =
+        _viewportSize.width / 2 - (topLeft.dx + pillBox.size.width / 2) * scale;
     final targetY = _flowTopInset - topLeft.dy * scale;
 
     final target = Matrix4.identity()
@@ -268,9 +271,9 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
     if (added != true || !mounted) {
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Agent registered')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Agent registered')));
   }
 
   @override
@@ -308,46 +311,159 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
           child: Divider(height: 1, color: AppColors.border),
         ),
       ),
-      body: ListenableBuilder(
-        listenable: AgentService.instance,
-        builder: (context, _) => LayoutBuilder(
-          builder: (context, constraints) {
-            _viewportSize = constraints.biggest;
-            return ClipRect(
-              child: AnimatedOpacity(
-                opacity: _fitted ? 1 : 0,
-                duration: const Duration(milliseconds: 180),
-                child: InteractiveViewer(
-                  transformationController: _transform,
-                  constrained: false,
-                  boundaryMargin: const EdgeInsets.all(600),
-                  minScale: 0.1,
-                  maxScale: 3.5,
-                  child: Padding(
-                    key: _chartKey,
-                    padding: const EdgeInsets.fromLTRB(40, 16, 40, 96),
-                    child: _MindNode(
-                      // Re-read rather than trusting widget.root as-is: a
-                      // photo added to the root from its own detail screen
-                      // would otherwise never show here.
-                      agent: AgentService.instance.byId(widget.root.id) ??
-                          widget.root,
-                      depth: 0,
-                      expanded: _expanded,
-                      keyFor: _keyFor,
-                      onToggle: _toggle,
-                      onOpen: (agent) => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AgentDetailScreen(agent: agent),
+      // The whole tree hangs off the geographic hierarchy (regions … wards).
+      // When it has not loaded, say why and offer a retry rather than showing
+      // a lone, dead-end root card.
+      body: AgentGeo.current.regions.isEmpty
+          ? _HierarchyStatus(
+              attempted: AgentGeo.instance.hasAttempted,
+              error: AgentGeo.instance.lastError,
+              configured: NeonHttp.isConfigured,
+              onRetry: () {
+                setState(() {});
+                AgentGeo.instance.ensureLoaded(force: true);
+              },
+            )
+          : ListenableBuilder(
+              listenable: AgentService.instance,
+              builder: (context, _) => LayoutBuilder(
+                builder: (context, constraints) {
+                  _viewportSize = constraints.biggest;
+                  return ClipRect(
+                    child: AnimatedOpacity(
+                      opacity: _fitted ? 1 : 0,
+                      duration: const Duration(milliseconds: 180),
+                      child: InteractiveViewer(
+                        transformationController: _transform,
+                        constrained: false,
+                        boundaryMargin: const EdgeInsets.all(600),
+                        minScale: 0.1,
+                        maxScale: 3.5,
+                        child: Padding(
+                          key: _chartKey,
+                          padding: const EdgeInsets.fromLTRB(40, 16, 40, 96),
+                          child: _MindNode(
+                            // Re-read rather than trusting widget.root as-is: a
+                            // photo added to the root from its own detail screen
+                            // would otherwise never show here.
+                            agent:
+                                AgentService.instance.byId(widget.root.id) ??
+                                widget.root,
+                            depth: 0,
+                            expanded: _expanded,
+                            keyFor: _keyFor,
+                            onToggle: _toggle,
+                            onOpen: (agent) => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AgentDetailScreen(agent: agent),
+                              ),
+                            ),
+                            onAdd: _addUnder,
+                          ),
                         ),
                       ),
-                      onAdd: _addUnder,
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
-            );
-          },
+            ),
+    );
+  }
+}
+
+/// Shown in place of the tree while the geographic hierarchy (`app.region` …
+/// `app.ward`) has not loaded — a spinner on the first attempt, then a plain
+/// reason and a retry once an attempt has finished with nothing.
+class _HierarchyStatus extends StatelessWidget {
+  final bool attempted;
+  final Object? error;
+  final bool configured;
+  final VoidCallback onRetry;
+
+  const _HierarchyStatus({
+    required this.attempted,
+    required this.error,
+    required this.configured,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!attempted) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 26,
+              height: 26,
+              child: CircularProgressIndicator(strokeWidth: 2.4),
+            ),
+            SizedBox(height: 14),
+            Text(
+              'Loading the team hierarchy…',
+              style: TextStyle(color: AppColors.textMuted, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final String reason;
+    if (!configured) {
+      reason =
+          'This build has no database connection.\n'
+          'Run it with --dart-define-from-file=.env';
+    } else if (error != null) {
+      reason = 'Could not reach the database.\n$error';
+    } else {
+      reason =
+          'The region … ward tables are empty.\n'
+          'Seed them (migrations 0014–0016, then the Kerala geo import) '
+          'and retry.';
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.account_tree_outlined,
+              size: 40,
+              color: AppColors.textMuted,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'The team hierarchy is not available yet',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textDark,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              reason,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 12.5,
+                height: 1.4,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Retry'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.brandBlue,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -409,14 +525,16 @@ class _MindNode extends StatelessWidget {
     // branch is honoured — a ward sitting straight under an assembly, say.
     // Never for the national agent itself, though: it heads no single real
     // slot ([Agent.areaId] is null for it), so there is nothing to look up.
-    final childLevel = (agent.level == AgentLevel.national ||
+    final childLevel =
+        (agent.level == AgentLevel.national ||
                 agent.areaId == null ||
                 slots.isEmpty
             ? null
             : AgentGeo.current.childLevelOfId(agent.areaId!)) ??
         agent.level.child;
-    final capacity =
-        slots.isNotEmpty ? slots.length : agent.level.childCapacity;
+    final capacity = slots.isNotEmpty
+        ? slots.length
+        : agent.level.childCapacity;
     final canExpand = capacity > 0;
     final isExpanded = canExpand && expanded.contains(agent.id);
 
@@ -435,8 +553,9 @@ class _MindNode extends StatelessWidget {
         expanded: isExpanded,
         onTap: () => onOpen(agent),
         onToggle: canExpand ? () => onToggle(agent.id) : null,
-        badge:
-            agent.isApproved ? null : _ApprovalTag(status: agent.approvalStatus),
+        badge: agent.isApproved
+            ? null
+            : _ApprovalTag(status: agent.approvalStatus),
       ),
       children: isExpanded
           ? _buildChildNodes(children, childLevel, slots, capacity)
@@ -460,14 +579,14 @@ class _MindNode extends StatelessWidget {
   }
 
   _MindNode _child(Agent child) => _MindNode(
-        agent: child,
-        depth: depth + 1,
-        expanded: expanded,
-        keyFor: keyFor,
-        onToggle: onToggle,
-        onOpen: onOpen,
-        onAdd: onAdd,
-      );
+    agent: child,
+    depth: depth + 1,
+    expanded: expanded,
+    keyFor: keyFor,
+    onToggle: onToggle,
+    onOpen: onOpen,
+    onAdd: onAdd,
+  );
 
   _MindPlusNode _slot(AgentLevel level, String slotId, {GeoSlot? slot}) =>
       _MindPlusNode(
@@ -572,11 +691,13 @@ class _MindPlusNode extends StatelessWidget {
     // If this open slot itself names a place, its own preview positions are
     // that place's named children rather than the plain doubling shape.
     final previewSlots = AgentGeo.current.slotsUnder(level, slot?.id);
-    final previewCapacity =
-        previewSlots.isNotEmpty ? previewSlots.length : level.childCapacity;
+    final previewCapacity = previewSlots.isNotEmpty
+        ? previewSlots.length
+        : level.childCapacity;
     // The successor read from the data, so an irregular branch is honoured
     // (falls back to the enum successor for the regular tiers).
-    final childLevel = (previewSlots.isEmpty || slot == null
+    final childLevel =
+        (previewSlots.isEmpty || slot == null
             ? null
             : AgentGeo.current.childLevelOfId(slot!.id)) ??
         level.child;
@@ -703,10 +824,7 @@ class _MindPill extends StatelessWidget {
                       color: AppColors.textDark.withValues(alpha: 0.45),
                     ),
                   ),
-                  if (badge != null) ...[
-                    const SizedBox(height: 6),
-                    badge!,
-                  ],
+                  if (badge != null) ...[const SizedBox(height: 6), badge!],
                 ],
               ),
             ),
@@ -777,8 +895,10 @@ class _MindPlusPill extends StatelessWidget {
               onTap: onAdd,
               borderRadius: BorderRadius.circular(10),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 11,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(color: tint),
@@ -922,7 +1042,10 @@ class _MindBranch extends MultiChildRenderObjectWidget {
       _RenderMindBranch(connectorColor: connectorColor);
 
   @override
-  void updateRenderObject(BuildContext context, _RenderMindBranch renderObject) {
+  void updateRenderObject(
+    BuildContext context,
+    _RenderMindBranch renderObject,
+  ) {
     renderObject.connectorColor = connectorColor;
   }
 }
