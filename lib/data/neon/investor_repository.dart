@@ -1,4 +1,5 @@
 import '../../module/investor/investor_model.dart';
+import '../../module/registration/shield_store.dart';
 import 'neon_http.dart';
 
 /// Writes an investor's return-plan-change request to the `app.investor` and
@@ -24,6 +25,52 @@ class InvestorRepository {
   static const InvestorRepository instance = InvestorRepository._();
 
   bool get isAvailable => NeonHttp.isConfigured;
+
+  /// Every `app.investor` row — the stakes the admin console has actually
+  /// created via "Convert to investor" — or null when the database is
+  /// unavailable. [InvestorService.ensureLoaded] swaps these in for the
+  /// bundled demo so the home screen's Investor Access card (and "who is
+  /// this phone" everywhere else) reflects real conversions.
+  Future<List<Investor>?> fetchAll() => _run('fetchAll', () async {
+        final rows = await NeonHttp.instance.query(r'''
+          SELECT i.id::text, i.code, i.name, i.phone,
+                 i.total_units, i.unit_price::text, i.invested_since::text,
+                 i.roi_percent::text, i.plan_type::text,
+                 s.code AS store_code
+          FROM app.investor i
+          LEFT JOIN app.shield_store s ON s.id = i.invested_store_id
+          ORDER BY i.id
+        ''');
+        return rows.map(_toInvestor).whereType<Investor>().toList();
+      });
+
+  static Investor? _toInvestor(Map<String, dynamic> row) {
+    String str(Object? v) => (v ?? '').toString().trim();
+    final phone = str(row['phone']);
+    final code = str(row['code']);
+    if (phone.isEmpty || code.isEmpty) {
+      return null;
+    }
+    final storeCode = str(row['store_code']);
+    final store = StoreDirectory.byId(storeCode.isEmpty ? null : storeCode) ??
+        StoreDirectory.all.first;
+    final since = DateTime.tryParse(str(row['invested_since'])) ?? DateTime.now();
+    final planType = str(row['plan_type']).toUpperCase() == 'MONTHLY'
+        ? InvestorPlanType.monthly
+        : InvestorPlanType.yearly;
+    return Investor(
+      id: 'db-${str(row['id'])}',
+      name: str(row['name']),
+      phone: phone,
+      investorCode: code,
+      investedStore: store,
+      totalUnits: int.tryParse(str(row['total_units'])) ?? 0,
+      unitPrice: double.tryParse(str(row['unit_price']))?.round() ?? 150000,
+      investedSince: since,
+      roiPercent: double.tryParse(str(row['roi_percent'])) ?? 0,
+      planType: planType,
+    );
+  }
 
   /// Records a `REQUESTED` row asking to switch the investor's return plan to
   /// [requestedPlanType], creating or refreshing the `app.investor` row it

@@ -11,6 +11,7 @@ import 'module/auth/persona_gate.dart';
 import 'module/agent/agent_geo.dart';
 import 'module/catalogue/catalogue_service.dart';
 import 'module/home/customer_reviews_service.dart';
+import 'module/investor/investor_service.dart';
 import 'module/refer/referral_service.dart';
 import 'module/registration/shield_store.dart';
 import 'module/rewards/rewards_service.dart';
@@ -86,6 +87,11 @@ Future<void> main() async {
   // show the admin console's own branches (with their real coordinates) rather
   // than the bundled seed.
   unawaited(StoreCatalog.instance.ensureLoaded());
+
+  // Warm the investor roster so the home screen's Investor Access card is
+  // driven by who the admin console has actually converted, not the bundled
+  // demo persona.
+  unawaited(InvestorService.instance.ensureLoaded());
 
   // One line at launch — via dart:developer so it survives a release build —
   // saying whether the Neon write-through is live. A build started without

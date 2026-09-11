@@ -53,32 +53,43 @@ class HomeScreen extends StatelessWidget {
                     // obvious next tap once the total has been read.
                     const EarningsSection(),
                     // Refer & Earn for a member; the Agent Portal in its place
-                    // once a known agent number is signed in.
-                    ValueListenableBuilder<AuthUser?>(
-                      valueListenable: AuthService.instance.currentUser,
-                      builder: (context, user, _) {
-                        final agent = AgentService.instance.agentForPhone(
-                          user?.phone,
-                        );
-                        return agent == null
-                            ? const ReferEarnCard()
-                            : AgentPortalCard(agent: agent);
-                      },
+                    // once a known agent number is signed in. Also rebuilds
+                    // when AgentService's database roster lands — it can still
+                    // be loading (main.dart's ensureLoaded) the moment this
+                    // first paints.
+                    ListenableBuilder(
+                      listenable: AgentService.instance,
+                      builder: (context, _) => ValueListenableBuilder<AuthUser?>(
+                        valueListenable: AuthService.instance.currentUser,
+                        builder: (context, user, _) {
+                          final agent = AgentService.instance.agentForPhone(
+                            user?.phone,
+                          );
+                          return agent == null
+                              ? const ReferEarnCard()
+                              : AgentPortalCard(agent: agent);
+                        },
+                      ),
                     ),
                     // Alongside whichever of those just showed, never in its
                     // place — an investor number is its own thing, not a
                     // stand-in for being a member or an agent. Not a general
                     // invitation to everyone else either: this section is
-                    // only ever for the one recognised investor number.
-                    ValueListenableBuilder<AuthUser?>(
-                      valueListenable: AuthService.instance.currentUser,
-                      builder: (context, user, _) {
-                        final investor = InvestorService.instance
-                            .investorForPhone(user?.phone);
-                        return investor == null
-                            ? const SizedBox.shrink()
-                            : InvestorAccessCard(investor: investor);
-                      },
+                    // only ever for a number the admin console has actually
+                    // converted. Rebuilds when InvestorService's database
+                    // roster lands, same reason as the agent block above.
+                    ListenableBuilder(
+                      listenable: InvestorService.instance,
+                      builder: (context, _) => ValueListenableBuilder<AuthUser?>(
+                        valueListenable: AuthService.instance.currentUser,
+                        builder: (context, user, _) {
+                          final investor = InvestorService.instance
+                              .investorForPhone(user?.phone);
+                          return investor == null
+                              ? const SizedBox.shrink()
+                              : InvestorAccessCard(investor: investor);
+                        },
+                      ),
                     ),
 
                     // Directly under Refer & Earn, with no banner between them.
