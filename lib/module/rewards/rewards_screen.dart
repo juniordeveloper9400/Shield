@@ -5,6 +5,7 @@ import '../../theme/app_colors.dart';
 import '../categories/categories_screen.dart';
 import '../home/points_badge.dart' show RewardCoin;
 import '../refer/refer_earn_screen.dart';
+import '../wallet/wallet_service.dart';
 import 'rewards_service.dart';
 
 /// The reward-points home, opened from the coin in the header.
@@ -213,21 +214,47 @@ class _Hero extends StatelessWidget {
 }
 
 /// The white card notched into the hero: the rate, the balance restated in
-/// rupees, and what those coins can and cannot do.
-///
-/// Coins are a discount, not a balance: they come off the bill at checkout and
-/// are never paid out as cash or moved to the wallet. The card says exactly
-/// that, and its one button is a way into the shop rather than a way to cash
-/// out.
-class _CoinWorthCard extends StatelessWidget {
+/// rupees, and what those coins can do — spent at checkout, the way every
+/// member already reads this card, or redeemed [WalletService.minRedeemPoints]
+/// or more at a time straight into the SHIELD wallet, where a plan is open to
+/// receive them.
+class _CoinWorthCard extends StatefulWidget {
   final int points;
 
   const _CoinWorthCard({required this.points});
 
   @override
+  State<_CoinWorthCard> createState() => _CoinWorthCardState();
+}
+
+class _CoinWorthCardState extends State<_CoinWorthCard> {
+  bool _redeeming = false;
+
+  Future<void> _redeem() async {
+    final error = WalletService.instance.redeemPointsError(widget.points);
+    if (error != null) {
+      _toast(context, error);
+      return;
+    }
+    setState(() => _redeeming = true);
+    final ok = await WalletService.instance.redeemPoints();
+    if (!mounted) return;
+    setState(() => _redeeming = false);
+    _toast(
+      context,
+      ok
+          ? '${formatRupees(widget.points)} points moved to your wallet'
+          : 'Could not redeem right now — try again in a moment.',
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final points = widget.points;
     final rupees = RewardsScreen.rupeesFor(points);
     final canSpend = RewardsScreen.wholeRupeesFor(points) > 0;
+    final redeemError = WalletService.instance.redeemPointsError(points);
+    final canRedeem = redeemError == null && !_redeeming;
 
     return Container(
       decoration: BoxDecoration(
@@ -354,11 +381,41 @@ class _CoinWorthCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          const Text(
-            'Coins come off your bill at checkout. They can’t be withdrawn '
-            'as cash or moved to your wallet.',
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: AppColors.brandBlue.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  size: 22,
+                  color: AppColors.brandBlue,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _DarkButton(
+                  label: _redeeming
+                      ? 'Redeeming…'
+                      : 'Redeem ${formatRupees(points)} pts to wallet',
+                  onTap: canRedeem ? _redeem : null,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            redeemError != null && points > 0
+                ? redeemError
+                : 'Coins come off your bill at checkout, or redeem '
+                    '${WalletService.minRedeemPoints}+ at a time straight '
+                    'into your SHIELD wallet.',
             textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 11.5,
               height: 1.35,
               fontWeight: FontWeight.w500,

@@ -273,6 +273,13 @@ class WalletService extends ChangeNotifier {
   /// account rather than from here.
   static const int openingBalance = 0;
 
+  /// The fewest reward points a member can move into the wallet in one go —
+  /// below this, [redeemPoints] refuses outright rather than posting a
+  /// trivial ledger line. 100 points, matching the "100 = ₹10" rate already
+  /// stated on the Rewards screen ([RewardsScreen.rateLabel]), so the figure
+  /// a member reads there is the same one that gates the button.
+  static const int minRedeemPoints = 100;
+
   /// The ledger a wallet opens with. Empty: every line in the wallet is put
   /// there by something the member did.
   static const List<WalletEntry> _seed = [];
@@ -668,17 +675,34 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Why [redeemPoints] would refuse [points] (defaulting to the whole
+  /// balance) right now, or null when it would go through. The Rewards
+  /// screen reads this to gate its own button and show the reason, rather
+  /// than letting a member tap it and learn nothing from a silent failure.
+  String? redeemPointsError([int? points]) {
+    final toRedeem = points ?? RewardsService.instance.balance;
+    if (!isActivated) {
+      return 'Activate a plan to open your wallet before redeeming points.';
+    }
+    if (toRedeem < minRedeemPoints) {
+      return 'Redeem at least $minRedeemPoints points at a time.';
+    }
+    if (toRedeem > RewardsService.instance.balance) {
+      return 'You don\'t have that many points.';
+    }
+    return null;
+  }
+
   /// Spends reward points and moves their value into the wallet balance.
   ///
   /// The points side is a negative `REDEMPTION` row on the reward-points
   /// ledger ([RewardsService.redeem]); the wallet side is a credit line here.
   /// Points become wallet balance, so they cannot be redeemed into a wallet
-  /// that is not open yet.
+  /// that is not open yet, and [minRedeemPoints] is the fewest that can move
+  /// in one go — see [redeemPointsError] for the same checks with a reason.
   Future<bool> redeemPoints({int? points, String date = 'Today'}) async {
     final toRedeem = points ?? RewardsService.instance.balance;
-    if (!isActivated ||
-        toRedeem <= 0 ||
-        toRedeem > RewardsService.instance.balance) {
+    if (redeemPointsError(toRedeem) != null) {
       return false;
     }
 
