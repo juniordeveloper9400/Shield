@@ -43,7 +43,7 @@ is a single safe statement (`DROP SCHEMA app CASCADE`) that cannot reach
 | `labtest` | `lab_package`, `lab_profile`, `lab_booking`, `lab_booking_patient` |
 | `appointment`, `dietitian` | `clinic`, `clinic_doctor`, `dietitian`, `appointment` |
 | `investment` | `investment_plan_point` (static pitch content) |
-| `agent` (field-sales MLM) | `agent` (self-referencing tree), `agent_customer`, `agent_customer_plan`, `agent_withdrawal`, `agent_wallet_transfer`, `agent_geo_node` (region→ward slot shape, migration 0011) |
+| `agent` (field-sales MLM) | `agent` (self-referencing tree), `agent_request` (registration approval queue — an app submission lands here PENDING, never straight into `agent`), `agent_customer`, `agent_customer_plan`, `agent_withdrawal`, `agent_wallet_transfer`. The `region`→`ward` geo hierarchy `agent.area_id` resolves into (replacing the old `agent_geo_node` slot table from migration 0011) lives in `backend/db/migrations/0014_geo_hierarchy.sql` onward and is **not yet folded into this DDL** — see `docs/erd.md`'s known drift. |
 | `investor` | `investor`, `investor_plan_change_request` |
 | push / notifications | `device_push_token`, `notification` |
 

@@ -16,6 +16,14 @@ The connection paths are intentionally split:
 
 The customer-facing schema is defined by `backend/db/app_schema.sql` and described in `backend/db/APP_SCHEMA.md`. It stores users, stores, products, carts, orders, prescriptions, wallets, rewards, referrals, lab bookings, appointments, partner data, and related content.
 
+**Geo hierarchy and agent approval queue (migrations `0014`–`0017`, applied to the live database, not yet folded into `app_schema.sql`):**
+
+- `region → state → district → assembly → lsgd → ward` — one table per administrative tier (UUIDv7 keys), replacing the earlier `agent_geo_node` slot table. No seed rows ship with the migration; the real Kerala data is loaded separately by `dart run backend/db/seed_kerala_geo.dart` from the Suvida LSG source spreadsheet (not committed).
+- `agent.area_id` — the real slot id (into whichever geo table `agent.level` implies) behind the free-text `agent.area` display name. Deliberately not a DB-level FK (polymorphic by level); see the comment in `0017_agent_area_id.sql`.
+- `agent_request` — an app-submitted recruitment (KYC + requested level/parent/area, phone already OTP-verified) awaiting an admin's review in the web console. Registering a lower-tier agent from the app or `shield agent_invester/` never writes `agent` directly; approving a request inserts the real row and links back via `agent_request.agent_id`.
+
+`backend/db/app_schema.sql` already has `agent_request` (folded in separately), but does **not** yet define the six geo tables or `agent.area_id` — see [ERD known drift](erd.md#5-known-erd-drift) before running a schema recreation.
+
 Commands:
 
 ```powershell

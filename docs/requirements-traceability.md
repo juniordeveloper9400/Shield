@@ -12,6 +12,7 @@
 | CARE | labtest/appointment/dietitian modules | lab/clinic/appointment tables | lab/clinic/dietitian tests | Implemented |
 | WAL | wallet/privilege modules and admin activations | wallet/card/entry/tier tables | investment/privilege/earnings tests | Implemented; authorization hardening needed |
 | REF | refer/rewards modules | referral/level/points tables | refer/rewards tests | Implemented |
+| AGT | `lib/module/agent/` (`shield/` and `shield agent_invester/`), `shieldweb/src/pages/UserDetailPage.tsx` + `AgentApprovalsPage.tsx`/`AgentApprovalDetailPage.tsx` | `agent`, `agent_request`, `region`/`state`/`district`/`assembly`/`lsgd`/`ward` | `test/agent_portal_test.dart` (root app only; `shield agent_invester/` and `shieldweb` have no discovered test suite for this) | Implemented; `app_schema.sql` missing geo tables/`area_id` (see ERD drift); duplicate-national-agent data issue open (decision log) |
 | OPS | `shieldweb/src/App.tsx`, pages, APIs, permissions | shared `app` tables, intended `admin_user` | typecheck/build; no React test suite found | Internal-only current state |
 | DATA | `backend/db/` tools and DDL | `app` and `public` schemas | introspection/ping/manual review | Implemented with known drift |
 
