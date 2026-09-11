@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../data/neon/category_repository.dart';
 import '../../theme/app_colors.dart';
 
 /// One browsable sub-category — the unit both the home strip and the
@@ -69,13 +70,22 @@ class CategoryGroup {
 class CategoryCatalogue {
   const CategoryCatalogue._();
 
-  static const List<CategoryGroup> groups = [
+  /// The live catalogue — the admin console's own categories once
+  /// [CategoryCatalog] has loaded them, otherwise [_seed].
+  static List<CategoryGroup> get groups => CategoryCatalog.instance.groups;
+
+  /// The bundled fallback: the categories SHIELD shipped with. Shown until
+  /// (and if) the database copy loads, and the only list `flutter test` ever
+  /// sees (`NeonHttp.isConfigured` is false under test).
+  static const List<CategoryGroup> _seed = [
     CategoryGroup(
       title: 'Personal Care',
       tabLabel: 'Personal\nCare',
       icon: Icons.spa_outlined,
       image: 'assets/categories/bundle_personalcare_tab.png',
-      bannerImage: 'assets/banners/skincare_banner.jpg',
+      // Used to point at assets/banners/skincare_banner.jpg, which is no
+      // longer bundled — the admin console publishes this banner now (see
+      // CategoryRepository / the "Category banners" page in shieldweb).
       panelTint: AppColors.panelGreen,
       items: [
         SubCategory(
@@ -298,8 +308,99 @@ class CategoryCatalogue {
     'Surgicals',
   ];
 
+  /// [groups] used to be a fixed const list, so every [_stripOrder] title was
+  /// guaranteed to exist. Now that an admin can rename or retire a category,
+  /// a title the strip expects can go missing — skip it rather than crash the
+  /// home screen; the strip just shows one fewer chip until the admin picks a
+  /// replacement.
   static List<CategoryGroup> get shoppable => [
     for (final title in _stripOrder)
-      groups.firstWhere((group) => group.title == title),
+      if (groups.any((group) => group.title == title))
+        groups.firstWhere((group) => group.title == title),
   ];
+}
+
+/// Holds the category list in force and swaps in the database copy once it
+/// has loaded. A [ChangeNotifier] so the Categories tab, the home "Shop by
+/// categories" strip and a category's listing screen rebuild when the admin's
+/// own categories (and banners) arrive.
+///
+/// Mirrors `StoreCatalog` / `AgentGeo`: warm it once at launch (`main.dart`),
+/// let every screen call [ensureLoaded] again in `initState` (they share one
+/// request), and fall back to the bundled seed whenever the endpoint is
+/// missing, unreachable, or the tables are empty.
+class CategoryCatalog extends ChangeNotifier {
+  CategoryCatalog._();
+
+  static final CategoryCatalog instance = CategoryCatalog._();
+
+  List<CategoryGroup> _live = CategoryCatalogue._seed;
+
+  /// The categories in force — the database copy once [ensureLoaded] has
+  /// pulled `app.product_category` / `app.product_subcategory`, otherwise the
+  /// bundled seed.
+  List<CategoryGroup> get groups => _live;
+
+  bool _loaded = false;
+  bool _fromDatabase = false;
+  bool _attempted = false;
+  Future<void>? _inFlight;
+
+  /// Whether [groups] is the database copy rather than the bundled seed.
+  bool get isFromDatabase => _fromDatabase;
+
+  /// True once a load has finished at least once — success, empty tables, or
+  /// failure. Lets a screen tell "still loading" from "loaded, nothing there".
+  bool get hasAttempted => _attempted;
+
+  /// Loads the category list from Neon once (best-effort). Safe to call from
+  /// every screen's `initState`; only the first call does work unless [force].
+  Future<void> ensureLoaded({bool force = false}) {
+    if (force) {
+      _loaded = false;
+      _inFlight = null;
+    }
+    if (_loaded) return Future<void>.value();
+    return _inFlight ??= _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final groups = await CategoryRepository.instance.fetchAll();
+      if (groups != null && groups.isNotEmpty) {
+        _live = groups;
+        _fromDatabase = true;
+        _loaded = true;
+      }
+      // Otherwise nothing came back — endpoint not configured, or the tables
+      // were empty. Leave [_loaded] false so the next ensureLoaded() retries.
+    } catch (error) {
+      debugPrint('CategoryCatalog: catalogue load failed — $error');
+    } finally {
+      _attempted = true;
+      _inFlight = null;
+      notifyListeners();
+    }
+  }
+
+  /// Test hook — stand in [groups] for what a database load would return.
+  @visibleForTesting
+  void useGroups(List<CategoryGroup> groups) {
+    _live = List<CategoryGroup>.unmodifiable(groups);
+    _loaded = true;
+    _fromDatabase = true;
+    _attempted = true;
+    _inFlight = null;
+    notifyListeners();
+  }
+
+  /// Test hook — drop back to the bundled seed and forget any load.
+  @visibleForTesting
+  void reset() {
+    _live = CategoryCatalogue._seed;
+    _loaded = false;
+    _fromDatabase = false;
+    _attempted = false;
+    _inFlight = null;
+  }
 }

@@ -665,7 +665,7 @@ void main() {
       );
 
       expect(find.byType(PrivilegeCard), findsOneWidget);
-      expect(find.text('Activate your Privilege Programme'), findsOneWidget);
+      expect(find.text('Activate your Health Pass Programme'), findsOneWidget);
     });
 
     testWidgets('opens the programme', (tester) async {
@@ -675,7 +675,7 @@ void main() {
         size: const Size(400, 4200),
       );
 
-      await tester.tap(find.text('Activate your Privilege Programme'));
+      await tester.tap(find.text('Activate your Health Pass Programme'));
       await tester.pumpAndSettle();
 
       expect(find.byType(PrivilegeScreen), findsOneWidget);
@@ -692,7 +692,7 @@ void main() {
         size: const Size(400, 4200),
       );
 
-      expect(find.text('Activate your Privilege Programme'), findsNothing);
+      expect(find.text('Activate your Health Pass Programme'), findsNothing);
       expect(find.byType(PrivilegeWallet), findsNothing);
     });
   });
@@ -909,7 +909,7 @@ void main() {
 
       // Twice: the button on the locked panel, and the heading of the offer
       // that replaces the rest of the screen.
-      expect(find.text('Activate your Privilege Card'), findsNWidgets(2));
+      expect(find.text('Activate your Health Pass Card'), findsNWidgets(2));
       // Nothing to move money with, and no ledger to read.
       expect(find.text('Add money'), findsNothing);
       expect(
@@ -917,7 +917,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Redeem points'), findsNothing);
-      expect(find.text('Top up your Privilege Programme'), findsNothing);
+      expect(find.text('Top up your Health Pass Programme'), findsNothing);
       expect(find.text('Transaction history'), findsNothing);
       expect(find.text('Wallet top-up'), findsNothing);
     });
@@ -925,7 +925,7 @@ void main() {
     testWidgets('the locked wallet opens the programme', (tester) async {
       await pump(tester, const WalletScreen());
 
-      await tester.tap(find.text('Activate your Privilege Card').first);
+      await tester.tap(find.text('Activate your Health Pass Card').first);
       await tester.pumpAndSettle();
 
       expect(find.byType(PrivilegeScreen), findsOneWidget);
@@ -936,7 +936,7 @@ void main() {
     // artwork included, since the cards are the obvious thing to tap.
     final triggers = <String, Finder Function()>{
       'the locked card button': () =>
-          find.text('Activate your Privilege Card').first,
+          find.text('Activate your Health Pass Card').first,
       'the panel button': () => find.text('See the cards'),
       'the cards themselves': () => find.byType(PrivilegeWallet),
     };
@@ -1203,7 +1203,7 @@ void main() {
       // button here; neither is left.
       expect(find.text('Redeem points'), findsNothing);
       expect(find.textContaining('Shield points'), findsNothing);
-      expect(find.text('Top up your Privilege Programme'), findsOneWidget);
+      expect(find.text('Top up your Health Pass Programme'), findsOneWidget);
       expect(find.text('Load ₹10,000 or more and we add 10%.'), findsOneWidget);
     });
 
@@ -1228,7 +1228,7 @@ void main() {
       openWallet();
       await pump(tester, const WalletScreen());
 
-      await tester.tap(find.text('Top up your Privilege Programme'));
+      await tester.tap(find.text('Top up your Health Pass Programme'));
       await tester.pumpAndSettle();
 
       expect(find.byType(PrivilegeScreen), findsOneWidget);
@@ -1242,7 +1242,7 @@ void main() {
 
       expect(find.text('Wallet locked'), findsOneWidget);
 
-      await tester.tap(find.text('Activate your Privilege Card').first);
+      await tester.tap(find.text('Activate your Health Pass Card').first);
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('₹10,000').last);
@@ -1441,7 +1441,7 @@ void main() {
       );
       final atRest = tester.getTopLeft(cards().first).dy;
 
-      await tester.tap(find.text('Activate your Privilege Programme'));
+      await tester.tap(find.text('Activate your Health Pass Programme'));
       // Part-way through the fan, before the programme has opened.
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 220));
@@ -1470,7 +1470,7 @@ void main() {
       );
       final atRest = tester.getTopLeft(cards().first).dy;
 
-      await tester.tap(find.text('Activate your Privilege Programme'));
+      await tester.tap(find.text('Activate your Health Pass Programme'));
       await tester.pumpAndSettle();
       expect(find.byType(PrivilegeScreen), findsOneWidget);
 
@@ -1493,7 +1493,7 @@ void main() {
       );
 
       expect(find.byType(PrivilegeCard), findsOneWidget);
-      expect(find.text('Activate your Privilege Programme'), findsOneWidget);
+      expect(find.text('Activate your Health Pass Programme'), findsOneWidget);
     });
   });
   group('the card front', () {

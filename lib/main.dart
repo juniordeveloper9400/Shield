@@ -10,6 +10,7 @@ import 'module/auth/auth_service.dart';
 import 'module/auth/persona_gate.dart';
 import 'module/agent/agent_geo.dart';
 import 'module/catalogue/catalogue_service.dart';
+import 'module/categories/category_catalogue.dart';
 import 'module/home/customer_reviews_service.dart';
 import 'module/investor/investor_service.dart';
 import 'module/refer/referral_service.dart';
@@ -73,6 +74,11 @@ Future<void> main() async {
   // category and search screens each call ensureLoaded() again and share this
   // one request.
   unawaited(CatalogueService.instance.ensureLoaded());
+
+  // Warm the category catalogue so the Categories tab, the home "Shop by
+  // categories" strip and each category's listing page show the admin
+  // console's own categories and banners rather than the bundled seed.
+  unawaited(CategoryCatalog.instance.ensureLoaded());
 
   // Warm "What our customers have to say" the same way, so the reel shows
   // the admin's own clips on first paint rather than the bundled fallback

@@ -171,7 +171,7 @@ void main() {
       expect(find.text('You saved'), findsOneWidget);
       expect(find.text('Earnings Breakdown by Order'), findsOneWidget);
       // No plan has been activated, so there is nothing to show here.
-      expect(find.text('Privilege Plan Bonus'), findsNothing);
+      expect(find.text('Health Pass Plan Bonus'), findsNothing);
 
       // Does not show the Your orders button on the details page either.
       expect(find.text('Your orders'), findsNothing);
@@ -206,7 +206,7 @@ void main() {
         await tester.tap(find.byType(EarningsSection));
         await tester.pumpAndSettle();
 
-        expect(find.text('Privilege Plan Bonus'), findsOneWidget);
+        expect(find.text('Health Pass Plan Bonus'), findsOneWidget);
         expect(find.text(silver.name), findsOneWidget);
         expect(find.text('+${silver.bonusLabel}'), findsOneWidget);
       },

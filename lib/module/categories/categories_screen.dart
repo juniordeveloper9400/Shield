@@ -10,8 +10,34 @@ import 'category_listing_screen.dart';
 /// One tinted panel per group, each closed by its own "View all …" link —
 /// the same card and the same catalogue the home strip draws from, so the two
 /// surfaces cannot drift apart.
-class CategoriesScreen extends StatelessWidget {
+class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
+
+  @override
+  State<CategoriesScreen> createState() => _CategoriesScreenState();
+}
+
+class _CategoriesScreenState extends State<CategoriesScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // The database copy can still be loading (main.dart's ensureLoaded) the
+    // moment this screen opens — ask once here and rebuild if it lands later.
+    CategoryCatalog.instance.addListener(_onCatalogChanged);
+    CategoryCatalog.instance.ensureLoaded();
+  }
+
+  @override
+  void dispose() {
+    CategoryCatalog.instance.removeListener(_onCatalogChanged);
+    super.dispose();
+  }
+
+  void _onCatalogChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,11 +90,7 @@ class CategoriesScreen extends StatelessWidget {
   /// it would go rather than silently doing nothing.
   /// Opens the group's listing, on [item] when one was tapped and on the
   /// "All" chip when the group heading's view-all link was used.
-  static void _openListing(
-    BuildContext context,
-    CategoryGroup group,
-    SubCategory? item,
-  ) {
+  void _openListing(BuildContext context, CategoryGroup group, SubCategory? item) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => CategoryListingScreen(group: group, initial: item),

@@ -263,7 +263,7 @@ class _CommissionDetail extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          'When someone you invited activates a privilege plan, $percent% of '
+          'When someone you invited activates a Health Pass plan, $percent% of '
           'what they load comes back to you as Sahakar money.',
           style: const TextStyle(
             fontSize: 13,
@@ -658,7 +658,7 @@ class _InviteButton extends StatelessWidget {
             ShareParams(
               subject: 'Join me on SHIELD',
               text:
-                  'Join me on SHIELD! Save up to 51% on medicines and unlock Privilege membership. '
+                  'Join me on SHIELD! Save up to 51% on medicines and unlock Health Pass membership. '
                   'Use my invite code $code when you sign up.',
             ),
           );
