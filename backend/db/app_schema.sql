@@ -906,7 +906,8 @@ CREATE TABLE app.agent_customer (
     member_id   bigint REFERENCES app.users(id) ON DELETE SET NULL,
     name        text NOT NULL,
     phone       text NOT NULL DEFAULT '',
-    created_at  timestamptz NOT NULL DEFAULT now()
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (agent_id, member_id) -- migration 0026: a member links to one agent at most
 );
 CREATE INDEX agent_customer_agent_idx ON app.agent_customer(agent_id);
 

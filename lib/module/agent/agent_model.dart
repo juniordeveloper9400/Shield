@@ -227,7 +227,19 @@ class Agent {
   Agent withApprovalStatus(AgentApprovalStatus status) =>
       _copyWith(approvalStatus: status);
 
-  Agent _copyWith({Uint8List? photoBytes, AgentApprovalStatus? approvalStatus}) =>
+  /// A copy of this agent with [personalSales] replaced — [AgentService]
+  /// calls this once real direct-sale customers ([AgentCustomerRepository])
+  /// have loaded, so this figure (and everything worked out from it: team
+  /// totals, the roster table, override commission) reflects what this
+  /// agent has actually sold rather than `app.agent.personal_sales`'s own
+  /// column, which nothing else ever writes to.
+  Agent withPersonalSales(int amount) => _copyWith(personalSales: amount);
+
+  Agent _copyWith({
+    Uint8List? photoBytes,
+    AgentApprovalStatus? approvalStatus,
+    int? personalSales,
+  }) =>
       Agent(
         id: id,
         name: name,
@@ -240,7 +252,7 @@ class Agent {
         areaId: areaId,
         earned: earned,
         redeemed: redeemed,
-        personalSales: personalSales,
+        personalSales: personalSales ?? this.personalSales,
         firstName: firstName,
         middleName: middleName,
         lastName: lastName,

@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../data/neon/agent_customer_repository.dart';
 import '../../data/neon/agent_repository.dart';
 import '../../money.dart';
 import '../auth/auth_service.dart';
@@ -89,28 +90,52 @@ class AgentService extends ChangeNotifier {
   Future<void> _loadFromServer() async {
     try {
       final remote = await AgentRepository.instance.fetchAll();
-      if (remote == null || remote.isEmpty) {
-        return;
-      }
-      // Skip any row that is the seed root's own database counterpart —
-      // written the first time a registration under it needed one to
-      // parent under (see `_resolveDbId`) — so the national persona never
-      // shows twice.
-      final seedPhones = _agents.map((a) => a.phone).toSet();
-      final fresh = remote.where((a) => !seedPhones.contains(a.phone)).toList();
-      if (fresh.isEmpty) {
-        return;
-      }
-      _agents.addAll(fresh);
-      // Every fetched row already has a real database id — cache it so a
-      // registration under one of them resolves its parent id immediately
-      // rather than treating it as still-unpersisted.
-      for (final agent in fresh) {
-        final dbId = int.tryParse(agent.id.replaceFirst('db-', ''));
-        if (dbId != null) {
-          _dbId[agent.id] = Future.value(dbId);
+      if (remote != null && remote.isNotEmpty) {
+        // Skip any row that is the seed root's own database counterpart —
+        // written the first time a registration under it needed one to
+        // parent under (see `_resolveDbId`) — so the national persona never
+        // shows twice.
+        final seedPhones = _agents.map((a) => a.phone).toSet();
+        final fresh =
+            remote.where((a) => !seedPhones.contains(a.phone)).toList();
+        if (fresh.isNotEmpty) {
+          _agents.addAll(fresh);
+          // Every fetched row already has a real database id — cache it so a
+          // registration under one of them resolves its parent id
+          // immediately rather than treating it as still-unpersisted.
+          for (final agent in fresh) {
+            final dbId = int.tryParse(agent.id.replaceFirst('db-', ''));
+            if (dbId != null) {
+              _dbId[agent.id] = Future.value(dbId);
+            }
+          }
         }
       }
+
+      // Real direct-sale customers, on top of the seed demo set — an agent
+      // id minted from a database row (`db-<id>`) never collides with a seed
+      // literal (`nat-001`), so this only ever adds to the roster, never
+      // replaces the seed national persona's own demo sales.
+      final realCustomers = await AgentCustomerRepository.instance.fetchAll();
+      if (realCustomers != null && realCustomers.isNotEmpty) {
+        _customers.addAll(realCustomers);
+        // Every real agent's own personal-sales figure — driving the team
+        // rollup and the roster table — comes from what they have actually
+        // sold, not `app.agent.personal_sales` (nothing ever writes to that
+        // column), so it is recomputed here from the customers just loaded.
+        final volumeByAgent = <String, int>{};
+        for (final customer in realCustomers) {
+          volumeByAgent[customer.agentId] =
+              (volumeByAgent[customer.agentId] ?? 0) + customer.totalAmount;
+        }
+        for (final entry in volumeByAgent.entries) {
+          final index = _agents.indexWhere((a) => a.id == entry.key);
+          if (index >= 0) {
+            _agents[index] = _agents[index].withPersonalSales(entry.value);
+          }
+        }
+      }
+
       notifyListeners();
     } finally {
       _remoteLoaded = true;

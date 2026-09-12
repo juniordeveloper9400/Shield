@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/neon/agent_customer_repository.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/age_badge.dart';
 import '../../widgets/labelled_field.dart';
@@ -231,6 +232,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     final referralCode = _referralCode.text.trim();
     if (isFirstRegistration && referralCode.isNotEmpty) {
       unawaited(ReferralService.instance.recordSignupCode(referralCode));
+      // The same field also accepts an agent's own code (`SHD-WRD-004`, …) —
+      // the two never collide, so trying both costs nothing when the code
+      // was really a member's referral code and matches no agent.
+      unawaited(
+        AgentCustomerRepository.instance.linkCustomer(
+          code: referralCode,
+          memberPhone: _phone.text.trim(),
+          memberName: _name.text.trim(),
+        ),
+      );
     }
 
     // Show the confirmation on this route while it is still up, then close the
@@ -410,7 +421,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
           const SizedBox(height: 14),
           LabelledField(
             label: 'Referral code (optional)',
-            hint: "A friend's invite code",
+            hint: "A friend's invite code, or an agent's code",
             controller: _referralCode,
             icon: Icons.card_giftcard_outlined,
             textCapitalization: TextCapitalization.characters,
