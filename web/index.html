@@ -18,6 +18,16 @@
   <title>SHIELD</title>
   <style>
     body { margin: 0; background: #FFFFFF; }
+    /* Firebase phone-sign-in's invisible reCAPTCHA still plants its little
+       "protected by reCAPTCHA" badge in a screen corner once the JS SDK
+       loads, and — unlike the challenge itself, which only ever appears
+       while a code is actually being verified — that badge never removes
+       itself afterward, so it sits on top of every other screen (the home
+       feed, checkout, …) for the rest of the session. Google's terms allow
+       hiding it as long as the equivalent notice is shown in its place;
+       that notice lives on the phone sign-in screen itself, right by the
+       "Get OTP" button (see login_screen.dart). */
+    .grecaptcha-badge { visibility: hidden !important; }
   </style>
 </head>
 <body>

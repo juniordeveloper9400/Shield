@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -586,6 +587,24 @@ class _LoginScreenState extends State<LoginScreen> {
             color: AppColors.textMuted,
           ),
         ),
+        // The web build hides reCAPTCHA's own corner badge (see
+        // web/index.html) so it does not linger on every screen after
+        // verification — Google's terms allow that only when this same
+        // notice is shown somewhere near where the check actually runs,
+        // which is here, not permanently pinned across the whole app.
+        if (kIsWeb) ...[
+          const SizedBox(height: 6),
+          const Text(
+            'This site is protected by reCAPTCHA and the Google '
+            'Privacy Policy and Terms of Service apply.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 11,
+              height: 1.4,
+              color: AppColors.textMuted,
+            ),
+          ),
+        ],
       ],
     );
   }
