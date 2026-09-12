@@ -553,7 +553,7 @@ void main() {
       expect(find.byType(TextField), findsOneWidget);
     });
 
-    testWidgets('Proceed unlocks once the form is complete', (tester) async {
+    testWidgets('Proceed unlocks once a patient is chosen', (tester) async {
       // Every other Proceed case here asserts the button is *disabled*, which
       // passes whether or not the button can ever be enabled. It could not:
       // the bar built its button once, when the screen opened and the form was
@@ -585,10 +585,9 @@ void main() {
 
       expect(proceed().onPressed, isNull, reason: 'nothing filled in yet');
 
-      form.setFile(XFile('prescription.jpg'), 1024);
-      await tester.pumpAndSettle();
-      expect(proceed().onPressed, isNull, reason: 'no patient, no duration');
-
+      // The photo and how much to dispense are both offered, not required —
+      // the pharmacist can read either off a call. Only the patient gates
+      // Proceed.
       form.setPatient(
         Patient(
           id: 'p1',
@@ -600,14 +599,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(proceed().onPressed, isNull, reason: 'still no duration');
 
-      // The last thing the form is waiting on, tapped through the UI rather
-      // than set on the controller, so the whole path is covered.
-      await tester.tap(find.text('1 month'));
-      await tester.pumpAndSettle();
-
-      expect(proceed().onPressed, isNotNull);
+      expect(
+        proceed().onPressed,
+        isNotNull,
+        reason: 'a patient is all Proceed needs',
+      );
     });
 
     testWidgets('a duration alone does not unlock proceeding', (tester) async {
@@ -616,7 +613,9 @@ void main() {
       await tester.tap(find.text('1 month'));
       await tester.pumpAndSettle();
 
-      // The file and the patient are both still missing.
+      // The patient is the one thing Proceed actually needs, and it is still
+      // missing — the duration on its own, like the photo on its own, is not
+      // enough.
       final button = tester.widget<FilledButton>(
         find.ancestor(
           of: find.text('Proceed'),
