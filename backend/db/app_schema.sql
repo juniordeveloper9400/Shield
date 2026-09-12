@@ -47,6 +47,7 @@ CREATE TYPE app.track_state        AS ENUM ('DONE', 'CURRENT', 'UPCOMING');
 
 CREATE TYPE app.medicine_duration  AS ENUM ('ONE_WEEK', 'FIFTEEN_DAYS', 'ONE_MONTH', 'TWO_MONTHS', 'THREE_MONTHS');
 CREATE TYPE app.prescription_status AS ENUM ('AWAITING_REVIEW', 'READ', 'IN_CART', 'ORDERED');
+CREATE TYPE app.prescription_medicine_status AS ENUM ('AVAILABLE', 'OUT_OF_STOCK', 'NOT_POSSIBLE'); -- migration 0024, pharmacist-only, never shown to the member
 CREATE TYPE app.approval_status    AS ENUM ('PENDING', 'APPROVED', 'PARTIALLY_APPROVED', 'REJECTED', 'CANCELLED', 'ON_HOLD'); -- ON_HOLD: migration 0019
 
 CREATE TYPE app.privilege_card_kind AS ENUM ('SILVER', 'GOLD', 'PLATINUM');
@@ -608,7 +609,8 @@ CREATE TABLE app.prescription_medicine (
     dose_night       integer NOT NULL DEFAULT 0,
     total_units      integer NOT NULL DEFAULT 0,          -- migration 0006: "Quantity" in the intake form
     route_time       text NOT NULL DEFAULT '',            -- migration 0023: e.g. "Oral, after food"
-    product_id       bigint REFERENCES app.product(id) ON DELETE SET NULL
+    product_id       bigint REFERENCES app.product(id) ON DELETE SET NULL,
+    status           app.prescription_medicine_status NOT NULL DEFAULT 'AVAILABLE' -- migration 0024: pharmacist-only stock note, never shown to the member
 );
 
 -- A prescription submitted for fulfilment (its own status trail before the order).
