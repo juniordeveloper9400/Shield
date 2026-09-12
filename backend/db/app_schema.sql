@@ -602,10 +602,12 @@ CREATE TABLE app.prescription_medicine (
     prescription_id  bigint NOT NULL REFERENCES app.prescription(id) ON DELETE CASCADE,
     sort             integer NOT NULL DEFAULT 0,
     name             text NOT NULL,
-    pack             text NOT NULL DEFAULT '',
+    pack             text NOT NULL DEFAULT '',           -- "Type" in the console's intake form
     dose_morning     integer NOT NULL DEFAULT 0,
     dose_afternoon   integer NOT NULL DEFAULT 0,
     dose_night       integer NOT NULL DEFAULT 0,
+    total_units      integer NOT NULL DEFAULT 0,          -- migration 0006: "Quantity" in the intake form
+    route_time       text NOT NULL DEFAULT '',            -- migration 0023: e.g. "Oral, after food"
     product_id       bigint REFERENCES app.product(id) ON DELETE SET NULL
 );
 
