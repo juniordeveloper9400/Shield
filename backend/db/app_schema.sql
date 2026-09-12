@@ -564,6 +564,19 @@ CREATE TABLE app.order_receipt (
     verified_at  timestamptz
 );
 
+-- The store's own invoice sent back for an order (migration 0024). One per
+-- order (order_id is UNIQUE) -- sending a bill upserts this row, replacing
+-- one overwrites it, removing one deletes it. Superseded the bill_image /
+-- billed_at columns migration 0012 had put directly on app."order".
+CREATE TABLE app.bill (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    uuid       uuid NOT NULL DEFAULT gen_random_uuid(),
+    order_id   bigint NOT NULL UNIQUE REFERENCES app."order"(id) ON DELETE CASCADE,
+    image      text NOT NULL,                             -- data: URI
+    sent_at    timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- ===========================================================================
 --  4 · Prescriptions & approvals
 -- ===========================================================================

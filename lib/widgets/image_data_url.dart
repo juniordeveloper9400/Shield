@@ -5,7 +5,7 @@ import 'package:image/image.dart' as img;
 
 /// Shrinks a picked photo to a small JPEG `data:` URI — small enough to sit
 /// in a Neon `text` column (`app.prescription.image`, `app.order_receipt.image`,
-/// `app.wallet_card.receipt_image`, `app."order".bill_image`, …) and travel
+/// `app.wallet_card.receipt_image`, `app.bill.image`, …) and travel
 /// over Neon's HTTP endpoint, and to render straight from an `<img src>` in
 /// the app, the admin console, and the customer's own order detail screen.
 ///

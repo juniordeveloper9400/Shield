@@ -240,9 +240,10 @@ class OrderRepository {
         r'''
           SELECT o.code, o.kind::text AS kind, o.status::text AS status,
                  o.item_count, o.mrp_total, o.paid_total, o.placed_at,
-                 o.bill_image, o.billed_at
+                 b.image AS bill_image, b.sent_at AS billed_at
           FROM app."order" o
           JOIN app.users u ON u.id = o.member_id
+          LEFT JOIN app.bill b ON b.order_id = o.id
           WHERE u.phone = $1
           ORDER BY o.placed_at DESC
         ''',
