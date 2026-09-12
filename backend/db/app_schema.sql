@@ -579,6 +579,9 @@ CREATE TABLE app.prescription (
     code              text NOT NULL UNIQUE,               -- 'RX-0004'
     file_name         text NOT NULL DEFAULT '',
     storage_path      text,
+    image             text,                               -- migration 0006: resized JPEG data URI
+    image_rotation    smallint NOT NULL DEFAULT 0           -- migration 0022: 0/90/180/270, fixed by a reviewer
+                          CHECK (image_rotation IN (0, 90, 180, 270)),
     doctor            text NOT NULL DEFAULT '',           -- read at the counter
     duration          app.medicine_duration,
     custom_days       integer,
