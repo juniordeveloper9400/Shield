@@ -24,7 +24,12 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
+    // .env.local first (the documented local-dev convention — see
+    // backend/docs/project-structure.md "cp .env.example .env.local"),
+    // falling back to .env. Neither is ever committed (see .gitignore);
+    // a real deployment sets these as actual environment variables and
+    // this array is simply never matched.
+    ConfigModule.forRoot({ isGlobal: true, validate: validateEnv, envFilePath: ['.env.local', '.env'] }),
     // In-memory limiter for now — becomes Redis-backed (see
     // backend/docs/tech-stack.md) once this runs as more than one instance,
     // since an in-memory counter doesn't share state across instances.
