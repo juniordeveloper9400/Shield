@@ -83,7 +83,7 @@ export class IdentityService {
       .select({
         id: adminUser.id,
         uuid: adminUser.uuid,
-        email: adminUser.email,
+        loginId: adminUser.loginId,
         name: adminUser.name,
         role: adminUser.role,
         storeId: adminUser.storeId,

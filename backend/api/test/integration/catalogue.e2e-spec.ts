@@ -54,7 +54,7 @@ describe('Catalogue (e2e)', () => {
     productId = seededProduct.id;
 
     await db.insert(adminUser).values({
-      email: 'pharmacist@example.com',
+      loginId: 'pharmacist@example.com',
       name: 'Test Pharmacist',
       passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
       role: 'PHARMACY',
@@ -62,7 +62,7 @@ describe('Catalogue (e2e)', () => {
 
     const login = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ email: 'pharmacist@example.com', password: 'correct-horse-battery-staple' })
+      .send({ loginId: 'pharmacist@example.com', password: 'correct-horse-battery-staple' })
       .expect(200);
     staffAccessToken = login.body.accessToken;
   });
@@ -151,14 +151,14 @@ describe('Catalogue (e2e)', () => {
 
   it('lets ADMIN (not just SUPERADMIN) manage customer review videos, auto-assigning sort, and hides inactive clips from the public feed', async () => {
     await db.insert(adminUser).values({
-      email: 'admin-role@example.com',
+      loginId: 'admin-role@example.com',
       name: 'App Admin',
       passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
       role: 'ADMIN',
     });
     const login = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ email: 'admin-role@example.com', password: 'correct-horse-battery-staple' })
+      .send({ loginId: 'admin-role@example.com', password: 'correct-horse-battery-staple' })
       .expect(200);
 
     const created = await request(app.getHttpServer())

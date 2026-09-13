@@ -69,7 +69,7 @@ describe('Commerce (e2e)', () => {
     const testPasswordHash = await hash('correct-horse-battery-staple', 4); // low cost factor — this is a test, not production
 
     await db.insert(adminUser).values({
-      email: 'storea@example.com',
+      loginId: 'storea@example.com',
       name: 'Store A Staff',
       passwordHash: testPasswordHash,
       role: 'PHARMACY',
@@ -77,7 +77,7 @@ describe('Commerce (e2e)', () => {
     });
 
     await db.insert(adminUser).values({
-      email: 'storeb@example.com',
+      loginId: 'storeb@example.com',
       name: 'Store B Staff',
       passwordHash: testPasswordHash,
       role: 'PHARMACY',
@@ -90,13 +90,13 @@ describe('Commerce (e2e)', () => {
     storeAStaffToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ email: 'storea@example.com', password: 'correct-horse-battery-staple' })
+        .send({ loginId: 'storea@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
     storeBStaffToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ email: 'storeb@example.com', password: 'correct-horse-battery-staple' })
+        .send({ loginId: 'storeb@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
 

@@ -64,7 +64,7 @@ describe('Care Services (e2e)', () => {
     ownedPatientId = seededPatient.id;
 
     await db.insert(adminUser).values({
-      email: 'care-staff@example.com',
+      loginId: 'care-staff@example.com',
       name: 'Care Staff',
       passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
       role: 'APPOINTMENTS',
@@ -76,7 +76,7 @@ describe('Care Services (e2e)', () => {
     staffAccessToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ email: 'care-staff@example.com', password: 'correct-horse-battery-staple' })
+        .send({ loginId: 'care-staff@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
   });

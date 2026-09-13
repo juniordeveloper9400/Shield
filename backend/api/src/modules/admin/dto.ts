@@ -2,8 +2,15 @@ import { z } from 'zod';
 
 const roleEnum = z.enum(['SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS']);
 
+/** A short handle, e.g. 'pharmacy_mel' — not an email. */
+const loginIdSchema = z
+  .string()
+  .min(3, 'Login id must be at least 3 characters')
+  .max(64)
+  .regex(/^[a-zA-Z0-9_.@-]+$/, 'Login id can only contain letters, numbers, "_", ".", "@" and "-"');
+
 export const createStaffSchema = z.object({
-  email: z.string().email(),
+  loginId: loginIdSchema,
   name: z.string().min(1),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   role: roleEnum,
@@ -12,6 +19,7 @@ export const createStaffSchema = z.object({
 
 export const updateStaffSchema = z.object({
   name: z.string().min(1).optional(),
+  loginId: loginIdSchema.optional(),
   /** Optional — set to change/reset the password; omit to leave it as is. */
   password: z.string().min(8, 'Password must be at least 8 characters').optional(),
   role: roleEnum.optional(),

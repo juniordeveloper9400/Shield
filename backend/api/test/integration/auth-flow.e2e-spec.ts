@@ -14,7 +14,7 @@ import { adminUser, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
-const STAFF_EMAIL = 'pharmacist@example.com';
+const STAFF_LOGIN_ID = 'pharmacist@example.com';
 const STAFF_PASSWORD = 'correct-horse-battery-staple';
 
 describe('Auth flow (e2e)', () => {
@@ -38,7 +38,7 @@ describe('Auth flow (e2e)', () => {
 
     await db.insert(users).values({ phone: '9999999999', name: 'Test Member', firebaseUid: 'member-uid-1' });
     await db.insert(adminUser).values({
-      email: STAFF_EMAIL,
+      loginId: STAFF_LOGIN_ID,
       name: 'Test Pharmacist',
       passwordHash: await hash(STAFF_PASSWORD, 4), // low cost factor — this is a test, not production
       role: 'PHARMACY',
@@ -80,10 +80,10 @@ describe('Auth flow (e2e)', () => {
       .expect(404);
   });
 
-  it('logs a staff user in with email + password and exposes their role for server-side RBAC', async () => {
+  it('logs a staff user in with login id + password and exposes their role for server-side RBAC', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ email: STAFF_EMAIL, password: STAFF_PASSWORD })
+      .send({ loginId: STAFF_LOGIN_ID, password: STAFF_PASSWORD })
       .expect(200);
 
     const me = await request(app.getHttpServer())
@@ -94,17 +94,17 @@ describe('Auth flow (e2e)', () => {
     expect(me.body.role).toBe('PHARMACY');
   });
 
-  it('rejects a wrong password with the same generic error as an unknown email — no user enumeration', async () => {
+  it('rejects a wrong password with the same generic error as an unknown login id — no user enumeration', async () => {
     const wrongPassword = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ email: STAFF_EMAIL, password: 'not-the-right-password' })
+      .send({ loginId: STAFF_LOGIN_ID, password: 'not-the-right-password' })
       .expect(401);
-    const unknownEmail = await request(app.getHttpServer())
+    const unknownLoginId = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ email: 'nobody@example.com', password: STAFF_PASSWORD })
+      .send({ loginId: 'nobody@example.com', password: STAFF_PASSWORD })
       .expect(401);
 
-    expect(wrongPassword.body.error.message).toBe(unknownEmail.body.error.message);
+    expect(wrongPassword.body.error.message).toBe(unknownLoginId.body.error.message);
   });
 
   it('rejects a member session on a staff-only route', async () => {
@@ -122,7 +122,7 @@ describe('Auth flow (e2e)', () => {
   it('rejects a staff session on a member-only route — the symmetric case', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ email: STAFF_EMAIL, password: STAFF_PASSWORD })
+      .send({ loginId: STAFF_LOGIN_ID, password: STAFF_PASSWORD })
       .expect(200);
 
     await request(app.getHttpServer())

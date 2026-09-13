@@ -18,7 +18,7 @@ export class StaffAuthController {
   @Post('session')
   @HttpCode(HttpStatus.OK)
   async createSession(@Body(new ZodValidationPipe(staffLoginSchema)) body: StaffLoginDto, @Req() req: Request) {
-    return this.auth.loginStaff(body.email, body.password, { userAgent: req.headers['user-agent'], ip: req.ip });
+    return this.auth.loginStaff(body.loginId, body.password, { userAgent: req.headers['user-agent'], ip: req.ip });
   }
 
   @Public()

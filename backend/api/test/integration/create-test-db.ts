@@ -101,7 +101,7 @@ export function createTestDb() {
       id bigserial PRIMARY KEY,
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),
       firebase_uid text UNIQUE,
-      email text NOT NULL UNIQUE,
+      login_id text NOT NULL UNIQUE,
       name text NOT NULL,
       password_hash text,
       role app.admin_role NOT NULL DEFAULT 'PHARMACY',

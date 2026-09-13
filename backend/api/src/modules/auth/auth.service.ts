@@ -47,17 +47,17 @@ export class AuthService {
   }
 
   /**
-   * Staff login: email + password, checked directly against the bcrypt hash
-   * on app.admin_user — no Firebase involved (that's member-only, see
+   * Staff login: login id + password, checked directly against the bcrypt
+   * hash on app.admin_user — no Firebase involved (that's member-only, see
    * exchangeMemberToken). Deliberately the same generic error for "no such
    * account" and "wrong password" — distinguishing them lets an attacker
-   * enumerate valid staff emails.
+   * enumerate valid staff login ids.
    */
-  async loginStaff(email: string, password: string, ctx: RequestContext): Promise<IssuedTokens> {
+  async loginStaff(loginId: string, password: string, ctx: RequestContext): Promise<IssuedTokens> {
     const invalid = () =>
-      new UnauthorizedException({ error: { code: 'UNAUTHORIZED', message: 'Invalid email or password' } });
+      new UnauthorizedException({ error: { code: 'UNAUTHORIZED', message: 'Invalid login id or password' } });
 
-    const [staff] = await this.db.select().from(adminUser).where(eq(adminUser.email, email)).limit(1);
+    const [staff] = await this.db.select().from(adminUser).where(eq(adminUser.loginId, loginId)).limit(1);
     if (!staff || !staff.passwordHash) throw invalid();
 
     const ok = await compare(password, staff.passwordHash);

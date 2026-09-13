@@ -15,10 +15,12 @@ export const adminUser = appSchema.table('admin_user', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   uuid: uuid('uuid').notNull().defaultRandom(),
   // No longer used for staff login (see migration 0028) — kept only in case
-  // a future integration wants it; staff auth is now email+password,
+  // a future integration wants it; staff auth is now loginId+password,
   // checked directly against passwordHash, with no Firebase dependency.
   firebaseUid: text('firebase_uid'),
-  email: text('email').notNull(),
+  // A short handle ('pharmacy_mel'), not an email — migration 0029 renamed
+  // this from `email` once login stopped requiring email format.
+  loginId: text('login_id').notNull(),
   name: text('name').notNull(),
   // bcrypt hash (see auth.service.ts loginStaff). Nullable only so a row
   // can exist before a password is set; login is refused with no hash.

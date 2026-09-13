@@ -4,9 +4,9 @@ export const idTokenSchema = z.object({
   idToken: z.string().min(10, 'idToken looks too short to be valid'),
 });
 
-/** Staff login — see auth.service.ts loginStaff. */
+/** Staff login — see auth.service.ts loginStaff. A short handle, not an email. */
 export const staffLoginSchema = z.object({
-  email: z.string().email(),
+  loginId: z.string().min(1),
   password: z.string().min(1),
 });
 

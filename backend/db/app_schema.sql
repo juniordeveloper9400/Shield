@@ -1010,9 +1010,9 @@ CREATE TABLE app.admin_user (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid          uuid NOT NULL DEFAULT gen_random_uuid(),
     -- No longer used for login (migration 0028) — staff auth is
-    -- email+password now, checked against password_hash directly.
+    -- login id + password now, checked against password_hash directly.
     firebase_uid  text UNIQUE,
-    email         text NOT NULL UNIQUE,
+    login_id      text NOT NULL UNIQUE,                 -- 'pharmacy_mel' — not an email (migration 0029)
     name          text NOT NULL,
     password_hash text,                                 -- bcrypt; null until set
     role          app.admin_role NOT NULL DEFAULT 'PHARMACY',

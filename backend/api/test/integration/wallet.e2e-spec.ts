@@ -60,14 +60,14 @@ describe('Wallet & Rewards (e2e)', () => {
     const testPasswordHash = await hash('correct-horse-battery-staple', 4); // low cost factor — this is a test, not production
 
     await db.insert(adminUser).values({
-      email: 'pharmacy@example.com',
+      loginId: 'pharmacy@example.com',
       name: 'Pharmacy Staff',
       passwordHash: testPasswordHash,
       role: 'PHARMACY',
     });
 
     await db.insert(adminUser).values({
-      email: 'superadmin@example.com',
+      loginId: 'superadmin@example.com',
       name: 'Super Admin',
       passwordHash: testPasswordHash,
       role: 'SUPERADMIN',
@@ -79,13 +79,13 @@ describe('Wallet & Rewards (e2e)', () => {
     pharmacyStaffToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ email: 'pharmacy@example.com', password: 'correct-horse-battery-staple' })
+        .send({ loginId: 'pharmacy@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
     superAdminToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ email: 'superadmin@example.com', password: 'correct-horse-battery-staple' })
+        .send({ loginId: 'superadmin@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
   });

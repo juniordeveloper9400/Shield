@@ -61,7 +61,7 @@ describe('Agent & Geography (e2e)', () => {
     wardId = w.id;
 
     await db.insert(adminUser).values({
-      email: 'superadmin@example.com',
+      loginId: 'superadmin@example.com',
       name: 'Super Admin',
       passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
       role: 'SUPERADMIN',
@@ -69,7 +69,7 @@ describe('Agent & Geography (e2e)', () => {
     superAdminToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ email: 'superadmin@example.com', password: 'correct-horse-battery-staple' })
+        .send({ loginId: 'superadmin@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
   });

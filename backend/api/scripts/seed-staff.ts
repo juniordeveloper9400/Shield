@@ -5,16 +5,18 @@
  * backend/docs/build-playbook.md M9). Once at least one SUPERADMIN exists,
  * use the real API for every account after this.
  *
- * Staff log in with email + password (see auth.service.ts loginStaff) — no
- * Firebase account needed for staff at all; the password is bcrypt-hashed
- * here before it ever touches the database.
+ * Staff log in with a login id (a short handle, e.g. 'pharmacy_mel' — not
+ * an email) + password (see auth.service.ts loginStaff) — no Firebase
+ * account needed for staff at all; the password is bcrypt-hashed here
+ * before it ever touches the database.
  *
  * Usage:
- *   pnpm seed:staff -- --email=you@example.com --name="Your Name" --password=... --role=SUPERADMIN
- *   pnpm seed:staff -- --email=pharmacist@example.com --name="Melattur Pharmacist" --password=... --role=PHARMACY --store=SHD-MEL
+ *   pnpm seed:staff -- --login-id=superadmin --name="Your Name" --password=... --role=SUPERADMIN
+ *   pnpm seed:staff -- --login-id=pharmacy_mel --name="Melattur Pharmacist" --password=... --role=PHARMACY --store=SHD-MEL
  *
- * Running it again for an email that already exists resets that account's
- * password to the one given (everything else about the row is left alone).
+ * Running it again for a login id that already exists resets that
+ * account's password to the one given (everything else about the row is
+ * left alone).
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -64,15 +66,15 @@ async function main() {
   loadEnvFile(resolve(__dirname, '../.env'));
 
   const args = parseArgs();
-  const email = args.email?.trim();
+  const loginId = args['login-id']?.trim();
   const name = args.name?.trim();
   const password = args.password;
   const roleArg = (args.role ?? 'SUPERADMIN').toUpperCase();
   const storeCode = args.store?.trim();
 
-  if (!email || !name || !password) {
+  if (!loginId || !name || !password) {
     console.error(
-      'Usage: pnpm seed:staff -- --email=you@example.com --name="Your Name" --password=... ' +
+      'Usage: pnpm seed:staff -- --login-id=superadmin --name="Your Name" --password=... ' +
         '[--role=SUPERADMIN|ADMIN|PHARMACY|LAB|APPOINTMENTS] [--store=SHD-MEL]',
     );
     process.exit(1);
@@ -106,20 +108,20 @@ async function main() {
     }
 
     const passwordHash = await hash(password, BCRYPT_ROUNDS);
-    const [existing] = await db.select({ id: adminUser.id }).from(adminUser).where(eq(adminUser.email, email)).limit(1);
+    const [existing] = await db.select({ id: adminUser.id }).from(adminUser).where(eq(adminUser.loginId, loginId)).limit(1);
 
     if (existing) {
       await db.update(adminUser).set({ passwordHash }).where(eq(adminUser.id, existing.id));
-      console.log(`Account for ${email} already existed (id ${existing.id}) — password reset to the one given.`);
+      console.log(`Account for "${loginId}" already existed (id ${existing.id}) — password reset to the one given.`);
       return;
     }
 
     const [created] = await db
       .insert(adminUser)
-      .values({ email, name, passwordHash, role: roleArg, storeId })
-      .returning({ id: adminUser.id, email: adminUser.email, role: adminUser.role });
+      .values({ loginId, name, passwordHash, role: roleArg, storeId })
+      .returning({ id: adminUser.id, loginId: adminUser.loginId, role: adminUser.role });
     console.log(
-      `Created staff account: id=${created.id}, email=${created.email}, role=${created.role}` +
+      `Created staff account: id=${created.id}, loginId=${created.loginId}, role=${created.role}` +
         (storeCode ? `, store=${storeCode}` : ''),
     );
   } finally {

@@ -11,7 +11,7 @@ const BCRYPT_ROUNDS = 12;
 const STAFF_COLUMNS = {
   id: adminUser.id,
   uuid: adminUser.uuid,
-  email: adminUser.email,
+  loginId: adminUser.loginId,
   name: adminUser.name,
   role: adminUser.role,
   storeId: adminUser.storeId,
@@ -22,9 +22,9 @@ const STAFF_COLUMNS = {
 
 /**
  * The only place app.admin_user rows get created now — replaces the static
- * credential list in shieldweb/src/config/admins.ts. Staff log in with
- * email + password (see auth.service.ts loginStaff) — no Firebase account
- * needed for staff at all.
+ * credential list in shieldweb/src/config/admins.ts. Staff log in with a
+ * login id + password (see auth.service.ts loginStaff) — no Firebase
+ * account needed for staff at all, and no email format required.
  */
 @Injectable()
 export class AdminService {
@@ -48,7 +48,7 @@ export class AdminService {
       return created;
     } catch {
       throw new ConflictException({
-        error: { code: 'CONFLICT', message: 'A staff account with this email already exists' },
+        error: { code: 'CONFLICT', message: 'A staff account with this login id already exists' },
       });
     }
   }

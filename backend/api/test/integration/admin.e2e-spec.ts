@@ -43,7 +43,7 @@ describe('Admin/Ops (e2e)', () => {
     await app.init();
 
     await db.insert(adminUser).values({
-      email: 'root-superadmin@example.com',
+      loginId: 'root-superadmin@example.com',
       name: 'Root Super Admin',
       passwordHash: await testPasswordHash(),
       role: 'SUPERADMIN',
@@ -51,12 +51,12 @@ describe('Admin/Ops (e2e)', () => {
     superAdminToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ email: 'root-superadmin@example.com', password: STAFF_PASSWORD })
+        .send({ loginId: 'root-superadmin@example.com', password: STAFF_PASSWORD })
         .expect(200)
     ).body.accessToken;
 
     await db.insert(adminUser).values({
-      email: 'pharmacy-admin@example.com',
+      loginId: 'pharmacy-admin@example.com',
       name: 'Pharmacy Admin',
       passwordHash: await testPasswordHash(),
       role: 'PHARMACY',
@@ -64,7 +64,7 @@ describe('Admin/Ops (e2e)', () => {
     pharmacyToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ email: 'pharmacy-admin@example.com', password: STAFF_PASSWORD })
+        .send({ loginId: 'pharmacy-admin@example.com', password: STAFF_PASSWORD })
         .expect(200)
     ).body.accessToken;
   });
@@ -86,7 +86,7 @@ describe('Admin/Ops (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/v1/staff/admins')
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ email: 'new-lab-tech@example.com', name: 'New Lab Tech', password: 'a-fresh-password', role: 'LAB' })
+      .send({ loginId: 'new-lab-tech@example.com', name: 'New Lab Tech', password: 'a-fresh-password', role: 'LAB' })
       .expect(201);
 
     newStaffId = res.body.id;
@@ -96,15 +96,15 @@ describe('Admin/Ops (e2e)', () => {
     // And the password actually works to log in — not just accepted and discarded.
     await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ email: 'new-lab-tech@example.com', password: 'a-fresh-password' })
+      .send({ loginId: 'new-lab-tech@example.com', password: 'a-fresh-password' })
       .expect(200);
   });
 
-  it('rejects creating a second staff account with the same email', async () => {
+  it('rejects creating a second staff account with the same login id', async () => {
     await request(app.getHttpServer())
       .post('/v1/staff/admins')
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ email: 'new-lab-tech@example.com', name: 'Duplicate', password: 'another-password', role: 'LAB' })
+      .send({ loginId: 'new-lab-tech@example.com', name: 'Duplicate', password: 'another-password', role: 'LAB' })
       .expect(409);
   });
 
@@ -120,7 +120,7 @@ describe('Admin/Ops (e2e)', () => {
   it('a deactivated staff account cannot log in even with the correct password', async () => {
     await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ email: 'new-lab-tech@example.com', password: 'a-fresh-password' })
+      .send({ loginId: 'new-lab-tech@example.com', password: 'a-fresh-password' })
       .expect(403);
   });
 
