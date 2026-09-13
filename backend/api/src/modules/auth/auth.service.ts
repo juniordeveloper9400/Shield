@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { compare } from 'bcryptjs';
 import { and, eq, isNull } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { adminUser, users } from '../../db/schema';
@@ -46,30 +47,22 @@ export class AuthService {
   }
 
   /**
-   * Staff login. First successful Firebase login for an account links
-   * firebase_uid by matching email (bootstrap path — see
-   * backend/docs/migration-plan.md Phase 1, staff must have a Firebase
-   * Authentication account created out-of-band before this works for them).
+   * Staff login: email + password, checked directly against the bcrypt hash
+   * on app.admin_user — no Firebase involved (that's member-only, see
+   * exchangeMemberToken). Deliberately the same generic error for "no such
+   * account" and "wrong password" — distinguishing them lets an attacker
+   * enumerate valid staff emails.
    */
-  async exchangeStaffToken(idToken: string, ctx: RequestContext): Promise<IssuedTokens> {
-    const decoded = await this.firebase.verifyIdToken(idToken);
+  async loginStaff(email: string, password: string, ctx: RequestContext): Promise<IssuedTokens> {
+    const invalid = () =>
+      new UnauthorizedException({ error: { code: 'UNAUTHORIZED', message: 'Invalid email or password' } });
 
-    let [staff] = await this.db.select().from(adminUser).where(eq(adminUser.firebaseUid, decoded.uid)).limit(1);
+    const [staff] = await this.db.select().from(adminUser).where(eq(adminUser.email, email)).limit(1);
+    if (!staff || !staff.passwordHash) throw invalid();
 
-    if (!staff && decoded.email) {
-      const [byEmail] = await this.db.select().from(adminUser).where(eq(adminUser.email, decoded.email)).limit(1);
-      if (byEmail) {
-        [staff] = await this.db
-          .update(adminUser)
-          .set({ firebaseUid: decoded.uid })
-          .where(eq(adminUser.id, byEmail.id))
-          .returning();
-      }
-    }
+    const ok = await compare(password, staff.passwordHash);
+    if (!ok) throw invalid();
 
-    if (!staff) {
-      throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'No staff account for this identity' } });
-    }
     if (!staff.isActive) {
       throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Staff account is deactivated' } });
     }

@@ -6,7 +6,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireStaff } from '../../common/decorators/require-role.decorator';
 import { AuthThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { idTokenSchema, refreshTokenSchema, type IdTokenDto, type RefreshTokenDto } from './dto';
+import { staffLoginSchema, refreshTokenSchema, type StaffLoginDto, type RefreshTokenDto } from './dto';
 import type { RequestSubject } from './session.types';
 
 @Controller('v1/staff/auth')
@@ -17,8 +17,8 @@ export class StaffAuthController {
   @AuthThrottle()
   @Post('session')
   @HttpCode(HttpStatus.OK)
-  async createSession(@Body(new ZodValidationPipe(idTokenSchema)) body: IdTokenDto, @Req() req: Request) {
-    return this.auth.exchangeStaffToken(body.idToken, { userAgent: req.headers['user-agent'], ip: req.ip });
+  async createSession(@Body(new ZodValidationPipe(staffLoginSchema)) body: StaffLoginDto, @Req() req: Request) {
+    return this.auth.loginStaff(body.email, body.password, { userAgent: req.headers['user-agent'], ip: req.ip });
   }
 
   @Public()

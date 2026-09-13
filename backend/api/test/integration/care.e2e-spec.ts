@@ -6,6 +6,7 @@ process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-please-ignore-00000';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { hash } from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
@@ -65,16 +66,18 @@ describe('Care Services (e2e)', () => {
     await db.insert(adminUser).values({
       email: 'care-staff@example.com',
       name: 'Care Staff',
-      firebaseUid: 'staff-care-1',
+      passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
       role: 'APPOINTMENTS',
     });
-    firebase.register('staff-token', { uid: 'staff-care-1', email: 'care-staff@example.com' });
 
     memberAccessToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
     ).body.accessToken;
     staffAccessToken = (
-      await request(app.getHttpServer()).post('/v1/staff/auth/session').send({ idToken: 'staff-token' }).expect(200)
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ email: 'care-staff@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200)
     ).body.accessToken;
   });
 

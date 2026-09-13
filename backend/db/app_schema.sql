@@ -1009,9 +1009,12 @@ CREATE TYPE app.admin_role AS ENUM
 CREATE TABLE app.admin_user (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     uuid          uuid NOT NULL DEFAULT gen_random_uuid(),
+    -- No longer used for login (migration 0028) — staff auth is
+    -- email+password now, checked against password_hash directly.
     firebase_uid  text UNIQUE,
     email         text NOT NULL UNIQUE,
     name          text NOT NULL,
+    password_hash text,                                 -- bcrypt; null until set
     role          app.admin_role NOT NULL DEFAULT 'PHARMACY',
     store_id      bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
     avatar_color  text NOT NULL DEFAULT '#2c57a6',

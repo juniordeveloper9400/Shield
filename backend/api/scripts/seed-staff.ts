@@ -1,19 +1,24 @@
 /**
- * Creates one app.admin_user row directly — the only way to get the FIRST
- * staff account in, since POST /v1/staff/admins itself requires an existing
- * SUPERADMIN session (see backend/docs/build-playbook.md M9). Once at least
- * one SUPERADMIN exists, use the real API for every account after this.
+ * Creates (or resets the password of) one app.admin_user row directly — the
+ * only way to get the FIRST staff account in, since POST /v1/staff/admins
+ * itself requires an existing SUPERADMIN session (see
+ * backend/docs/build-playbook.md M9). Once at least one SUPERADMIN exists,
+ * use the real API for every account after this.
  *
- * firebase_uid is deliberately left unset — it links automatically on this
- * account's first login (see auth.service.ts exchangeStaffToken), the same
- * way it always has.
+ * Staff log in with email + password (see auth.service.ts loginStaff) — no
+ * Firebase account needed for staff at all; the password is bcrypt-hashed
+ * here before it ever touches the database.
  *
  * Usage:
- *   pnpm seed:staff -- --email=you@example.com --name="Your Name" --role=SUPERADMIN
- *   pnpm seed:staff -- --email=pharmacist@example.com --name="Melattur Pharmacist" --role=PHARMACY --store=SHD-MEL
+ *   pnpm seed:staff -- --email=you@example.com --name="Your Name" --password=... --role=SUPERADMIN
+ *   pnpm seed:staff -- --email=pharmacist@example.com --name="Melattur Pharmacist" --password=... --role=PHARMACY --store=SHD-MEL
+ *
+ * Running it again for an email that already exists resets that account's
+ * password to the one given (everything else about the row is left alone).
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { hash } from 'bcryptjs';
 import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
@@ -21,6 +26,7 @@ import { adminUser, shieldStore } from '../src/db/schema';
 
 type Role = 'SUPERADMIN' | 'ADMIN' | 'PHARMACY' | 'LAB' | 'APPOINTMENTS';
 const VALID_ROLES: Role[] = ['SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS'];
+const BCRYPT_ROUNDS = 12;
 
 function loadEnvFile(path: string): void {
   let content: string;
@@ -32,10 +38,10 @@ function loadEnvFile(path: string): void {
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1).trim();
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx === -1) continue;
+    const key = trimmed.slice(0, eqIdx).trim();
+    const value = trimmed.slice(eqIdx + 1).trim();
     if (!(key in process.env)) process.env[key] = value;
   }
 }
@@ -60,14 +66,19 @@ async function main() {
   const args = parseArgs();
   const email = args.email?.trim();
   const name = args.name?.trim();
+  const password = args.password;
   const roleArg = (args.role ?? 'SUPERADMIN').toUpperCase();
   const storeCode = args.store?.trim();
 
-  if (!email || !name) {
+  if (!email || !name || !password) {
     console.error(
-      'Usage: pnpm seed:staff -- --email=you@example.com --name="Your Name" ' +
+      'Usage: pnpm seed:staff -- --email=you@example.com --name="Your Name" --password=... ' +
         '[--role=SUPERADMIN|ADMIN|PHARMACY|LAB|APPOINTMENTS] [--store=SHD-MEL]',
     );
+    process.exit(1);
+  }
+  if (password.length < 8) {
+    console.error('--password must be at least 8 characters.');
     process.exit(1);
   }
   if (!isRole(roleArg)) {
@@ -94,18 +105,23 @@ async function main() {
       storeId = store.id;
     }
 
+    const passwordHash = await hash(password, BCRYPT_ROUNDS);
     const [existing] = await db.select({ id: adminUser.id }).from(adminUser).where(eq(adminUser.email, email)).limit(1);
+
     if (existing) {
-      console.log(`A staff account for ${email} already exists (id ${existing.id}) — nothing to do.`);
+      await db.update(adminUser).set({ passwordHash }).where(eq(adminUser.id, existing.id));
+      console.log(`Account for ${email} already existed (id ${existing.id}) — password reset to the one given.`);
       return;
     }
 
-    const [created] = await db.insert(adminUser).values({ email, name, role: roleArg, storeId }).returning();
+    const [created] = await db
+      .insert(adminUser)
+      .values({ email, name, passwordHash, role: roleArg, storeId })
+      .returning({ id: adminUser.id, email: adminUser.email, role: adminUser.role });
     console.log(
       `Created staff account: id=${created.id}, email=${created.email}, role=${created.role}` +
         (storeCode ? `, store=${storeCode}` : ''),
     );
-    console.log("firebase_uid is not set — it links automatically the first time this account signs in.");
   } finally {
     await pool.end();
   }

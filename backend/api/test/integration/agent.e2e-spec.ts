@@ -7,6 +7,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
+import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
@@ -62,14 +63,13 @@ describe('Agent & Geography (e2e)', () => {
     await db.insert(adminUser).values({
       email: 'superadmin@example.com',
       name: 'Super Admin',
-      firebaseUid: 'staff-superadmin-agent',
+      passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
       role: 'SUPERADMIN',
     });
-    firebase.register('superadmin-token', { uid: 'staff-superadmin-agent', email: 'superadmin@example.com' });
     superAdminToken = (
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
-        .send({ idToken: 'superadmin-token' })
+        .send({ email: 'superadmin@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
   });

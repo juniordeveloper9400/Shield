@@ -6,6 +6,7 @@ process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-please-ignore-00000';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
@@ -55,14 +56,13 @@ describe('Catalogue (e2e)', () => {
     await db.insert(adminUser).values({
       email: 'pharmacist@example.com',
       name: 'Test Pharmacist',
-      firebaseUid: 'staff-uid-1',
+      passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
       role: 'PHARMACY',
     });
-    firebase.register('valid-staff-token', { uid: 'staff-uid-1', email: 'pharmacist@example.com' });
 
     const login = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ idToken: 'valid-staff-token' })
+      .send({ email: 'pharmacist@example.com', password: 'correct-horse-battery-staple' })
       .expect(200);
     staffAccessToken = login.body.accessToken;
   });
@@ -153,13 +153,12 @@ describe('Catalogue (e2e)', () => {
     await db.insert(adminUser).values({
       email: 'admin-role@example.com',
       name: 'App Admin',
-      firebaseUid: 'staff-admin-role',
+      passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
       role: 'ADMIN',
     });
-    firebase.register('admin-role-token', { uid: 'staff-admin-role', email: 'admin-role@example.com' });
     const login = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ idToken: 'admin-role-token' })
+      .send({ email: 'admin-role@example.com', password: 'correct-horse-battery-staple' })
       .expect(200);
 
     const created = await request(app.getHttpServer())

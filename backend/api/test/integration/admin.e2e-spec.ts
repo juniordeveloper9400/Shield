@@ -6,7 +6,7 @@ process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-please-ignore-00000';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { eq } from 'drizzle-orm';
+import { hash } from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
@@ -15,6 +15,9 @@ import { adminUser, agentRequest, membershipTier, users, wallet, walletCard } fr
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+
+const STAFF_PASSWORD = 'correct-horse-battery-staple';
+const testPasswordHash = () => hash(STAFF_PASSWORD, 4); // low cost factor — this is a test, not production
 
 describe('Admin/Ops (e2e)', () => {
   let app: INestApplication;
@@ -42,23 +45,27 @@ describe('Admin/Ops (e2e)', () => {
     await db.insert(adminUser).values({
       email: 'root-superadmin@example.com',
       name: 'Root Super Admin',
-      firebaseUid: 'staff-root-superadmin',
+      passwordHash: await testPasswordHash(),
       role: 'SUPERADMIN',
     });
-    firebase.register('superadmin-token', { uid: 'staff-root-superadmin', email: 'root-superadmin@example.com' });
     superAdminToken = (
-      await request(app.getHttpServer()).post('/v1/staff/auth/session').send({ idToken: 'superadmin-token' }).expect(200)
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ email: 'root-superadmin@example.com', password: STAFF_PASSWORD })
+        .expect(200)
     ).body.accessToken;
 
     await db.insert(adminUser).values({
       email: 'pharmacy-admin@example.com',
       name: 'Pharmacy Admin',
-      firebaseUid: 'staff-pharmacy-admin',
+      passwordHash: await testPasswordHash(),
       role: 'PHARMACY',
     });
-    firebase.register('pharmacy-token', { uid: 'staff-pharmacy-admin', email: 'pharmacy-admin@example.com' });
     pharmacyToken = (
-      await request(app.getHttpServer()).post('/v1/staff/auth/session').send({ idToken: 'pharmacy-token' }).expect(200)
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ email: 'pharmacy-admin@example.com', password: STAFF_PASSWORD })
+        .expect(200)
     ).body.accessToken;
   });
 
@@ -75,23 +82,29 @@ describe('Admin/Ops (e2e)', () => {
 
   let newStaffId: number;
 
-  it('lets SUPERADMIN create a staff account', async () => {
+  it('lets SUPERADMIN create a staff account, and never returns the password hash', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/staff/admins')
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ email: 'new-lab-tech@example.com', name: 'New Lab Tech', role: 'LAB' })
+      .send({ email: 'new-lab-tech@example.com', name: 'New Lab Tech', password: 'a-fresh-password', role: 'LAB' })
       .expect(201);
 
     newStaffId = res.body.id;
     expect(res.body.isActive).toBe(true);
-    expect(res.body.firebaseUid).toBeNull(); // not linked until their first login
+    expect(res.body.passwordHash).toBeUndefined();
+
+    // And the password actually works to log in — not just accepted and discarded.
+    await request(app.getHttpServer())
+      .post('/v1/staff/auth/session')
+      .send({ email: 'new-lab-tech@example.com', password: 'a-fresh-password' })
+      .expect(200);
   });
 
   it('rejects creating a second staff account with the same email', async () => {
     await request(app.getHttpServer())
       .post('/v1/staff/admins')
       .set('Authorization', `Bearer ${superAdminToken}`)
-      .send({ email: 'new-lab-tech@example.com', name: 'Duplicate', role: 'LAB' })
+      .send({ email: 'new-lab-tech@example.com', name: 'Duplicate', password: 'another-password', role: 'LAB' })
       .expect(409);
   });
 
@@ -104,13 +117,10 @@ describe('Admin/Ops (e2e)', () => {
     expect(res.body.isActive).toBe(false);
   });
 
-  it('a deactivated staff account cannot log in even with a valid Firebase token', async () => {
-    await db.update(adminUser).set({ firebaseUid: 'staff-deactivated-test' }).where(eq(adminUser.id, newStaffId));
-    firebase.register('deactivated-token', { uid: 'staff-deactivated-test' });
-
+  it('a deactivated staff account cannot log in even with the correct password', async () => {
     await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ idToken: 'deactivated-token' })
+      .send({ email: 'new-lab-tech@example.com', password: 'a-fresh-password' })
       .expect(403);
   });
 

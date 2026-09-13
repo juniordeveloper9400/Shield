@@ -14,11 +14,18 @@ export const adminRoleEnum = appSchema.enum('admin_role', ['SUPERADMIN', 'ADMIN'
 export const adminUser = appSchema.table('admin_user', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   uuid: uuid('uuid').notNull().defaultRandom(),
+  // No longer used for staff login (see migration 0028) — kept only in case
+  // a future integration wants it; staff auth is now email+password,
+  // checked directly against passwordHash, with no Firebase dependency.
   firebaseUid: text('firebase_uid'),
   email: text('email').notNull(),
   name: text('name').notNull(),
+  // bcrypt hash (see auth.service.ts loginStaff). Nullable only so a row
+  // can exist before a password is set; login is refused with no hash.
+  passwordHash: text('password_hash'),
   role: adminRoleEnum('role').notNull().default('PHARMACY'),
   storeId: bigint('store_id', { mode: 'number' }),
+  avatarColor: text('avatar_color').notNull().default('#2c57a6'),
   isActive: boolean('is_active').notNull().default(true),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

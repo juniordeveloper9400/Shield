@@ -6,6 +6,7 @@ process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-please-ignore-00000';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
@@ -56,30 +57,36 @@ describe('Wallet & Rewards (e2e)', () => {
     memberId = member.id;
     firebase.register('member-token', { uid: 'member-wallet-1' });
 
+    const testPasswordHash = await hash('correct-horse-battery-staple', 4); // low cost factor — this is a test, not production
+
     await db.insert(adminUser).values({
       email: 'pharmacy@example.com',
       name: 'Pharmacy Staff',
-      firebaseUid: 'staff-pharmacy',
+      passwordHash: testPasswordHash,
       role: 'PHARMACY',
     });
-    firebase.register('pharmacy-token', { uid: 'staff-pharmacy', email: 'pharmacy@example.com' });
 
     await db.insert(adminUser).values({
       email: 'superadmin@example.com',
       name: 'Super Admin',
-      firebaseUid: 'staff-superadmin',
+      passwordHash: testPasswordHash,
       role: 'SUPERADMIN',
     });
-    firebase.register('superadmin-token', { uid: 'staff-superadmin', email: 'superadmin@example.com' });
 
     memberAccessToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
     ).body.accessToken;
     pharmacyStaffToken = (
-      await request(app.getHttpServer()).post('/v1/staff/auth/session').send({ idToken: 'pharmacy-token' }).expect(200)
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ email: 'pharmacy@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200)
     ).body.accessToken;
     superAdminToken = (
-      await request(app.getHttpServer()).post('/v1/staff/auth/session').send({ idToken: 'superadmin-token' }).expect(200)
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ email: 'superadmin@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200)
     ).body.accessToken;
   });
 

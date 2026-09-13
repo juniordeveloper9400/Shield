@@ -6,12 +6,16 @@ process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-please-ignore-00000';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { hash } from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+
+const STAFF_EMAIL = 'pharmacist@example.com';
+const STAFF_PASSWORD = 'correct-horse-battery-staple';
 
 describe('Auth flow (e2e)', () => {
   let app: INestApplication;
@@ -34,14 +38,13 @@ describe('Auth flow (e2e)', () => {
 
     await db.insert(users).values({ phone: '9999999999', name: 'Test Member', firebaseUid: 'member-uid-1' });
     await db.insert(adminUser).values({
-      email: 'pharmacist@example.com',
+      email: STAFF_EMAIL,
       name: 'Test Pharmacist',
-      firebaseUid: 'staff-uid-1',
+      passwordHash: await hash(STAFF_PASSWORD, 4), // low cost factor — this is a test, not production
       role: 'PHARMACY',
     });
 
     firebase.register('valid-member-token', { uid: 'member-uid-1' });
-    firebase.register('valid-staff-token', { uid: 'staff-uid-1', email: 'pharmacist@example.com' });
   });
 
   afterAll(async () => {
@@ -77,10 +80,10 @@ describe('Auth flow (e2e)', () => {
       .expect(404);
   });
 
-  it('logs a staff user in and exposes their role for server-side RBAC', async () => {
+  it('logs a staff user in with email + password and exposes their role for server-side RBAC', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ idToken: 'valid-staff-token' })
+      .send({ email: STAFF_EMAIL, password: STAFF_PASSWORD })
       .expect(200);
 
     const me = await request(app.getHttpServer())
@@ -89,6 +92,19 @@ describe('Auth flow (e2e)', () => {
       .expect(200);
 
     expect(me.body.role).toBe('PHARMACY');
+  });
+
+  it('rejects a wrong password with the same generic error as an unknown email — no user enumeration', async () => {
+    const wrongPassword = await request(app.getHttpServer())
+      .post('/v1/staff/auth/session')
+      .send({ email: STAFF_EMAIL, password: 'not-the-right-password' })
+      .expect(401);
+    const unknownEmail = await request(app.getHttpServer())
+      .post('/v1/staff/auth/session')
+      .send({ email: 'nobody@example.com', password: STAFF_PASSWORD })
+      .expect(401);
+
+    expect(wrongPassword.body.error.message).toBe(unknownEmail.body.error.message);
   });
 
   it('rejects a member session on a staff-only route', async () => {
@@ -106,7 +122,7 @@ describe('Auth flow (e2e)', () => {
   it('rejects a staff session on a member-only route — the symmetric case', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/staff/auth/session')
-      .send({ idToken: 'valid-staff-token' })
+      .send({ email: STAFF_EMAIL, password: STAFF_PASSWORD })
       .expect(200);
 
     await request(app.getHttpServer())
