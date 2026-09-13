@@ -1,0 +1,128 @@
+import { bigint, date, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { appSchema } from './app-identity';
+import { shieldStore } from './app-catalogue';
+import { order } from './app-commerce';
+import { approvalStatusEnum } from './app-prescription';
+
+/**
+ * Typed READ/WRITE MIRROR of wallet/rewards tables owned by
+ * backend/db/app_schema.sql — see backend/docs/erd.md §2.
+ * `wallet_card.sold_by_agent_id` is left as plain bigint (no FK) — `agent`
+ * isn't mirrored yet; M7 adds it. `wallet_card.status` reuses
+ * app.approval_status (PENDING/APPROVED/... — same enum as prescription
+ * approvals, per the live schema).
+ */
+export const privilegeCardKindEnum = appSchema.enum('privilege_card_kind', ['SILVER', 'GOLD', 'PLATINUM']);
+export const walletEntryKindEnum = appSchema.enum('wallet_entry_kind', [
+  'ACTIVATION',
+  'BONUS',
+  'TOPUP',
+  'SPEND',
+  'POINTS_REDEEMED',
+  'AGENT_EARNINGS',
+]);
+export const rewardTxnReasonEnum = appSchema.enum('reward_txn_reason', [
+  'REGISTRATION',
+  'REFERRAL_LEVEL',
+  'ORDER',
+  'REDEMPTION',
+  'ADJUSTMENT',
+]);
+export const referralStatusEnum = appSchema.enum('referral_status', [
+  'SHARED',
+  'REGISTERED',
+  'TRANSACTED',
+  'PLAN_ACTIVATED',
+]);
+
+export const membershipTier = appSchema.table('membership_tier', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  uuid: uuid('uuid').notNull().defaultRandom(),
+  kind: privilegeCardKindEnum('kind').notNull(),
+  name: text('name').notNull(),
+  bin: text('bin').notNull(),
+  blurb: text('blurb').notNull().default(''),
+  bonusRate: numeric('bonus_rate', { precision: 4, scale: 3 }).notNull().default('0.100'),
+  validityMonths: integer('validity_months').notNull().default(12),
+  sort: integer('sort').notNull().default(0),
+});
+
+export const membershipTierLoad = appSchema.table('membership_tier_load', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  tierId: bigint('tier_id', { mode: 'number' }).notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  sort: integer('sort').notNull().default(0),
+});
+
+export const wallet = appSchema.table('wallet', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  memberId: bigint('member_id', { mode: 'number' }).notNull(),
+  balance: numeric('balance', { precision: 12, scale: 2 }).notNull().default('0'),
+  rewardPoints: integer('reward_points').notNull().default(0),
+  redeemedThisMonth: numeric('redeemed_this_month', { precision: 12, scale: 2 }).notNull().default('0'),
+  openedAt: timestamp('opened_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const walletCard = appSchema.table('wallet_card', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  uuid: uuid('uuid').notNull().defaultRandom(),
+  walletId: bigint('wallet_id', { mode: 'number' }).notNull(),
+  tierId: bigint('tier_id', { mode: 'number' }).notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  bonus: numeric('bonus', { precision: 12, scale: 2 }).notNull(),
+  rechargedExtra: numeric('recharged_extra', { precision: 12, scale: 2 }).notNull().default('0'),
+  cardNumber: text('card_number'),
+  storeId: bigint('store_id', { mode: 'number' }).references(() => shieldStore.id),
+  status: approvalStatusEnum('status').notNull().default('PENDING'),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  reviewerNote: text('reviewer_note').notNull().default(''),
+  receiptReference: text('receipt_reference'),
+  receiptFileName: text('receipt_file_name'),
+  issuedOn: date('issued_on').notNull(),
+  rechargedOn: date('recharged_on').notNull(),
+  expiresOn: date('expires_on').notNull(),
+  soldByAgentId: bigint('sold_by_agent_id', { mode: 'number' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const walletEntry = appSchema.table('wallet_entry', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  walletId: bigint('wallet_id', { mode: 'number' }).notNull(),
+  kind: walletEntryKindEnum('kind').notNull(),
+  label: text('label').notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(), // signed: credits positive, debits negative
+  occurredOn: date('occurred_on').notNull(),
+  walletCardId: bigint('wallet_card_id', { mode: 'number' }).references(() => walletCard.id),
+  orderId: bigint('order_id', { mode: 'number' }).references(() => order.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const rewardPointTransaction = appSchema.table('reward_point_transaction', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  memberId: bigint('member_id', { mode: 'number' }).notNull(),
+  points: integer('points').notNull(), // signed
+  reason: rewardTxnReasonEnum('reason').notNull(),
+  refType: text('ref_type'),
+  refId: bigint('ref_id', { mode: 'number' }),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const referral = appSchema.table('referral', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  uuid: uuid('uuid').notNull().defaultRandom(),
+  inviterMemberId: bigint('inviter_member_id', { mode: 'number' }).notNull(),
+  inviteeMemberId: bigint('invitee_member_id', { mode: 'number' }),
+  inviteePhone: text('invitee_phone'),
+  codeUsed: text('code_used'),
+  status: referralStatusEnum('status').notNull().default('SHARED'),
+  planAmount: numeric('plan_amount', { precision: 12, scale: 2 }),
+  commissionAmount: numeric('commission_amount', { precision: 12, scale: 2 }).notNull().default('0'),
+  registeredAt: timestamp('registered_at', { withTimezone: true }),
+  transactedAt: timestamp('transacted_at', { withTimezone: true }),
+  planActivatedAt: timestamp('plan_activated_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

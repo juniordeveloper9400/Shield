@@ -350,6 +350,24 @@ CREATE TABLE app.customer_review (
     created_at       timestamptz NOT NULL DEFAULT now()
 );
 
+-- "What our customers have to say" — admin-managed clips (migration 0009,
+-- folded in here). A bundled asset path for the seeded clips, or an http(s)
+-- URL for anything an admin adds afterwards. Seed rows are loaded by
+-- seed_app.dart, not here — this file is DDL only.
+CREATE TABLE app.customer_review_video (
+    id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    uuid         uuid NOT NULL DEFAULT gen_random_uuid(),
+    name         text NOT NULL,
+    subtitle     text NOT NULL DEFAULT '',
+    video_url    text NOT NULL,
+    thumbnail    text,
+    is_active    boolean NOT NULL DEFAULT true,
+    sort         integer NOT NULL DEFAULT 0,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX customer_review_video_sort_idx ON app.customer_review_video(sort);
+
 CREATE TABLE app.home_banner (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     title       text,
@@ -979,8 +997,12 @@ CREATE TABLE app.investor_plan_change_request (
 --  Also created by backend/db/migrations/0001_admin_user.sql (idempotent) so
 --  an existing database can pick it up without a full rebuild.
 
+-- 'ADMIN' added so this matches shieldweb's console role model, which has
+-- always had a fifth role (app manager, one level under Super Admin) with
+-- no database counterpart until now — see backend/docs/erd.md §5 and
+-- backend/db/migrations/0027_admin_role_add_admin.sql for the live-DB fix.
 CREATE TYPE app.admin_role AS ENUM
-    ('SUPERADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS');
+    ('SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS');
 
 -- One row per staff login. Identity is a Firebase Email/Password account; this
 -- row says which role it holds and, for a Pharmacy Admin, which branch.
