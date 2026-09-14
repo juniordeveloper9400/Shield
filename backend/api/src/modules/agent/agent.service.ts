@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
@@ -207,16 +207,28 @@ export class AgentService {
       .orderBy(agentRequest.createdAt);
   }
 
+  /**
+   * One round trip instead of one per tree depth level: a recursive CTE
+   * walks the whole subtree in the database, then a single typed `select`
+   * fetches the full rows for those ids. The old version's level-by-level
+   * BFS loop (one `SELECT ... WHERE parent_id IN (...)` per depth) cost a
+   * full network round trip per level — cheap on a local database, but the
+   * backend and the Neon database sit in different regions, so each round
+   * trip carries real cross-region latency and a deep tree made "My Team"
+   * feel like it hung.
+   */
   private async getDescendants(rootId: number) {
-    const result: (typeof agent.$inferSelect)[] = [];
-    let frontier = [rootId];
-    while (frontier.length > 0) {
-      const children = await this.db.select().from(agent).where(inArray(agent.parentId, frontier));
-      if (children.length === 0) break;
-      result.push(...children);
-      frontier = children.map((c) => c.id);
-    }
-    return result;
+    const idRows = await this.db.execute<{ id: number }>(sql`
+      WITH RECURSIVE descendants AS (
+        SELECT id FROM app.agent WHERE parent_id = ${rootId}
+        UNION ALL
+        SELECT a.id FROM app.agent a INNER JOIN descendants d ON a.parent_id = d.id
+      )
+      SELECT id FROM descendants
+    `);
+    const ids = idRows.rows.map((row) => Number(row.id));
+    if (ids.length === 0) return [];
+    return this.db.select().from(agent).where(inArray(agent.id, ids));
   }
 
   /**

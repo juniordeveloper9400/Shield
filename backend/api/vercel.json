@@ -3,6 +3,7 @@
   "buildCommand": "pnpm build",
   "installCommand": "pnpm install",
   "outputDirectory": "dist",
+  "regions": ["sin1"],
   "functions": {
     "api/index.js": {
       "includeFiles": "dist/**"
