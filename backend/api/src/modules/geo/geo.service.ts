@@ -49,4 +49,66 @@ export class GeoService {
       this.db.select().from(ward).where(eq(ward.lsgdId, lsgdId)).orderBy(asc(ward.sort)),
     );
   }
+
+  /**
+   * The whole hierarchy flattened into one list — region down to ward, each
+   * row carrying its own parentId and a lowercase level tag. Exists for
+   * clients (the legacy `shield agent_invester/` app) that build a full
+   * in-memory tree once rather than drilling down tier by tier; the
+   * region..lsgd structure is ~1,200 rows, wards add ~21k more. Cached like
+   * every other geo read here — this data is near-static.
+   */
+  listTree() {
+    return this.cache.getOrSet('geo:tree', TTL, async () => {
+      const [regions, states, districts, assemblies, lsgds, wards] = await Promise.all([
+        this.db.select().from(region).orderBy(asc(region.sort)),
+        this.db.select().from(state).orderBy(asc(state.sort)),
+        this.db.select().from(district).orderBy(asc(district.sort)),
+        this.db.select().from(assembly).orderBy(asc(assembly.sort)),
+        this.db.select().from(lsgd).orderBy(asc(lsgd.sort)),
+        this.db.select().from(ward).orderBy(asc(ward.sort)),
+      ]);
+
+      return [
+        ...regions.map((r) => ({ id: r.id, parentId: null, level: 'region', name: r.name, code: r.code, type: '', sort: r.sort })),
+        ...states.map((s) => ({ id: s.id, parentId: s.regionId, level: 'state', name: s.name, code: s.code, type: '', sort: s.sort })),
+        ...districts.map((d) => ({
+          id: d.id,
+          parentId: d.stateId,
+          level: 'district',
+          name: d.name,
+          code: d.code,
+          type: '',
+          sort: d.sort,
+        })),
+        ...assemblies.map((a) => ({
+          id: a.id,
+          parentId: a.districtId,
+          level: 'assembly',
+          name: a.name,
+          code: a.code,
+          type: '',
+          sort: a.sort,
+        })),
+        ...lsgds.map((l) => ({
+          id: l.id,
+          parentId: l.assemblyId,
+          level: 'lsgd',
+          name: l.name,
+          code: l.code,
+          type: l.type,
+          sort: l.sort,
+        })),
+        ...wards.map((w) => ({
+          id: w.id,
+          parentId: w.lsgdId,
+          level: 'ward',
+          name: w.name,
+          code: w.code,
+          type: '',
+          sort: w.sort,
+        })),
+      ];
+    });
+  }
 }

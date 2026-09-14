@@ -86,6 +86,14 @@ describe('Agent & Geography (e2e)', () => {
     expect(states.body).toHaveLength(1);
   });
 
+  it('lists the whole geo hierarchy flattened in one call, for a client that builds its tree eagerly', async () => {
+    const tree = await request(app.getHttpServer()).get('/v1/public/geo/tree').expect(200);
+    expect(tree.body).toHaveLength(6); // region, state, district, assembly, lsgd, ward — one of each seeded
+    const byLevel = Object.fromEntries(tree.body.map((n: { level: string; id: string }) => [n.level, n.id]));
+    expect(byLevel).toHaveProperty('region');
+    expect(byLevel).toHaveProperty('ward', wardId);
+  });
+
   let nationalAgentId: number;
 
   it('approves a NATIONAL agent request', async () => {
@@ -210,6 +218,48 @@ describe('Agent & Geography (e2e)', () => {
 
     expect(team.body.id).toBe(nationalAgentId);
     expect(team.body.descendants).toEqual(expect.arrayContaining([expect.objectContaining({ id: wardAgentId })]));
+  });
+
+  it('lists PENDING requests recruited directly under the caller, distinct from the requests the caller filed themself', async () => {
+    // Same Firebase identity as the national agent — a fresh login, not a new user.
+    firebase.register('national-agent-pending-check', { uid: 'member-agent-national-1' });
+    const recruiterLogin = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'national-agent-pending-check' })
+      .expect(200);
+    const recruiterToken = recruiterLogin.body.accessToken as string;
+
+    const recruitToken = await memberToken('9100000007', 'member-agent-recruit-1', 'Recruit One');
+
+    await request(app.getHttpServer())
+      .post('/v1/agent/requests')
+      .set('Authorization', `Bearer ${recruitToken}`)
+      .send({
+        requestedLevel: 'WARD',
+        requestedArea: 'Ward 1',
+        requestedAreaId: wardId,
+        parentAgentId: nationalAgentId,
+      })
+      .expect(201);
+
+    const pending = await request(app.getHttpServer())
+      .get('/v1/agent/team/pending')
+      .set('Authorization', `Bearer ${recruiterToken}`)
+      .expect(200);
+
+    expect(pending.body).toHaveLength(1);
+    expect(pending.body[0].name).toBe('Recruit One');
+
+    // listOwnRequests (a different endpoint) is the recruiter's own filed
+    // applications, matched by phone — just their own earlier NATIONAL
+    // application, already APPROVED, not the pending recruit under them.
+    const own = await request(app.getHttpServer())
+      .get('/v1/agent/requests')
+      .set('Authorization', `Bearer ${recruiterToken}`)
+      .expect(200);
+    expect(own.body).toHaveLength(1);
+    expect(own.body[0].requestedLevel).toBe('NATIONAL');
+    expect(own.body[0].status).toBe('APPROVED');
   });
 
   it('links a customer to an agent and rejects linking the same member twice', async () => {

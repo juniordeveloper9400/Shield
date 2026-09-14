@@ -4,6 +4,12 @@ export const idTokenSchema = z.object({
   idToken: z.string().min(10, 'idToken looks too short to be valid'),
 });
 
+/** Member self-registration — see auth.service.ts registerMember. */
+export const registerMemberSchema = z.object({
+  idToken: z.string().min(10, 'idToken looks too short to be valid'),
+  name: z.string().min(1),
+});
+
 /** Staff login — see auth.service.ts loginStaff. A short handle, not an email. */
 export const staffLoginSchema = z.object({
   loginId: z.string().min(1),
@@ -15,5 +21,6 @@ export const refreshTokenSchema = z.object({
 });
 
 export type IdTokenDto = z.infer<typeof idTokenSchema>;
+export type RegisterMemberDto = z.infer<typeof registerMemberSchema>;
 export type StaffLoginDto = z.infer<typeof staffLoginSchema>;
 export type RefreshTokenDto = z.infer<typeof refreshTokenSchema>;

@@ -37,6 +37,11 @@ export class MemberAgentController {
     return this.agents.getTeamForMember(Number(user.subjectId));
   }
 
+  @Get('team/pending')
+  getPendingRequests(@CurrentUser() user: RequestSubject) {
+    return this.agents.getPendingRequestsForMember(Number(user.subjectId));
+  }
+
   @Post('customers')
   linkCustomer(@CurrentUser() user: RequestSubject, @Body(new ZodValidationPipe(linkCustomerSchema)) dto: LinkCustomerDto) {
     return this.agents.linkCustomer(Number(user.subjectId), dto);

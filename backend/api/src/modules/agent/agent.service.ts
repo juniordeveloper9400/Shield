@@ -173,6 +173,22 @@ export class AgentService {
     return { ...self, descendants };
   }
 
+  /**
+   * PENDING app.agent_request rows recruited directly under the caller's own
+   * agent id — distinct from listOwnRequests (the caller's own filed
+   * applications, matched by phone). This is what a "My Team" screen needs
+   * to show a locked "waiting for approval" card for someone the caller
+   * recruited but the admin hasn't approved yet.
+   */
+  async getPendingRequestsForMember(memberId: number) {
+    const self = await this.getApprovedAgentByMemberIdOrThrow(memberId);
+    return this.db
+      .select()
+      .from(agentRequest)
+      .where(and(eq(agentRequest.parentAgentId, self.id), eq(agentRequest.status, 'PENDING')))
+      .orderBy(agentRequest.createdAt);
+  }
+
   private async getDescendants(rootId: number) {
     const result: (typeof agent.$inferSelect)[] = [];
     let frontier = [rootId];

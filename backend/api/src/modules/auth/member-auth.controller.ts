@@ -6,7 +6,14 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireMember } from '../../common/decorators/require-role.decorator';
 import { AuthThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { idTokenSchema, refreshTokenSchema, type IdTokenDto, type RefreshTokenDto } from './dto';
+import {
+  idTokenSchema,
+  refreshTokenSchema,
+  registerMemberSchema,
+  type IdTokenDto,
+  type RefreshTokenDto,
+  type RegisterMemberDto,
+} from './dto';
 import type { RequestSubject } from './session.types';
 
 @Controller('v1/member/auth')
@@ -19,6 +26,14 @@ export class MemberAuthController {
   @HttpCode(HttpStatus.OK)
   async createSession(@Body(new ZodValidationPipe(idTokenSchema)) body: IdTokenDto, @Req() req: Request) {
     return this.auth.exchangeMemberToken(body.idToken, { userAgent: req.headers['user-agent'], ip: req.ip });
+  }
+
+  @Public()
+  @AuthThrottle()
+  @Post('register')
+  @HttpCode(HttpStatus.OK)
+  async register(@Body(new ZodValidationPipe(registerMemberSchema)) body: RegisterMemberDto, @Req() req: Request) {
+    return this.auth.registerMember(body.idToken, body.name, { userAgent: req.headers['user-agent'], ip: req.ip });
   }
 
   @Public()

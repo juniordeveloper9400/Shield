@@ -12,6 +12,11 @@ export class GeoController {
     return this.geo.listRegions();
   }
 
+  @Get('tree')
+  tree() {
+    return this.geo.listTree();
+  }
+
   @Get('regions/:id/states')
   states(@Param('id') id: string) {
     return this.geo.listStates(id);

@@ -13,6 +13,19 @@ export interface RequestContext {
   ip?: string;
 }
 
+/**
+ * Firebase phone-auth tokens carry E.164 (`+919876543210`); every existing
+ * app.users.phone row is the bare 10-digit number. Returns null rather than
+ * a wrong guess when the claim isn't a recognizable Indian mobile number, so
+ * callers can fall back to a phone-less row instead of storing garbage.
+ */
+function normalizeIndianPhone(phoneNumber: string | undefined): string | null {
+  if (!phoneNumber) return null;
+  const digits = phoneNumber.replace(/\D/g, '');
+  const last10 = digits.slice(-10);
+  return last10.length === 10 ? last10 : null;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -44,6 +57,56 @@ export class AuthService {
     }
 
     return this.createSession('MEMBER', String(member.id), undefined, undefined, ctx);
+  }
+
+  /**
+   * Member self-registration: the one place that DOES create an app.users
+   * row from a verified Firebase identity, completing what
+   * exchangeMemberToken deliberately leaves undone. Looked up by
+   * firebaseUid first; if not found, falls back to the bare 10-digit phone
+   * so a row created by an unmigrated client (still writing app.users
+   * directly, keyed on phone only) gets its firebase_uid backfilled instead
+   * of a duplicate account being created for the same person.
+   */
+  async registerMember(idToken: string, name: string, ctx: RequestContext): Promise<IssuedTokens> {
+    const decoded = await this.firebase.verifyIdToken(idToken);
+    const phone = normalizeIndianPhone(decoded.phoneNumber);
+
+    const [byUid] = await this.db
+      .select()
+      .from(users)
+      .where(and(eq(users.firebaseUid, decoded.uid), isNull(users.deletedAt)))
+      .limit(1);
+
+    let memberId: number;
+    if (byUid) {
+      memberId = byUid.id;
+    } else if (phone) {
+      const [byPhone] = await this.db
+        .select()
+        .from(users)
+        .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
+        .limit(1);
+
+      if (byPhone) {
+        await this.db.update(users).set({ firebaseUid: decoded.uid }).where(eq(users.id, byPhone.id));
+        memberId = byPhone.id;
+      } else {
+        const [created] = await this.db
+          .insert(users)
+          .values({ phone, name, firebaseUid: decoded.uid })
+          .returning();
+        memberId = created.id;
+      }
+    } else {
+      const [created] = await this.db
+        .insert(users)
+        .values({ phone: '', name, firebaseUid: decoded.uid })
+        .returning();
+      memberId = created.id;
+    }
+
+    return this.createSession('MEMBER', String(memberId), undefined, undefined, ctx);
   }
 
   /**

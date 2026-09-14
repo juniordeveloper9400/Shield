@@ -7,6 +7,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { hash } from 'bcryptjs';
+import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
@@ -169,5 +170,45 @@ describe('Auth flow (e2e)', () => {
 
   it('rejects a request body that fails validation instead of reaching the database', async () => {
     await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'x' }).expect(400);
+  });
+
+  it('registers a brand-new member from a verified Firebase identity with no app.users row yet', async () => {
+    firebase.register('new-member-token', { uid: 'brand-new-uid', phoneNumber: '+919812345678' });
+
+    const register = await request(app.getHttpServer())
+      .post('/v1/member/auth/register')
+      .send({ idToken: 'new-member-token', name: 'Brand New Member' })
+      .expect(200);
+
+    expect(register.body.accessToken).toBeDefined();
+
+    const me = await request(app.getHttpServer())
+      .get('/v1/member/me')
+      .set('Authorization', `Bearer ${register.body.accessToken}`)
+      .expect(200);
+
+    expect(me.body.phone).toBe('9812345678');
+    expect(me.body.name).toBe('Brand New Member');
+  });
+
+  it('backfills firebase_uid onto an existing phone-only row instead of creating a duplicate account', async () => {
+    await db.insert(users).values({ phone: '9700000001', name: 'Legacy Phone Member' });
+    firebase.register('legacy-member-token', { uid: 'legacy-uid-1', phoneNumber: '+919700000001' });
+
+    await request(app.getHttpServer())
+      .post('/v1/member/auth/register')
+      .send({ idToken: 'legacy-member-token', name: 'Legacy Phone Member' })
+      .expect(200);
+
+    const rows = await db.select().from(users).where(eq(users.phone, '9700000001'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].firebaseUid).toBe('legacy-uid-1');
+
+    // A second sign-in for the same identity is now a plain session exchange, not a re-registration.
+    const session = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'legacy-member-token' })
+      .expect(200);
+    expect(session.body.accessToken).toBeDefined();
   });
 });
