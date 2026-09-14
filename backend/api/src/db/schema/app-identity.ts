@@ -70,6 +70,9 @@ export const patient = appSchema.table('patient', {
   dob: date('dob').notNull(),
   gender: genderEnum('gender').notNull().default('OTHER'),
   relation: patientRelationEnum('relation').notNull().default('SELF'),
+  // Real column in the live schema (app_schema.sql), missing from this
+  // mirror until now — same known drift as other tables here.
+  abhaId: text('abha_id').notNull().default(''),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),

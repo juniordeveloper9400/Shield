@@ -4,6 +4,7 @@ import { DRIZZLE, type Database } from '../../db/client';
 import {
   customerReviewVideo,
   homeBanner,
+  membershipTier,
   product,
   productCategory,
   productDetail,
@@ -48,6 +49,19 @@ export class CatalogueService {
   async listStores() {
     return this.cache.getOrSet('catalogue:stores', TTL.LONG, () =>
       this.db.select().from(shieldStore).where(eq(shieldStore.isActive, true)).orderBy(asc(shieldStore.sort)),
+    );
+  }
+
+  // ---- Membership tiers -----------------------------------------------------
+  // Reference data for resolving a tier kind (silver/gold/platinum) to the
+  // id `POST /v1/member/wallet/cards` requires — the load-amount presets
+  // themselves are bundled client-side already (see
+  // `shield agent_invester/lib/module/privilege/privilege_tier.dart`), so
+  // this only needs to expose id/kind/name, not membership_tier_load.
+
+  async listMembershipTiers() {
+    return this.cache.getOrSet('catalogue:membership-tiers', TTL.LONG, () =>
+      this.db.select().from(membershipTier).orderBy(asc(membershipTier.sort)),
     );
   }
 

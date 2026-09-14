@@ -48,4 +48,9 @@ export class CatalogueController {
   reviewVideos() {
     return this.catalogue.listActiveReviewVideos();
   }
+
+  @Get('membership-tiers')
+  membershipTiers() {
+    return this.catalogue.listMembershipTiers();
+  }
 }

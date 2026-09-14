@@ -122,6 +122,17 @@ describe('Wallet & Rewards (e2e)', () => {
     expect(Number(wallet.body.balance)).toBe(0);
   });
 
+  it("lists the caller's own submitted cards, oldest first", async () => {
+    const cards = await request(app.getHttpServer())
+      .get('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+
+    expect(cards.body).toHaveLength(1);
+    expect(cards.body[0].id).toBe(cardId);
+    expect(cards.body[0].status).toBe('PENDING');
+  });
+
   it('rejects redeeming points before the wallet has ever been opened', async () => {
     await db.update(users).set({ rewardPoints: 500 }).where(eq(users.id, memberId));
 
@@ -158,6 +169,14 @@ describe('Wallet & Rewards (e2e)', () => {
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .expect(200);
     expect(entries.body).toHaveLength(2); // TOPUP + BONUS
+
+    // The member's own card list picks up the approval too — this is how a
+    // client learns a pending submission was approved.
+    const cards = await request(app.getHttpServer())
+      .get('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(cards.body[0].status).toBe('APPROVED');
   });
 
   it('rejects approving the same card twice', async () => {

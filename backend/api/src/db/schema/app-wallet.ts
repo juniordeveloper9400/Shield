@@ -81,6 +81,9 @@ export const walletCard = appSchema.table('wallet_card', {
   reviewerNote: text('reviewer_note').notNull().default(''),
   receiptReference: text('receipt_reference'),
   receiptFileName: text('receipt_file_name'),
+  // Real column in the live schema (migration 0012), missing from this
+  // mirror until now — same known drift as other tables here.
+  receiptImage: text('receipt_image'),
   issuedOn: date('issued_on').notNull(),
   rechargedOn: date('recharged_on').notNull(),
   expiresOn: date('expires_on').notNull(),

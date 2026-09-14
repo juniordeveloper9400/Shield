@@ -7,3 +7,4 @@ coverage/
 
 # Firebase Admin SDK service-account key — never committed, see FIREBASE_SETUP.md
 firebase-admin-key.json
+firebase-admin-key.min.json

@@ -2,11 +2,15 @@ import { z } from 'zod';
 
 export const uploadPrescriptionSchema = z.object({
   patientId: z.number().int().positive(),
-  image: z.string().regex(/^data:image\/(png|jpe?g);base64,/, 'image must be a data: URI (png/jpeg)'),
+  // Optional — a script phoned in with no photo attached (the pharmacist
+  // fills it in from the call) is a real, existing flow, not an error case.
+  image: z.string().regex(/^data:image\/(png|jpe?g);base64,/, 'image must be a data: URI (png/jpeg)').optional(),
   fileName: z.string().default(''),
   doctor: z.string().default(''),
   duration: z.enum(['ONE_WEEK', 'FIFTEEN_DAYS', 'ONE_MONTH', 'TWO_MONTHS', 'THREE_MONTHS']).optional(),
   customDays: z.number().int().positive().optional(),
+  recurringFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  recurringUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export const addMedicineLineSchema = z.object({

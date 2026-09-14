@@ -2,7 +2,7 @@ import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nest
 import { and, eq, isNull } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { adminUser, memberAddress, patient, shieldStore, users } from '../../db/schema';
-import type { CreateAddressDto, CreatePatientDto } from './dto';
+import type { CreateAddressDto, CreatePatientDto, UpdatePatientDto } from './dto';
 
 /**
  * Every query here is scoped to the calling member's own id, resolved from
@@ -70,6 +70,25 @@ export class IdentityService {
   async createPatient(memberId: number, dto: CreatePatientDto) {
     const [created] = await this.db.insert(patient).values({ ...dto, memberId }).returning();
     return created;
+  }
+
+  async updatePatient(memberId: number, patientId: number, dto: UpdatePatientDto) {
+    const [updated] = await this.db
+      .update(patient)
+      .set(dto)
+      .where(and(eq(patient.id, patientId), eq(patient.memberId, memberId), isNull(patient.deletedAt)))
+      .returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Patient not found' } });
+    return updated;
+  }
+
+  async softDeletePatient(memberId: number, patientId: number) {
+    const [deleted] = await this.db
+      .update(patient)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(patient.id, patientId), eq(patient.memberId, memberId), isNull(patient.deletedAt)))
+      .returning();
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Patient not found' } });
   }
 
   /**

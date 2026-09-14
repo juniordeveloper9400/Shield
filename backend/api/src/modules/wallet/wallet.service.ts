@@ -72,6 +72,7 @@ export class WalletService {
         cardNumber: dto.cardNumber,
         receiptReference: dto.receiptReference,
         receiptFileName: dto.receiptFileName,
+        receiptImage: dto.receiptImage,
         issuedOn: isoDate(today),
         rechargedOn: isoDate(today),
         expiresOn: isoDate(addMonths(today, tier.validityMonths)),
@@ -79,6 +80,16 @@ export class WalletService {
       .returning();
 
     return created;
+  }
+
+  /**
+   * The caller's own submitted cards, newest first — how a member's app
+   * learns a pending card was approved or rejected after the fact, since
+   * submission itself credits nothing (see submitCard's doc).
+   */
+  async listCardsForMember(memberId: number) {
+    const theWallet = await this.getOrCreateWallet(memberId);
+    return this.db.select().from(walletCard).where(eq(walletCard.walletId, theWallet.id)).orderBy(walletCard.submittedAt);
   }
 
   async listPendingCards() {

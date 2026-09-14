@@ -92,6 +92,7 @@ export function createTestDb() {
       dob date NOT NULL,
       gender app.gender NOT NULL DEFAULT 'OTHER',
       relation app.patient_relation NOT NULL DEFAULT 'SELF',
+      abha_id text NOT NULL DEFAULT '',
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now(),
       deleted_at timestamptz
@@ -174,6 +175,9 @@ export function createTestDb() {
       is_prescription_only boolean NOT NULL DEFAULT false,
       status text NOT NULL DEFAULT 'ACTIVE',
       stock_quantity numeric(12,2) NOT NULL DEFAULT 0,
+      is_popular boolean NOT NULL DEFAULT false,
+      is_deal boolean NOT NULL DEFAULT false,
+      is_offer_of_day boolean NOT NULL DEFAULT false,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -426,6 +430,7 @@ export function createTestDb() {
       reviewer_note text NOT NULL DEFAULT '',
       receipt_reference text,
       receipt_file_name text,
+      receipt_image text,
       issued_on date NOT NULL DEFAULT current_date,
       recharged_on date NOT NULL DEFAULT current_date,
       expires_on date NOT NULL,

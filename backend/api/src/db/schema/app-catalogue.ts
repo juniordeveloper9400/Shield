@@ -71,6 +71,13 @@ export const product = appSchema.table('product', {
   isPrescriptionOnly: boolean('is_prescription_only').notNull().default(false),
   status: text('status').notNull().default('ACTIVE'),
   stockQuantity: numeric('stock_quantity', { precision: 12, scale: 2 }).notNull().default('0'),
+  // From migration 0005_product_home_sections.sql — drives the storefront's
+  // Popular/Deal/Offer-of-the-day sections. Present in the live schema; not
+  // yet folded into app_schema.sql's bundled DDL (known drift, see
+  // docs/decision-log.md), but real columns to mirror regardless.
+  isPopular: boolean('is_popular').notNull().default(false),
+  isDeal: boolean('is_deal').notNull().default(false),
+  isOfferOfDay: boolean('is_offer_of_day').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

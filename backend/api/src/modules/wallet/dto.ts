@@ -6,6 +6,7 @@ export const submitWalletCardSchema = z.object({
   cardNumber: z.string().optional(),
   receiptReference: z.string().optional(),
   receiptFileName: z.string().optional(),
+  receiptImage: z.string().regex(/^data:image\/(png|jpe?g);base64,/, 'receiptImage must be a data: URI (png/jpeg)').optional(),
 });
 
 export const rejectWalletCardSchema = z.object({

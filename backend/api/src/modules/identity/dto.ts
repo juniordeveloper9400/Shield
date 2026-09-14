@@ -22,7 +22,11 @@ export const createPatientSchema = z.object({
   dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'dob must be YYYY-MM-DD'),
   gender: z.enum(['MALE', 'FEMALE', 'OTHER']).default('OTHER'),
   relation: z.enum(['SELF', 'SPOUSE', 'CHILD', 'PARENT', 'OTHER']).default('SELF'),
+  abhaId: z.string().default(''),
 });
+
+export const updatePatientSchema = createPatientSchema.partial();
 
 export type CreateAddressDto = z.infer<typeof createAddressSchema>;
 export type CreatePatientDto = z.infer<typeof createPatientSchema>;
+export type UpdatePatientDto = z.infer<typeof updatePatientSchema>;

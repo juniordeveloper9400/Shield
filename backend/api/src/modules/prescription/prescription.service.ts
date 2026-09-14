@@ -28,7 +28,7 @@ export class PrescriptionService {
 
     const [member] = await this.db.select({ homeStoreId: users.homeStoreId }).from(users).where(eq(users.id, memberId)).limit(1);
 
-    if (!/^data:image\/(?:png|jpe?g);base64,.+$/.test(dto.image)) {
+    if (dto.image && !/^data:image\/(?:png|jpe?g);base64,.+$/.test(dto.image)) {
       throw new ForbiddenException({ error: { code: 'VALIDATION_ERROR', message: 'Malformed image data URI' } });
     }
 
@@ -44,6 +44,8 @@ export class PrescriptionService {
         doctor: dto.doctor,
         duration: dto.duration,
         customDays: dto.customDays,
+        recurringFrom: dto.recurringFrom,
+        recurringUntil: dto.recurringUntil,
       })
       .returning();
 

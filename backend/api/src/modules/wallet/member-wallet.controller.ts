@@ -47,6 +47,11 @@ export class MemberWalletController {
     return this.wallet.submitCard(Number(user.subjectId), dto);
   }
 
+  @Get('wallet/cards')
+  listCards(@CurrentUser() user: RequestSubject) {
+    return this.wallet.listCardsForMember(Number(user.subjectId));
+  }
+
   @Get('rewards/transactions')
   listRewardTransactions(@CurrentUser() user: RequestSubject) {
     return this.rewards.listTransactions(Number(user.subjectId));

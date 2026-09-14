@@ -1,9 +1,16 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
 import { IdentityService } from './identity.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireMember } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { createAddressSchema, createPatientSchema, type CreateAddressDto, type CreatePatientDto } from './dto';
+import {
+  createAddressSchema,
+  createPatientSchema,
+  updatePatientSchema,
+  type CreateAddressDto,
+  type CreatePatientDto,
+  type UpdatePatientDto,
+} from './dto';
 import type { RequestSubject } from '../auth/session.types';
 
 @Controller('v1/member')
@@ -40,5 +47,20 @@ export class MemberController {
     @Body(new ZodValidationPipe(createPatientSchema)) body: CreatePatientDto,
   ) {
     return this.identity.createPatient(Number(user.subjectId), body);
+  }
+
+  @Patch('patients/:id')
+  async updatePatient(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updatePatientSchema)) body: UpdatePatientDto,
+  ) {
+    return this.identity.updatePatient(Number(user.subjectId), id, body);
+  }
+
+  @Delete('patients/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deletePatient(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    await this.identity.softDeletePatient(Number(user.subjectId), id);
   }
 }

@@ -93,6 +93,48 @@ describe('Care Services (e2e)', () => {
     expect(dietitians.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: dietitianId })]));
   });
 
+  it('creates, updates, and soft-deletes a patient — the caller\'s own resource end to end', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/v1/member/patients')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ name: 'Throwaway Patient', dob: '1990-01-01', abhaId: '12345678901234' })
+      .expect(201);
+    const throwawayId = created.body.id;
+    expect(created.body.abhaId).toBe('12345678901234');
+
+    const updated = await request(app.getHttpServer())
+      .patch(`/v1/member/patients/${throwawayId}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ name: 'Renamed Patient' })
+      .expect(200);
+    expect(updated.body.name).toBe('Renamed Patient');
+    expect(String(updated.body.dob)).toContain('1990-01-01'); // untouched fields survive a partial update
+    expect(updated.body.abhaId).toBe('12345678901234'); // untouched by the partial update
+
+    await request(app.getHttpServer())
+      .patch(`/v1/member/patients/${ownedPatientId + 1000000}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ name: 'Nope' })
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .delete(`/v1/member/patients/${throwawayId}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(204);
+
+    const list = await request(app.getHttpServer())
+      .get('/v1/member/patients')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(list.body.map((p: { id: number }) => p.id)).not.toContain(throwawayId);
+
+    // Deleted (or never-owned) patients are gone as far as further writes are concerned.
+    await request(app.getHttpServer())
+      .delete(`/v1/member/patients/${throwawayId}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(404);
+  });
+
   it('rejects booking a lab test for a patient that is not the member\'s own', async () => {
     await request(app.getHttpServer())
       .post('/v1/member/lab-bookings')

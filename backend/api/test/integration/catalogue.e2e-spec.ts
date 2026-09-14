@@ -12,7 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, product, productCategory } from '../../src/db/schema';
+import { adminUser, membershipTier, product, productCategory } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -49,7 +49,7 @@ describe('Catalogue (e2e)', () => {
 
     const [seededProduct] = await db
       .insert(product)
-      .values({ name: 'Paracetamol 500mg', categoryId, price: '20.00', mrp: '25.00' })
+      .values({ name: 'Paracetamol 500mg', categoryId, price: '20.00', mrp: '25.00', isPopular: true })
       .returning();
     productId = seededProduct.id;
 
@@ -71,6 +71,17 @@ describe('Catalogue (e2e)', () => {
     await app.close();
   });
 
+  it('lists membership tiers publicly, for a client resolving a tier kind to its id', async () => {
+    await db
+      .insert(membershipTier)
+      .values({ kind: 'GOLD', name: 'Gold Shield', bin: '5678', bonusRate: '0.150', validityMonths: 12, sort: 1 });
+
+    const tiers = await request(app.getHttpServer()).get('/v1/public/catalogue/membership-tiers').expect(200);
+    expect(tiers.body).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'GOLD', name: 'Gold Shield' })]),
+    );
+  });
+
   it('lists categories publicly, with no auth required', async () => {
     const res = await request(app.getHttpServer()).get('/v1/public/catalogue/categories').expect(200);
     expect(res.body).toEqual(
@@ -87,6 +98,8 @@ describe('Catalogue (e2e)', () => {
     const single = await request(app.getHttpServer()).get(`/v1/public/catalogue/products/${productId}`).expect(200);
     expect(single.body.name).toBe('Paracetamol 500mg');
     expect(single.body.faqs).toEqual([]);
+    expect(single.body.isPopular).toBe(true);
+    expect(single.body.isDeal).toBe(false);
   });
 
   it('rejects a member session on staff-only catalogue writes', async () => {

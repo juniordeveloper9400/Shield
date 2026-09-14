@@ -119,7 +119,13 @@ describe('Prescription (e2e)', () => {
     const res = await request(app.getHttpServer())
       .post('/v1/member/prescriptions')
       .set('Authorization', `Bearer ${memberAccessToken}`)
-      .send({ patientId, image: PNG_DATA_URI, doctor: 'Dr. Rao' })
+      .send({
+        patientId,
+        image: PNG_DATA_URI,
+        doctor: 'Dr. Rao',
+        recurringFrom: '2026-01-01',
+        recurringUntil: '2026-06-01',
+      })
       .expect(201);
 
     prescriptionId = res.body.id;
@@ -127,6 +133,17 @@ describe('Prescription (e2e)', () => {
     expect(res.body.storagePath).toBeUndefined();
     expect(res.body.image).toBeUndefined();
     expect(res.body.status).toBe('AWAITING_REVIEW');
+    expect(String(res.body.recurringFrom)).toContain('2026-01-01');
+    expect(String(res.body.recurringUntil)).toContain('2026-06-01');
+  });
+
+  it('uploads a prescription with no photo — a script phoned in, not an error case', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/prescriptions')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ patientId, doctor: 'Dr. Rao (phone)' })
+      .expect(201);
+    expect(res.body.imageUrl).toBeNull();
   });
 
   it("hides the pharmacist-only medicine status field from the member, but not from staff", async () => {
