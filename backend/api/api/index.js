@@ -15,7 +15,11 @@ const { AppModule } = require('../dist/app.module');
 let cachedServer;
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // No bufferLogs here: it holds every Logger call (including runtime
+  // request errors, not just bootstrap output) until app.useLogger() is
+  // called, which nothing here ever does — so buffered logs never reach
+  // Vercel's log viewer at all, not even on crash.
+  const app = await NestFactory.create(AppModule);
   app.enableCors({ origin: true, credentials: true });
   await app.init();
   return app.getHttpAdapter().getInstance();
