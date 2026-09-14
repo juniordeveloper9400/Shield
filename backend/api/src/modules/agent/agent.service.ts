@@ -71,6 +71,23 @@ export class AgentService {
         throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: `Request already ${req.status.toLowerCase()}` } });
       }
 
+      // An agent must be a real, registered app member — never a row with
+      // no app.users behind it. Older code (long since retired — see
+      // docs/decision-log.md) could write app.agent directly with no
+      // member link at all; this is the one remaining path that inserts
+      // into app.agent and it must not reopen that gap just because the
+      // recruit's phone no longer resolves (member deleted their account,
+      // changed number, or the row was somehow never registered).
+      const memberId = await this.resolveMemberIdByPhone(tx, req.phone);
+      if (memberId === null) {
+        throw new ForbiddenException({
+          error: {
+            code: 'FORBIDDEN',
+            message: 'No registered member matches this phone number — an agent can only be created for a real registered app user',
+          },
+        });
+      }
+
       if (req.requestedLevel === 'NATIONAL') {
         const [existingNational] = await tx
           .select({ id: agent.id })
@@ -100,7 +117,7 @@ export class AgentService {
       const [createdAgent] = await tx
         .insert(agent)
         .values({
-          memberId: (await this.resolveMemberIdByPhone(tx, req.phone)) ?? undefined,
+          memberId,
           code: `SHD-${req.requestedLevel.slice(0, 3)}-${Date.now().toString(36).toUpperCase()}`,
           name: req.name,
           phone: req.phone,

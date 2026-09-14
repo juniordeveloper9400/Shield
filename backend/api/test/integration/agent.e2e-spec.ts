@@ -13,7 +13,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, agent, assembly, district, lsgd, region, state, users, ward } from '../../src/db/schema';
+import { adminUser, agent, agentRequest, assembly, district, lsgd, region, state, users, ward } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -159,6 +159,42 @@ describe('Agent & Geography (e2e)', () => {
       .post(`/v1/staff/agent-requests/${submit.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(403);
+  });
+
+  it("rejects approving a request whose phone doesn't match any registered app.users row — the fix for the live database's orphan (member_id NULL) app.agent rows", async () => {
+    // Simulates a member who filed a recruitment request and then deleted
+    // their account (or changed number) before an admin got to approving
+    // it — the request's phone no longer resolves to any app.users row.
+    // Inserted directly rather than through the real submit flow: no
+    // member sign-in is needed to exercise the approval-time guard this
+    // test actually checks, and every spec in this file sharing one
+    // in-memory auth-route throttle bucket means an extra sign-in call
+    // here isn't free.
+    const [submitted] = await db
+      .insert(agentRequest)
+      .values({
+        requestedLevel: 'WARD',
+        requestedArea: 'Ward 1',
+        requestedAreaId: wardId,
+        name: 'Orphan Candidate',
+        phone: '9100000009',
+      })
+      .returning();
+
+    await request(app.getHttpServer())
+      .post(`/v1/staff/agent-requests/${submitted.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(403);
+
+    // Nothing was written to app.agent for this request — never a row with
+    // no real member behind it.
+    const created = await db.select().from(agent).where(eq(agent.phone, '9100000009'));
+    expect(created).toHaveLength(0);
+
+    // The rejected-at-approval request stays PENDING (an admin can retry it
+    // later, e.g. once the member re-registers) — clean it up so it doesn't
+    // throw off later tests that count pending requests by number.
+    await db.delete(agentRequest).where(eq(agentRequest.id, submitted.id));
   });
 
   let wardAgentId: number;
