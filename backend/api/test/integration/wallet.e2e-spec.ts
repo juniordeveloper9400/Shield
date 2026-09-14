@@ -12,7 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, membershipTier, membershipTierLoad, users } from '../../src/db/schema';
+import { adminUser, membershipTier, membershipTierLoad, referral, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -259,5 +259,59 @@ describe('Wallet & Rewards (e2e)', () => {
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .expect(200);
     expect(list.body).toEqual(expect.arrayContaining([expect.objectContaining({ inviteePhone: '9123456789', status: 'SHARED' })]));
+  });
+
+  it('gets or creates the caller\'s own referral code, stably across repeat calls', async () => {
+    const first = await request(app.getHttpServer())
+      .get('/v1/member/referrals/code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(first.body.code).toMatch(/^SHIELD-\d{4}$/);
+
+    const second = await request(app.getHttpServer())
+      .get('/v1/member/referrals/code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(second.body.code).toBe(first.body.code);
+  });
+
+  it("reports direct referrals and activated wallet cards for the caller's own progress", async () => {
+    const [invitee] = await db
+      .insert(users)
+      .values({ phone: '9000000010', name: 'Referred Invitee', firebaseUid: 'member-referred-invitee' })
+      .returning();
+    await db.insert(referral).values({
+      inviterMemberId: memberId,
+      inviteeMemberId: invitee.id,
+      inviteePhone: invitee.phone,
+      status: 'TRANSACTED',
+      registeredAt: new Date(),
+      transactedAt: new Date(),
+    });
+
+    firebase.register('invitee-progress-token', { uid: 'member-referred-invitee' });
+    const inviteeLogin = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'invitee-progress-token' })
+      .expect(200);
+    const inviteeToken = inviteeLogin.body.accessToken as string;
+
+    const card = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${inviteeToken}`)
+      .send({ tierId, amount: 10000 })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${card.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const progress = await request(app.getHttpServer())
+      .get('/v1/member/referrals/progress')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(progress.body.directReferrals).toBe(1);
+    expect(progress.body.activatedWalletCards).toHaveLength(1);
+    expect(Number(progress.body.activatedWalletCards[0].amount)).toBe(10000);
   });
 });

@@ -11,7 +11,7 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, users } from '../../src/db/schema';
+import { adminUser, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
@@ -71,6 +71,62 @@ describe('Auth flow (e2e)', () => {
       .expect(200);
 
     expect(me.body.phone).toBe('9999999999');
+  });
+
+  it('saves a registration profile, crediting the bonus once and never again on a later edit', async () => {
+    const [store] = await db.insert(shieldStore).values({
+      code: 'SHD-REG',
+      name: 'Registration Store',
+      area: 'A',
+      city: 'A',
+      state: 'A',
+      pincode: '100000',
+    }).returning();
+
+    const login = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'valid-member-token' })
+      .expect(200);
+    const token = login.body.accessToken as string;
+
+    const firstSave = await request(app.getHttpServer())
+      .patch('/v1/member/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Test Member', email: 'test@example.com', address: '1 Main St', homeStoreId: store.id })
+      .expect(200);
+    expect(firstSave.body.registrationCompletedAt).not.toBeNull();
+    expect(firstSave.body.rewardPoints).toBe(500);
+    expect(firstSave.body.homeStoreId).toBe(store.id);
+
+    const secondSave = await request(app.getHttpServer())
+      .patch('/v1/member/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ address: '2 Second St' })
+      .expect(200);
+    expect(secondSave.body.rewardPoints).toBe(500); // unchanged — the bonus is one-time
+    expect(secondSave.body.address).toBe('2 Second St');
+    expect(secondSave.body.registrationCompletedAt).toBe(firstSave.body.registrationCompletedAt);
+
+    // GET /v1/member/me must reflect the same address fields PATCH just saved.
+    const me = await request(app.getHttpServer())
+      .get('/v1/member/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(me.body.address).toBe('2 Second St');
+    expect(me.body.homeStoreId).toBe(store.id);
+  });
+
+  it('rejects a registration save naming an unknown or inactive home store', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'valid-member-token' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch('/v1/member/me')
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .send({ homeStoreId: 999999 })
+      .expect(403);
   });
 
   it('does not silently create a member for an unrecognized Firebase identity', async () => {

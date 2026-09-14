@@ -59,9 +59,21 @@ export const respondApprovalSchema = z.object({
     .min(1),
 });
 
+/**
+ * Submits one or more uploaded prescriptions for fulfilment — an unpriced
+ * order shell the pharmacist prices at the counter, not a real-time
+ * checkout. See `PrescriptionService.submitForOrder`.
+ */
+export const submitPrescriptionOrderSchema = z.object({
+  prescriptionIds: z.array(z.number().int().positive()).min(1),
+  addressId: z.number().int().positive().optional(),
+  paymentMethodId: z.number().int().positive().optional(),
+});
+
 export type UploadPrescriptionDto = z.infer<typeof uploadPrescriptionSchema>;
 export type AddMedicineLineDto = z.infer<typeof addMedicineLineSchema>;
 export type UpdateMedicineStatusDto = z.infer<typeof updateMedicineStatusSchema>;
 export type UpdatePrescriptionStatusDto = z.infer<typeof updatePrescriptionStatusSchema>;
 export type RaiseApprovalDto = z.infer<typeof raiseApprovalSchema>;
 export type RespondApprovalDto = z.infer<typeof respondApprovalSchema>;
+export type SubmitPrescriptionOrderDto = z.infer<typeof submitPrescriptionOrderSchema>;

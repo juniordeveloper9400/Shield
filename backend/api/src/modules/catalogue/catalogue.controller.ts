@@ -53,4 +53,9 @@ export class CatalogueController {
   membershipTiers() {
     return this.catalogue.listMembershipTiers();
   }
+
+  @Get('payment-methods')
+  paymentMethods() {
+    return this.catalogue.listPaymentMethods();
+  }
 }

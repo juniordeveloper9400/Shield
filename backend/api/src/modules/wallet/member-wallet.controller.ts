@@ -75,6 +75,16 @@ export class MemberWalletController {
     return this.referrals.listForMember(Number(user.subjectId));
   }
 
+  @Get('referrals/code')
+  getReferralCode(@CurrentUser() user: RequestSubject) {
+    return this.referrals.getOrCreateCode(Number(user.subjectId)).then((code) => ({ code }));
+  }
+
+  @Get('referrals/progress')
+  getReferralProgress(@CurrentUser() user: RequestSubject) {
+    return this.referrals.getProgress(Number(user.subjectId));
+  }
+
   @Post('referrals')
   createReferral(
     @CurrentUser() user: RequestSubject,

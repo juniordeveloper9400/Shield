@@ -1,12 +1,26 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
-import { bill, cartLine, order, orderLine, orderTrackStep, users } from '../../db/schema';
+import {
+  bill,
+  cartLine,
+  memberAddress,
+  order,
+  orderLine,
+  orderReceipt,
+  orderTrackStep,
+  referral,
+  rewardPointTransaction,
+  users,
+} from '../../db/schema';
 import type { AdminRole } from '../auth/session.types';
 import { CartService } from './cart.service';
 import { assertLegalTransition, type OrderStatus } from './order-status';
-import type { CheckoutDto, SendBillDto, UpdateOrderStatusDto } from './dto';
+import type { CheckoutDto, SendBillDto, SubmitOrderReceiptDto, UpdateOrderStatusDto } from './dto';
+
+/** ₹100 → 10 points (ten rupees to the point) — mirrors the client's own `RewardsService.pointsForSpend`. */
+const RUPEES_PER_POINT = 10;
 
 @Injectable()
 export class OrderService {
@@ -21,6 +35,19 @@ export class OrderService {
 
     if (lines.length === 0) {
       throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Cart is empty' } });
+    }
+
+    if (dto.deliveryAddressId !== undefined) {
+      const [owned] = await this.db
+        .select({ id: memberAddress.id })
+        .from(memberAddress)
+        .where(and(eq(memberAddress.id, dto.deliveryAddressId), eq(memberAddress.memberId, memberId), isNull(memberAddress.deletedAt)))
+        .limit(1);
+      if (!owned) {
+        throw new ForbiddenException({
+          error: { code: 'FORBIDDEN', message: 'deliveryAddressId does not belong to the authenticated member' },
+        });
+      }
     }
 
     // Every total is computed here, server-side, from the cart lines that
@@ -76,8 +103,43 @@ export class OrderService {
 
       await tx.delete(cartLine).where(eq(cartLine.cartId, theCart.id));
 
+      // A paid order (always true here — every cart line is priced) earns
+      // reward points and advances the buyer's own inbound referral, the
+      // same two things `RewardsService.awardForOrder` and
+      // `ReferralService.markTransacted` used to do as separate client
+      // calls after the fact — now automatic, in the same transaction as
+      // the order itself.
+      if (paidTotal > 0) {
+        const points = Math.floor(paidTotal / RUPEES_PER_POINT);
+        if (points > 0) {
+          await tx.insert(rewardPointTransaction).values({
+            memberId,
+            points,
+            reason: 'ORDER',
+            note: `Order ${created.code}`,
+            refType: 'order',
+            refId: created.id,
+          });
+          const currentPoints = await this.currentRewardPoints(tx, memberId);
+          await tx
+            .update(users)
+            .set({ rewardPoints: currentPoints + points })
+            .where(eq(users.id, memberId));
+        }
+
+        await tx
+          .update(referral)
+          .set({ status: 'TRANSACTED', transactedAt: new Date() })
+          .where(and(eq(referral.inviteeMemberId, memberId), eq(referral.status, 'REGISTERED')));
+      }
+
       return created;
     });
+  }
+
+  private async currentRewardPoints(tx: Database, memberId: number): Promise<number> {
+    const [row] = await tx.select({ rewardPoints: users.rewardPoints }).from(users).where(eq(users.id, memberId)).limit(1);
+    return row?.rewardPoints ?? 0;
   }
 
   async listForMember(memberId: number) {
@@ -93,6 +155,22 @@ export class OrderService {
       .where(eq(orderTrackStep.orderId, orderId))
       .orderBy(orderTrackStep.sort);
     return { ...found, lines, steps };
+  }
+
+  /** A manual-transfer claim against an order the caller owns — see `SubmitOrderReceiptDto`'s doc. */
+  async submitReceipt(memberId: number, orderId: number, dto: SubmitOrderReceiptDto) {
+    await this.getOwnedByMemberOrThrow(orderId, memberId);
+    const [created] = await this.db
+      .insert(orderReceipt)
+      .values({
+        orderId,
+        payerName: dto.payerName,
+        reference: dto.reference,
+        amount: dto.amount?.toFixed(2),
+        fileName: dto.fileName,
+      })
+      .returning();
+    return created;
   }
 
   async getBillForMember(memberId: number, orderId: number) {

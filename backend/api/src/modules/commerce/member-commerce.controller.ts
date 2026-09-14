@@ -10,9 +10,11 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   addCartLineSchema,
   checkoutSchema,
+  submitOrderReceiptSchema,
   updateCartLineSchema,
   type AddCartLineDto,
   type CheckoutDto,
+  type SubmitOrderReceiptDto,
   type UpdateCartLineDto,
 } from './dto';
 import type { RequestSubject } from '../auth/session.types';
@@ -76,5 +78,14 @@ export class MemberCommerceController {
   @Get('orders/:id/bill')
   getBill(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
     return this.orders.getBillForMember(Number(user.subjectId), id);
+  }
+
+  @Post('orders/:id/receipt')
+  submitReceipt(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(submitOrderReceiptSchema)) dto: SubmitOrderReceiptDto,
+  ) {
+    return this.orders.submitReceipt(Number(user.subjectId), id, dto);
   }
 }

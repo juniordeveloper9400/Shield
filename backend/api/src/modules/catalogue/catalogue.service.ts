@@ -5,6 +5,7 @@ import {
   customerReviewVideo,
   homeBanner,
   membershipTier,
+  paymentMethod,
   product,
   productCategory,
   productDetail,
@@ -62,6 +63,17 @@ export class CatalogueService {
   async listMembershipTiers() {
     return this.cache.getOrSet('catalogue:membership-tiers', TTL.LONG, () =>
       this.db.select().from(membershipTier).orderBy(asc(membershipTier.sort)),
+    );
+  }
+
+  // ---- Payment methods --------------------------------------------------
+  // Checkout's option list — previously had no mirror or route at all, so
+  // `order.paymentMethodId` had nothing a client could validate against or
+  // even list.
+
+  async listPaymentMethods() {
+    return this.cache.getOrSet('catalogue:payment-methods', TTL.LONG, () =>
+      this.db.select().from(paymentMethod).where(eq(paymentMethod.isLive, true)).orderBy(asc(paymentMethod.sort)),
     );
   }
 

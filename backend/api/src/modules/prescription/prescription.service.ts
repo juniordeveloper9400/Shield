@@ -1,10 +1,35 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
-import { patient, prescription, prescriptionMedicine, users } from '../../db/schema';
+import {
+  memberAddress,
+  order,
+  orderTrackStep,
+  patient,
+  prescription,
+  prescriptionMedicine,
+  prescriptionOrder,
+  users,
+} from '../../db/schema';
 import type { AdminRole } from '../auth/session.types';
 import { assertLegalPrescriptionTransition, type PrescriptionStatus } from './prescription-status';
-import type { AddMedicineLineDto, UpdateMedicineStatusDto, UpdatePrescriptionStatusDto, UploadPrescriptionDto } from './dto';
+import type {
+  AddMedicineLineDto,
+  SubmitPrescriptionOrderDto,
+  UpdateMedicineStatusDto,
+  UpdatePrescriptionStatusDto,
+  UploadPrescriptionDto,
+} from './dto';
+
+/** The same track-step graph the old direct-Neon `savePrescriptionOrder` seeded — see order_repository.dart's `_prescriptionStages`. */
+const PRESCRIPTION_ORDER_STAGES = [
+  'Prescription received',
+  'Pharmacist review',
+  'Order confirmed',
+  'Dispatched',
+  'Delivered',
+];
 
 /** Strips the pharmacist-only stock field — see db/schema/app-prescription.ts. */
 function toMemberMedicine(line: typeof prescriptionMedicine.$inferSelect) {
@@ -50,6 +75,94 @@ export class PrescriptionService {
       .returning();
 
     return this.toMemberView(created);
+  }
+
+  /**
+   * Submits one or more uploaded prescriptions for fulfilment: one unpriced
+   * `order` (kind `PRESCRIPTION`, `mrpTotal`/`paidTotal` both `0` — a
+   * pharmacist prices it at the counter, this is not a checkout), the same
+   * five-stage track-step graph the old direct-Neon `savePrescriptionOrder`
+   * seeded, a `prescriptionOrder` link row per prescription, and each
+   * prescription's own `status` moved to `ORDERED`. Mirrors
+   * `OrderRepository.savePrescriptionOrder` + `PrescriptionRepository.
+   * markOrdered` exactly — no pricing or payment logic invented.
+   */
+  async submitForOrder(memberId: number, dto: SubmitPrescriptionOrderDto) {
+    const owned = await this.db
+      .select({ id: prescription.id, status: prescription.status })
+      .from(prescription)
+      .where(and(inArray(prescription.id, dto.prescriptionIds), eq(prescription.memberId, memberId)));
+    if (owned.length !== dto.prescriptionIds.length) {
+      throw new ForbiddenException({
+        error: { code: 'FORBIDDEN', message: 'One or more prescriptionIds do not belong to this member' },
+      });
+    }
+
+    if (dto.addressId !== undefined) {
+      const [ownedAddress] = await this.db
+        .select({ id: memberAddress.id })
+        .from(memberAddress)
+        .where(and(eq(memberAddress.id, dto.addressId), eq(memberAddress.memberId, memberId), isNull(memberAddress.deletedAt)))
+        .limit(1);
+      if (!ownedAddress) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'addressId does not belong to this member' } });
+      }
+    }
+
+    const medicineCounts = await this.db
+      .select({ prescriptionId: prescriptionMedicine.prescriptionId })
+      .from(prescriptionMedicine)
+      .where(inArray(prescriptionMedicine.prescriptionId, dto.prescriptionIds));
+    const itemCount = medicineCounts.length > 0 ? medicineCounts.length : dto.prescriptionIds.length;
+
+    const [member] = await this.db.select({ homeStoreId: users.homeStoreId }).from(users).where(eq(users.id, memberId)).limit(1);
+
+    return this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(order)
+        .values({
+          memberId,
+          code: `RX-${Date.now().toString(36).toUpperCase()}${randomBytes(2).toString('hex').toUpperCase()}`,
+          kind: 'PRESCRIPTION',
+          itemCount,
+          mrpTotal: '0',
+          paidTotal: '0',
+          storeId: member?.homeStoreId ?? null,
+          deliveryAddressId: dto.addressId,
+          paymentMethodId: dto.paymentMethodId,
+          placedOn: new Date().toISOString().slice(0, 10),
+        })
+        .returning();
+
+      await tx.insert(orderTrackStep).values(
+        PRESCRIPTION_ORDER_STAGES.map((title, index) => ({
+          orderId: created.id,
+          sort: index,
+          title,
+          state: index === 0 ? ('DONE' as const) : index === 1 ? ('CURRENT' as const) : ('UPCOMING' as const),
+          occurredAt: index === 0 ? new Date() : null,
+        })),
+      );
+
+      await tx.insert(prescriptionOrder).values(
+        dto.prescriptionIds.map((prescriptionId) => ({
+          prescriptionId,
+          orderId: created.id,
+          storeId: member?.homeStoreId ?? null,
+        })),
+      );
+
+      // Same "only if it hasn't already moved past AWAITING_REVIEW" guard as
+      // the old `markOrdered` — a prescription already READ (pharmacist has
+      // keyed in dosage) still moves to ORDERED, one already ORDERED is left
+      // alone.
+      const toAdvance = owned.filter((p) => p.status === 'AWAITING_REVIEW' || p.status === 'READ').map((p) => p.id);
+      if (toAdvance.length > 0) {
+        await tx.update(prescription).set({ status: 'ORDERED' }).where(inArray(prescription.id, toAdvance));
+      }
+
+      return created;
+    });
   }
 
   async listForMember(memberId: number) {

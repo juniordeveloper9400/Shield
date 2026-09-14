@@ -12,7 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, membershipTier, product, productCategory } from '../../src/db/schema';
+import { adminUser, membershipTier, paymentMethod, product, productCategory } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -80,6 +80,17 @@ describe('Catalogue (e2e)', () => {
     expect(tiers.body).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: 'GOLD', name: 'Gold Shield' })]),
     );
+  });
+
+  it('lists only live payment methods publicly', async () => {
+    await db.insert(paymentMethod).values([
+      { code: 'upi', name: 'UPI', isLive: true, sort: 0 },
+      { code: 'cod', name: 'Cash on Delivery', isLive: false, sort: 1 },
+    ]);
+
+    const methods = await request(app.getHttpServer()).get('/v1/public/catalogue/payment-methods').expect(200);
+    expect(methods.body).toHaveLength(1);
+    expect(methods.body[0].code).toBe('upi');
   });
 
   it('lists categories publicly, with no auth required', async () => {

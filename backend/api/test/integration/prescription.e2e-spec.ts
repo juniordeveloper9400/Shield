@@ -258,4 +258,40 @@ describe('Prescription (e2e)', () => {
       })
       .expect(403);
   });
+
+  it('rejects submitting a prescription that does not belong to the caller', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/member/prescription-orders')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ prescriptionIds: [999999] })
+      .expect(403);
+  });
+
+  it('submits a prescription for fulfilment: an unpriced order, track steps, and ORDERED status', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/prescription-orders')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ prescriptionIds: [prescriptionId] })
+      .expect(201);
+
+    expect(res.body.kind).toBe('PRESCRIPTION');
+    expect(Number(res.body.mrpTotal)).toBe(0);
+    expect(Number(res.body.paidTotal)).toBe(0);
+    expect(res.body.itemCount).toBe(1); // one medicine line was added earlier
+
+    const order = await request(app.getHttpServer())
+      .get(`/v1/member/orders/${res.body.id}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(order.body.steps).toHaveLength(5);
+    expect(order.body.steps[0].title).toBe('Prescription received');
+    expect(order.body.steps[0].state).toBe('DONE');
+    expect(order.body.steps[1].state).toBe('CURRENT');
+
+    const rx = await request(app.getHttpServer())
+      .get(`/v1/member/prescriptions/${prescriptionId}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(rx.body.status).toBe('ORDERED');
+  });
 });

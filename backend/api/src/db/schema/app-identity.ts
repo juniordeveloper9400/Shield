@@ -30,9 +30,18 @@ export const users = appSchema.table('users', {
   email: text('email'),
   gender: genderEnum('gender'),
   dob: date('dob'),
+  // Real columns in the live schema, missing from this mirror until now —
+  // same known drift as other tables here.
+  address: text('address'),
+  place: text('place'),
+  pincode: text('pincode'),
+  state: text('state'),
   homeStoreId: bigint('home_store_id', { mode: 'number' }),
   rewardPoints: integer('reward_points').notNull().default(0),
+  referralCode: text('referral_code'),
+  referredByMemberId: bigint('referred_by_member_id', { mode: 'number' }),
   registrationCompletedAt: timestamp('registration_completed_at', { withTimezone: true }),
+  registrationPromptDismissed: boolean('registration_prompt_dismissed').notNull().default(false),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

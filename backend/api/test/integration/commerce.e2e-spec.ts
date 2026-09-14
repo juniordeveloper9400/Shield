@@ -7,11 +7,12 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { hash } from 'bcryptjs';
+import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, product, productCategory, shieldStore, users } from '../../src/db/schema';
+import { adminUser, memberAddress, product, productCategory, referral, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -151,6 +152,13 @@ describe('Commerce (e2e)', () => {
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .expect(200);
     expect(cart.body.lines).toEqual([]);
+
+    // A paid checkout earns reward points automatically now — ₹200 → 20 pts.
+    const me = await request(app.getHttpServer())
+      .get('/v1/member/me')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(me.body.rewardPoints).toBe(20);
   });
 
   it('is idempotent: retrying checkout with the same key returns the same order, not a new one', async () => {
@@ -218,6 +226,31 @@ describe('Commerce (e2e)', () => {
       .expect(409); // DELIVERED is terminal
   });
 
+  it('submits a manual-transfer receipt claim against the caller\'s own order', async () => {
+    const receipt = await request(app.getHttpServer())
+      .post(`/v1/member/orders/${orderId}/receipt`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ payerName: 'Commerce Member', reference: 'UTR12345', amount: 200, fileName: 'receipt.jpg' })
+      .expect(201);
+    expect(receipt.body.reference).toBe('UTR12345');
+    expect(Number(receipt.body.amount)).toBe(200);
+  });
+
+  it("rejects a receipt claim against an order that isn't the caller's own", async () => {
+    await db.insert(users).values({ phone: '9000000098', name: 'Other Member', firebaseUid: 'member-commerce-other' });
+    firebase.register('other-member-token', { uid: 'member-commerce-other' });
+    const otherLogin = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'other-member-token' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post(`/v1/member/orders/${orderId}/receipt`)
+      .set('Authorization', `Bearer ${otherLogin.body.accessToken}`)
+      .send({ reference: 'stolen-claim' })
+      .expect(404);
+  });
+
   it('sends a bill as staff and reads it as the owning member', async () => {
     await request(app.getHttpServer())
       .put(`/v1/staff/orders/${orderId}/bill`)
@@ -239,5 +272,77 @@ describe('Commerce (e2e)', () => {
       .set('Idempotency-Key', 'checkout-key-2')
       .send({})
       .expect(403);
+  });
+
+  it("rejects checkout with a deliveryAddressId that belongs to someone else", async () => {
+    const [stranger] = await db
+      .insert(users)
+      .values({ phone: '9000000099', name: 'Stranger', firebaseUid: 'member-commerce-stranger' })
+      .returning();
+    const [strangerAddress] = await db
+      .insert(memberAddress)
+      .values({ memberId: stranger.id, house: '1', area: 'Somewhere', pincode: '000000' })
+      .returning();
+
+    await request(app.getHttpServer())
+      .post('/v1/member/cart/lines')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ productId, qty: 1 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/v1/member/orders')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .set('Idempotency-Key', 'checkout-key-stolen-address')
+      .send({ deliveryAddressId: strangerAddress.id })
+      .expect(403);
+
+    // The rejected attempt must not have consumed the cart or created an order.
+    const cart = await request(app.getHttpServer())
+      .get('/v1/member/cart')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(cart.body.lines).toHaveLength(1);
+  });
+
+  it("advances the buyer's own referral status to TRANSACTED on their first paid order", async () => {
+    const [inviter] = await db
+      .insert(users)
+      .values({ phone: '9000000050', name: 'Inviter', firebaseUid: 'member-commerce-inviter' })
+      .returning();
+    const [invitee] = await db
+      .insert(users)
+      .values({ phone: '9000000051', name: 'Invitee', firebaseUid: 'member-commerce-invitee' })
+      .returning();
+    await db.insert(referral).values({
+      inviterMemberId: inviter.id,
+      inviteeMemberId: invitee.id,
+      inviteePhone: invitee.phone,
+      status: 'REGISTERED',
+      registeredAt: new Date(),
+    });
+
+    firebase.register('invitee-token', { uid: 'member-commerce-invitee' });
+    const inviteeLogin = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'invitee-token' })
+      .expect(200);
+    const inviteeToken = inviteeLogin.body.accessToken as string;
+
+    await request(app.getHttpServer())
+      .post('/v1/member/cart/lines')
+      .set('Authorization', `Bearer ${inviteeToken}`)
+      .send({ productId, qty: 1 })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/v1/member/orders')
+      .set('Authorization', `Bearer ${inviteeToken}`)
+      .set('Idempotency-Key', 'checkout-key-invitee-1')
+      .send({})
+      .expect(201);
+
+    const [updatedReferral] = await db.select().from(referral).where(eq(referral.inviteeMemberId, invitee.id));
+    expect(updatedReferral.status).toBe('TRANSACTED');
+    expect(updatedReferral.transactedAt).not.toBeNull();
   });
 });

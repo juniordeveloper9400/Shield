@@ -1,8 +1,11 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { adminUser, memberAddress, patient, shieldStore, users } from '../../db/schema';
-import type { CreateAddressDto, CreatePatientDto, UpdatePatientDto } from './dto';
+import { adminUser, memberAddress, patient, rewardPointTransaction, shieldStore, users } from '../../db/schema';
+import type { CreateAddressDto, CreatePatientDto, UpdateMemberProfileDto, UpdatePatientDto } from './dto';
+
+/** Credited once, the first time a member completes registration. Mirrors the client's own display constant (`RewardsService.registrationBonus`). */
+const REGISTRATION_BONUS_POINTS = 500;
 
 /**
  * Every query here is scoped to the calling member's own id, resolved from
@@ -23,6 +26,10 @@ export class IdentityService {
         email: users.email,
         gender: users.gender,
         dob: users.dob,
+        address: users.address,
+        place: users.place,
+        pincode: users.pincode,
+        state: users.state,
         homeStoreId: users.homeStoreId,
         rewardPoints: users.rewardPoints,
         registrationCompletedAt: users.registrationCompletedAt,
@@ -33,6 +40,79 @@ export class IdentityService {
 
     if (!member) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Member not found' } });
     return member;
+  }
+
+  /**
+   * Registration save / profile edit. `registrationCompletedAt` is set by
+   * the server the first time this succeeds for a member (never by the
+   * client) — and in the same transaction, that exact null → non-null
+   * transition is what credits the one-time registration bonus, replacing
+   * the client's own `isFirst` + separate ledger `once` guard with a single
+   * atomic check here.
+   */
+  async updateProfile(memberId: number, dto: UpdateMemberProfileDto) {
+    if (dto.homeStoreId !== undefined) {
+      const [store] = await this.db
+        .select({ id: shieldStore.id })
+        .from(shieldStore)
+        .where(and(eq(shieldStore.id, dto.homeStoreId), eq(shieldStore.isActive, true)))
+        .limit(1);
+      if (!store) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'homeStoreId is not a known active store' } });
+      }
+    }
+
+    return this.db.transaction(async (tx) => {
+      const [before] = await tx
+        .select({ registrationCompletedAt: users.registrationCompletedAt })
+        .from(users)
+        .where(and(eq(users.id, memberId), isNull(users.deletedAt)))
+        .limit(1);
+      if (!before) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Member not found' } });
+
+      const isFirstCompletion = before.registrationCompletedAt === null;
+
+      const [updated] = await tx
+        .update(users)
+        .set({
+          ...dto,
+          ...(isFirstCompletion ? { registrationCompletedAt: new Date() } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(users.id, memberId))
+        .returning({
+          id: users.id,
+          uuid: users.uuid,
+          phone: users.phone,
+          name: users.name,
+          email: users.email,
+          gender: users.gender,
+          dob: users.dob,
+          address: users.address,
+          place: users.place,
+          pincode: users.pincode,
+          state: users.state,
+          homeStoreId: users.homeStoreId,
+          rewardPoints: users.rewardPoints,
+          registrationCompletedAt: users.registrationCompletedAt,
+        });
+
+      if (isFirstCompletion) {
+        await tx.insert(rewardPointTransaction).values({
+          memberId,
+          points: REGISTRATION_BONUS_POINTS,
+          reason: 'REGISTRATION',
+          note: 'Registration bonus',
+        });
+        await tx
+          .update(users)
+          .set({ rewardPoints: updated.rewardPoints + REGISTRATION_BONUS_POINTS })
+          .where(eq(users.id, memberId));
+        updated.rewardPoints += REGISTRATION_BONUS_POINTS;
+      }
+
+      return updated;
+    });
   }
 
   async listAddresses(memberId: number) {

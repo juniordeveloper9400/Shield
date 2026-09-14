@@ -27,8 +27,20 @@ export const sendBillSchema = z.object({
   image: z.string().min(1),
 });
 
+// A manual-transfer claim, not a payment confirmation — no image bytes: the
+// live app has never uploaded the receipt photo itself anywhere, only this
+// metadata (see order_repository.dart's OrderReceiptInput on the client this
+// mirrors). Staff settle the claim against `reference` by hand.
+export const submitOrderReceiptSchema = z.object({
+  payerName: z.string().optional(),
+  reference: z.string().optional(),
+  amount: z.number().nonnegative().optional(),
+  fileName: z.string().optional(),
+});
+
 export type AddCartLineDto = z.infer<typeof addCartLineSchema>;
 export type UpdateCartLineDto = z.infer<typeof updateCartLineSchema>;
 export type CheckoutDto = z.infer<typeof checkoutSchema>;
 export type UpdateOrderStatusDto = z.infer<typeof updateOrderStatusSchema>;
 export type SendBillDto = z.infer<typeof sendBillSchema>;
+export type SubmitOrderReceiptDto = z.infer<typeof submitOrderReceiptSchema>;

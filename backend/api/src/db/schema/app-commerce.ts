@@ -1,4 +1,4 @@
-import { bigint, date, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, date, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { appSchema } from './app-identity';
 
 /**
@@ -17,6 +17,21 @@ export const orderStatusEnum = appSchema.enum('order_status', [
   'CANCELLED',
 ]);
 export const trackStateEnum = appSchema.enum('track_state', ['DONE', 'CURRENT', 'UPCOMING']);
+
+/**
+ * Checkout payment methods (`'upi'` / `'wallet'` / `'cod'`) — previously
+ * unmirrored entirely; `order.paymentMethodId` had nothing to validate
+ * against.
+ */
+export const paymentMethod = appSchema.table('payment_method', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  blurb: text('blurb').notNull().default(''),
+  isLive: boolean('is_live').notNull().default(false),
+  sort: integer('sort').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const cart = appSchema.table('cart', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),

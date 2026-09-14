@@ -6,9 +6,11 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createAddressSchema,
   createPatientSchema,
+  updateMemberProfileSchema,
   updatePatientSchema,
   type CreateAddressDto,
   type CreatePatientDto,
+  type UpdateMemberProfileDto,
   type UpdatePatientDto,
 } from './dto';
 import type { RequestSubject } from '../auth/session.types';
@@ -21,6 +23,14 @@ export class MemberController {
   @Get('me')
   async me(@CurrentUser() user: RequestSubject) {
     return this.identity.getMemberProfile(Number(user.subjectId));
+  }
+
+  @Patch('me')
+  async updateMe(
+    @CurrentUser() user: RequestSubject,
+    @Body(new ZodValidationPipe(updateMemberProfileSchema)) body: UpdateMemberProfileDto,
+  ) {
+    return this.identity.updateProfile(Number(user.subjectId), body);
   }
 
   @Get('addresses')

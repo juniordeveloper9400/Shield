@@ -6,8 +6,10 @@ import { RequireMember } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   respondApprovalSchema,
+  submitPrescriptionOrderSchema,
   uploadPrescriptionSchema,
   type RespondApprovalDto,
+  type SubmitPrescriptionOrderDto,
   type UploadPrescriptionDto,
 } from './dto';
 import type { RequestSubject } from '../auth/session.types';
@@ -36,6 +38,14 @@ export class MemberPrescriptionController {
   @Get('prescriptions/:id')
   get(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
     return this.prescriptions.getForMember(Number(user.subjectId), id);
+  }
+
+  @Post('prescription-orders')
+  submitForOrder(
+    @CurrentUser() user: RequestSubject,
+    @Body(new ZodValidationPipe(submitPrescriptionOrderSchema)) dto: SubmitPrescriptionOrderDto,
+  ) {
+    return this.prescriptions.submitForOrder(Number(user.subjectId), dto);
   }
 
   @Get('approvals')

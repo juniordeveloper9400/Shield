@@ -52,9 +52,16 @@ export function createTestDb() {
       email text,
       gender app.gender,
       dob date,
+      address text,
+      place text,
+      pincode text,
+      state text,
       home_store_id bigint,
       reward_points integer NOT NULL DEFAULT 0,
+      referral_code text UNIQUE,
+      referred_by_member_id bigint,
       registration_completed_at timestamptz,
+      registration_prompt_dismissed boolean NOT NULL DEFAULT false,
       last_login_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now(),
@@ -129,6 +136,16 @@ export function createTestDb() {
       sort integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE app.payment_method (
+      id bigserial PRIMARY KEY,
+      code text NOT NULL UNIQUE,
+      name text NOT NULL,
+      blurb text NOT NULL DEFAULT '',
+      is_live boolean NOT NULL DEFAULT false,
+      sort integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE app.product_category (
@@ -319,6 +336,20 @@ export function createTestDb() {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE app.order_receipt (
+      id bigserial PRIMARY KEY,
+      uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+      order_id bigint NOT NULL REFERENCES app."order"(id) ON DELETE CASCADE,
+      payer_name text,
+      reference text,
+      amount numeric(12,2),
+      storage_path text,
+      file_name text,
+      mime_type text,
+      uploaded_at timestamptz NOT NULL DEFAULT now(),
+      verified_at timestamptz
+    );
+
     CREATE TABLE app.prescription (
       id bigserial PRIMARY KEY,
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -355,6 +386,18 @@ export function createTestDb() {
       route_time text NOT NULL DEFAULT '',
       product_id bigint REFERENCES app.product(id) ON DELETE SET NULL,
       status app.prescription_medicine_status NOT NULL DEFAULT 'AVAILABLE'
+    );
+
+    CREATE TABLE app.prescription_order (
+      id bigserial PRIMARY KEY,
+      uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+      prescription_id bigint NOT NULL REFERENCES app.prescription(id) ON DELETE CASCADE,
+      order_id bigint REFERENCES app."order"(id) ON DELETE SET NULL,
+      store_id bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
+      status text NOT NULL DEFAULT 'SUBMITTED',
+      customer_notes text,
+      submitted_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE app.approval (
