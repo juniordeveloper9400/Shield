@@ -1,0 +1,18 @@
+name: Keep backend warm
+
+# Vercel Hobby serverless functions and Neon's free-tier database both
+# suspend after a few minutes of inactivity, adding several seconds of cold
+# start to the first real request. A periodic ping against /readyz (which
+# touches the database, not just the process) keeps both warm so members
+# don't feel that lag.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend readiness endpoint
+        run: curl -sf --max-time 25 https://shieldbackend.vercel.app/readyz || true
