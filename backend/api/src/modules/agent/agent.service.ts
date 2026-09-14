@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
@@ -169,7 +169,8 @@ export class AgentService {
 
   async getTeamForMember(memberId: number) {
     const self = await this.getApprovedAgentByMemberIdOrThrow(memberId);
-    const descendants = await this.getDescendants(self.id);
+    const descendants =
+      self.level === 'NATIONAL' ? await this.getEveryoneBelowNational(self.id) : await this.getDescendants(self.id);
     return { ...self, descendants };
   }
 
@@ -199,6 +200,20 @@ export class AgentService {
       frontier = children.map((c) => c.id);
     }
     return result;
+  }
+
+  /**
+   * The national agent is meant to be the one root everyone eventually
+   * reports up to, but real data can leave someone unreachable by a plain
+   * parent-chain walk (an agent converted with no parent chosen, an
+   * inconsistent parent_id) — so a national agent's own downline is every
+   * other non-national agent, not just whoever a correct chain of
+   * parent_id happens to connect back to them. Mirrors AgentService's own
+   * client-side `descendantsOf` in shield agent_invester (the same rule
+   * kept in sync on both sides — see that method's doc).
+   */
+  private async getEveryoneBelowNational(nationalId: number) {
+    return this.db.select().from(agent).where(and(ne(agent.id, nationalId), ne(agent.level, 'NATIONAL')));
   }
 
   // ---- Customers & withdrawals -------------------------------------------
