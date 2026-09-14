@@ -10,12 +10,10 @@ import { hash } from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { OBJECT_STORAGE } from '../../src/storage/object-storage';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser, patient, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeObjectStorage } from './fake-object-storage';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 // A real (tiny, valid) 1x1 transparent PNG.
@@ -26,7 +24,6 @@ describe('Prescription (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
   let firebase: FakeFirebaseVerifier;
-  let storage: FakeObjectStorage;
   let memberAccessToken: string;
   let storeAStaffToken: string;
   let storeBStaffToken: string;
@@ -35,15 +32,12 @@ describe('Prescription (e2e)', () => {
   beforeAll(async () => {
     db = createTestDb();
     firebase = new FakeFirebaseVerifier();
-    storage = new FakeObjectStorage();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(OBJECT_STORAGE)
-      .useValue(storage)
       .overrideProvider(FIREBASE_VERIFIER)
       .useValue(firebase)
       .compile();
@@ -121,7 +115,7 @@ describe('Prescription (e2e)', () => {
       .expect(403);
   });
 
-  it('uploads a prescription to object storage and never exposes storagePath/image', async () => {
+  it('uploads a prescription, storing the image inline and never exposing the raw column name', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/member/prescriptions')
       .set('Authorization', `Bearer ${memberAccessToken}`)
@@ -129,18 +123,10 @@ describe('Prescription (e2e)', () => {
       .expect(201);
 
     prescriptionId = res.body.id;
-    expect(res.body.imageUrl).toMatch(/^https:\/\/fake-object-storage\.test\//);
+    expect(res.body.imageUrl).toBe(PNG_DATA_URI);
     expect(res.body.storagePath).toBeUndefined();
     expect(res.body.image).toBeUndefined();
     expect(res.body.status).toBe('AWAITING_REVIEW');
-  });
-
-  it('stores the actual bytes, not just a reference', () => {
-    // The upload above must have actually called storage.put() with real
-    // decoded bytes — not just recorded a path.
-    const key = storage.keys().find((k) => k.startsWith('prescriptions/'));
-    expect(key).toBeDefined();
-    expect(storage.has(key!)).toBe(true);
   });
 
   it("hides the pharmacist-only medicine status field from the member, but not from staff", async () => {

@@ -19,9 +19,9 @@ const envSchema = z
     // Optional outside production: CacheService degrades to "always miss,
     // always hit the DB" if Redis is unreachable — see cache/cache.service.ts.
     REDIS_URL: z.string().default('redis://localhost:6379'),
-    // Object storage for prescription images and other member uploads —
-    // see backend/docs/security.md. Optional outside production; tests use
-    // an in-memory double (test/integration/fake-object-storage.ts).
+    // Object storage — currently unused (prescription images are stored as
+    // base64 in app.prescription.image directly, see prescription.service.ts).
+    // Kept optional for a future re-migration back to S3-compatible storage.
     OBJECT_STORAGE_ENDPOINT: z.string().optional(),
     OBJECT_STORAGE_REGION: z.string().default('auto'),
     OBJECT_STORAGE_BUCKET: z.string().optional(),
@@ -39,9 +39,6 @@ const envSchema = z
           path: ['FIREBASE_ADMIN_CREDENTIALS'],
           message: 'FIREBASE_ADMIN_CREDENTIALS or FIREBASE_ADMIN_CREDENTIALS_FILE is required in production',
         });
-      }
-      for (const key of ['OBJECT_STORAGE_ENDPOINT', 'OBJECT_STORAGE_BUCKET', 'OBJECT_STORAGE_ACCESS_KEY', 'OBJECT_STORAGE_SECRET_KEY'] as const) {
-        if (!val[key]) ctx.addIssue({ code: 'custom', path: [key], message: `${key} is required in production` });
       }
     }
   });

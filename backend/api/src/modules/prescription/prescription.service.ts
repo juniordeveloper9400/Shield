@@ -1,14 +1,10 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import { patient, prescription, prescriptionMedicine, users } from '../../db/schema';
-import { OBJECT_STORAGE, type ObjectStorage } from '../../storage/object-storage';
 import type { AdminRole } from '../auth/session.types';
 import { assertLegalPrescriptionTransition, type PrescriptionStatus } from './prescription-status';
 import type { AddMedicineLineDto, UpdateMedicineStatusDto, UpdatePrescriptionStatusDto, UploadPrescriptionDto } from './dto';
-
-const SIGNED_URL_TTL_SECONDS = 5 * 60;
 
 /** Strips the pharmacist-only stock field — see db/schema/app-prescription.ts. */
 function toMemberMedicine(line: typeof prescriptionMedicine.$inferSelect) {
@@ -18,10 +14,7 @@ function toMemberMedicine(line: typeof prescriptionMedicine.$inferSelect) {
 
 @Injectable()
 export class PrescriptionService {
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Database,
-    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
   async upload(memberId: number, dto: UploadPrescriptionDto) {
     const [owned] = await this.db
@@ -35,15 +28,9 @@ export class PrescriptionService {
 
     const [member] = await this.db.select({ homeStoreId: users.homeStoreId }).from(users).where(eq(users.id, memberId)).limit(1);
 
-    const match = /^data:(image\/(?:png|jpe?g));base64,(.+)$/.exec(dto.image);
-    if (!match) {
+    if (!/^data:image\/(?:png|jpe?g);base64,.+$/.test(dto.image)) {
       throw new ForbiddenException({ error: { code: 'VALIDATION_ERROR', message: 'Malformed image data URI' } });
     }
-    const [, contentType, base64] = match;
-    const buffer = Buffer.from(base64, 'base64');
-    const extension = contentType === 'image/png' ? 'png' : 'jpg';
-    const storagePath = `prescriptions/${memberId}/${randomUUID()}.${extension}`;
-    await this.storage.put(storagePath, buffer, contentType);
 
     const [created] = await this.db
       .insert(prescription)
@@ -53,7 +40,7 @@ export class PrescriptionService {
         storeId: member?.homeStoreId ?? null,
         code: `RX-${Date.now().toString(36).toUpperCase()}`,
         fileName: dto.fileName,
-        storagePath,
+        image: dto.image,
         doctor: dto.doctor,
         duration: dto.duration,
         customDays: dto.customDays,
@@ -69,13 +56,13 @@ export class PrescriptionService {
       .from(prescription)
       .where(eq(prescription.memberId, memberId))
       .orderBy(desc(prescription.createdAt));
-    return Promise.all(rows.map((row) => this.toMemberView(row)));
+    return rows.map((row) => this.toMemberView(row));
   }
 
   async getForMember(memberId: number, id: number) {
     const found = await this.getOwnedByMemberOrThrow(id, memberId);
     const lines = await this.db.select().from(prescriptionMedicine).where(eq(prescriptionMedicine.prescriptionId, id));
-    return { ...(await this.toMemberView(found)), medicines: lines.map(toMemberMedicine) };
+    return { ...this.toMemberView(found), medicines: lines.map(toMemberMedicine) };
   }
 
   async listForStaff(role: AdminRole, storeId: number | null) {
@@ -89,13 +76,13 @@ export class PrescriptionService {
               .from(prescription)
               .where(eq(prescription.storeId, storeId))
               .orderBy(desc(prescription.createdAt));
-    return Promise.all(rows.map((row) => this.toStaffView(row)));
+    return rows.map((row) => this.toStaffView(row));
   }
 
   async getForStaff(role: AdminRole, storeId: number | null, id: number) {
     const found = await this.getOwnedByStaffOrThrow(id, role, storeId);
     const lines = await this.db.select().from(prescriptionMedicine).where(eq(prescriptionMedicine.prescriptionId, id));
-    return { ...(await this.toStaffView(found)), medicines: lines };
+    return { ...this.toStaffView(found), medicines: lines };
   }
 
   async addMedicineLine(role: AdminRole, storeId: number | null, prescriptionId: number, dto: AddMedicineLineDto) {
@@ -162,18 +149,13 @@ export class PrescriptionService {
     return found;
   }
 
-  private async signedImageUrl(storagePath: string | null): Promise<string | null> {
-    if (!storagePath) return null;
-    return this.storage.getSignedReadUrl(storagePath, SIGNED_URL_TTL_SECONDS);
+  private toMemberView(row: typeof prescription.$inferSelect) {
+    const { storagePath: _storagePath, image, ...rest } = row;
+    return { ...rest, imageUrl: image };
   }
 
-  private async toMemberView(row: typeof prescription.$inferSelect) {
-    const { storagePath: _storagePath, image: _image, ...rest } = row;
-    return { ...rest, imageUrl: await this.signedImageUrl(row.storagePath) };
-  }
-
-  private async toStaffView(row: typeof prescription.$inferSelect) {
-    const { storagePath: _storagePath, image: _image, ...rest } = row;
-    return { ...rest, imageUrl: await this.signedImageUrl(row.storagePath) };
+  private toStaffView(row: typeof prescription.$inferSelect) {
+    const { storagePath: _storagePath, image, ...rest } = row;
+    return { ...rest, imageUrl: image };
   }
 }
