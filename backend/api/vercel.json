@@ -2,6 +2,7 @@
   "version": 2,
   "buildCommand": "pnpm build",
   "installCommand": "pnpm install",
+  "outputDirectory": "dist",
   "functions": {
     "api/index.js": {
       "includeFiles": "dist/**"
