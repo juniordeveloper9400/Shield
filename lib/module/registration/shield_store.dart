@@ -222,8 +222,8 @@ class StoreDirectory {
       city: 'Malappuram',
       state: 'Kerala',
       pincode: '676505',
-      latitude: 10.993,
-      longitude: 76.08,
+      latitude: 11.0870314,
+      longitude: 75.9528125,
     ),
     ShieldStore(
       id: 'SHD-KND',

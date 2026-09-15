@@ -114,12 +114,15 @@ void main() {
       expect(find.text('Packed'), findsOneWidget);
       expect(find.text('Delivered'), findsOneWidget);
       expect(find.textContaining('Delivery by:'), findsOneWidget);
-      // A standard order owes nothing here.
+      // The old "make payment now" nudge and pay-using footer are gone —
+      // the real pay-now action lives on the bill card further down, not
+      // pinned to the tracker.
       expect(find.text('Make payment now'), findsNothing);
+      expect(find.text('Pay using'), findsNothing);
     });
 
-    testWidgets('a prescription order shows the pharmacist stages and a '
-        'payment nudge', (tester) async {
+    testWidgets('a prescription order shows the pharmacist stages, with no '
+        'payment nudge or footer', (tester) async {
       await _pumpTrack(
         tester,
         _order(kind: OrderKind.prescription, mrp: 0, paid: 0),
@@ -128,10 +131,11 @@ void main() {
       expect(find.text('Prescription received'), findsOneWidget);
       expect(find.text('Pharmacist review'), findsOneWidget);
       expect(find.text('Order confirmed'), findsOneWidget);
-      expect(find.text('Make payment now'), findsOneWidget);
+      expect(find.text('Make payment now'), findsNothing);
+      expect(find.text('Pay using'), findsNothing);
     });
 
-    testWidgets('a delivered order drops the window and the nudge', (
+    testWidgets('a delivered order drops the delivery window', (
       tester,
     ) async {
       await _pumpTrack(
@@ -140,8 +144,28 @@ void main() {
       );
 
       expect(find.textContaining('Delivery by:'), findsNothing);
-      expect(find.text('Make payment now'), findsNothing);
       expect(find.text('Order delivered'), findsOneWidget);
+    });
+
+    testWidgets('the order tracking section collapses and expands from its '
+        'own arrow', (tester) async {
+      await _pumpTrack(tester, _order());
+
+      // Open by default — the stepper reads straight away.
+      expect(find.text('Order placed'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+
+      await tester.tap(find.text('Order tracking'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Order placed'), findsNothing);
+      expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
+
+      await tester.tap(find.text('Order tracking'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Order placed'), findsOneWidget);
+      expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
     });
   });
 

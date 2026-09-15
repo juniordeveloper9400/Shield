@@ -43,12 +43,6 @@ class OrderTrackScreen extends StatelessWidget {
           child: Divider(height: 1, color: AppColors.border),
         ),
       ),
-      // The pay bar is pinned rather than scrolled to — it is the one action
-      // the screen exists to prompt, and a member should not have to reach the
-      // end of the bill to find it.
-      bottomNavigationBar: track.awaitingPayment
-          ? OrderPayFooter(order: order)
-          : null,
       body: Column(
         children: [
           // Where the order stands is what a member opens this screen to
@@ -188,13 +182,24 @@ class _StatusHeader extends StatelessWidget {
   }
 }
 
-class _TrackCard extends StatelessWidget {
+class _TrackCard extends StatefulWidget {
   final OrderTrack track;
 
   const _TrackCard({required this.track});
 
   @override
+  State<_TrackCard> createState() => _TrackCardState();
+}
+
+class _TrackCardState extends State<_TrackCard> {
+  // Open by default — collapsing is for putting the stepper away once a
+  // member already knows where the order stands, not for hiding it on
+  // first view.
+  bool _expanded = true;
+
+  @override
   Widget build(BuildContext context) {
+    final track = widget.track;
     final steps = track.steps;
     final currentIndex = steps.indexWhere(
       (s) => s.state == TrackState.current,
@@ -243,67 +248,94 @@ class _TrackCard extends StatelessWidget {
                 ),
               ),
             ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
-            child: Column(
-              children: [
-                _StepGraph(steps: steps),
-                const SizedBox(height: 16),
-                _Callout(
-                  icon: _statusIcon(track.order.status),
-                  title: track.headline,
-                  sub: track.subhead,
-                  caretX: caretX,
-                ),
-                if (track.awaitingPayment) ...[
-                  const SizedBox(height: 12),
-                  _PayNudge(track: track),
-                ],
-                const SizedBox(height: 14),
-                const Divider(height: 1, color: AppColors.border),
-                const SizedBox(height: 12),
-                Row(
+          Material(
+            color: AppColors.white,
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                child: Row(
                   children: [
-                    const Icon(
-                      Icons.shopping_bag_outlined,
-                      size: 18,
-                      color: AppColors.textMuted,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
+                    const Expanded(
                       child: Text(
-                        '${track.order.itemCount} '
-                        'item${track.order.itemCount == 1 ? '' : 's'} ordered',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textBody,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        track.order.mrpTotal > 0 || track.order.paidTotal > 0
-                            ? track.order.paidLabel
-                            : 'Price on confirmation',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          fontSize: 13.5,
+                        'Order tracking',
+                        style: TextStyle(
+                          fontSize: 14.5,
                           fontWeight: FontWeight.w800,
                           color: AppColors.textDark,
                         ),
                       ),
                     ),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      size: 24,
+                      color: AppColors.textMuted,
+                    ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+              child: Column(
+                children: [
+                  _StepGraph(steps: steps),
+                  const SizedBox(height: 16),
+                  _Callout(
+                    icon: _statusIcon(track.order.status),
+                    title: track.headline,
+                    sub: track.subhead,
+                    caretX: caretX,
+                  ),
+                  const SizedBox(height: 14),
+                  const Divider(height: 1, color: AppColors.border),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.shopping_bag_outlined,
+                        size: 18,
+                        color: AppColors.textMuted,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${track.order.itemCount} '
+                          'item${track.order.itemCount == 1 ? '' : 's'} ordered',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textBody,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          track.order.mrpTotal > 0 || track.order.paidTotal > 0
+                              ? track.order.paidLabel
+                              : 'Price on confirmation',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -548,71 +580,6 @@ class _CaretPainter extends CustomPainter {
   bool shouldRepaint(_CaretPainter oldDelegate) => oldDelegate.color != color;
 }
 
-/// The amber "make payment now" strip inside the card, for a prescription
-/// order that has not been paid.
-class _PayNudge extends StatelessWidget {
-  final OrderTrack track;
-
-  const _PayNudge({required this.track});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.goldTint,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.schedule_rounded,
-            size: 20,
-            color: AppColors.goldAccent,
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Make payment now',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                SizedBox(height: 1),
-                Text(
-                  'To get delivery on time',
-                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton(
-            onPressed: () => _payToast(context),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.goldAccent,
-              side: const BorderSide(color: AppColors.goldAccent),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: const Text(
-              'Pay now',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ReminderRow extends StatelessWidget {
   const _ReminderRow();
 
@@ -663,14 +630,4 @@ class _ReminderRow extends StatelessWidget {
       ),
     );
   }
-}
-
-void _payToast(BuildContext context) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      const SnackBar(
-        content: Text('Payment opens once the pharmacist confirms the price.'),
-      ),
-    );
 }
