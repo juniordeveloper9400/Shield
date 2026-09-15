@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:youtube_player_iframe/youtube_player_iframe.dart';
 
-/// Full-screen page for a customer review clip that's a YouTube link —
-/// opened instead of [CustomerStoryPlayerModal] for that case, since a
-/// YouTube video plays through YouTube's own embedded player (native
-/// controls, fullscreen, captions) rather than the story reel's custom
-/// swipe/scrub controls, which only drive `video_player`.
+/// Full-screen page for a customer review clip — every clip is a YouTube
+/// link (see `customer_reviews.dart`), played through YouTube's own
+/// embedded player (native controls, fullscreen, captions).
 class ReviewVideoPlayerScreen extends StatefulWidget {
   final String videoId;
   final String title;

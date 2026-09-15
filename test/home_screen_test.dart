@@ -6,6 +6,7 @@ import 'package:shield/module/cart/cart_screen.dart';
 import 'package:shield/module/home/brand_quote.dart';
 import 'package:shield/module/home/category_section.dart';
 import 'package:shield/module/home/customer_reviews.dart';
+import 'package:shield/module/home/customer_reviews_service.dart';
 import 'package:shield/module/home/home_header.dart';
 import 'package:shield/module/home/points_badge.dart';
 import 'package:shield/module/refer/refer_earn_screen.dart';
@@ -34,13 +35,22 @@ void main() {
   // balance from RewardsService — both are backed by a database the test does
   // not have, so seed them.
   const seededBalance = 1240;
+  const seededReview = CustomerReviewItem(
+    id: 'test-review',
+    name: 'Melattur',
+    video: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+  );
   setUp(() {
     seedFakeCatalogue();
     RewardsService.instance.debugSet(seededBalance);
+    // The reel has no bundled fallback — seed one clip so the section
+    // renders for the layout/overflow assertions below.
+    CustomerReviewsService.instance.debugSeed(const [seededReview]);
   });
   tearDown(() {
     resetFakeCatalogue();
     RewardsService.instance.debugReset();
+    CustomerReviewsService.instance.debugReset();
   });
 
   // A tall surface forces every home section to lay out in one pass, including
@@ -86,7 +96,7 @@ void main() {
   testWidgets('review avatars and product cards are laid out', (tester) async {
     await pumpHome(tester, const Size(400, 8000));
 
-    expect(find.text(CustomerReviews.reviews.first.name), findsOneWidget);
+    expect(find.text(seededReview.name), findsOneWidget);
     expect(find.text('SHIELD Immunity Plus'), findsWidgets);
     expect(find.text('ADD'), findsWidgets);
   });
