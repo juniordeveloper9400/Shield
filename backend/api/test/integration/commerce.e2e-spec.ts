@@ -12,7 +12,18 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, memberAddress, product, productCategory, referral, shieldStore, users } from '../../src/db/schema';
+import {
+  adminUser,
+  memberAddress,
+  paymentMethod,
+  product,
+  productCategory,
+  referral,
+  shieldStore,
+  users,
+  wallet,
+  walletEntry,
+} from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -344,5 +355,87 @@ describe('Commerce (e2e)', () => {
     const [updatedReferral] = await db.select().from(referral).where(eq(referral.inviteeMemberId, invitee.id));
     expect(updatedReferral.status).toBe('TRANSACTED');
     expect(updatedReferral.transactedAt).not.toBeNull();
+  });
+
+  describe('wallet checkout', () => {
+    let walletMemberToken: string;
+    let walletMethodId: number;
+    let walletId: number;
+
+    beforeAll(async () => {
+      const [walletMember] = await db
+        .insert(users)
+        .values({ phone: '9000000060', name: 'Wallet Checkout Member', firebaseUid: 'member-commerce-wallet' })
+        .returning();
+      firebase.register('wallet-member-token', { uid: 'member-commerce-wallet' });
+      const login = await request(app.getHttpServer())
+        .post('/v1/member/auth/session')
+        .send({ idToken: 'wallet-member-token' })
+        .expect(200);
+      walletMemberToken = login.body.accessToken;
+
+      const [method] = await db
+        .insert(paymentMethod)
+        .values({ code: 'wallet', name: 'Wallet balance', isLive: true })
+        .returning();
+      walletMethodId = method.id;
+
+      // Funded directly, bypassing the card-submission/approval flow — this
+      // suite only cares about checkout's own debit logic, not how the
+      // balance got there (wallet.e2e-spec.ts already covers that).
+      const [createdWallet] = await db.insert(wallet).values({ memberId: walletMember.id, balance: '1000' }).returning();
+      walletId = createdWallet.id;
+    });
+
+    it('debits the wallet in full and marks the order PAID when walletAmount covers the whole total', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/member/cart/lines')
+        .set('Authorization', `Bearer ${walletMemberToken}`)
+        .send({ productId, qty: 3 }) // 3 × ₹100 = ₹300
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .post('/v1/member/orders')
+        .set('Authorization', `Bearer ${walletMemberToken}`)
+        .set('Idempotency-Key', 'checkout-key-wallet-full')
+        .send({ paymentMethodId: walletMethodId, walletAmount: 300 })
+        .expect(201);
+
+      expect(res.body.paymentStatus).toBe('PAID');
+
+      const [row] = await db.select().from(wallet).where(eq(wallet.id, walletId));
+      expect(Number(row.balance)).toBe(700); // 1000 - 300
+
+      const entries = await db.select().from(walletEntry).where(eq(walletEntry.walletId, walletId));
+      const spend = entries.find((e) => Number(e.amount) === -300);
+      expect(spend?.label).toBe(`Order ${res.body.code}`);
+    });
+
+    it('caps the debit at the client-supplied walletAmount and leaves the order PENDING when it falls short of the total', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/member/cart/lines')
+        .set('Authorization', `Bearer ${walletMemberToken}`)
+        .send({ productId, qty: 6 }) // 6 × ₹100 = ₹600 total, only ₹400 asked of the wallet
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .post('/v1/member/orders')
+        .set('Authorization', `Bearer ${walletMemberToken}`)
+        .set('Idempotency-Key', 'checkout-key-wallet-partial')
+        .send({ paymentMethodId: walletMethodId, walletAmount: 400 })
+        .expect(201);
+
+      expect(Number(res.body.paidTotal)).toBe(600);
+      // Never flips PAID on a partial wallet share — the rest is still owed,
+      // same as an order paid by cash.
+      expect(res.body.paymentStatus).toBe('PENDING');
+
+      const [row] = await db.select().from(wallet).where(eq(wallet.id, walletId));
+      expect(Number(row.balance)).toBe(300); // 700 - 400, not 700 - 600
+
+      const entries = await db.select().from(walletEntry).where(eq(walletEntry.walletId, walletId));
+      const spend = entries.find((e) => Number(e.amount) === -400);
+      expect(spend?.label).toBe(`Order ${res.body.code} (wallet share)`);
+    });
   });
 });

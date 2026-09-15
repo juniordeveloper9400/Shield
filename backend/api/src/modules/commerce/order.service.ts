@@ -156,19 +156,39 @@ export class OrderService {
       // order itself, then flip the order to PAID. If the balance cannot
       // cover it (a stale client-side balance, or two checkouts racing),
       // the whole transaction rolls back — no half-placed order.
+      //
+      // dto.walletAmount lets the client cap this at less than the order's
+      // full price — the member's monthly wallet allowance, worked out
+      // client-side by WalletService.walletShareOf. Clamped to [0, paidTotal]
+      // so a bad or stale client figure can never debit more than the order
+      // is actually worth. When it covers the whole total the order still
+      // flips PAID exactly as before; when it doesn't, only the wallet's
+      // share is debited and the order is left PENDING — same as a cash
+      // order — for the member to settle the rest another way.
       if (paymentMethodCode === 'wallet' && paidTotal > 0) {
-        await this.debitWalletForOrder(tx, {
-          memberId,
-          orderId: created.id,
-          amount: paidTotal,
-          label: `Order ${created.code}`,
-        });
-        const [paid] = await tx
-          .update(order)
-          .set({ paymentStatus: 'PAID', paidAt: new Date() })
-          .where(eq(order.id, created.id))
-          .returning();
-        return paid;
+        const walletAmount = dto.walletAmount != null
+          ? Math.min(Math.max(dto.walletAmount, 0), paidTotal)
+          : paidTotal;
+
+        if (walletAmount > 0) {
+          await this.debitWalletForOrder(tx, {
+            memberId,
+            orderId: created.id,
+            amount: walletAmount,
+            label: walletAmount < paidTotal
+              ? `Order ${created.code} (wallet share)`
+              : `Order ${created.code}`,
+          });
+        }
+
+        if (walletAmount >= paidTotal) {
+          const [paid] = await tx
+            .update(order)
+            .set({ paymentStatus: 'PAID', paidAt: new Date() })
+            .where(eq(order.id, created.id))
+            .returning();
+          return paid;
+        }
       }
 
       return created;

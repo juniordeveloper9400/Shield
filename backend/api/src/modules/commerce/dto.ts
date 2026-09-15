@@ -16,6 +16,12 @@ export const checkoutSchema = z.object({
   // HOME_DELIVERY server-side (the column's own default) when omitted.
   fulfillmentType: z.enum(['HOME_DELIVERY', 'STORE_PICKUP']).optional(),
   reference: z.string().optional(),
+  // The wallet's share of the order when the client has already worked out
+  // (from the member's monthly allowance) that it should not cover the
+  // whole total. Only read when the resolved payment method's code is
+  // 'wallet' — see order.service.ts's checkout(). Omitted debits the full
+  // total, the pre-existing behaviour.
+  walletAmount: z.number().nonnegative().optional(),
 });
 
 export const updateOrderStatusSchema = z.object({
