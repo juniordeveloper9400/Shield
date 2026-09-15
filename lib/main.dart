@@ -59,6 +59,12 @@ Future<void> main() async {
   // RootScreen waits on it.
   unawaited(PersonaGate.instance.ensureChecked());
 
+  // Keep re-checking every 60 seconds for as long as this app instance runs,
+  // so a conversion the admin console makes while a member is already
+  // signed in and browsing gets caught without them having to sign out and
+  // back in — see PersonaGate.startPolling's own doc.
+  PersonaGate.instance.startPolling();
+
   // Follow the session for the reward-points balance: load the ledger
   // (app.reward_point_transaction) on sign-in, clear it on sign-out. The header
   // coin, the rewards screen and the menu all read RewardsService.balance.

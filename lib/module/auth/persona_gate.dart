@@ -75,6 +75,44 @@ class PersonaGate extends ChangeNotifier {
   /// compares against this and drops its result instead of overwriting.
   int _generation = 0;
 
+  /// Re-checks every 60 seconds while someone is signed in as a plain
+  /// member, so a conversion the admin console makes mid-session is caught
+  /// on its own.
+  ///
+  /// The check above this comment only ever ran once per sign-in — "safe to
+  /// call... a finished check for the same member is a no-op" was the whole
+  /// contract. That means a member the admin converts to an agent or
+  /// investor while already signed in and browsing the shop stayed on the
+  /// shop indefinitely: nothing here was ever going to ask Neon again short
+  /// of a sign-out and a fresh sign-in. No lifecycle "resume" trigger exists
+  /// on this path at all (unlike `shield agent_invester`'s `PersonaService`,
+  /// which at least re-checks when the app is foregrounded) — this timer is
+  /// the only thing that closes that gap here.
+  ///
+  /// Gated behind [startPolling] rather than running unconditionally: this
+  /// class's every widget test signs a member in via [debugSet], and
+  /// `flutter_test` asserts no `Timer` is left pending once a test's widget
+  /// tree is disposed — a real ambient timer started as a side effect of
+  /// sign-in would trip that on every one of them. Real app startup opts in
+  /// once from `main()`; nothing in the test suite ever does.
+  Timer? _pollTimer;
+  bool _pollingEnabled = false;
+
+  static const Duration _pollInterval = Duration(seconds: 60);
+
+  /// Turns on the periodic re-check above — call once from `main()`, after
+  /// wiring up [AuthService.restoreSession]. A no-op the rest of this file
+  /// stays silent about if called more than once.
+  void startPolling() {
+    if (_pollingEnabled) {
+      return;
+    }
+    _pollingEnabled = true;
+    if (AuthService.instance.currentUser.value != null) {
+      _pollTimer ??= Timer.periodic(_pollInterval, (_) => unawaited(_recheck()));
+    }
+  }
+
   void _onUserChanged() {
     final user = AuthService.instance.currentUser.value;
     if (user == null) {
@@ -82,13 +120,30 @@ class PersonaGate extends ChangeNotifier {
       _checkedPhone = null;
       _inFlight = null;
       _snapshot = PersonaSnapshot.none;
+      _pollTimer?.cancel();
+      _pollTimer = null;
       _set(PersonaStatus.unknown);
       return;
+    }
+    if (_pollingEnabled) {
+      _pollTimer ??= Timer.periodic(_pollInterval, (_) => unawaited(_recheck()));
     }
     if (user.phone == _checkedPhone) {
       return;
     }
     unawaited(ensureChecked());
+  }
+
+  /// What the poll timer calls: unlike [ensureChecked], this re-runs the
+  /// look-up even though [_checkedPhone] already matches — that equality is
+  /// exactly the "already checked, don't ask again" guard this timer exists
+  /// to get past.
+  Future<void> _recheck() {
+    final user = AuthService.instance.currentUser.value;
+    if (user == null) {
+      return Future.value();
+    }
+    return _inFlight ??= _check(user.phone);
   }
 
   /// Runs the persona look-up for the signed-in member once. Safe to call from
@@ -157,7 +212,10 @@ class PersonaGate extends ChangeNotifier {
     _set(status);
   }
 
-  /// Test hook: back to the unchecked state.
+  /// Test hook: back to the unchecked state. Cancels [_pollTimer] too —
+  /// `_onUserChanged` starts it the moment a test signs a member in, and
+  /// `flutter_test` asserts no timer is left pending once a test's widget
+  /// tree is torn down.
   @visibleForTesting
   void debugReset() {
     _generation++;
@@ -165,5 +223,7 @@ class PersonaGate extends ChangeNotifier {
     _inFlight = null;
     _snapshot = PersonaSnapshot.none;
     _status = PersonaStatus.unknown;
+    _pollTimer?.cancel();
+    _pollTimer = null;
   }
 }
