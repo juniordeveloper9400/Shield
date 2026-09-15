@@ -27,6 +27,11 @@ dependencies:
   # Opens the platform dialer for the call-to-order number.
   url_launcher: ^6.3.2
   video_player: ^2.11.1
+  # Plays a YouTube link pasted into "Customer Videos" in the admin console —
+  # `video_player` above only streams a direct media file, not a YouTube page.
+  # The iframe variant (not youtube_player_flutter) so it also runs on the web
+  # build, which this app ships (see the "not Flutter web" note below).
+  youtube_player_iframe: ^6.0.2
   # Direct client connection to the Neon Postgres backend. Native only
   # (Android / iOS / desktop) — dart:io sockets, so not Flutter web.
   postgres: ^3.5.12
@@ -50,6 +55,10 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.4
+  # A fake `WebViewPlatform` in test/customer_reviews_test.dart, registered so
+  # `youtube_player_iframe`'s controller (a youtube_player_iframe dependency)
+  # can build under `flutter_test`, which has no real WebView.
+  webview_flutter_platform_interface: ^2.15.1
   # backend/db/seed_kerala_geo.dart only — reads the raw sheetN.xml /
   # sharedStrings.xml out of the Suvida LSG xlsx. Dev-only so it never ships
   # in the app.

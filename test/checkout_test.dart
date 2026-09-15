@@ -236,8 +236,6 @@ void main() {
       price: 450,
       mrp: 500,
     );
-    ReceiptPicker.debugOverride = (source) async =>
-        const PickedFile(name: 'cart-receipt.jpg', bytes: 100 * 1024);
 
     await pump(tester, const CartScreen(), size: const Size(420, 3400));
 
@@ -249,15 +247,15 @@ void main() {
     expect(find.text('Home (679322)'), findsOneWidget);
     expect(find.text('PATIENT'), findsOneWidget);
     expect(find.text('Asha Nair'), findsOneWidget);
+    // Wallet/cash — not bank transfer — is the delivering checkout's payment
+    // panel, and cash is selected from the start.
+    expect(find.text('Wallet balance'), findsOneWidget);
+    expect(find.text('Cash'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, 'AGT99');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Select payment mode'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Gallery'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).first, 'UTR123456');
-    await tester.pumpAndSettle();
+    // Cash needs nothing further — placing the order submits directly, with
+    // no bank-transfer/receipt step in between.
     await tester.tap(find.text('Place order'));
     await tester.pumpAndSettle();
 
@@ -291,8 +289,6 @@ void main() {
         price: 450,
         mrp: 500,
       );
-      ReceiptPicker.debugOverride = (source) async =>
-          const PickedFile(name: 'cart-receipt.jpg', bytes: 100 * 1024);
 
       await pump(tester, const CartScreen(), size: const Size(420, 3400));
       await tester.tap(find.text('Proceed to checkout'));
@@ -316,12 +312,6 @@ void main() {
       expect(find.text('₹${formatRupees(522)}'), findsWidgets);
 
       await tester.enterText(find.byType(TextField).first, 'AGT99');
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Select payment mode'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Gallery'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).first, 'UTR123456');
       await tester.pumpAndSettle();
       await tester.tap(find.text('Place order'));
       await tester.pumpAndSettle();

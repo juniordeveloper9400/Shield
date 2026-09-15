@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, isNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
@@ -10,9 +10,12 @@ import {
   orderLine,
   orderReceipt,
   orderTrackStep,
+  paymentMethod,
   referral,
   rewardPointTransaction,
   users,
+  wallet,
+  walletEntry,
 } from '../../db/schema';
 import type { AdminRole } from '../auth/session.types';
 import { CartService } from './cart.service';
@@ -64,6 +67,20 @@ export class OrderService {
     // store-assignment flow is designed.
     const [member] = await this.db.select({ homeStoreId: users.homeStoreId }).from(users).where(eq(users.id, memberId)).limit(1);
 
+    // migration 0031: resolve the chosen payment method's own `code` —
+    // 'wallet' settles instantly off the balance, 'cash' (or anything else,
+    // including none chosen) leaves the order PENDING until it is collected
+    // in person. Read before the transaction opens; nothing here writes.
+    let paymentMethodCode: string | null = null;
+    if (dto.paymentMethodId !== undefined) {
+      const [method] = await this.db
+        .select({ code: paymentMethod.code })
+        .from(paymentMethod)
+        .where(eq(paymentMethod.id, dto.paymentMethodId))
+        .limit(1);
+      paymentMethodCode = method?.code ?? null;
+    }
+
     return this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(order)
@@ -77,6 +94,7 @@ export class OrderService {
           deliveryAddressId: dto.deliveryAddressId,
           paymentMethodId: dto.paymentMethodId,
           reference: dto.reference,
+          fulfillmentType: dto.fulfillmentType,
           placedOn: new Date().toISOString().slice(0, 10),
         })
         .returning();
@@ -133,7 +151,103 @@ export class OrderService {
           .where(and(eq(referral.inviteeMemberId, memberId), eq(referral.status, 'REGISTERED')));
       }
 
+      // migration 0031: a wallet checkout settles instantly — debit the
+      // balance and post the ledger line in the same transaction as the
+      // order itself, then flip the order to PAID. If the balance cannot
+      // cover it (a stale client-side balance, or two checkouts racing),
+      // the whole transaction rolls back — no half-placed order.
+      if (paymentMethodCode === 'wallet' && paidTotal > 0) {
+        await this.debitWalletForOrder(tx, {
+          memberId,
+          orderId: created.id,
+          amount: paidTotal,
+          label: `Order ${created.code}`,
+        });
+        const [paid] = await tx
+          .update(order)
+          .set({ paymentStatus: 'PAID', paidAt: new Date() })
+          .where(eq(order.id, created.id))
+          .returning();
+        return paid;
+      }
+
       return created;
+    });
+  }
+
+  /**
+   * Debits [amount] off the member's wallet and posts the matching `SPEND`
+   * ledger line against [orderId] — the one debit path both a wallet
+   * checkout ([checkout]) and a "Pay now" on a priced bill ([payBillWithWallet])
+   * go through, so the guard against overdraw only lives in one place.
+   *
+   * Runs inside the caller's own transaction ([tx]) so the debit and
+   * whatever it is settling (the order, or the bill) commit or roll back
+   * together. Throws (never returns false) — the caller's transaction is
+   * already open, so there is nothing sensible to do but abort it.
+   */
+  private async debitWalletForOrder(
+    tx: Database,
+    params: { memberId: number; orderId: number; amount: number; label: string },
+  ) {
+    const [theWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, params.memberId)).limit(1);
+    const balance = theWallet ? Number(theWallet.balance) : 0;
+    if (!theWallet || balance < params.amount) {
+      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Insufficient wallet balance' } });
+    }
+
+    await tx
+      .update(wallet)
+      .set({ balance: (balance - params.amount).toString(), updatedAt: new Date() })
+      .where(eq(wallet.id, theWallet.id));
+
+    await tx.insert(walletEntry).values({
+      walletId: theWallet.id,
+      kind: 'SPEND',
+      label: params.label,
+      amount: (-params.amount).toString(),
+      occurredOn: new Date().toISOString().slice(0, 10),
+      orderId: params.orderId,
+    });
+  }
+
+  /**
+   * "Pay now" on a priced-but-unpaid bill (a prescription order, almost
+   * always — see `bill.amount`/`bill.status`): debits the wallet for the
+   * bill's own amount and marks both the order and its bill PAID, all in one
+   * transaction via [debitWalletForOrder].
+   */
+  async payBillWithWallet(memberId: number, orderId: number) {
+    const found = await this.getOwnedByMemberOrThrow(orderId, memberId);
+    const [theBill] = await this.db.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
+    if (!theBill) {
+      throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'No bill sent for this order yet' } });
+    }
+    if (theBill.status === 'PAID') {
+      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'This bill is already paid' } });
+    }
+    const amount = Number(theBill.amount);
+    if (amount <= 0) {
+      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'This bill has not been priced yet' } });
+    }
+
+    return this.db.transaction(async (tx) => {
+      await this.debitWalletForOrder(tx, {
+        memberId,
+        orderId,
+        amount,
+        label: `Order ${found.code}`,
+      });
+      await tx
+        .update(order)
+        .set({ paymentStatus: 'PAID', paidAt: new Date() })
+        .where(eq(order.id, orderId));
+      const [updatedBill] = await tx
+        .update(bill)
+        .set({ status: 'PAID', paidAt: new Date() })
+        .where(eq(bill.id, theBill.id))
+        .returning();
+      return updatedBill;
     });
   }
 
@@ -142,8 +256,24 @@ export class OrderService {
     return row?.rewardPoints ?? 0;
   }
 
+  /**
+   * Every order the member has placed, newest first. Left-joined against
+   * `bill` (0-or-1 per order) so a prescription order's priced amount and
+   * paid/pending status — `billAmount`/`billStatus` on the client's
+   * `Purchase` — come back alongside the order's own columns without a
+   * second round trip per row.
+   */
   async listForMember(memberId: number) {
-    return this.db.select().from(order).where(eq(order.memberId, memberId)).orderBy(desc(order.placedAt));
+    return this.db
+      .select({
+        ...getTableColumns(order),
+        billAmount: bill.amount,
+        billStatus: bill.status,
+      })
+      .from(order)
+      .leftJoin(bill, eq(bill.orderId, order.id))
+      .where(eq(order.memberId, memberId))
+      .orderBy(desc(order.placedAt));
   }
 
   async getForMember(memberId: number, orderId: number) {

@@ -4,7 +4,11 @@
 
 ## Routes
 
-The current console includes login, dashboard, stores, products, orders, prescriptions, activations, lab orders, lab tests, appointments, users, user details, admins, agent approvals, and no-access views. Parameterized routes include activation, user/member detail, and agent approval detail pages.
+The current console includes login, dashboard, stores, products, orders, prescriptions, activations, lab orders, lab tests, appointments, users, user details, admins, agent approvals, deliveries, and no-access views. Parameterized routes include activation, user/member detail, and agent approval detail pages.
+
+### Deliveries
+
+`DeliveriesPage` (`/deliveries`) is the `DELIVERY` role's own portal — "available to deliver" (unclaimed cash orders at their branch) and "my deliveries" (claimed, with "mark cash collected" and status-advance actions) — plus a simpler store-scoped assignment view for admin/superadmin/pharmacy to hand a cash order to a specific delivery boy. Backed by `src/api/deliveries.ts`, which is deliberately still direct-to-Neon like the rest of the console's data screens (see [Current authentication implementation](#current-authentication-implementation) below) rather than the unused `backend/api` `StaffCommerceController`.
 
 ### Agent approval queue
 
@@ -14,7 +18,9 @@ A user can also be made an agent directly, bypassing the request queue: `UserDet
 
 ## Roles
 
-Permission definitions and landing paths live in `shieldweb/src/config/permissions.ts`. Current roles are `superadmin`, `admin`, `pharmacy`, `lab`, and `appointments`; pharmacy access is scoped by `storeCode`.
+Permission definitions and landing paths live in `shieldweb/src/config/permissions.ts`. Current roles are `superadmin`, `admin`, `pharmacy`, `lab`, `appointments`, and `delivery` (migration `0031_wallet_cash_delivery.sql`, adding `app.admin_role.DELIVERY`); pharmacy and delivery access are both scoped by `storeCode`.
+
+Creating a staff account (any role) is done from `AdminsPage`'s "Add staff account" form (`POST /v1/staff/admins`, `SUPERADMIN` only) — this was previously backend-only, no console UI.
 
 ## Current authentication implementation
 

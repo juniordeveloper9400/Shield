@@ -45,6 +45,10 @@ CREATE TYPE app.order_kind         AS ENUM ('STANDARD', 'PRESCRIPTION');
 CREATE TYPE app.order_status       AS ENUM ('PROCESSING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED');
 CREATE TYPE app.track_state        AS ENUM ('DONE', 'CURRENT', 'UPCOMING');
 
+-- migration 0031: how the order reaches the member, and whether it's paid.
+CREATE TYPE app.fulfillment_type    AS ENUM ('HOME_DELIVERY', 'STORE_PICKUP');
+CREATE TYPE app.order_payment_status AS ENUM ('PENDING', 'PAID');
+
 CREATE TYPE app.medicine_duration  AS ENUM ('ONE_WEEK', 'FIFTEEN_DAYS', 'ONE_MONTH', 'TWO_MONTHS', 'THREE_MONTHS');
 CREATE TYPE app.prescription_status AS ENUM ('AWAITING_REVIEW', 'READ', 'IN_CART', 'ORDERED');
 CREATE TYPE app.prescription_medicine_status AS ENUM ('AVAILABLE', 'OUT_OF_STOCK', 'NOT_POSSIBLE', 'ORDERED'); -- migration 0024/0025, pharmacist-only, never shown to the member
@@ -129,7 +133,7 @@ CREATE TABLE app.referral_level (
 -- Checkout payment methods.
 CREATE TABLE app.payment_method (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    code        text NOT NULL UNIQUE,                  -- 'upi', 'wallet', 'cod'
+    code        text NOT NULL UNIQUE,                  -- 'wallet', 'cash' (migration 0031); 'bank-transfer' kept, not live
     name        text NOT NULL,
     blurb       text NOT NULL DEFAULT '',
     is_live     boolean NOT NULL DEFAULT false,
@@ -539,6 +543,12 @@ CREATE TABLE app."order" (
     payment_method_id   bigint REFERENCES app.payment_method(id) ON DELETE SET NULL,
     billed_wallet_card_id bigint,                         -- FK added after app.wallet_card
     reference           text,                             -- UPI ref / notes
+    -- migration 0031: how it's fulfilled, whether it's paid, and who's
+    -- carrying/collecting it when paid in cash.
+    fulfillment_type    app.fulfillment_type NOT NULL DEFAULT 'HOME_DELIVERY',
+    payment_status      app.order_payment_status NOT NULL DEFAULT 'PENDING',
+    delivery_boy_id     bigint,                            -- FK added after app.admin_user
+    paid_at             timestamptz,
     placed_on           date NOT NULL DEFAULT current_date,
     placed_at           timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()
@@ -591,9 +601,28 @@ CREATE TABLE app.bill (
     uuid       uuid NOT NULL DEFAULT gen_random_uuid(),
     order_id   bigint NOT NULL UNIQUE REFERENCES app."order"(id) ON DELETE CASCADE,
     image      text NOT NULL,                             -- data: URI
+    -- migration 0031: turns the bill into a priced invoice, not just a
+    -- picture -- amount is what the member owes; status/paid_at track
+    -- whether it's actually been settled (wallet debit, or cash collected).
+    amount     numeric(12,2) NOT NULL DEFAULT 0,
+    status     app.order_payment_status NOT NULL DEFAULT 'PENDING',
+    paid_at    timestamptz,
     sent_at    timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Itemised breakdown for a priced bill (migration 0031) -- same shape as
+-- app.order_line, but against the bill, since a prescription order is only
+-- priced after intake, well after the order row itself was created.
+CREATE TABLE app.bill_line (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    bill_id     bigint NOT NULL REFERENCES app.bill(id) ON DELETE CASCADE,
+    name        text NOT NULL,
+    pack        text NOT NULL DEFAULT '',
+    unit_price  numeric(12,2) NOT NULL DEFAULT 0,
+    qty         integer NOT NULL DEFAULT 1
+);
+CREATE INDEX bill_line_bill_idx ON app.bill_line(bill_id);
 
 -- ===========================================================================
 --  4 · Prescriptions & approvals
@@ -1001,8 +1030,10 @@ CREATE TABLE app.investor_plan_change_request (
 -- always had a fifth role (app manager, one level under Super Admin) with
 -- no database counterpart until now — see backend/docs/erd.md §5 and
 -- backend/db/migrations/0027_admin_role_add_admin.sql for the live-DB fix.
+-- 'DELIVERY' added by backend/db/migrations/0031_wallet_cash_delivery.sql — a
+-- delivery boy's own login, store-scoped the same way PHARMACY is.
 CREATE TYPE app.admin_role AS ENUM
-    ('SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS');
+    ('SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS', 'DELIVERY');
 
 -- One row per staff login. Identity is a Firebase Email/Password account; this
 -- row says which role it holds and, for a Pharmacy Admin, which branch.
@@ -1023,6 +1054,10 @@ CREATE TABLE app.admin_user (
     created_at    timestamptz NOT NULL DEFAULT now(),
     updated_at    timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE app."order"
+    ADD CONSTRAINT order_delivery_boy_fk
+    FOREIGN KEY (delivery_boy_id) REFERENCES app.admin_user(id) ON DELETE SET NULL;
 
 -- ===========================================================================
 --  updated_at trigger

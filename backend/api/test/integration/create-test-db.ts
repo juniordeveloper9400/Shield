@@ -25,6 +25,8 @@ export function createTestDb() {
     CREATE TYPE app.order_kind AS ENUM ('STANDARD','PRESCRIPTION');
     CREATE TYPE app.order_status AS ENUM ('PROCESSING','OUT_FOR_DELIVERY','DELIVERED','CANCELLED');
     CREATE TYPE app.track_state AS ENUM ('DONE','CURRENT','UPCOMING');
+    CREATE TYPE app.fulfillment_type AS ENUM ('HOME_DELIVERY','STORE_PICKUP');
+    CREATE TYPE app.order_payment_status AS ENUM ('PENDING','PAID');
     CREATE TYPE app.medicine_duration AS ENUM ('ONE_WEEK','FIFTEEN_DAYS','ONE_MONTH','TWO_MONTHS','THREE_MONTHS');
     CREATE TYPE app.prescription_status AS ENUM ('AWAITING_REVIEW','READ','IN_CART','ORDERED');
     CREATE TYPE app.prescription_medicine_status AS ENUM ('AVAILABLE','OUT_OF_STOCK','NOT_POSSIBLE','ORDERED');
@@ -301,6 +303,10 @@ export function createTestDb() {
       payment_method_id bigint,
       billed_wallet_card_id bigint,
       reference text,
+      fulfillment_type app.fulfillment_type NOT NULL DEFAULT 'HOME_DELIVERY',
+      payment_status app.order_payment_status NOT NULL DEFAULT 'PENDING',
+      delivery_boy_id bigint,
+      paid_at timestamptz,
       placed_on date NOT NULL DEFAULT current_date,
       placed_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
@@ -332,6 +338,9 @@ export function createTestDb() {
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),
       order_id bigint NOT NULL UNIQUE REFERENCES app."order"(id) ON DELETE CASCADE,
       image text NOT NULL,
+      amount numeric(12,2) NOT NULL DEFAULT 0,
+      status app.order_payment_status NOT NULL DEFAULT 'PENDING',
+      paid_at timestamptz,
       sent_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );

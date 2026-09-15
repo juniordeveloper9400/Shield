@@ -197,6 +197,68 @@ class WalletRepository {
     });
   }
 
+  /// Debits [amount] off the member's wallet for an order paid by wallet at
+  /// checkout (or from a "Pay now" bill), and posts the matching `SPEND`
+  /// ledger line against [orderId].
+  ///
+  /// Two sequential statements, the same accepted risk as every other write
+  /// in this file — Neon's `/sql` endpoint runs one statement per request
+  /// with no client transaction. The `UPDATE` itself guards against an
+  /// overdraw (`WHERE balance >= amount`); when it returns no row — a stale
+  /// balance, or a second attempt racing the first — nothing is debited and
+  /// the ledger line is never inserted, so the two stay in step.
+  ///
+  /// Returns false without writing anything when the member has no wallet
+  /// row yet, or the debit could not be applied.
+  Future<bool> recordSpend({
+    required String memberPhone,
+    required int amount,
+    required String label,
+    required int orderId,
+  }) async {
+    final result = await _run('recordSpend', () async {
+      final walletId = _rowId(
+        await NeonHttp.instance.query(
+          '''
+            SELECT w.id
+            FROM app.wallet w
+            JOIN app.users u ON u.id = w.member_id
+            WHERE u.phone = \$1
+            LIMIT 1
+          ''',
+          [memberPhone],
+        ),
+      );
+      if (walletId == null) {
+        return false;
+      }
+
+      final debited = await NeonHttp.instance.query(
+        '''
+          UPDATE app.wallet
+          SET balance = balance - \$2, updated_at = now()
+          WHERE id = \$1 AND balance >= \$2
+          RETURNING id
+        ''',
+        [walletId, amount],
+      );
+      if (debited.isEmpty) {
+        return false;
+      }
+
+      await NeonHttp.instance.query(
+        '''
+          INSERT INTO app.wallet_entry
+            (wallet_id, kind, label, amount, occurred_on, order_id)
+          VALUES (\$1, 'SPEND'::app.wallet_entry_kind, \$2, \$3, current_date, \$4)
+        ''',
+        [walletId, label, -amount, orderId],
+      );
+      return true;
+    });
+    return result ?? false;
+  }
+
   static PrivilegeCardKind? _kindFor(String? token) => switch (token) {
         'SILVER' => PrivilegeCardKind.silver,
         'GOLD' => PrivilegeCardKind.gold,

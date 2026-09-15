@@ -6,15 +6,50 @@ import 'package:video_player/video_player.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import 'customer_reviews_service.dart';
+import 'review_video_player_screen.dart';
 
 /// A `VideoPlayerController` for [video] — network for an admin-hosted link
 /// (every clip added from the console is a hosted URL; see
 /// `CustomerReviewRepository`), a bundled asset otherwise (every clip that
 /// ships with the app).
+///
+/// Never called for a YouTube link — `video_player` streams a direct media
+/// file and cannot open a youtube.com/youtu.be page; [CustomerReviewItem.youtubeId]
+/// is what routes those to `ReviewVideoPlayerScreen` instead.
 VideoPlayerController _controllerFor(String video) {
   return AppImage.isNetwork(video)
       ? VideoPlayerController.networkUrl(Uri.parse(video))
       : VideoPlayerController.asset(video);
+}
+
+/// The video id out of a YouTube URL — `watch?v=`, `youtu.be/`, `/embed/`,
+/// `/shorts/` and `/live/` links, with or without extra query params — or
+/// null when [url] is not a YouTube link at all (a bundled asset path, or a
+/// direct hosted video file).
+String? _youtubeVideoId(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null) return null;
+  final host = uri.host.toLowerCase();
+
+  if (host == 'youtu.be' || host.endsWith('.youtu.be')) {
+    return uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+  }
+  if (!host.contains('youtube.com')) {
+    return null;
+  }
+
+  final fromQuery = uri.queryParameters['v'];
+  if (fromQuery != null && fromQuery.isNotEmpty) {
+    return fromQuery;
+  }
+  final segments = uri.pathSegments;
+  for (final marker in ['embed', 'shorts', 'live']) {
+    final index = segments.indexOf(marker);
+    if (index != -1 && index + 1 < segments.length) {
+      return segments[index + 1];
+    }
+  }
+  return null;
 }
 
 /// One clip in the reel.
@@ -54,6 +89,25 @@ class CustomerReviewItem {
     this.thumbnail,
     this.duration = const Duration(seconds: 8),
   });
+
+  /// The YouTube video id [video] points to, or null when it is a bundled
+  /// asset or a direct hosted video file instead of a YouTube link.
+  String? get youtubeId => _youtubeVideoId(video);
+
+  /// What the thumbnail card and the story-player backdrop show: the
+  /// admin-supplied [thumbnail] where there is one, otherwise YouTube's own
+  /// poster for a YouTube clip — YouTube serves that at a fixed URL for every
+  /// video, so there is never a reason to ask the admin to upload one by
+  /// hand. Null for a bundled/hosted clip with no poster, which falls back to
+  /// a decoded frame instead (see `_VideoReviewThumbnailCardState._load`).
+  String? get displayThumbnail {
+    final custom = thumbnail;
+    if (custom != null && custom.isNotEmpty) {
+      return custom;
+    }
+    final id = youtubeId;
+    return id == null ? null : 'https://img.youtube.com/vi/$id/hqdefault.jpg';
+  }
 }
 
 /// "What our customers have to say" — the customer video reel under the offer
@@ -154,6 +208,37 @@ class _CustomerReviewsState extends State<CustomerReviews> {
     }
   }
 
+  /// Opens the tapped clip: a dedicated page for a YouTube link (YouTube's
+  /// own embedded player, controls and all), the swipe-through story viewer
+  /// for everything else.
+  ///
+  /// The story viewer never gets a YouTube link in its list — it plays a
+  /// story on `video_player`, which can't open a YouTube URL — so swiping
+  /// past a YouTube clip's neighbours can't land on it either.
+  void _openReview(
+    BuildContext context,
+    List<CustomerReviewItem> reviews,
+    int initialIndex,
+  ) {
+    final review = reviews[initialIndex];
+    final youtubeId = review.youtubeId;
+    if (youtubeId != null) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ReviewVideoPlayerScreen(
+            videoId: youtubeId,
+            title: review.name,
+            description: review.subtitle,
+          ),
+        ),
+      );
+      return;
+    }
+    final playable = reviews.where((r) => r.youtubeId == null).toList(growable: false);
+    final playableIndex = playable.indexWhere((r) => r.id == review.id);
+    _openStoryViewer(context, playable, playableIndex < 0 ? 0 : playableIndex);
+  }
+
   void _openStoryViewer(
     BuildContext context,
     List<CustomerReviewItem> reviews,
@@ -208,7 +293,7 @@ class _CustomerReviewsState extends State<CustomerReviews> {
                 final review = reviews[index];
                 return _VideoReviewThumbnailCard(
                   review: review,
-                  onTap: () => _openStoryViewer(context, reviews, index),
+                  onTap: () => _openReview(context, reviews, index),
                 );
               },
             ),
@@ -260,10 +345,11 @@ class _VideoReviewThumbnailCardState extends State<_VideoReviewThumbnailCard> {
   /// cards scroll in and out — so only the clips on screen hold a decoder,
   /// and each holds it only long enough to paint one frame.
   Future<void> _load() async {
-    if ((widget.review.thumbnail ?? '').isNotEmpty) {
-      // The admin gave this clip a poster of its own — decoding a frame
-      // (over the network, for a hosted clip) would be slower and no
-      // better than what they chose.
+    if ((widget.review.displayThumbnail ?? '').isNotEmpty) {
+      // Either the admin gave this clip a poster of its own, or it's a
+      // YouTube link with YouTube's own poster — decoding a frame would be
+      // slower and no better where there's a poster, and impossible where
+      // there's nothing but a YouTube page for `video_player` to fail on.
       return;
     }
     final controller = _controllerFor(widget.review.video);
@@ -322,7 +408,7 @@ class _VideoReviewThumbnailCardState extends State<_VideoReviewThumbnailCard> {
             children: [
               _ReviewVideoSurface(
                 controller: _controller,
-                thumbnail: widget.review.thumbnail,
+                thumbnail: widget.review.displayThumbnail,
               ),
 
               // Gradient overlay from top (dark for name) to bottom
@@ -704,7 +790,7 @@ class _CustomerStoryPlayerModalState extends State<CustomerStoryPlayerModal>
               Center(
                 child: _ReviewVideoSurface(
                   controller: _video,
-                  thumbnail: currentReview.thumbnail,
+                  thumbnail: currentReview.displayThumbnail,
                   placeholder: Colors.black,
                 ),
               ),

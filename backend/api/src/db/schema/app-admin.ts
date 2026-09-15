@@ -8,8 +8,18 @@ import { appSchema } from './app-identity';
  * backend/db/migrations/0027_admin_role_add_admin.sql: ADMIN is now a real
  * app.admin_role value, not a client-only concept. That migration must be
  * applied to the live database before this matches reality there.
+ *
+ * DELIVERY added by migration 0031_wallet_cash_delivery.sql — a delivery
+ * boy's own login, store-scoped the same way PHARMACY is.
  */
-export const adminRoleEnum = appSchema.enum('admin_role', ['SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS']);
+export const adminRoleEnum = appSchema.enum('admin_role', [
+  'SUPERADMIN',
+  'ADMIN',
+  'PHARMACY',
+  'LAB',
+  'APPOINTMENTS',
+  'DELIVERY',
+]);
 
 export const adminUser = appSchema.table('admin_user', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),

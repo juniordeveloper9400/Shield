@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const roleEnum = z.enum(['SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS']);
+const roleEnum = z.enum(['SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS', 'DELIVERY']);
 
 /** A short handle, e.g. 'pharmacy_mel' — not an email. */
 const loginIdSchema = z

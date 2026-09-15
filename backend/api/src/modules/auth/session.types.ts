@@ -1,4 +1,4 @@
-export type AdminRole = 'SUPERADMIN' | 'ADMIN' | 'PHARMACY' | 'LAB' | 'APPOINTMENTS';
+export type AdminRole = 'SUPERADMIN' | 'ADMIN' | 'PHARMACY' | 'LAB' | 'APPOINTMENTS' | 'DELIVERY';
 export type SubjectType = 'MEMBER' | 'STAFF';
 
 /** What AuthGuard attaches to the request after verifying a session. */

@@ -11,7 +11,7 @@
 //   * shield_store        — the 10 branches from StoreDirectory
 //   * membership_tier(+loads) — Silver / Gold / Platinum and their fixed loads
 //   * referral_level      — the 5-rung refer-and-earn ladder
-//   * payment_method      — the checkout methods (only bank transfer is live)
+//   * payment_method      — the checkout methods (wallet + cash are live)
 //   * product_category    — the storefront category tabs
 //   * lab_package         — a representative slice of the lab catalogue
 //   * clinic / dietitian / health_article / promo — sample home-feed content
@@ -64,7 +64,7 @@ Future<void> main(List<String> args) async {
       ..writeln('  shield_store        10')
       ..writeln('  membership_tier      3  (+ 10 loads)')
       ..writeln('  referral_level       5')
-      ..writeln('  payment_method       4')
+      ..writeln('  payment_method       3')
       ..writeln('  product_category     6')
       ..writeln('  lab_package          5')
       ..writeln('  clinic               3')
@@ -188,10 +188,9 @@ Future<void> _seedReferralLevels(TxSession tx) async {
 // --- payment_method ----------------------------------------------------
 Future<void> _seedPaymentMethods(TxSession tx) async {
   const rows = [
-    ['bank-transfer', 'Bank account', 'Pay by UPI or bank transfer, upload the receipt', true, 0],
-    ['gpay', 'Google Pay', 'Coming soon', false, 1],
-    ['phonepe', 'PhonePe', 'Coming soon', false, 2],
-    ['paytm', 'Paytm', 'Coming soon', false, 3],
+    ['wallet', 'Wallet balance', 'Pay from your SHIELD wallet', true, 0],
+    ['cash', 'Cash', 'Pay the delivery person, or at the store on pickup', true, 1],
+    ['bank-transfer', 'Bank account', 'Pay by UPI or bank transfer, upload the receipt', false, 9],
   ];
   for (final r in rows) {
     await tx.execute(

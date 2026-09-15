@@ -89,21 +89,57 @@ void main() {
       await pumpCheckout(tester);
 
       expect(find.byType(PrescriptionCheckoutScreen), findsOneWidget);
+      // Wallet/cash — not bank transfer — since nothing is charged until the
+      // pharmacist prices it; this is only the member's stated preference.
       expect(find.text('Payment method'), findsOneWidget);
-      expect(find.text('Bank account'), findsOneWidget);
-      expect(find.text('Google Pay'), findsOneWidget);
+      expect(find.text('Wallet balance'), findsOneWidget);
+      expect(find.text('Cash'), findsOneWidget);
       expect(find.text('Place order'), findsOneWidget);
     });
 
-    testWidgets('a method that is not wired up says so', (tester) async {
+    testWidgets('cash is selected by default, and wallet can be chosen instead',
+        (tester) async {
       await pumpCheckout(tester);
 
-      await tester.tap(find.text('Google Pay'));
+      // Cash is the safe default — always selectable, unlike wallet, which
+      // may not even be open yet.
+      expect(find.byIcon(Icons.radio_button_checked_rounded), findsOneWidget);
+
+      await tester.tap(find.text('Wallet balance'));
       await tester.pump();
 
-      expect(find.textContaining('coming soon'), findsOneWidget);
-      // Bank transfer stays the one selected method.
       expect(find.byIcon(Icons.radio_button_checked_rounded), findsOneWidget);
+    });
+
+    testWidgets('home delivery and store pickup are both offered', (
+      tester,
+    ) async {
+      await pumpCheckout(tester);
+
+      expect(find.text('How should this reach you?'), findsOneWidget);
+      expect(find.text('Home Delivery'), findsOneWidget);
+      expect(find.text('Store Pickup'), findsOneWidget);
+      // Home delivery is the default, so the delivery-address card shows.
+      expect(find.text('Delivery address'), findsOneWidget);
+
+      await tester.tap(find.text('Store Pickup'));
+      await tester.pumpAndSettle();
+
+      // The address card is replaced by a pickup notice, and nothing blocks
+      // placing the order despite there being no delivery address.
+      expect(find.text('Delivery address'), findsNothing);
+      expect(find.text('Pick up in store'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.ancestor(
+                of: find.text('Place order'),
+                matching: find.byType(FilledButton),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+      );
     });
 
     testWidgets('Place order files it in My Orders and marks the script ordered',

@@ -18,6 +18,10 @@ export const orderStatusEnum = appSchema.enum('order_status', [
 ]);
 export const trackStateEnum = appSchema.enum('track_state', ['DONE', 'CURRENT', 'UPCOMING']);
 
+/** migration 0031: how the order reaches the member, and whether it's paid. */
+export const fulfillmentTypeEnum = appSchema.enum('fulfillment_type', ['HOME_DELIVERY', 'STORE_PICKUP']);
+export const orderPaymentStatusEnum = appSchema.enum('order_payment_status', ['PENDING', 'PAID']);
+
 /**
  * Checkout payment methods (`'upi'` / `'wallet'` / `'cod'`) — previously
  * unmirrored entirely; `order.paymentMethodId` had nothing to validate
@@ -71,6 +75,10 @@ export const order = appSchema.table('order', {
   paymentMethodId: bigint('payment_method_id', { mode: 'number' }),
   billedWalletCardId: bigint('billed_wallet_card_id', { mode: 'number' }),
   reference: text('reference'),
+  fulfillmentType: fulfillmentTypeEnum('fulfillment_type').notNull().default('HOME_DELIVERY'),
+  paymentStatus: orderPaymentStatusEnum('payment_status').notNull().default('PENDING'),
+  deliveryBoyId: bigint('delivery_boy_id', { mode: 'number' }),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
   placedOn: date('placed_on').notNull(),
   placedAt: timestamp('placed_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -116,6 +124,18 @@ export const bill = appSchema.table('bill', {
   uuid: uuid('uuid').notNull().defaultRandom(),
   orderId: bigint('order_id', { mode: 'number' }).notNull(),
   image: text('image').notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull().default('0'),
+  status: orderPaymentStatusEnum('status').notNull().default('PENDING'),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const billLine = appSchema.table('bill_line', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  billId: bigint('bill_id', { mode: 'number' }).notNull(),
+  name: text('name').notNull(),
+  pack: text('pack').notNull().default(''),
+  unitPrice: numeric('unit_price', { precision: 12, scale: 2 }).notNull().default('0'),
+  qty: integer('qty').notNull().default(1),
 });

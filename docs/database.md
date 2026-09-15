@@ -24,6 +24,14 @@ The customer-facing schema is defined by `backend/db/app_schema.sql` and describ
 
 `backend/db/app_schema.sql` already has `agent_request` (folded in separately), but does **not** yet define the six geo tables or `agent.area_id` — see [ERD known drift](erd.md#5-known-erd-drift) before running a schema recreation.
 
+**Wallet/cash checkout, delivery method, delivery-boy role, priced prescription bills (migration `0031_wallet_cash_delivery.sql`, folded into `app_schema.sql`, NOT yet applied to the live database):**
+
+- `app.payment_method` now offers `wallet` and `cash` as the live checkout methods; `bank-transfer` is kept (existing orders/receipts still reference it) but marked `is_live = false` and no longer offered at order-time checkout. The Health Pass / privilege-plan purchase screen, which is how the wallet is funded in the first place, is unaffected — it does not read `payment_method.is_live`.
+- `app."order"` gains `fulfillment_type` (`HOME_DELIVERY` / `STORE_PICKUP`), `payment_status` (`PENDING` / `PAID`), `delivery_boy_id` (→ `app.admin_user`, a `DELIVERY`-role staff account), and `paid_at`.
+- `app.bill` gains `amount`, `status`, `paid_at` — it is no longer just an invoice *image*; a new `app.bill_line` table (mirroring `app.order_line`) carries the priced breakdown, letting a prescription order (priced only after the pharmacist's intake review, unlike a standard order which is priced at cart time) get a real, payable invoice.
+- `app.admin_role` gains `DELIVERY` — a delivery boy's own console login, store-scoped the same way `PHARMACY` is.
+- `app.wallet_entry.order_id` (already present, previously unused) starts getting populated: paying an order from the wallet posts a `SPEND` entry referencing that order and debits `app.wallet.balance` directly, alongside the existing monthly reward-release counter, which SPEND does not touch.
+
 Commands:
 
 ```powershell

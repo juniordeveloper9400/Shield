@@ -116,6 +116,10 @@ class _CartScreenState extends State<CartScreen> {
               mrpTotal: _cart.mrpTotal.round(),
               paidTotal: _cart.subtotal.round(),
               kind: OrderKind.standard,
+              fulfillmentType: receipt.fulfillmentType,
+              paymentStatus: receipt.paidViaWallet
+                  ? OrderPaymentStatus.paid
+                  : OrderPaymentStatus.pending,
             );
             // Write the order through to Neon while the cart lines are still
             // here to copy. Best-effort: a database that is absent (tests, a
@@ -156,13 +160,25 @@ class _CartScreenState extends State<CartScreen> {
                       ? id
                       : receipt.bankReference,
                   address: AddressBook.instance.deliverTo?.toDeliveryInput(),
-                  receipt: OrderReceiptInput(
-                    payerName: user.name,
-                    reference: receipt.bankReference,
-                    amount: _cart.payable,
-                    fileName: receipt.fileName,
-                    image: receiptImage,
-                  ),
+                  fulfillmentType: receipt.fulfillmentType,
+                  walletDebit: receipt.paidViaWallet
+                      ? WalletDebitInput(
+                          memberPhone: user.phone,
+                          amount: _cart.payable.round(),
+                          label: 'Order $id',
+                        )
+                      : null,
+                  // A delivering order (wallet or cash) never uploads a
+                  // receipt file — only the bank-transfer path does.
+                  receipt: receipt.fileName.isEmpty
+                      ? null
+                      : OrderReceiptInput(
+                          payerName: user.name,
+                          reference: receipt.bankReference,
+                          amount: _cart.payable,
+                          fileName: receipt.fileName,
+                          image: receiptImage,
+                        ),
                 ),
               );
             }

@@ -12,6 +12,9 @@ export const updateCartLineSchema = z.object({
 export const checkoutSchema = z.object({
   deliveryAddressId: z.number().int().positive().optional(),
   paymentMethodId: z.number().int().positive().optional(),
+  // migration 0031: how the order reaches the member. Defaults to
+  // HOME_DELIVERY server-side (the column's own default) when omitted.
+  fulfillmentType: z.enum(['HOME_DELIVERY', 'STORE_PICKUP']).optional(),
   reference: z.string().optional(),
 });
 

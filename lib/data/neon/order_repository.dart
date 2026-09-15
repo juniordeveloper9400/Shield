@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 
 import '../../dates.dart';
+import '../../module/checkout/fulfillment_type.dart';
 import '../../module/orders/purchase_service.dart';
 import 'neon_http.dart';
+import 'wallet_repository.dart';
 
 /// One line of a placed order — a product name, how it is sold, the two prices
 /// and the quantity. Carried as plain values so the call site does not have to
@@ -75,6 +77,23 @@ class OrderReceiptInput {
     this.amount,
     this.fileName,
     this.image,
+  });
+}
+
+/// A wallet payment to post against an order at the moment it is placed (or,
+/// for a "Pay now" bill, against one already on file). Carried as plain
+/// values, same as every other `*Input` here, rather than reaching into
+/// [WalletRepository] directly from the checkout screen.
+@immutable
+class WalletDebitInput {
+  final String memberPhone;
+  final int amount;
+  final String label;
+
+  const WalletDebitInput({
+    required this.memberPhone,
+    required this.amount,
+    required this.label,
   });
 }
 
@@ -240,7 +259,10 @@ class OrderRepository {
         r'''
           SELECT o.code, o.kind::text AS kind, o.status::text AS status,
                  o.item_count, o.mrp_total, o.paid_total, o.placed_at,
-                 b.image AS bill_image, b.sent_at AS billed_at
+                 o.fulfillment_type::text AS fulfillment_type,
+                 o.payment_status::text AS payment_status,
+                 b.image AS bill_image, b.sent_at AS billed_at,
+                 b.amount AS bill_amount, b.status::text AS bill_status
           FROM app."order" o
           JOIN app.users u ON u.id = o.member_id
           LEFT JOIN app.bill b ON b.order_id = o.id
@@ -275,10 +297,24 @@ class OrderRepository {
       kind: row['kind']?.toString() == 'PRESCRIPTION'
           ? OrderKind.prescription
           : OrderKind.standard,
+      fulfillmentType: row['fulfillment_type']?.toString() == 'STORE_PICKUP'
+          ? FulfillmentType.storePickup
+          : FulfillmentType.homeDelivery,
+      paymentStatus: row['payment_status']?.toString() == 'PAID'
+          ? OrderPaymentStatus.paid
+          : OrderPaymentStatus.pending,
       billImage: (row['bill_image'] as String?)?.trim().isNotEmpty == true
           ? row['bill_image'] as String
           : null,
       billedAt: DateTime.tryParse((row['billed_at'] ?? '').toString()),
+      billAmount: row['bill_amount'] == null
+          ? null
+          : double.tryParse(row['bill_amount'].toString())?.round(),
+      billStatus: row['bill_status'] == null
+          ? null
+          : (row['bill_status'].toString() == 'PAID'
+                ? OrderPaymentStatus.paid
+                : OrderPaymentStatus.pending),
     );
   }
 
@@ -315,6 +351,12 @@ class OrderRepository {
     String? reference,
     DeliveryAddressInput? address,
     OrderReceiptInput? receipt,
+    FulfillmentType fulfillmentType = FulfillmentType.homeDelivery,
+    /// Set when the order was paid off the SHIELD wallet at checkout — the
+    /// order is inserted `payment_status = 'PAID'` and the debit is posted
+    /// against its id once it exists. Left null for cash, which stays at the
+    /// column's own `PENDING` default.
+    WalletDebitInput? walletDebit,
   }) async {
     await _guard('saveStandardOrder', () async {
       final memberId = await _ensureMember(phone, name);
@@ -349,7 +391,8 @@ class OrderRepository {
             INSERT INTO app."order" (
               member_id, code, kind, status, item_count,
               mrp_total, paid_total, delivery_fee,
-              delivery_address_id, store_id, payment_method_id, reference
+              delivery_address_id, store_id, payment_method_id, reference,
+              fulfillment_type, payment_status, paid_at
             )
             VALUES (
               \$1, \$2, 'STANDARD', 'PROCESSING', \$3,
@@ -357,7 +400,10 @@ class OrderRepository {
               \$7,
               (SELECT id FROM app.shield_store WHERE code = \$8),
               (SELECT id FROM app.payment_method WHERE code = \$9),
-              \$10
+              \$10,
+              \$11::app.fulfillment_type,
+              \$12::app.order_payment_status,
+              CASE WHEN \$13 THEN now() ELSE NULL END
             )
             ON CONFLICT (code) DO NOTHING
             RETURNING id
@@ -373,6 +419,11 @@ class OrderRepository {
             storeCode,
             paymentMethodCode,
             reference,
+            fulfillmentType == FulfillmentType.storePickup
+                ? 'STORE_PICKUP'
+                : 'HOME_DELIVERY',
+            walletDebit != null ? 'PAID' : 'PENDING',
+            walletDebit != null,
           ],
         );
         if (inserted.isNotEmpty) {
@@ -387,6 +438,15 @@ class OrderRepository {
 
       await _insertLines(orderId, lines);
       await _seedTrackSteps(orderId, _standardStages);
+
+      if (walletDebit != null) {
+        await WalletRepository.instance.recordSpend(
+          memberPhone: walletDebit.memberPhone,
+          amount: walletDebit.amount,
+          label: walletDebit.label,
+          orderId: orderId,
+        );
+      }
 
       if (receipt != null) {
         await NeonHttp.instance.query(
@@ -424,6 +484,8 @@ class OrderRepository {
     String? storeCode,
     String? paymentMethodCode,
     DeliveryAddressInput? address,
+    required FulfillmentType fulfillmentType,
+    WalletDebitInput? walletDebit,
   }) async {
     await _guard('savePrescriptionOrder', () async {
       if (prescriptions.isEmpty) {
@@ -448,9 +510,19 @@ class OrderRepository {
         addressId: addressId,
         storeCode: storeCode,
         paymentMethodCode: paymentMethodCode,
+        fulfillmentType: fulfillmentType,
+        paid: walletDebit != null,
       );
       if (orderId != null) {
         await _seedTrackSteps(orderId, _prescriptionStages);
+        if (walletDebit != null) {
+          await WalletRepository.instance.recordSpend(
+            memberPhone: walletDebit.memberPhone,
+            amount: walletDebit.amount,
+            label: walletDebit.label,
+            orderId: orderId,
+          );
+        }
       }
       final storeId = await _storeId(storeCode);
 
@@ -636,6 +708,66 @@ class OrderRepository {
       }
       return;
     });
+  }
+
+  /// Settles a priced-but-unpaid order (a prescription bill, most often) off
+  /// the member's wallet: debits the wallet and posts the `SPEND` ledger line
+  /// via [WalletRepository.recordSpend], then flips this order's own
+  /// `payment_status` and, when it carries one, its `app.bill.status` too.
+  ///
+  /// [orderCode] rather than a database id — the app only ever carries the
+  /// order's own code ([Purchase.id]), so the row is found by it the same way
+  /// [_upsertOrderShell] does. Returns false, writing nothing further, when
+  /// the order cannot be found or the wallet debit itself is refused.
+  Future<bool> markOrderPaidByWallet({
+    required String orderCode,
+    required int amount,
+    required String memberPhone,
+  }) async {
+    if (!NeonHttp.isConfigured) {
+      return false;
+    }
+    try {
+      final found = await NeonHttp.instance.query(
+        'SELECT id FROM app."order" WHERE code = \$1 LIMIT 1',
+        [orderCode],
+      );
+      final orderId = _rowId(found);
+      if (orderId == null) {
+        return false;
+      }
+
+      final debited = await WalletRepository.instance.recordSpend(
+        memberPhone: memberPhone,
+        amount: amount,
+        label: 'Order $orderCode',
+        orderId: orderId,
+      );
+      if (!debited) {
+        return false;
+      }
+
+      await NeonHttp.instance.query(
+        '''
+          UPDATE app."order"
+          SET payment_status = 'PAID'::app.order_payment_status, paid_at = now()
+          WHERE id = \$1
+        ''',
+        [orderId],
+      );
+      await NeonHttp.instance.query(
+        '''
+          UPDATE app.bill
+          SET status = 'PAID'::app.order_payment_status, paid_at = now()
+          WHERE order_id = \$1
+        ''',
+        [orderId],
+      );
+      return true;
+    } catch (error) {
+      NeonHttp.log('OrderRepository.markOrderPaidByWallet failed', error: error);
+      return false;
+    }
   }
 
   // --- shared helpers ------------------------------------------------------
@@ -841,23 +973,42 @@ class OrderRepository {
     int? addressId,
     String? storeCode,
     String? paymentMethodCode,
+    required FulfillmentType fulfillmentType,
+    bool paid = false,
   }) async {
     final inserted = await NeonHttp.instance.query(
       '''
         INSERT INTO app."order" (
           member_id, code, kind, status, item_count,
-          mrp_total, paid_total, delivery_address_id, store_id, payment_method_id
+          mrp_total, paid_total, delivery_address_id, store_id, payment_method_id,
+          fulfillment_type, payment_status, paid_at
         )
         VALUES (
           \$1, \$2, \$3::app.order_kind, 'PROCESSING', \$4,
           0, 0, \$5,
           (SELECT id FROM app.shield_store WHERE code = \$6),
-          (SELECT id FROM app.payment_method WHERE code = \$7)
+          (SELECT id FROM app.payment_method WHERE code = \$7),
+          \$8::app.fulfillment_type,
+          \$9::app.order_payment_status,
+          CASE WHEN \$10 THEN now() ELSE NULL END
         )
         ON CONFLICT (code) DO NOTHING
         RETURNING id
       ''',
-      [memberId, code, kind, itemCount, addressId, storeCode, paymentMethodCode],
+      [
+        memberId,
+        code,
+        kind,
+        itemCount,
+        addressId,
+        storeCode,
+        paymentMethodCode,
+        fulfillmentType == FulfillmentType.storePickup
+            ? 'STORE_PICKUP'
+            : 'HOME_DELIVERY',
+        paid ? 'PAID' : 'PENDING',
+        paid,
+      ],
     );
     if (inserted.isNotEmpty) {
       return _rowId(inserted);

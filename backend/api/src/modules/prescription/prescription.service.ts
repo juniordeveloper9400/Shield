@@ -130,6 +130,7 @@ export class PrescriptionService {
           storeId: member?.homeStoreId ?? null,
           deliveryAddressId: dto.addressId,
           paymentMethodId: dto.paymentMethodId,
+          fulfillmentType: dto.fulfillmentType,
           placedOn: new Date().toISOString().slice(0, 10),
         })
         .returning();

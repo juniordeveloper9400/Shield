@@ -1,8 +1,23 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Real release signing — see android/key.properties (gitignored, never
+// committed) for the actual credentials. Falls back to null (which makes
+// the release build fail loudly rather than silently signing with the
+// debug key) when that file hasn't been created yet, e.g. on a fresh
+// checkout that hasn't run the keystore setup step.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+val hasKeystoreProperties = keystorePropertiesFile.exists()
+if (hasKeystoreProperties) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 // Firebase (Phone Auth): apply the Google Services plugin only once its config
@@ -38,11 +53,31 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasKeystoreProperties) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Signed with the real upload keystore (android/app/upload-keystore.jks,
+            // configured via android/key.properties) when that setup exists;
+            // otherwise falls back to the debug key so `flutter run --release`
+            // still works for local testing on a fresh checkout that hasn't
+            // generated a keystore yet. A Play Store upload must use the
+            // "release" config below — the debug key is never accepted for
+            // distribution and Play Console will reject it outright.
+            signingConfig = if (hasKeystoreProperties) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

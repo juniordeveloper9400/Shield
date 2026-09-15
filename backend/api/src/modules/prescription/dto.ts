@@ -68,6 +68,12 @@ export const submitPrescriptionOrderSchema = z.object({
   prescriptionIds: z.array(z.number().int().positive()).min(1),
   addressId: z.number().int().positive().optional(),
   paymentMethodId: z.number().int().positive().optional(),
+  // migration 0031: how the order reaches the member once it's priced.
+  // Defaults to HOME_DELIVERY server-side (the column's own default) when
+  // omitted. Never paid here either way — a prescription is priced at the
+  // counter first (see `app.bill`), this only states the member's stated
+  // preference up front.
+  fulfillmentType: z.enum(['HOME_DELIVERY', 'STORE_PICKUP']).optional(),
 });
 
 export type UploadPrescriptionDto = z.infer<typeof uploadPrescriptionSchema>;
