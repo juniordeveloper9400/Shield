@@ -94,7 +94,7 @@ class _CartScreenState extends State<CartScreen> {
             (mrp - paid).toDouble(),
             isCredit: true,
           ),
-          CheckoutLine('Delivery fee', _cart.deliveryFee),
+          // Delivery is free — no line for a fee that's always zero.
         ],
       );
     }
@@ -252,7 +252,6 @@ class _CartScreenState extends State<CartScreen> {
               _BillSummary(
                 subtotal: _subtotal,
                 discount: _discount,
-                delivery: _cart.deliveryFee,
                 payable: _payable,
               ),
             ],
@@ -972,13 +971,11 @@ class _NumChip extends StatelessWidget {
 class _BillSummary extends StatelessWidget {
   final double subtotal;
   final double discount;
-  final double delivery;
   final double payable;
 
   const _BillSummary({
     required this.subtotal,
     required this.discount,
-    required this.delivery,
     required this.payable,
   });
 
@@ -1014,10 +1011,7 @@ class _BillSummary extends StatelessWidget {
             value: '-₹${discount.toStringAsFixed(2)}',
             valueColor: AppColors.brandGreenDark,
           ),
-          _BillRow(
-            label: 'Delivery fee',
-            value: '₹${delivery.toStringAsFixed(2)}',
-          ),
+          // Delivery is free — no line for a fee that's always zero.
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 10),
             child: Divider(height: 1, color: AppColors.border),

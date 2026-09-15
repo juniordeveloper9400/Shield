@@ -74,11 +74,11 @@ void main() {
 
       expect(cart.subtotal, 100);
       expect(cart.discount, closeTo(26, 0.001));
-      expect(cart.deliveryFee, 40);
-      expect(cart.payable, closeTo(140, 0.001));
+      expect(cart.deliveryFee, 0);
+      expect(cart.payable, closeTo(100, 0.001));
     });
 
-    test('an empty cart carries no delivery fee', () {
+    test('delivery is free even on an empty cart', () {
       expect(CartService.instance.deliveryFee, 0);
       expect(CartService.instance.payable, 0);
     });

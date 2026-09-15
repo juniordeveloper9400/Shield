@@ -294,8 +294,8 @@ void main() {
       await tester.tap(find.text('Proceed to checkout'));
       await tester.pumpAndSettle();
 
-      // Delivery fee (₹40) on top of the one item's price.
-      expect(find.text('₹${formatRupees(490)}'), findsWidgets);
+      // Delivery is free — just the one item's price.
+      expect(find.text('₹${formatRupees(450)}'), findsWidgets);
 
       // What tapping ADD on "Last minute buys" does under the hood: another
       // line lands in the same cart while this screen is still open.
@@ -308,8 +308,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // The total on this very screen has already moved to include it.
-      expect(find.text('₹${formatRupees(490)}'), findsNothing);
-      expect(find.text('₹${formatRupees(522)}'), findsWidgets);
+      expect(find.text('₹${formatRupees(450)}'), findsNothing);
+      expect(find.text('₹${formatRupees(482)}'), findsWidgets);
 
       await tester.enterText(find.byType(TextField).first, 'AGT99');
       await tester.pumpAndSettle();
