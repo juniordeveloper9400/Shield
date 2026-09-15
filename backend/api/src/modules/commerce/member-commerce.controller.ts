@@ -89,21 +89,12 @@ export class MemberCommerceController {
     return this.orders.submitReceipt(Number(user.subjectId), id, dto);
   }
 
-  /**
-   * "Pay now" on a priced-but-unpaid bill — settles it off the member's
-   * wallet. Idempotent, the same as checkout: a retried tap with the same
-   * key never double-debits. No body: the amount is the bill's own stored
-   * `amount`, never a client-submitted figure — see `OrderService.payBillWithWallet`.
-   */
-  @FinancialThrottle()
-  @Post('orders/:id/pay')
-  payWithWallet(
-    @CurrentUser() user: RequestSubject,
-    @Param('id', ParseIntPipe) id: number,
-    @IdempotencyKey() key: string,
-  ) {
-    return this.idempotency.run(user.sessionId, `POST /v1/member/orders/${id}/pay`, key, () =>
-      this.orders.payBillWithWallet(Number(user.subjectId), id),
-    );
-  }
+  // A priced bill is no longer settled by the member tapping "Pay now"
+  // themselves — a member-triggered POST /v1/member/orders/:id/pay route
+  // used to sit here and call OrderService.payBillWithWallet directly. Now
+  // staff collect a bill off the wallet from the admin console only, gated
+  // on an OTP the member reads out at hand-off (shieldweb's
+  // src/api/billPayments.ts) — a route a member's own session could call at
+  // will defeated that gate entirely, so it's gone rather than left dead and
+  // reachable. See order.service.ts's debitWalletForOrder doc.
 }

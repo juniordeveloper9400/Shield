@@ -197,14 +197,16 @@ export class OrderService {
 
   /**
    * Debits [amount] off the member's wallet and posts the matching `SPEND`
-   * ledger line against [orderId] — the one debit path both a wallet
-   * checkout ([checkout]) and a "Pay now" on a priced bill ([payBillWithWallet])
-   * go through, so the guard against overdraw only lives in one place.
+   * ledger line against [orderId] — the one debit path a wallet checkout
+   * ([checkout]) goes through, so the guard against overdraw only lives in
+   * one place. A priced bill's own wallet settlement ("Pay now") is a
+   * *different* path deliberately — see shieldweb's `src/api/billPayments.ts`
+   * doc for why it isn't this method behind a member-facing route anymore.
    *
    * Runs inside the caller's own transaction ([tx]) so the debit and
-   * whatever it is settling (the order, or the bill) commit or roll back
-   * together. Throws (never returns false) — the caller's transaction is
-   * already open, so there is nothing sensible to do but abort it.
+   * whatever it is settling commit or roll back together. Throws (never
+   * returns false) — the caller's transaction is already open, so there is
+   * nothing sensible to do but abort it.
    */
   private async debitWalletForOrder(
     tx: Database,
@@ -228,46 +230,6 @@ export class OrderService {
       amount: (-params.amount).toString(),
       occurredOn: new Date().toISOString().slice(0, 10),
       orderId: params.orderId,
-    });
-  }
-
-  /**
-   * "Pay now" on a priced-but-unpaid bill (a prescription order, almost
-   * always — see `bill.amount`/`bill.status`): debits the wallet for the
-   * bill's own amount and marks both the order and its bill PAID, all in one
-   * transaction via [debitWalletForOrder].
-   */
-  async payBillWithWallet(memberId: number, orderId: number) {
-    const found = await this.getOwnedByMemberOrThrow(orderId, memberId);
-    const [theBill] = await this.db.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
-    if (!theBill) {
-      throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'No bill sent for this order yet' } });
-    }
-    if (theBill.status === 'PAID') {
-      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'This bill is already paid' } });
-    }
-    const amount = Number(theBill.amount);
-    if (amount <= 0) {
-      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'This bill has not been priced yet' } });
-    }
-
-    return this.db.transaction(async (tx) => {
-      await this.debitWalletForOrder(tx, {
-        memberId,
-        orderId,
-        amount,
-        label: `Order ${found.code}`,
-      });
-      await tx
-        .update(order)
-        .set({ paymentStatus: 'PAID', paidAt: new Date() })
-        .where(eq(order.id, orderId));
-      const [updatedBill] = await tx
-        .update(bill)
-        .set({ status: 'PAID', paidAt: new Date() })
-        .where(eq(bill.id, theBill.id))
-        .returning();
-      return updatedBill;
     });
   }
 
