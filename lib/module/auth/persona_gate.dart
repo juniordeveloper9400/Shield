@@ -155,6 +155,12 @@ class PersonaGate extends ChangeNotifier {
     return _inFlight ??= _check(user.phone);
   }
 
+  /// Test hook: runs exactly what the poll timer runs, once — without
+  /// needing a real [Timer.periodic] via [startPolling], which `flutter_test`
+  /// would flag as a pending timer once the test tears down.
+  @visibleForTesting
+  Future<void> debugRecheckNow() => _recheck();
+
   /// Runs the persona look-up for the signed-in member once. Safe to call from
   /// `main()` and from `RootScreen` — concurrent calls share one request and a
   /// finished check for the same member is a no-op.
@@ -168,7 +174,13 @@ class PersonaGate extends ChangeNotifier {
 
   Future<void> _check(String phone) async {
     final generation = _generation;
-    _set(PersonaStatus.checking);
+    // Only the very first check for this phone holds the splash — a
+    // background [_recheck] of an already-settled member must not flip
+    // [isSettled] back to false, or `RootScreen` swaps the shell for the
+    // splash every 60 seconds while someone is actively using the app.
+    if (_checkedPhone != phone) {
+      _set(PersonaStatus.checking);
+    }
     var snapshot = PersonaSnapshot.none;
     try {
       snapshot =

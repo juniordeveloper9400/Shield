@@ -188,6 +188,33 @@ void main() {
     expect(find.byType(AppShell), findsOneWidget);
   });
 
+  test(
+    'a background recheck of an already-settled member never passes through '
+    '"checking" — RootScreen would swap the shell for the splash on that',
+    () async {
+      // Reproduces the bug: PersonaGate.startPolling() re-runs the persona
+      // look-up every 60s for a signed-in member so a conversion made
+      // mid-session is caught. That recheck used to flip status to
+      // `checking` first — same as the very first check does — which made
+      // RootScreen's `AnimatedBuilder` (gated on `PersonaGate.isSettled`)
+      // swap `AppShell` for `SplashScreen`: a visible flash back to the logo
+      // roughly once a minute while someone was actively using the app.
+      AuthService.instance.signInAs();
+      PersonaGate.instance.debugSet(PersonaStatus.member);
+
+      final seenStatuses = <PersonaStatus>[];
+      void listener() => seenStatuses.add(PersonaGate.instance.status);
+      PersonaGate.instance.addListener(listener);
+      addTearDown(() => PersonaGate.instance.removeListener(listener));
+
+      await PersonaGate.instance.debugRecheckNow();
+
+      expect(seenStatuses, isNot(contains(PersonaStatus.checking)));
+      expect(PersonaGate.instance.status, PersonaStatus.member);
+      expect(PersonaGate.instance.isSettled, isTrue);
+    },
+  );
+
   test('PersonaGate fails open when the look-up is unavailable', () async {
     // No DATABASE_URL is compiled into the test binary, so the repository read
     // resolves to "no persona" rather than throwing.
