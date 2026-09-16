@@ -80,6 +80,11 @@ export class MemberCommerceController {
     return this.orders.getBillForMember(Number(user.subjectId), id);
   }
 
+  @Get('orders/:id/prescriptions')
+  getOrderPrescriptions(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    return this.orders.getPrescriptionsForOrder(Number(user.subjectId), id);
+  }
+
   @Post('orders/:id/receipt')
   submitReceipt(
     @CurrentUser() user: RequestSubject,

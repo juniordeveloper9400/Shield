@@ -1,0 +1,34 @@
+# Only backend/api's source is actually needed to deploy the "shield_backend"
+# project — this file exists because that project's dashboard Root Directory
+# setting forces every deploy to upload from the repo root (see the deploy
+# notes in backend/docs), and without this, the CLI's --archive=tgz fallback
+# swept up several gigabytes of Flutter build output and swelled a normally
+# tiny upload past the point Vercel would even accept it.
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/.symlinks/
+*.apk
+*.aab
+*.jks
+hs_err_pid*.log
+
+# The nested "shield agent_invester" app is its own separate git repository
+# (see AGENTS.md) — never needed to build this backend, and its own build
+# output alone regularly runs into gigabytes.
+shield agent_invester/
+
+# Node dependency trees for the other Node-based projects in this repo —
+# backend/api's own build step installs its own via pnpm during the Vercel
+# build itself, so a pre-existing local node_modules here is dead weight.
+backend/api/node_modules/
+backend/api/dist/
+shieldweb/node_modules/
+shieldweb/dist/
+node_modules/

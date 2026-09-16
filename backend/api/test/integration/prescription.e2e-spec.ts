@@ -293,5 +293,15 @@ describe('Prescription (e2e)', () => {
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .expect(200);
     expect(rx.body.status).toBe('ORDERED');
+
+    // What "Prescription uploaded" on order tracking actually renders — the
+    // real scan, not a generic icon standing in for it.
+    const linked = await request(app.getHttpServer())
+      .get(`/v1/member/orders/${res.body.id}/prescriptions`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(linked.body).toHaveLength(1);
+    expect(linked.body[0].id).toBe(prescriptionId);
+    expect(linked.body[0].image).toBe(rx.body.imageUrl);
   });
 });

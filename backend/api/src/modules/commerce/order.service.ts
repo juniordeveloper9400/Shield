@@ -11,6 +11,8 @@ import {
   orderReceipt,
   orderTrackStep,
   paymentMethod,
+  prescription,
+  prescriptionOrder,
   referral,
   rewardPointTransaction,
   users,
@@ -290,6 +292,30 @@ export class OrderService {
     const [theBill] = await this.db.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
     if (!theBill) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'No bill sent for this order yet' } });
     return theBill;
+  }
+
+  /**
+   * The prescription(s) submitted into this order, via `prescription_order`
+   * (one row per prescription — `submitForOrder` writes one for every id it
+   * was given). Empty for a standard order, which never has one. `image`
+   * carries the member's own uploaded scan (a `data:` URI — see
+   * `PrescriptionService.upload`'s own validation), what the "Prescription
+   * uploaded" card on order tracking actually shows, as opposed to a generic
+   * icon standing in for it.
+   */
+  async getPrescriptionsForOrder(memberId: number, orderId: number) {
+    await this.getOwnedByMemberOrThrow(orderId, memberId);
+    return this.db
+      .select({
+        id: prescription.id,
+        code: prescription.code,
+        image: prescription.image,
+        doctor: prescription.doctor,
+        status: prescription.status,
+      })
+      .from(prescriptionOrder)
+      .innerJoin(prescription, eq(prescription.id, prescriptionOrder.prescriptionId))
+      .where(eq(prescriptionOrder.orderId, orderId));
   }
 
   // ---- Staff (store-scoped, SUPERADMIN sees every store) -----------------
