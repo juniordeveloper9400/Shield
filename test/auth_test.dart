@@ -192,6 +192,58 @@ void main() {
       expect(auth.hasPendingOtp, isFalse);
     });
 
+    test('deleting the account ends the session and deletes the Firebase '
+        'identity outright when Firebase allows it', () async {
+      final auth = AuthService.instance;
+      final gateway = FakeAuthGateway();
+      auth.useGateway(gateway);
+      auth.signInAs();
+      expect(auth.isSignedIn, isTrue);
+
+      await auth.deleteAccount();
+
+      expect(auth.isSignedIn, isFalse);
+      expect(auth.hasPendingOtp, isFalse);
+      expect(
+        gateway.signOutCalled,
+        isFalse,
+        reason: 'deleteFirebaseUser succeeded — no fallback sign-out needed',
+      );
+    });
+
+    test('deleting the account still ends the session when Firebase refuses '
+        '(requires-recent-login)', () async {
+      final auth = AuthService.instance;
+      final gateway = FakeAuthGateway()..refuseDelete = true;
+      auth.useGateway(gateway);
+      auth.signInAs();
+
+      await auth.deleteAccount();
+
+      expect(
+        auth.isSignedIn,
+        isFalse,
+        reason: 'the account is already gone in app.users regardless',
+      );
+      expect(
+        gateway.signOutCalled,
+        isTrue,
+        reason: 'falls back to a plain sign-out when the identity itself '
+            'cannot be deleted outright',
+      );
+    });
+
+    test('deleting with nobody signed in is a no-op', () async {
+      final auth = AuthService.instance;
+      final gateway = FakeAuthGateway();
+      auth.useGateway(gateway);
+
+      await auth.deleteAccount();
+
+      expect(auth.isSignedIn, isFalse);
+      expect(gateway.signOutCalled, isFalse);
+    });
+
     test('going back from the code step drops the pending request', () async {
       final auth = AuthService.instance;
       await auth.requestOtp(name: name, phone: phone);

@@ -91,6 +91,23 @@ export const walletCard = appSchema.table('wallet_card', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * A Health Pass activation's commission pool (10% of the loaded amount) is
+ * split on approval: 60% of the pool to the agent who made the direct sale,
+ * 10% to the one national agent when someone else made that sale, and
+ * whatever is left over is the company's own share, not owed to any
+ * agent — logged here (migration 0032) rather than credited nowhere, so the
+ * admin console has a real, auditable "Reserved" total. Never surfaced to a
+ * member or an agent anywhere in the app — see `wallet.service.ts`'s
+ * `approveCard`.
+ */
+export const commissionReserveEntry = appSchema.table('commission_reserve_entry', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  walletCardId: bigint('wallet_card_id', { mode: 'number' }).notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const walletEntry = appSchema.table('wallet_entry', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   walletId: bigint('wallet_id', { mode: 'number' }).notNull(),

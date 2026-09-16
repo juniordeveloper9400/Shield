@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/auth/persona_gate.dart';
+import 'package:shield/screens/account_deleted_screen.dart';
 import 'package:shield/screens/app_shell.dart';
 import 'package:shield/screens/persona_web_only_screen.dart';
 import 'package:shield/screens/root_screen.dart';
@@ -73,6 +74,35 @@ void main() {
 
     expect(find.byType(PersonaWebOnlyScreen), findsOneWidget);
     expect(find.text("You're now a SHIELD Investor"), findsOneWidget);
+  });
+
+  testWidgets(
+    'a deleted account is shut out of the app, not sent to the web portal',
+    (tester) async {
+      AuthService.instance.signInAs();
+      PersonaGate.instance.debugSet(PersonaStatus.deleted);
+
+      await pumpRoot(tester);
+
+      expect(find.byType(AppShell), findsNothing);
+      expect(find.byType(PersonaWebOnlyScreen), findsNothing);
+      expect(find.byType(AccountDeletedScreen), findsOneWidget);
+      expect(find.text('This account has been deactivated'), findsOneWidget);
+    },
+  );
+
+  testWidgets('logging out from the deleted-account screen returns to sign-in', (
+    tester,
+  ) async {
+    AuthService.instance.signInAs();
+    PersonaGate.instance.debugSet(PersonaStatus.deleted);
+    await pumpRoot(tester);
+
+    await tester.tap(find.text('Log out'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AccountDeletedScreen), findsNothing);
+    expect(AuthService.instance.isSignedIn, isFalse);
   });
 
   testWidgets('"Open the web app" launches the portal URL', (tester) async {

@@ -1,7 +1,15 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { membershipTier, membershipTierLoad, wallet, walletCard, walletEntry } from '../../db/schema';
+import {
+  agent,
+  commissionReserveEntry,
+  membershipTier,
+  membershipTierLoad,
+  wallet,
+  walletCard,
+  walletEntry,
+} from '../../db/schema';
 import type { SubmitWalletCardDto } from './dto';
 
 function isoDate(d: Date): string {
@@ -13,6 +21,37 @@ function addMonths(d: Date, months: number): Date {
   copy.setMonth(copy.getMonth() + months);
   return copy;
 }
+
+/** Rounds to the nearest paisa — every commission figure here is real money. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * The Health Pass direct-sale commission split, worked out on [approveCard].
+ * A Health Pass activation sets aside [COMMISSION_POOL_RATE] of the loaded
+ * amount as the whole commission pool. From that pool:
+ *
+ *  - [DIRECT_SALE_SHARE_RATE] (60%) always goes to the agent whose code the
+ *    member typed in at checkout (`wallet_card.sold_by_agent_id`) — their
+ *    own direct-sale earnings, whatever level they are.
+ *  - [NATIONAL_OVERRIDE_RATE] (10%) additionally goes to the one national
+ *    agent, but only when the direct seller is someone else — the national
+ *    agent's own direct sale already gets the 60% above and nothing on top
+ *    of it, there being nobody further up to pay an override to.
+ *  - Whatever is left (30% when a non-national agent sold directly, 40%
+ *    when the national agent did) is not owed to any agent. It is logged to
+ *    [commissionReserveEntry] as the company's own share — see that table's
+ *    own doc — and is never credited to anyone or surfaced to a member or
+ *    an agent anywhere in the app. A later change paying intermediate
+ *    levels (state, district, …) an override of their own on a downline
+ *    sale would come out of this same reserve share, once that split is
+ *    specified; nothing here assumes it is permanently un-owed, only that
+ *    this method does not yet hand any more of it out than described above.
+ */
+const COMMISSION_POOL_RATE = 0.1;
+const DIRECT_SALE_SHARE_RATE = 0.6;
+const NATIONAL_OVERRIDE_RATE = 0.1;
 
 /**
  * Wallet balance is a stored column (matching the live schema), but it is
@@ -62,6 +101,23 @@ export class WalletService {
     const bonus = Math.round(dto.amount * Number(tier.bonusRate) * 100) / 100;
     const today = new Date();
 
+    // Resolved now rather than left as a bare string for approveCard to
+    // parse later — a typo or a made-up code must never be a reason to
+    // refuse this member's own submission, so any code that doesn't match a
+    // real, approved agent is silently dropped rather than surfaced as an
+    // error. Only an APPROVED agent can be credited — a pending or rejected
+    // row is not a real agent as far as the rest of the app is concerned
+    // (see agent.service.ts's own comment on that same rule).
+    let soldByAgentId: number | undefined;
+    if (dto.agentCode) {
+      const [found] = await this.db
+        .select({ id: agent.id })
+        .from(agent)
+        .where(and(eq(agent.code, dto.agentCode.toUpperCase()), eq(agent.approvalStatus, 'APPROVED')))
+        .limit(1);
+      soldByAgentId = found?.id;
+    }
+
     const [created] = await this.db
       .insert(walletCard)
       .values({
@@ -76,6 +132,7 @@ export class WalletService {
         issuedOn: isoDate(today),
         rechargedOn: isoDate(today),
         expiresOn: isoDate(addMonths(today, tier.validityMonths)),
+        soldByAgentId,
       })
       .returning();
 
@@ -143,6 +200,60 @@ export class WalletService {
         })
         .where(eq(wallet.id, card.walletId));
 
+      // Direct-sale commission — only now, not at submission, matching this
+      // whole method's own reason for being the one place "the ledger lines
+      // and the balance move" (see submitCard's doc): a card can still be
+      // rejected right up to this point, and a rejected sale must never have
+      // paid anyone. [amount] is the same figure the member is being
+      // credited above, not a separate agent-side figure to keep in sync.
+      if (card.soldByAgentId != null) {
+        const [seller] = await tx.select().from(agent).where(eq(agent.id, card.soldByAgentId)).limit(1);
+        // The agent could in principle have been deleted between submission
+        // and approval; best-effort like every other cross-reference here —
+        // this member's own approval must still go through either way.
+        if (seller) {
+          const pool = amount * COMMISSION_POOL_RATE;
+          const directShare = round2(pool * DIRECT_SALE_SHARE_RATE);
+          await tx
+            .update(agent)
+            .set({
+              earned: (Number(seller.earned) + directShare).toString(),
+              personalSales: (Number(seller.personalSales) + amount).toString(),
+            })
+            .where(eq(agent.id, seller.id));
+
+          let distributed = directShare;
+
+          // The seller's own direct sale already covers them when they are
+          // the national agent — nobody sits above the national agent to
+          // pay an override to.
+          if (seller.level !== 'NATIONAL') {
+            const [national] = await tx
+              .select()
+              .from(agent)
+              .where(and(eq(agent.level, 'NATIONAL'), eq(agent.approvalStatus, 'APPROVED')))
+              .limit(1);
+            // No national agent appointed yet is a real, if unusual, state
+            // (the very first agent onboarded) — that share simply falls
+            // through to the reserve below rather than crediting nobody
+            // silently and losing track of the money.
+            if (national) {
+              const overrideShare = round2(pool * NATIONAL_OVERRIDE_RATE);
+              await tx
+                .update(agent)
+                .set({ earned: (Number(national.earned) + overrideShare).toString() })
+                .where(eq(agent.id, national.id));
+              distributed += overrideShare;
+            }
+          }
+
+          const reserve = round2(pool - distributed);
+          if (reserve > 0) {
+            await tx.insert(commissionReserveEntry).values({ walletCardId: card.id, amount: reserve.toString() });
+          }
+        }
+      }
+
       return updatedCard;
     });
   }
@@ -160,5 +271,19 @@ export class WalletService {
       .where(eq(walletCard.id, cardId))
       .returning();
     return updated;
+  }
+
+  /**
+   * The company's own share of every approved Health Pass activation's
+   * commission pool — see [commissionReserveEntry]'s own doc. SUPERADMIN
+   * only; this is company money, never meant to be visible to a member or
+   * an agent. `total` sums the ledger the same "ledger is the real figure"
+   * way every other running total in this codebase is read, rather than
+   * trusting a separately maintained counter that could drift from it.
+   */
+  async getCommissionReserve() {
+    const entries = await this.db.select().from(commissionReserveEntry).orderBy(desc(commissionReserveEntry.createdAt));
+    const total = entries.reduce((sum, e) => sum + Number(e.amount), 0);
+    return { total: round2(total), entries };
   }
 }

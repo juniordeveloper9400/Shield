@@ -7,6 +7,14 @@ export const submitWalletCardSchema = z.object({
   receiptReference: z.string().optional(),
   receiptFileName: z.string().optional(),
   receiptImage: z.string().regex(/^data:image\/(png|jpe?g);base64,/, 'receiptImage must be a data: URI (png/jpeg)').optional(),
+  /**
+   * The agent code a member optionally typed in at checkout ("Agent code
+   * (optional)" — an agent helping them, not a requirement). Resolved to a
+   * real `app.agent` row in `WalletService.submitCard`; an unknown or
+   * mistyped code is never a reason to refuse the submission — a member's
+   * plan purchase must not fail over someone else's typo.
+   */
+  agentCode: z.string().trim().optional(),
 });
 
 export const rejectWalletCardSchema = z.object({

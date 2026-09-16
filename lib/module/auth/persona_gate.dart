@@ -21,6 +21,10 @@ enum PersonaStatus {
 
   /// Checked — the admin console has made them an investor.
   investor,
+
+  /// Checked — an admin has deleted this account from the console's Users
+  /// section. The app is closed to them entirely, not just the shop.
+  deleted,
 }
 
 /// Decides whether the signed-in member may use the mobile app at all.
@@ -58,12 +62,17 @@ class PersonaGate extends ChangeNotifier {
   bool get isSettled =>
       _status == PersonaStatus.member ||
       _status == PersonaStatus.agent ||
-      _status == PersonaStatus.investor;
+      _status == PersonaStatus.investor ||
+      _status == PersonaStatus.deleted;
 
   /// True when the signed-in member is an agent or investor and must be sent
   /// to the web app rather than shown the shell.
   bool get isBlocked =>
       _status == PersonaStatus.agent || _status == PersonaStatus.investor;
+
+  /// True when an admin has deleted this account — the app is closed to them
+  /// entirely, unlike [isBlocked] which just redirects to the web portal.
+  bool get isDeleted => _status == PersonaStatus.deleted;
 
   /// The phone the current [_status] was resolved for, so a rebuild does not
   /// fire the look-up again and a returning member is re-checked.
@@ -182,11 +191,13 @@ class PersonaGate extends ChangeNotifier {
     _checkedPhone = phone;
     _snapshot = snapshot;
     _set(
-      snapshot.isAgent
-          ? PersonaStatus.agent
-          : snapshot.isInvestor
-              ? PersonaStatus.investor
-              : PersonaStatus.member,
+      snapshot.deleted
+          ? PersonaStatus.deleted
+          : snapshot.isAgent
+              ? PersonaStatus.agent
+              : snapshot.isInvestor
+                  ? PersonaStatus.investor
+                  : PersonaStatus.member,
     );
   }
 

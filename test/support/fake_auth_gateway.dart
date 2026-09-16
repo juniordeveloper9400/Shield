@@ -50,9 +50,30 @@ class FakeAuthGateway implements AuthGateway {
   @override
   void discard() => _sent = false;
 
+  /// Set by [signOut] — lets a test tell "deleted outright" apart from
+  /// "[AuthService.deleteAccount] fell back to a plain sign-out", since both
+  /// leave [persistedUser] null the same way.
+  bool signOutCalled = false;
+
   @override
   Future<void> signOut() async {
+    signOutCalled = true;
     _sent = false;
     _persisted = null;
+  }
+
+  /// Whether the next [deleteFirebaseUser] should refuse, as Firebase does
+  /// with `requires-recent-login` — set from a test to exercise
+  /// [AuthService.deleteAccount]'s sign-out fallback.
+  bool refuseDelete = false;
+
+  @override
+  Future<bool> deleteFirebaseUser() async {
+    if (refuseDelete) {
+      return false;
+    }
+    _sent = false;
+    _persisted = null;
+    return true;
   }
 }

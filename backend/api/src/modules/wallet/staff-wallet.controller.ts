@@ -32,4 +32,15 @@ export class StaffWalletController {
   reject(@Param('id', ParseIntPipe) id: number, @Body(new ZodValidationPipe(rejectWalletCardSchema)) dto: RejectWalletCardDto) {
     return this.wallet.rejectCard(id, dto.note);
   }
+
+  /**
+   * SUPERADMIN only, narrower than the rest of this controller — company
+   * money, not something an ADMIN role reviewing activations needs to see.
+   * See `commissionReserveEntry`'s own doc for what this actually is.
+   */
+  @Get('reserve')
+  @RequireRole('SUPERADMIN')
+  reserve() {
+    return this.wallet.getCommissionReserve();
+  }
 }

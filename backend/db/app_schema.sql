@@ -988,6 +988,124 @@ CREATE TABLE app.agent_wallet_transfer (
     created_at      timestamptz NOT NULL DEFAULT now()
 );
 
+-- A Health Pass activation's commission pool (10% of the loaded amount) is
+-- split on approval: 60% of the pool to the agent who made the direct sale,
+-- 10% to the one national agent when someone else made that sale, and
+-- whatever is left over is the company's own share, not owed to any agent —
+-- logged here (migration 0032) rather than credited nowhere, so the admin
+-- console has a real, auditable "Reserved" total. Never surfaced to a
+-- member or an agent anywhere in the app.
+CREATE TABLE app.commission_reserve_entry (
+    id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    wallet_card_id bigint NOT NULL REFERENCES app.wallet_card(id),
+    amount         numeric(12,2) NOT NULL,
+    created_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX commission_reserve_entry_card_idx ON app.commission_reserve_entry(wallet_card_id);
+
+-- Approves a pending/on-hold Health Pass activation and, in the one atomic
+-- call, credits the ledger, the wallet balance, the pre-existing
+-- agent_customer_plan bookkeeping, AND the commission split above — see
+-- migration 0033's own doc for the split itself and why this had to be a
+-- function rather than shieldweb's usual plain-CTE style: its Neon driver
+-- is one HTTP call per statement, with no cross-statement transaction, so a
+-- multi-step write this size can only be atomic as a single function call.
+CREATE OR REPLACE FUNCTION app.approve_wallet_card_activation(p_card_id bigint)
+RETURNS TABLE(approved_id bigint) AS $$
+DECLARE
+    v_wallet_id        bigint;
+    v_member_id        bigint;
+    v_tier_id          bigint;
+    v_amount           numeric(12,2);
+    v_bonus            numeric(12,2);
+    v_tier_name        text;
+    v_sold_by_agent_id bigint;
+    v_seller_id        bigint;
+    v_seller_level     app.agent_level;
+    v_pool             numeric(12,2);
+    v_direct_share     numeric(12,2);
+    v_distributed      numeric(12,2) := 0;
+    v_national_id      bigint;
+    v_override_share   numeric(12,2);
+    v_reserve          numeric(12,2);
+BEGIN
+    UPDATE app.wallet_card
+       SET status = 'APPROVED', reviewed_at = now()
+     WHERE id = p_card_id AND status IN ('PENDING', 'ON_HOLD')
+     RETURNING wallet_id, tier_id, amount, bonus, sold_by_agent_id
+       INTO v_wallet_id, v_tier_id, v_amount, v_bonus, v_sold_by_agent_id;
+
+    IF NOT FOUND THEN
+        RETURN;
+    END IF;
+
+    SELECT member_id INTO v_member_id FROM app.wallet WHERE id = v_wallet_id;
+    SELECT name INTO v_tier_name FROM app.membership_tier WHERE id = v_tier_id;
+
+    INSERT INTO app.wallet_entry (wallet_id, kind, label, amount, occurred_on, wallet_card_id)
+    VALUES (v_wallet_id, 'ACTIVATION', v_tier_name || ' activation', v_amount, current_date, p_card_id);
+
+    IF v_bonus > 0 THEN
+        INSERT INTO app.wallet_entry (wallet_id, kind, label, amount, occurred_on, wallet_card_id)
+        VALUES (v_wallet_id, 'BONUS', v_tier_name || ' bonus · 10%', v_bonus, current_date, p_card_id);
+    END IF;
+
+    UPDATE app.wallet
+       SET balance    = balance + v_amount + v_bonus,
+           opened_at  = COALESCE(opened_at, now()),
+           updated_at = now()
+     WHERE id = v_wallet_id;
+
+    INSERT INTO app.agent_customer_plan (agent_customer_id, tier_id, amount, activated_on, wallet_card_id)
+    SELECT ac.id, v_tier_id, v_amount, current_date, p_card_id
+    FROM app.agent_customer ac
+    WHERE ac.member_id = v_member_id;
+
+    SELECT COALESCE(
+        v_sold_by_agent_id,
+        (SELECT ac.agent_id FROM app.agent_customer ac WHERE ac.member_id = v_member_id LIMIT 1)
+    ) INTO v_seller_id;
+
+    IF v_seller_id IS NOT NULL THEN
+        SELECT level INTO v_seller_level
+        FROM app.agent
+        WHERE id = v_seller_id AND approval_status = 'APPROVED';
+    END IF;
+
+    IF v_seller_level IS NOT NULL THEN
+        v_pool := v_amount * 0.10;
+        v_direct_share := ROUND(v_pool * 0.60, 2);
+
+        UPDATE app.agent
+           SET earned         = earned + v_direct_share,
+               personal_sales = personal_sales + v_amount
+         WHERE id = v_seller_id;
+
+        v_distributed := v_direct_share;
+
+        IF v_seller_level <> 'NATIONAL' THEN
+            SELECT id INTO v_national_id
+            FROM app.agent
+            WHERE level = 'NATIONAL' AND approval_status = 'APPROVED'
+            LIMIT 1;
+
+            IF v_national_id IS NOT NULL THEN
+                v_override_share := ROUND(v_pool * 0.10, 2);
+                UPDATE app.agent SET earned = earned + v_override_share WHERE id = v_national_id;
+                v_distributed := v_distributed + v_override_share;
+            END IF;
+        END IF;
+
+        v_reserve := ROUND(v_pool - v_distributed, 2);
+        IF v_reserve > 0 THEN
+            INSERT INTO app.commission_reserve_entry (wallet_card_id, amount) VALUES (p_card_id, v_reserve);
+        END IF;
+    END IF;
+
+    RETURN QUERY SELECT p_card_id;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ===========================================================================
 --  8 · Investor portal
 -- ===========================================================================

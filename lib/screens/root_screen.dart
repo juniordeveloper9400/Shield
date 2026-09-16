@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../module/auth/auth_service.dart';
 import '../module/auth/login_screen.dart';
 import '../module/auth/persona_gate.dart';
+import 'account_deleted_screen.dart';
 import 'app_shell.dart';
 import 'persona_web_only_screen.dart';
 import 'splash_screen.dart';
@@ -18,7 +19,9 @@ import 'splash_screen.dart';
 /// One more gate sits under the sign-in one: [PersonaGate]. A member the admin
 /// console has turned into an agent or investor is shown
 /// [PersonaWebOnlyScreen] instead of the shell — those personas belong on the
-/// web portal.
+/// web portal. A member an admin has deleted from the console's Users section
+/// is shown [AccountDeletedScreen] instead — the app is closed to them
+/// entirely, not redirected anywhere.
 class RootScreen extends StatefulWidget {
   /// How long the splash stays up.
   final Duration splashDuration;
@@ -77,6 +80,9 @@ class _RootScreenState extends State<RootScreen> {
               // Brief — one Neon read — so hold the splash rather than flash
               // the shell and snatch it back.
               return const SplashScreen();
+            }
+            if (gate.isDeleted) {
+              return const AccountDeletedScreen();
             }
             if (gate.isBlocked) {
               return PersonaWebOnlyScreen(status: gate.status);

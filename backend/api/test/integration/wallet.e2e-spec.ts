@@ -12,7 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, membershipTier, membershipTierLoad, referral, users } from '../../src/db/schema';
+import { adminUser, agent, membershipTier, membershipTierLoad, referral, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -24,8 +24,10 @@ describe('Wallet & Rewards (e2e)', () => {
   let memberAccessToken: string;
   let pharmacyStaffToken: string;
   let superAdminToken: string;
+  let adminToken: string;
   let tierId: number;
   let memberId: number;
+  let agentId: number;
 
   beforeAll(async () => {
     db = createTestDb();
@@ -57,6 +59,12 @@ describe('Wallet & Rewards (e2e)', () => {
     memberId = member.id;
     firebase.register('member-token', { uid: 'member-wallet-1' });
 
+    const [sellingAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-NAT-TEST1', name: 'Selling Agent', phone: '9000000099', level: 'NATIONAL' })
+      .returning();
+    agentId = sellingAgent.id;
+
     const testPasswordHash = await hash('correct-horse-battery-staple', 4); // low cost factor — this is a test, not production
 
     await db.insert(adminUser).values({
@@ -73,6 +81,13 @@ describe('Wallet & Rewards (e2e)', () => {
       role: 'SUPERADMIN',
     });
 
+    await db.insert(adminUser).values({
+      loginId: 'admin@example.com',
+      name: 'Plain Admin',
+      passwordHash: testPasswordHash,
+      role: 'ADMIN',
+    });
+
     memberAccessToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
     ).body.accessToken;
@@ -86,6 +101,12 @@ describe('Wallet & Rewards (e2e)', () => {
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
         .send({ loginId: 'superadmin@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200)
+    ).body.accessToken;
+    adminToken = (
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ loginId: 'admin@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
   });
@@ -183,6 +204,95 @@ describe('Wallet & Rewards (e2e)', () => {
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${cardId}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(403);
+  });
+
+  it("credits the agent whose code was given at checkout — 10% of the load as the commission pool, 60% of that pool as the agent's own direct-sale earnings — only once the card is actually approved, not at submission", async () => {
+    // A separate member — approving into memberAccessToken's own wallet
+    // here would shift the balance later tests assert an exact figure
+    // against.
+    await db.insert(users).values({ phone: '9000000004', name: 'Another Member', firebaseUid: 'member-wallet-2' });
+    firebase.register('member-2-token', { uid: 'member-wallet-2' });
+    const otherMemberToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-2-token' }).expect(200)
+    ).body.accessToken;
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${otherMemberToken}`)
+      .send({ tierId, amount: 10000, agentCode: 'shd-nat-test1' }) // lowercase — resolution is case-insensitive
+      .expect(201);
+
+    const [beforeApproval] = await db.select().from(agent).where(eq(agent.id, agentId));
+    expect(Number(beforeApproval.earned)).toBe(0);
+    expect(Number(beforeApproval.personalSales)).toBe(0);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [afterApproval] = await db.select().from(agent).where(eq(agent.id, agentId));
+    expect(Number(afterApproval.earned)).toBe(600); // 10000 * 10% pool * 60% direct share
+    expect(Number(afterApproval.personalSales)).toBe(10000);
+  });
+
+  it('never blocks a submission over an agent code that matches no real agent', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ tierId, amount: 10000, agentCode: 'NOT-A-REAL-CODE' })
+      .expect(201);
+  });
+
+  it('splits a non-national direct sale three ways: 60% to the seller, 10% up to the one national agent, 30% reserved', async () => {
+    const [regionAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-REG-TEST1', name: 'Region Agent', phone: '9000000098', level: 'REGION' })
+      .returning();
+
+    await db.insert(users).values({ phone: '9000000005', name: 'Third Member', firebaseUid: 'member-wallet-3' });
+    firebase.register('member-3-token', { uid: 'member-wallet-3' });
+    const thirdMemberToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-3-token' }).expect(200)
+    ).body.accessToken;
+
+    // agentId (NATIONAL) already earned 600 from the earlier direct-sale
+    // test in this file — read its current figure rather than assume 0, so
+    // this test doesn't depend on running after (or instead of) that one.
+    const [nationalBefore] = await db.select().from(agent).where(eq(agent.id, agentId));
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${thirdMemberToken}`)
+      .send({ tierId, amount: 10000, agentCode: 'SHD-REG-TEST1' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [regionAfter] = await db.select().from(agent).where(eq(agent.id, regionAgent.id));
+    expect(Number(regionAfter.earned)).toBe(600); // 10000 * 10% pool * 60% direct share
+    expect(Number(regionAfter.personalSales)).toBe(10000);
+
+    const [nationalAfter] = await db.select().from(agent).where(eq(agent.id, agentId));
+    expect(Number(nationalAfter.earned) - Number(nationalBefore.earned)).toBe(100); // 10% pool override
+    expect(Number(nationalAfter.personalSales)).toBe(Number(nationalBefore.personalSales)); // not their own sale
+
+    const reserve = await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/reserve')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    expect(Number(thisEntry.amount)).toBe(300); // 1000 pool - 600 direct - 100 override
+  });
+
+  it('rejects the commission reserve to ADMIN, even though that role can approve/reject wallet cards themselves', async () => {
+    await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/reserve')
+      .set('Authorization', `Bearer ${adminToken}`)
       .expect(403);
   });
 

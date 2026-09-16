@@ -502,6 +502,13 @@ export function createTestDb() {
       created_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE app.commission_reserve_entry (
+      id bigserial PRIMARY KEY,
+      wallet_card_id bigint NOT NULL REFERENCES app.wallet_card(id),
+      amount numeric(12,2) NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE app.reward_point_transaction (
       id bigserial PRIMARY KEY,
       member_id bigint NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,

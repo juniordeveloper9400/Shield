@@ -62,14 +62,18 @@ class RemoteInvestor {
 }
 
 /// What a phone resolves to on Neon — at most one of [agent] / [investor], or
-/// neither for a plain member.
+/// neither for a plain member. [deleted] wins over both: an admin who has
+/// soft-deleted the `app.users` row (`deleted_at`) has revoked the account
+/// entirely, regardless of any agent/investor row still sitting under it.
 class PersonaSnapshot {
   final RemoteAgent? agent;
   final RemoteInvestor? investor;
+  final bool deleted;
 
-  const PersonaSnapshot({this.agent, this.investor});
+  const PersonaSnapshot({this.agent, this.investor, this.deleted = false});
 
   static const PersonaSnapshot none = PersonaSnapshot();
+  static const PersonaSnapshot deletedAccount = PersonaSnapshot(deleted: true);
 
   bool get isAgent => agent != null;
   bool get isInvestor => investor != null;
@@ -95,6 +99,9 @@ class PersonaRepository {
     }
     final clean = phone.trim();
     try {
+      if (await _isDeleted(clean)) {
+        return PersonaSnapshot.deletedAccount;
+      }
       final agent = await _agentFor(clean);
       final investor = await _investorFor(clean);
       return PersonaSnapshot(agent: agent, investor: investor);
@@ -102,6 +109,18 @@ class PersonaRepository {
       NeonHttp.log('PersonaRepository.loadFor failed', error: error);
       return PersonaSnapshot.none;
     }
+  }
+
+  /// Whether an admin has deleted this member's account (`app.users
+  /// .deleted_at`) from the console's Users section — checked ahead of the
+  /// agent/investor look-ups since a deleted account is blocked regardless of
+  /// either.
+  Future<bool> _isDeleted(String phone) async {
+    final rows = await NeonHttp.instance.query(
+      'SELECT 1 FROM app.users WHERE phone = \$1 AND deleted_at IS NOT NULL LIMIT 1',
+      [phone],
+    );
+    return rows.isNotEmpty;
   }
 
   Future<RemoteAgent?> _agentFor(String phone) async {
