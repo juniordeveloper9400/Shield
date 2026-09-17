@@ -751,4 +751,76 @@ describe('Wallet & Rewards (e2e)', () => {
     expect(progress.body.activatedWalletCards).toHaveLength(1);
     expect(Number(progress.body.activatedWalletCards[0].amount)).toBe(10000);
   });
+
+  it('applies an agent code typed into the "Referral ID" field at registration, linking as that agent\'s customer', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ code: 'SHD-NAT-TEST1' })
+      .expect(201);
+    expect(res.body.linked).toBe('agent');
+
+    // Idempotent — applying again (a retry, or a second code typed later)
+    // does nothing: a member links to at most one agent, ever.
+    const again = await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ code: 'SHD-NAT-TEST1' })
+      .expect(201);
+    expect(again.body.linked).toBe('none');
+  });
+
+  it('applies a fellow member\'s referral code, recording the referral edge as REGISTERED', async () => {
+    // memberAccessToken's own member plays the inviter here — being agent-
+    // linked (previous test) or a referral inviter are independent, never
+    // colliding facts about the same account.
+    const codeRes = await request(app.getHttpServer())
+      .get('/v1/member/referrals/code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    const inviterCode = codeRes.body.code as string;
+
+    await db.insert(users).values({ phone: '9000000013', name: 'New Signup', firebaseUid: 'member-signup-code-member' });
+    firebase.register('signup-code-member-token', { uid: 'member-signup-code-member' });
+    const inviteeToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'signup-code-member-token' }).expect(200)
+    ).body.accessToken;
+
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${inviteeToken}`)
+      .send({ code: inviterCode })
+      .expect(201);
+    expect(res.body.linked).toBe('member');
+
+    // memberId already carries an unrelated SHARED referral row from an
+    // earlier test in this file — filter on the code this test actually
+    // used, not just the inviter, to find the right one.
+    const [edge] = await db.select().from(referral).where(eq(referral.codeUsed, inviterCode));
+    expect(edge.status).toBe('REGISTERED');
+    expect(edge.inviterMemberId).toBe(memberId);
+  });
+
+  it('does nothing for a code that matches neither an agent nor a member', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ code: 'NOT-A-REAL-CODE' })
+      .expect(201);
+    expect(res.body.linked).toBe('none');
+  });
+
+  it('does nothing when a member applies their own referral code', async () => {
+    const codeRes = await request(app.getHttpServer())
+      .get('/v1/member/referrals/code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ code: codeRes.body.code })
+      .expect(201);
+    expect(res.body.linked).toBe('none');
+  });
 });

@@ -121,6 +121,7 @@ class _TeamRosterState extends State<_TeamRoster> {
         children: [
           for (var i = 0; i < groups.length; i++)
             _TierGroup(
+              viewer: widget.agent,
               level: groups[i].key,
               members: groups[i].value,
               open: !_folded.contains(groups[i].key),
@@ -136,6 +137,7 @@ class _TeamRosterState extends State<_TeamRoster> {
 /// One tier's foldable section: a header that counts the tier and turns its
 /// chevron, over the member rows it opens onto.
 class _TierGroup extends StatelessWidget {
+  final Agent viewer;
   final AgentLevel level;
   final List<Agent> members;
   final bool open;
@@ -143,6 +145,7 @@ class _TierGroup extends StatelessWidget {
   final bool topDivider;
 
   const _TierGroup({
+    required this.viewer,
     required this.level,
     required this.members,
     required this.open,
@@ -216,7 +219,7 @@ class _TierGroup extends StatelessWidget {
           curve: Curves.easeOut,
           alignment: Alignment.topCenter,
           child: open
-              ? _MemberTable(members: members)
+              ? _MemberTable(viewer: viewer, members: members)
               : const SizedBox(width: double.infinity),
         ),
       ],
@@ -234,9 +237,10 @@ class _TierGroup extends StatelessWidget {
 /// card's agent earns *from* them, which is why it is the one figure in the
 /// table picked out in green.
 class _MemberTable extends StatelessWidget {
+  final Agent viewer;
   final List<Agent> members;
 
-  const _MemberTable({required this.members});
+  const _MemberTable({required this.viewer, required this.members});
 
   static const double plansWidth = 40;
   static const double amountWidth = 78;
@@ -251,7 +255,7 @@ class _MemberTable extends StatelessWidget {
           agent: member,
           plans: service.customersOf(member).length,
           amount: member.displayPersonalSales,
-          earning: service.commissionFrom(member),
+          earning: service.commissionFrom(viewer, member),
         ),
     ];
     final totalPlans = rows.fold<int>(0, (sum, row) => sum + row.plans);

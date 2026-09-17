@@ -1054,7 +1054,7 @@ void main() {
       final region = service.childrenOf(national.id);
       final regionEarning = region.fold<int>(
         0,
-        (sum, agent) => sum + service.commissionFrom(agent),
+        (sum, agent) => sum + service.commissionFrom(national, agent),
       );
       expect(find.text('₹${formatRupees(regionEarning)}'), findsWidgets);
     });

@@ -9,9 +9,11 @@ import { RequireMember } from '../../common/decorators/require-role.decorator';
 import { FinancialThrottle, ReceiptUploadThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
+  applyReferralCodeSchema,
   createReferralSchema,
   redeemPointsSchema,
   submitWalletCardSchema,
+  type ApplyReferralCodeDto,
   type CreateReferralDto,
   type RedeemPointsDto,
   type SubmitWalletCardDto,
@@ -91,5 +93,15 @@ export class MemberWalletController {
     @Body(new ZodValidationPipe(createReferralSchema)) dto: CreateReferralDto,
   ) {
     return this.referrals.create(Number(user.subjectId), dto);
+  }
+
+  /** The "Referral ID" field at registration — see
+   *  `ReferralService.applySignupCode`'s own doc for what it resolves to. */
+  @Post('referrals/apply-code')
+  applyReferralCode(
+    @CurrentUser() user: RequestSubject,
+    @Body(new ZodValidationPipe(applyReferralCodeSchema)) dto: ApplyReferralCodeDto,
+  ) {
+    return this.referrals.applySignupCode(Number(user.subjectId), dto);
   }
 }

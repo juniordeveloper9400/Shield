@@ -29,7 +29,14 @@ export const createReferralSchema = z.object({
   inviteePhone: z.string().min(10).max(10),
 });
 
+/** Whatever a new member typed into the "Referral ID" field at registration
+ *  — see `ReferralService.applySignupCode`'s own doc for what it resolves to. */
+export const applyReferralCodeSchema = z.object({
+  code: z.string().trim().min(1),
+});
+
 export type SubmitWalletCardDto = z.infer<typeof submitWalletCardSchema>;
 export type RejectWalletCardDto = z.infer<typeof rejectWalletCardSchema>;
 export type RedeemPointsDto = z.infer<typeof redeemPointsSchema>;
 export type CreateReferralDto = z.infer<typeof createReferralSchema>;
+export type ApplyReferralCodeDto = z.infer<typeof applyReferralCodeSchema>;
