@@ -209,7 +209,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       return;
     }
 
-    final isFirstRegistration = !_service.isRegistered;
     _service.save(
       Registration(
         name: _name.text.trim(),
@@ -225,12 +224,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       ),
     );
 
-    // The referral edge is only ever recorded on a first registration — an
-    // edit carries no code field to read one from (see _buildAboutYou).
-    // Best-effort and fire-and-forget: a bad or reused code must not hold up
-    // the celebration screen below.
+    // Tried on every save, not just a first registration — both paths below
+    // are idempotent (ON CONFLICT DO NOTHING / WHERE NOT EXISTS), so a
+    // member who skipped this the first time round can still add one
+    // later. Best-effort and fire-and-forget either way: a bad or reused
+    // code must not hold up the celebration screen below.
     final referralCode = _referralCode.text.trim();
-    if (isFirstRegistration && referralCode.isNotEmpty) {
+    if (referralCode.isNotEmpty) {
       unawaited(ReferralService.instance.recordSignupCode(referralCode));
       // The same field also accepts an agent's own code (`SHD-WRD-004`, …) —
       // the two never collide, so trying both costs nothing when the code
@@ -415,18 +415,19 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         ),
         if (_submitted && _dob == null)
           const _FieldError('Date of birth is required'),
-        // Only asked once, on a first registration — editing a saved profile
-        // has nothing left to attribute.
-        if (!widget.isEditing) ...[
-          const SizedBox(height: 14),
-          LabelledField(
-            label: 'Referral code (optional)',
-            hint: "A friend's invite code, or an agent's code",
-            controller: _referralCode,
-            icon: Icons.card_giftcard_outlined,
-            textCapitalization: TextCapitalization.characters,
-          ),
-        ],
+        // Shown on every visit to this form, not just a first registration —
+        // both the agent-link and the referral-code paths this feeds are
+        // idempotent (ON CONFLICT DO NOTHING / WHERE NOT EXISTS), so a
+        // member who skipped this the first time round can still add one
+        // later.
+        const SizedBox(height: 14),
+        LabelledField(
+          label: 'Referral code (optional)',
+          hint: "A friend's invite code, or an agent's code",
+          controller: _referralCode,
+          icon: Icons.card_giftcard_outlined,
+          textCapitalization: TextCapitalization.characters,
+        ),
       ],
     );
   }

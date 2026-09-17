@@ -120,10 +120,11 @@ class ReferralService extends ChangeNotifier {
 
   // ---- writes ------------------------------------------------------
 
-  /// Records a referral code entered on the registration form. Called once,
-  /// right after [RegistrationService.save] on a first-time registration —
-  /// editing an existing profile carries no such field, so this never runs
-  /// twice for the same member.
+  /// Records a referral code entered on the registration form — right after
+  /// [RegistrationService.save], on a first-time registration or an edit
+  /// alike. `ReferralRepository.recordSignup`'s own `WHERE NOT EXISTS`
+  /// guard is what actually enforces "at most one inbound referral, ever";
+  /// this can be called as many times as the member saves the form.
   ///
   /// Best-effort and silent either way: a bad, self-used or already-spent
   /// code must not stop the registration it rode in on.
