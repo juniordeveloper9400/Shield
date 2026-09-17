@@ -1,10 +1,16 @@
 import { z } from 'zod';
 
+const dataUriImage = z
+  .string()
+  .regex(/^data:image\/(png|jpe?g);base64,/, 'image must be a data: URI (png/jpeg)');
+
 export const uploadPrescriptionSchema = z.object({
   patientId: z.number().int().positive(),
   // Optional — a script phoned in with no photo attached (the pharmacist
   // fills it in from the call) is a real, existing flow, not an error case.
-  image: z.string().regex(/^data:image\/(png|jpe?g);base64,/, 'image must be a data: URI (png/jpeg)').optional(),
+  // Up to 3 — a script is often more than one page (front/back, or several
+  // pages of a longer prescription).
+  images: z.array(dataUriImage).max(3, 'Up to 3 images per prescription').optional(),
   fileName: z.string().default(''),
   doctor: z.string().default(''),
   duration: z.enum(['ONE_WEEK', 'FIFTEEN_DAYS', 'ONE_MONTH', 'TWO_MONTHS', 'THREE_MONTHS']).optional(),
@@ -30,6 +36,10 @@ export const updateMedicineStatusSchema = z.object({
 
 export const updatePrescriptionStatusSchema = z.object({
   status: z.enum(['AWAITING_REVIEW', 'READ', 'IN_CART', 'ORDERED']),
+});
+
+export const setPrescriptionImageRotationSchema = z.object({
+  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]),
 });
 
 export const raiseApprovalSchema = z.object({
@@ -80,6 +90,7 @@ export type UploadPrescriptionDto = z.infer<typeof uploadPrescriptionSchema>;
 export type AddMedicineLineDto = z.infer<typeof addMedicineLineSchema>;
 export type UpdateMedicineStatusDto = z.infer<typeof updateMedicineStatusSchema>;
 export type UpdatePrescriptionStatusDto = z.infer<typeof updatePrescriptionStatusSchema>;
+export type SetPrescriptionImageRotationDto = z.infer<typeof setPrescriptionImageRotationSchema>;
 export type RaiseApprovalDto = z.infer<typeof raiseApprovalSchema>;
 export type RespondApprovalDto = z.infer<typeof respondApprovalSchema>;
 export type SubmitPrescriptionOrderDto = z.infer<typeof submitPrescriptionOrderSchema>;

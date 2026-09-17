@@ -64,3 +64,5 @@ lib/data/neon/neon_secret.dart
 /shieldweb/
 # github.com/juniordeveloper9400/shield-webapp  (Flutter Web build: agent + investor)
 /shield agent_invester/
+.vercel
+.env*

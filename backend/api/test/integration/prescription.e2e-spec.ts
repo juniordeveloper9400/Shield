@@ -111,17 +111,17 @@ describe('Prescription (e2e)', () => {
     await request(app.getHttpServer())
       .post('/v1/member/prescriptions')
       .set('Authorization', `Bearer ${memberAccessToken}`)
-      .send({ patientId: 999999, image: PNG_DATA_URI })
+      .send({ patientId: 999999, images: [PNG_DATA_URI] })
       .expect(403);
   });
 
-  it('uploads a prescription, storing the image inline and never exposing the raw column name', async () => {
+  it('uploads a prescription, storing up to 3 images and never exposing the raw column names', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/member/prescriptions')
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .send({
         patientId,
-        image: PNG_DATA_URI,
+        images: [PNG_DATA_URI, PNG_DATA_URI],
         doctor: 'Dr. Rao',
         recurringFrom: '2026-01-01',
         recurringUntil: '2026-06-01',
@@ -129,12 +129,23 @@ describe('Prescription (e2e)', () => {
       .expect(201);
 
     prescriptionId = res.body.id;
-    expect(res.body.imageUrl).toBe(PNG_DATA_URI);
+    expect(res.body.images).toHaveLength(2);
+    expect(res.body.images[0].image).toBe(PNG_DATA_URI);
+    expect(res.body.images[0].rotation).toBe(0);
     expect(res.body.storagePath).toBeUndefined();
     expect(res.body.image).toBeUndefined();
+    expect(res.body.imageRotation).toBeUndefined();
     expect(res.body.status).toBe('AWAITING_REVIEW');
     expect(String(res.body.recurringFrom)).toContain('2026-01-01');
     expect(String(res.body.recurringUntil)).toContain('2026-06-01');
+  });
+
+  it('rejects more than 3 images on a single prescription', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/member/prescriptions')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ patientId, images: [PNG_DATA_URI, PNG_DATA_URI, PNG_DATA_URI, PNG_DATA_URI] })
+      .expect(400);
   });
 
   it('uploads a prescription with no photo — a script phoned in, not an error case', async () => {
@@ -143,7 +154,7 @@ describe('Prescription (e2e)', () => {
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .send({ patientId, doctor: 'Dr. Rao (phone)' })
       .expect(201);
-    expect(res.body.imageUrl).toBeNull();
+    expect(res.body.images).toEqual([]);
   });
 
   it("hides the pharmacist-only medicine status field from the member, but not from staff", async () => {
@@ -173,6 +184,42 @@ describe('Prescription (e2e)', () => {
     await request(app.getHttpServer())
       .get(`/v1/staff/prescriptions/${prescriptionId}`)
       .set('Authorization', `Bearer ${storeBStaffToken}`)
+      .expect(404);
+  });
+
+  it('rotates one image on a multi-page prescription without touching the others', async () => {
+    const before = await request(app.getHttpServer())
+      .get(`/v1/staff/prescriptions/${prescriptionId}`)
+      .set('Authorization', `Bearer ${storeAStaffToken}`)
+      .expect(200);
+    expect(before.body.images).toHaveLength(2);
+    const [firstImage, secondImage] = before.body.images;
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/prescriptions/${prescriptionId}/images/${firstImage.id}/rotation`)
+      .set('Authorization', `Bearer ${storeAStaffToken}`)
+      .send({ rotation: 90 })
+      .expect(200);
+
+    const after = await request(app.getHttpServer())
+      .get(`/v1/staff/prescriptions/${prescriptionId}`)
+      .set('Authorization', `Bearer ${storeAStaffToken}`)
+      .expect(200);
+    const updatedFirst = after.body.images.find((i: { id: number }) => i.id === firstImage.id);
+    const updatedSecond = after.body.images.find((i: { id: number }) => i.id === secondImage.id);
+    expect(updatedFirst.rotation).toBe(90);
+    expect(updatedSecond.rotation).toBe(0); // untouched
+  });
+
+  it('rejects rotating an image on a prescription from a different store', async () => {
+    const staffView = await request(app.getHttpServer())
+      .get(`/v1/staff/prescriptions/${prescriptionId}`)
+      .set('Authorization', `Bearer ${storeAStaffToken}`)
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/prescriptions/${prescriptionId}/images/${staffView.body.images[0].id}/rotation`)
+      .set('Authorization', `Bearer ${storeBStaffToken}`)
+      .send({ rotation: 180 })
       .expect(404);
   });
 
@@ -302,6 +349,6 @@ describe('Prescription (e2e)', () => {
       .expect(200);
     expect(linked.body).toHaveLength(1);
     expect(linked.body[0].id).toBe(prescriptionId);
-    expect(linked.body[0].image).toBe(rx.body.imageUrl);
+    expect(linked.body[0].image).toBe(rx.body.images[0].image);
   });
 });

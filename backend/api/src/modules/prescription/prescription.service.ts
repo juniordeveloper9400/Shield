@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
@@ -8,6 +8,7 @@ import {
   orderTrackStep,
   patient,
   prescription,
+  prescriptionImage,
   prescriptionMedicine,
   prescriptionOrder,
   users,
@@ -16,6 +17,7 @@ import type { AdminRole } from '../auth/session.types';
 import { assertLegalPrescriptionTransition, type PrescriptionStatus } from './prescription-status';
 import type {
   AddMedicineLineDto,
+  SetPrescriptionImageRotationDto,
   SubmitPrescriptionOrderDto,
   UpdateMedicineStatusDto,
   UpdatePrescriptionStatusDto,
@@ -53,28 +55,40 @@ export class PrescriptionService {
 
     const [member] = await this.db.select({ homeStoreId: users.homeStoreId }).from(users).where(eq(users.id, memberId)).limit(1);
 
-    if (dto.image && !/^data:image\/(?:png|jpe?g);base64,.+$/.test(dto.image)) {
-      throw new ForbiddenException({ error: { code: 'VALIDATION_ERROR', message: 'Malformed image data URI' } });
+    const images = dto.images ?? [];
+    for (const image of images) {
+      if (!/^data:image\/(?:png|jpe?g);base64,.+$/.test(image)) {
+        throw new ForbiddenException({ error: { code: 'VALIDATION_ERROR', message: 'Malformed image data URI' } });
+      }
     }
 
-    const [created] = await this.db
-      .insert(prescription)
-      .values({
-        memberId,
-        patientId: dto.patientId,
-        storeId: member?.homeStoreId ?? null,
-        code: `RX-${Date.now().toString(36).toUpperCase()}`,
-        fileName: dto.fileName,
-        image: dto.image,
-        doctor: dto.doctor,
-        duration: dto.duration,
-        customDays: dto.customDays,
-        recurringFrom: dto.recurringFrom,
-        recurringUntil: dto.recurringUntil,
-      })
-      .returning();
+    return this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(prescription)
+        .values({
+          memberId,
+          patientId: dto.patientId,
+          storeId: member?.homeStoreId ?? null,
+          code: `RX-${Date.now().toString(36).toUpperCase()}`,
+          fileName: dto.fileName,
+          doctor: dto.doctor,
+          duration: dto.duration,
+          customDays: dto.customDays,
+          recurringFrom: dto.recurringFrom,
+          recurringUntil: dto.recurringUntil,
+        })
+        .returning();
 
-    return this.toMemberView(created);
+      const insertedImages =
+        images.length > 0
+          ? await tx
+              .insert(prescriptionImage)
+              .values(images.map((image, sort) => ({ prescriptionId: created.id, sort, image })))
+              .returning()
+          : [];
+
+      return this.toMemberView(created, insertedImages);
+    });
   }
 
   /**
@@ -172,13 +186,19 @@ export class PrescriptionService {
       .from(prescription)
       .where(eq(prescription.memberId, memberId))
       .orderBy(desc(prescription.createdAt));
-    return rows.map((row) => this.toMemberView(row));
+    const imagesByRx = await this.attachImages(rows.map((r) => r.id));
+    return rows.map((row) => this.toMemberView(row, imagesByRx.get(row.id) ?? []));
   }
 
   async getForMember(memberId: number, id: number) {
     const found = await this.getOwnedByMemberOrThrow(id, memberId);
     const lines = await this.db.select().from(prescriptionMedicine).where(eq(prescriptionMedicine.prescriptionId, id));
-    return { ...this.toMemberView(found), medicines: lines.map(toMemberMedicine) };
+    const images = await this.db
+      .select()
+      .from(prescriptionImage)
+      .where(eq(prescriptionImage.prescriptionId, id))
+      .orderBy(asc(prescriptionImage.sort));
+    return { ...this.toMemberView(found, images), medicines: lines.map(toMemberMedicine) };
   }
 
   async listForStaff(role: AdminRole, storeId: number | null) {
@@ -192,13 +212,42 @@ export class PrescriptionService {
               .from(prescription)
               .where(eq(prescription.storeId, storeId))
               .orderBy(desc(prescription.createdAt));
-    return rows.map((row) => this.toStaffView(row));
+    const imagesByRx = await this.attachImages(rows.map((r) => r.id));
+    return rows.map((row) => this.toStaffView(row, imagesByRx.get(row.id) ?? []));
   }
 
   async getForStaff(role: AdminRole, storeId: number | null, id: number) {
     const found = await this.getOwnedByStaffOrThrow(id, role, storeId);
     const lines = await this.db.select().from(prescriptionMedicine).where(eq(prescriptionMedicine.prescriptionId, id));
-    return { ...this.toStaffView(found), medicines: lines };
+    const images = await this.db
+      .select()
+      .from(prescriptionImage)
+      .where(eq(prescriptionImage.prescriptionId, id))
+      .orderBy(asc(prescriptionImage.sort));
+    return { ...this.toStaffView(found, images), medicines: lines };
+  }
+
+  /**
+   * Fixes one image's display rotation in place — a script photographed
+   * sideways or upside down is common enough to need this, and a
+   * multi-page prescription may need only one of its pages fixed, not all
+   * of them, hence per-image rather than the old whole-prescription field.
+   */
+  async setImageRotation(
+    role: AdminRole,
+    storeId: number | null,
+    prescriptionId: number,
+    imageId: number,
+    dto: SetPrescriptionImageRotationDto,
+  ) {
+    await this.getOwnedByStaffOrThrow(prescriptionId, role, storeId);
+    const [updated] = await this.db
+      .update(prescriptionImage)
+      .set({ imageRotation: dto.rotation })
+      .where(and(eq(prescriptionImage.id, imageId), eq(prescriptionImage.prescriptionId, prescriptionId)))
+      .returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Image not found' } });
+    return updated;
   }
 
   async addMedicineLine(role: AdminRole, storeId: number | null, prescriptionId: number, dto: AddMedicineLineDto) {
@@ -265,13 +314,36 @@ export class PrescriptionService {
     return found;
   }
 
-  private toMemberView(row: typeof prescription.$inferSelect) {
-    const { storagePath: _storagePath, image, ...rest } = row;
-    return { ...rest, imageUrl: image };
+  /** Batch-loads every image for a set of prescriptions, grouped by
+   *  prescriptionId and ordered by sort — one query for a whole list rather
+   *  than one per row. */
+  private async attachImages(prescriptionIds: number[]) {
+    const byRx = new Map<number, (typeof prescriptionImage.$inferSelect)[]>();
+    if (prescriptionIds.length === 0) return byRx;
+    const rows = await this.db
+      .select()
+      .from(prescriptionImage)
+      .where(inArray(prescriptionImage.prescriptionId, prescriptionIds))
+      .orderBy(asc(prescriptionImage.sort));
+    for (const row of rows) {
+      const bucket = byRx.get(row.prescriptionId);
+      if (bucket) bucket.push(row);
+      else byRx.set(row.prescriptionId, [row]);
+    }
+    return byRx;
   }
 
-  private toStaffView(row: typeof prescription.$inferSelect) {
-    const { storagePath: _storagePath, image, ...rest } = row;
-    return { ...rest, imageUrl: image };
+  private toMemberView(row: typeof prescription.$inferSelect, images: (typeof prescriptionImage.$inferSelect)[] = []) {
+    const { storagePath: _storagePath, image: _image, imageRotation: _imageRotation, ...rest } = row;
+    return { ...rest, images: images.map(toImageView) };
   }
+
+  private toStaffView(row: typeof prescription.$inferSelect, images: (typeof prescriptionImage.$inferSelect)[] = []) {
+    const { storagePath: _storagePath, image: _image, imageRotation: _imageRotation, ...rest } = row;
+    return { ...rest, images: images.map(toImageView) };
+  }
+}
+
+function toImageView(row: typeof prescriptionImage.$inferSelect) {
+  return { id: row.id, image: row.image, rotation: row.imageRotation };
 }

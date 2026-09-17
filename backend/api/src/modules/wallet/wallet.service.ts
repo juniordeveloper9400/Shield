@@ -30,28 +30,48 @@ function round2(n: number): number {
 /**
  * The Health Pass direct-sale commission split, worked out on [approveCard].
  * A Health Pass activation sets aside [COMMISSION_POOL_RATE] of the loaded
- * amount as the whole commission pool. From that pool:
+ * amount as the whole commission pool. From that pool, once the direct
+ * seller (`wallet_card.sold_by_agent_id`) resolves to a real APPROVED agent:
  *
- *  - [DIRECT_SALE_SHARE_RATE] (60%) always goes to the agent whose code the
- *    member typed in at checkout (`wallet_card.sold_by_agent_id`) — their
- *    own direct-sale earnings, whatever level they are.
- *  - [NATIONAL_OVERRIDE_RATE] (10%) additionally goes to the one national
- *    agent, but only when the direct seller is someone else — the national
- *    agent's own direct sale already gets the 60% above and nothing on top
- *    of it, there being nobody further up to pay an override to.
- *  - Whatever is left (30% when a non-national agent sold directly, 40%
- *    when the national agent did) is not owed to any agent. It is logged to
+ *  - [DIRECT_SALE_SHARE_RATE] (60%) always goes to the seller — their own
+ *    direct-sale earnings, whatever level they are.
+ *  - Then, walking the seller's own real `agent.parentId` chain (their
+ *    actual upline, not just "whoever happens to be one level up"),
+ *    [HOP_OVERRIDE_RATES] pays a decaying share to each ancestor in turn:
+ *    10% to whoever is 1 hop up, 6% to whoever is 2 hops up, 5% to whoever
+ *    is 3 hops up, 4% to whoever is 4 hops up, 3% to whoever is 5 hops up,
+ *    2% to whoever is 6 hops up — each only when that specific ancestor
+ *    resolves to a real APPROVED agent (an unapproved ancestor is skipped
+ *    for payment but the walk still continues past them to find the next
+ *    hop).
+ *  - Whatever is left over once the walk ends (the chain runs out, or the
+ *    rate table does) is not owed to any agent. It is logged to
  *    [commissionReserveEntry] as the company's own share — see that table's
  *    own doc — and is never credited to anyone or surfaced to a member or
- *    an agent anywhere in the app. A later change paying intermediate
- *    levels (state, district, …) an override of their own on a downline
- *    sale would come out of this same reserve share, once that split is
- *    specified; nothing here assumes it is permanently un-owed, only that
- *    this method does not yet hand any more of it out than described above.
+ *    an agent anywhere in the app.
+ *
+ * Worked examples this reproduces, on a 10,000 rupee plan: national sells
+ * directly -> 600/0/0/0/0/0/0/400 reserved; region sells directly (hop 1 IS
+ * national) -> 600/100/0/0/0/0/0/300 reserved; state sells directly (hop 1 a
+ * real region agent, hop 2 national) -> 600/100/60/0/0/0/0/240 reserved;
+ * district sells directly (hop 1 state, hop 2 region, hop 3 national) ->
+ * 600/100/60/50/0/0/0/190 reserved; assembly sells directly (hop 1 district,
+ * hop 2 state, hop 3 region, hop 4 national) -> 600/100/60/50/40/0/0/150
+ * reserved; lsgd sells directly (hop 1 assembly, hop 2 district, hop 3
+ * state, hop 4 region, hop 5 national) -> 600/100/60/50/40/30/0/120
+ * reserved; ward sells directly (hop 1 lsgd, hop 2 assembly, hop 3
+ * district, hop 4 state, hop 5 region, hop 6 national) ->
+ * 600/100/60/50/40/30/20/100 reserved.
+ *
+ * Mirrors the Postgres function `app.approve_wallet_card_activation`
+ * (migration 0039) that shieldweb's real approval action actually calls —
+ * see that migration's own doc for why this logic exists in both places.
+ * This covers every level down to WARD, the deepest in app.agent_level —
+ * nothing left to extend unless a new level is ever added below it.
  */
 const COMMISSION_POOL_RATE = 0.1;
 const DIRECT_SALE_SHARE_RATE = 0.6;
-const NATIONAL_OVERRIDE_RATE = 0.1;
+const HOP_OVERRIDE_RATES = [0.1, 0.06, 0.05, 0.04, 0.03, 0.02];
 
 /**
  * Wallet balance is a stored column (matching the live schema), but it is
@@ -207,10 +227,15 @@ export class WalletService {
       // paid anyone. [amount] is the same figure the member is being
       // credited above, not a separate agent-side figure to keep in sync.
       if (card.soldByAgentId != null) {
-        const [seller] = await tx.select().from(agent).where(eq(agent.id, card.soldByAgentId)).limit(1);
-        // The agent could in principle have been deleted between submission
-        // and approval; best-effort like every other cross-reference here —
-        // this member's own approval must still go through either way.
+        const [seller] = await tx
+          .select()
+          .from(agent)
+          .where(and(eq(agent.id, card.soldByAgentId), eq(agent.approvalStatus, 'APPROVED')))
+          .limit(1);
+        // The agent could in principle have been deleted, or not yet
+        // approved, between submission and approval; best-effort like every
+        // other cross-reference here — this member's own approval must
+        // still go through either way.
         if (seller) {
           const pool = amount * COMMISSION_POOL_RATE;
           const directShare = round2(pool * DIRECT_SALE_SHARE_RATE);
@@ -224,27 +249,26 @@ export class WalletService {
 
           let distributed = directShare;
 
-          // The seller's own direct sale already covers them when they are
-          // the national agent — nobody sits above the national agent to
-          // pay an override to.
-          if (seller.level !== 'NATIONAL') {
-            const [national] = await tx
-              .select()
-              .from(agent)
-              .where(and(eq(agent.level, 'NATIONAL'), eq(agent.approvalStatus, 'APPROVED')))
-              .limit(1);
-            // No national agent appointed yet is a real, if unusual, state
-            // (the very first agent onboarded) — that share simply falls
-            // through to the reserve below rather than crediting nobody
-            // silently and losing track of the money.
-            if (national) {
-              const overrideShare = round2(pool * NATIONAL_OVERRIDE_RATE);
+          // Walk the seller's own real upline, one hop at a time, paying
+          // the decaying rate for however many hops HOP_OVERRIDE_RATES
+          // covers. An ancestor who isn't a real APPROVED agent is skipped
+          // for payment but the walk still continues past them (via their
+          // own parentId) to look for the next hop.
+          let ancestorId: number | null = seller.parentId;
+          for (let hop = 0; hop < HOP_OVERRIDE_RATES.length && ancestorId != null; hop++) {
+            const [ancestor] = await tx.select().from(agent).where(eq(agent.id, ancestorId)).limit(1);
+            if (!ancestor) break;
+
+            if (ancestor.approvalStatus === 'APPROVED') {
+              const hopShare = round2(pool * HOP_OVERRIDE_RATES[hop]);
               await tx
                 .update(agent)
-                .set({ earned: (Number(national.earned) + overrideShare).toString() })
-                .where(eq(agent.id, national.id));
-              distributed += overrideShare;
+                .set({ earned: (Number(ancestor.earned) + hopShare).toString() })
+                .where(eq(agent.id, ancestor.id));
+              distributed += hopShare;
             }
+
+            ancestorId = ancestor.parentId;
           }
 
           const reserve = round2(pool - distributed);

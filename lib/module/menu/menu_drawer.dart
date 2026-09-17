@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../diagnostics/debug_log.dart';
-import '../../diagnostics/debug_report_screen.dart';
 import '../../money.dart';
 import '../../screens/app_tabs.dart';
 import '../../theme/app_colors.dart';
@@ -14,6 +12,9 @@ import '../categories/categories_screen.dart';
 import '../health/health_section.dart';
 import '../labtest/lab_cart_screen.dart';
 import '../labtest/lab_cart_service.dart';
+import '../orders/purchase_service.dart';
+import '../registration/registration_flow.dart';
+import '../registration/registration_service.dart';
 import '../rewards/rewards_service.dart';
 import '../refer/refer_earn_screen.dart';
 import '../rewards/rewards_screen.dart';
@@ -161,10 +162,6 @@ class MenuDrawer extends StatelessWidget {
                           transparent: true,
                           onTap: () => _go(context, AppTab.account.index),
                         ),
-                        _DebugReportRow(
-                          onTap: () =>
-                              _push(context, const DebugReportScreen()),
-                        ),
                       ],
                     ),
                   ),
@@ -267,7 +264,18 @@ class _AccountStrip extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           InkWell(
-            onTap: () {},
+            // Same registration form the Account tab's "Edit" button and the
+            // "Complete your registration" banner open — one place the
+            // profile is actually edited, opened from every entry point.
+            // Closes the menu first, same as every other row here — it is a
+            // full-screen route of its own, not a drawer slide-out.
+            onTap: () {
+              Navigator.of(context).pop();
+              RegistrationFlow.show(
+                context,
+                isEditing: RegistrationService.instance.isRegistered,
+              );
+            },
             child: const Padding(
               padding: EdgeInsets.symmetric(vertical: 2),
               child: Text(
@@ -325,82 +333,6 @@ class _MenuRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 24,
-                color: AppColors.textMuted,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// "Debug report" — a download icon, the label, and a red count when the app
-/// has caught something going wrong this run. Opens [DebugReportScreen], where
-/// the member can download the captured errors to send to support.
-class _DebugReportRow extends StatelessWidget {
-  final VoidCallback onTap;
-
-  const _DebugReportRow({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.download_rounded,
-                size: 22,
-                color: AppColors.brandBlue,
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Debug report',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 15.5,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textDark,
-                  ),
-                ),
-              ),
-              ValueListenableBuilder<int>(
-                valueListenable: DebugLog.instance.issueCount,
-                builder: (context, count, _) {
-                  if (count == 0) {
-                    return const SizedBox.shrink();
-                  }
-                  return Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFB4322F),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      count > 99 ? '99+' : '$count',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.white,
-                      ),
-                    ),
-                  );
-                },
-              ),
               const Icon(
                 Icons.chevron_right_rounded,
                 size: 24,
@@ -475,7 +407,7 @@ class _DashboardPanel extends StatelessWidget {
                     child: _StatTile(
                       icon: Icons.collections_bookmark_outlined,
                       label: 'Active orders',
-                      value: '2',
+                      value: '${PurchaseService.instance.activeCount}',
                       accent: AppColors.brandGreenDeep,
                       onTap: onOpenOrders,
                     ),

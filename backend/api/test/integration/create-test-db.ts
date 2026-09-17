@@ -382,6 +382,15 @@ export function createTestDb() {
       deleted_at timestamptz
     );
 
+    CREATE TABLE app.prescription_image (
+      id bigserial PRIMARY KEY,
+      prescription_id bigint NOT NULL REFERENCES app.prescription(id) ON DELETE CASCADE,
+      sort integer NOT NULL DEFAULT 0,
+      image text NOT NULL,
+      image_rotation smallint NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE app.prescription_medicine (
       id bigserial PRIMARY KEY,
       prescription_id bigint NOT NULL REFERENCES app.prescription(id) ON DELETE CASCADE,

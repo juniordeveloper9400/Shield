@@ -246,9 +246,13 @@ describe('Wallet & Rewards (e2e)', () => {
   });
 
   it('splits a non-national direct sale three ways: 60% to the seller, 10% up to the one national agent, 30% reserved', async () => {
+    // parentId: agentId — a REGION agent's real immediate parent IS the
+    // national agent in this tree (confirmed against live data), so the
+    // 10% "immediate parent" override and the "national" override are the
+    // same payment here, not two separate ones.
     const [regionAgent] = await db
       .insert(agent)
-      .values({ code: 'SHD-REG-TEST1', name: 'Region Agent', phone: '9000000098', level: 'REGION' })
+      .values({ code: 'SHD-REG-TEST1', name: 'Region Agent', phone: '9000000098', level: 'REGION', parentId: agentId })
       .returning();
 
     await db.insert(users).values({ phone: '9000000005', name: 'Third Member', firebaseUid: 'member-wallet-3' });
@@ -287,6 +291,329 @@ describe('Wallet & Rewards (e2e)', () => {
       .expect(200);
     const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
     expect(Number(thisEntry.amount)).toBe(300); // 1000 pool - 600 direct - 100 override
+  });
+
+  it('splits a state-level direct sale four ways: 60% seller, 10% real region parent, 6% national, 24% reserved', async () => {
+    // A real reporting line two levels below national: state's parent is
+    // this specific region agent, whose own parent is the national agent —
+    // not just "whoever happens to be at the REGION level".
+    const [regionAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-REG-TEST2', name: 'Region Agent 2', phone: '9000000097', level: 'REGION', parentId: agentId })
+      .returning();
+    const [stateAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-STA-TEST1', name: 'State Agent', phone: '9000000096', level: 'STATE', parentId: regionAgent.id })
+      .returning();
+
+    await db.insert(users).values({ phone: '9000000006', name: 'Fourth Member', firebaseUid: 'member-wallet-4' });
+    firebase.register('member-4-token', { uid: 'member-wallet-4' });
+    const fourthMemberToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-4-token' }).expect(200)
+    ).body.accessToken;
+
+    // agentId (NATIONAL) has already earned from earlier tests in this file
+    // — read its current figure rather than assume a fixed value.
+    const [nationalBefore] = await db.select().from(agent).where(eq(agent.id, agentId));
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${fourthMemberToken}`)
+      .send({ tierId, amount: 10000, agentCode: 'SHD-STA-TEST1' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [stateAfter] = await db.select().from(agent).where(eq(agent.id, stateAgent.id));
+    expect(Number(stateAfter.earned)).toBe(600); // 10000 * 10% pool * 60% direct share
+    expect(Number(stateAfter.personalSales)).toBe(10000);
+
+    const [regionAfter] = await db.select().from(agent).where(eq(agent.id, regionAgent.id));
+    expect(Number(regionAfter.earned)).toBe(100); // 10% pool to the real immediate parent
+    expect(Number(regionAfter.personalSales)).toBe(0); // not their own sale
+
+    const [nationalAfter] = await db.select().from(agent).where(eq(agent.id, agentId));
+    expect(Number(nationalAfter.earned) - Number(nationalBefore.earned)).toBe(60); // 6% pool, national ≠ immediate parent here
+
+    const reserve = await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/reserve')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    expect(Number(thisEntry.amount)).toBe(240); // 1000 pool - 600 direct - 100 parent - 60 national
+  });
+
+  it('splits a district-level direct sale five ways: 60% seller, 10% state, 6% region, 5% national, 19% reserved', async () => {
+    // A real four-deep reporting line: district -> state -> region -> national.
+    const [regionAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-REG-TEST3', name: 'Region Agent 3', phone: '9000000095', level: 'REGION', parentId: agentId })
+      .returning();
+    const [stateAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-STA-TEST2', name: 'State Agent 2', phone: '9000000094', level: 'STATE', parentId: regionAgent.id })
+      .returning();
+    const [districtAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-DIS-TEST1', name: 'District Agent', phone: '9000000093', level: 'DISTRICT', parentId: stateAgent.id })
+      .returning();
+
+    await db.insert(users).values({ phone: '9000000007', name: 'Fifth Member', firebaseUid: 'member-wallet-5' });
+    firebase.register('member-5-token', { uid: 'member-wallet-5' });
+    const fifthMemberToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-5-token' }).expect(200)
+    ).body.accessToken;
+
+    // agentId (NATIONAL) has already earned from earlier tests in this file
+    // — read its current figure rather than assume a fixed value.
+    const [nationalBefore] = await db.select().from(agent).where(eq(agent.id, agentId));
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${fifthMemberToken}`)
+      .send({ tierId, amount: 10000, agentCode: 'SHD-DIS-TEST1' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [districtAfter] = await db.select().from(agent).where(eq(agent.id, districtAgent.id));
+    expect(Number(districtAfter.earned)).toBe(600); // 10000 * 10% pool * 60% direct share
+    expect(Number(districtAfter.personalSales)).toBe(10000);
+
+    const [stateAfter] = await db.select().from(agent).where(eq(agent.id, stateAgent.id));
+    expect(Number(stateAfter.earned)).toBe(100); // hop 1: 10% pool
+
+    const [regionAfter] = await db.select().from(agent).where(eq(agent.id, regionAgent.id));
+    expect(Number(regionAfter.earned)).toBe(60); // hop 2: 6% pool
+
+    const [nationalAfter] = await db.select().from(agent).where(eq(agent.id, agentId));
+    expect(Number(nationalAfter.earned) - Number(nationalBefore.earned)).toBe(50); // hop 3: 5% pool
+
+    const reserve = await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/reserve')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    expect(Number(thisEntry.amount)).toBe(190); // 1000 pool - 600 direct - 100 - 60 - 50
+  });
+
+  it('splits an assembly-level direct sale six ways: 60% seller, 10% district, 6% state, 5% region, 4% national, 15% reserved', async () => {
+    // A real five-deep reporting line: assembly -> district -> state -> region -> national.
+    const [regionAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-REG-TEST4', name: 'Region Agent 4', phone: '9000000092', level: 'REGION', parentId: agentId })
+      .returning();
+    const [stateAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-STA-TEST3', name: 'State Agent 3', phone: '9000000091', level: 'STATE', parentId: regionAgent.id })
+      .returning();
+    const [districtAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-DIS-TEST2', name: 'District Agent 2', phone: '9000000090', level: 'DISTRICT', parentId: stateAgent.id })
+      .returning();
+    const [assemblyAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-ASM-TEST1', name: 'Assembly Agent', phone: '9000000089', level: 'ASSEMBLY', parentId: districtAgent.id })
+      .returning();
+
+    await db.insert(users).values({ phone: '9000000008', name: 'Sixth Member', firebaseUid: 'member-wallet-6' });
+    firebase.register('member-6-token', { uid: 'member-wallet-6' });
+    const sixthMemberToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-6-token' }).expect(200)
+    ).body.accessToken;
+
+    // agentId (NATIONAL) has already earned from earlier tests in this file
+    // — read its current figure rather than assume a fixed value.
+    const [nationalBefore] = await db.select().from(agent).where(eq(agent.id, agentId));
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${sixthMemberToken}`)
+      .send({ tierId, amount: 10000, agentCode: 'SHD-ASM-TEST1' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [assemblyAfter] = await db.select().from(agent).where(eq(agent.id, assemblyAgent.id));
+    expect(Number(assemblyAfter.earned)).toBe(600); // 10000 * 10% pool * 60% direct share
+    expect(Number(assemblyAfter.personalSales)).toBe(10000);
+
+    const [districtAfter] = await db.select().from(agent).where(eq(agent.id, districtAgent.id));
+    expect(Number(districtAfter.earned)).toBe(100); // hop 1: 10% pool
+
+    const [stateAfter] = await db.select().from(agent).where(eq(agent.id, stateAgent.id));
+    expect(Number(stateAfter.earned)).toBe(60); // hop 2: 6% pool
+
+    const [regionAfter] = await db.select().from(agent).where(eq(agent.id, regionAgent.id));
+    expect(Number(regionAfter.earned)).toBe(50); // hop 3: 5% pool
+
+    const [nationalAfter] = await db.select().from(agent).where(eq(agent.id, agentId));
+    expect(Number(nationalAfter.earned) - Number(nationalBefore.earned)).toBe(40); // hop 4: 4% pool
+
+    const reserve = await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/reserve')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    expect(Number(thisEntry.amount)).toBe(150); // 1000 pool - 600 direct - 100 - 60 - 50 - 40
+  });
+
+  it('splits an lsgd-level direct sale seven ways: 60% seller, 10% assembly, 6% district, 5% state, 4% region, 3% national, 12% reserved', async () => {
+    // A real six-deep reporting line: lsgd -> assembly -> district -> state -> region -> national.
+    const [regionAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-REG-TEST5', name: 'Region Agent 5', phone: '9000000088', level: 'REGION', parentId: agentId })
+      .returning();
+    const [stateAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-STA-TEST4', name: 'State Agent 4', phone: '9000000087', level: 'STATE', parentId: regionAgent.id })
+      .returning();
+    const [districtAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-DIS-TEST3', name: 'District Agent 3', phone: '9000000086', level: 'DISTRICT', parentId: stateAgent.id })
+      .returning();
+    const [assemblyAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-ASM-TEST2', name: 'Assembly Agent 2', phone: '9000000085', level: 'ASSEMBLY', parentId: districtAgent.id })
+      .returning();
+    const [lsgdAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-LSG-TEST1', name: 'Lsgd Agent', phone: '9000000084', level: 'LSGD', parentId: assemblyAgent.id })
+      .returning();
+
+    await db.insert(users).values({ phone: '9000000009', name: 'Seventh Member', firebaseUid: 'member-wallet-7' });
+    firebase.register('member-7-token', { uid: 'member-wallet-7' });
+    const seventhMemberToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-7-token' }).expect(200)
+    ).body.accessToken;
+
+    // agentId (NATIONAL) has already earned from earlier tests in this file
+    // — read its current figure rather than assume a fixed value.
+    const [nationalBefore] = await db.select().from(agent).where(eq(agent.id, agentId));
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${seventhMemberToken}`)
+      .send({ tierId, amount: 10000, agentCode: 'SHD-LSG-TEST1' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [lsgdAfter] = await db.select().from(agent).where(eq(agent.id, lsgdAgent.id));
+    expect(Number(lsgdAfter.earned)).toBe(600); // 10000 * 10% pool * 60% direct share
+    expect(Number(lsgdAfter.personalSales)).toBe(10000);
+
+    const [assemblyAfter] = await db.select().from(agent).where(eq(agent.id, assemblyAgent.id));
+    expect(Number(assemblyAfter.earned)).toBe(100); // hop 1: 10% pool
+
+    const [districtAfter] = await db.select().from(agent).where(eq(agent.id, districtAgent.id));
+    expect(Number(districtAfter.earned)).toBe(60); // hop 2: 6% pool
+
+    const [stateAfter] = await db.select().from(agent).where(eq(agent.id, stateAgent.id));
+    expect(Number(stateAfter.earned)).toBe(50); // hop 3: 5% pool
+
+    const [regionAfter] = await db.select().from(agent).where(eq(agent.id, regionAgent.id));
+    expect(Number(regionAfter.earned)).toBe(40); // hop 4: 4% pool
+
+    const [nationalAfter] = await db.select().from(agent).where(eq(agent.id, agentId));
+    expect(Number(nationalAfter.earned) - Number(nationalBefore.earned)).toBe(30); // hop 5: 3% pool
+
+    const reserve = await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/reserve')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    expect(Number(thisEntry.amount)).toBe(120); // 1000 pool - 600 direct - 100 - 60 - 50 - 40 - 30
+  });
+
+  it('splits a ward-level direct sale eight ways: 60% seller, 10% lsgd, 6% assembly, 5% district, 4% state, 3% region, 2% national, 10% reserved', async () => {
+    // A real seven-deep reporting line: ward -> lsgd -> assembly -> district -> state -> region -> national.
+    const [regionAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-REG-TEST6', name: 'Region Agent 6', phone: '9000000083', level: 'REGION', parentId: agentId })
+      .returning();
+    const [stateAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-STA-TEST5', name: 'State Agent 5', phone: '9000000082', level: 'STATE', parentId: regionAgent.id })
+      .returning();
+    const [districtAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-DIS-TEST4', name: 'District Agent 4', phone: '9000000081', level: 'DISTRICT', parentId: stateAgent.id })
+      .returning();
+    const [assemblyAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-ASM-TEST3', name: 'Assembly Agent 3', phone: '9000000080', level: 'ASSEMBLY', parentId: districtAgent.id })
+      .returning();
+    const [lsgdAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-LSG-TEST2', name: 'Lsgd Agent 2', phone: '9000000079', level: 'LSGD', parentId: assemblyAgent.id })
+      .returning();
+    const [wardAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-WRD-TEST1', name: 'Ward Agent', phone: '9000000078', level: 'WARD', parentId: lsgdAgent.id })
+      .returning();
+
+    await db.insert(users).values({ phone: '9000000077', name: 'Eighth Member', firebaseUid: 'member-wallet-8' });
+    firebase.register('member-8-token', { uid: 'member-wallet-8' });
+    const eighthMemberToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-8-token' }).expect(200)
+    ).body.accessToken;
+
+    // agentId (NATIONAL) has already earned from earlier tests in this file
+    // — read its current figure rather than assume a fixed value.
+    const [nationalBefore] = await db.select().from(agent).where(eq(agent.id, agentId));
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${eighthMemberToken}`)
+      .send({ tierId, amount: 10000, agentCode: 'SHD-WRD-TEST1' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [wardAfter] = await db.select().from(agent).where(eq(agent.id, wardAgent.id));
+    expect(Number(wardAfter.earned)).toBe(600); // 10000 * 10% pool * 60% direct share
+    expect(Number(wardAfter.personalSales)).toBe(10000);
+
+    const [lsgdAfter] = await db.select().from(agent).where(eq(agent.id, lsgdAgent.id));
+    expect(Number(lsgdAfter.earned)).toBe(100); // hop 1: 10% pool
+
+    const [assemblyAfter] = await db.select().from(agent).where(eq(agent.id, assemblyAgent.id));
+    expect(Number(assemblyAfter.earned)).toBe(60); // hop 2: 6% pool
+
+    const [districtAfter] = await db.select().from(agent).where(eq(agent.id, districtAgent.id));
+    expect(Number(districtAfter.earned)).toBe(50); // hop 3: 5% pool
+
+    const [stateAfter] = await db.select().from(agent).where(eq(agent.id, stateAgent.id));
+    expect(Number(stateAfter.earned)).toBe(40); // hop 4: 4% pool
+
+    const [regionAfter] = await db.select().from(agent).where(eq(agent.id, regionAgent.id));
+    expect(Number(regionAfter.earned)).toBe(30); // hop 5: 3% pool
+
+    const [nationalAfter] = await db.select().from(agent).where(eq(agent.id, agentId));
+    expect(Number(nationalAfter.earned) - Number(nationalBefore.earned)).toBe(20); // hop 6: 2% pool
+
+    const reserve = await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/reserve')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    expect(Number(thisEntry.amount)).toBe(100); // 1000 pool - 600 direct - 100 - 60 - 50 - 40 - 30 - 20
   });
 
   it('rejects the commission reserve to ADMIN, even though that role can approve/reject wallet cards themselves', async () => {

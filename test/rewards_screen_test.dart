@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/module/categories/categories_screen.dart';
 import 'package:shield/module/refer/refer_earn_screen.dart';
+import 'package:shield/module/refer/referral_service.dart';
 import 'package:shield/module/rewards/rewards_screen.dart';
 
 void main() {
@@ -41,24 +42,34 @@ void main() {
     expect(shopButton, findsOneWidget);
   });
 
-  testWidgets('the exclusive offers section carries two coupons', (
-    tester,
-  ) async {
+  testWidgets('the exclusive offers section carries the milestone coupon, '
+      'not a flat referral one', (tester) async {
     await pumpRewards(tester);
 
     expect(find.text('EXCLUSIVE OFFERS'), findsOneWidget);
     expect(find.text('JUST FOR YOU'), findsOneWidget);
 
-    expect(find.text('Win flat'), findsNWidgets(2));
-    expect(find.text('Refer now'), findsOneWidget);
+    // The referral reward is level-based (see the Refer & Earn card below),
+    // so the flat "Win flat 10,000" coupon that used to overstate it here is
+    // gone — only the order-milestone coupon remains.
+    expect(find.text('Win flat'), findsOneWidget);
+    expect(find.text('Refer now'), findsNothing);
     expect(find.text('Start now'), findsOneWidget);
   });
 
-  testWidgets('the refer coupon opens the refer journey', (tester) async {
+  testWidgets('the refer & earn card shows real level progress and opens '
+      'the refer journey', (tester) async {
+    ReferralService.instance.debugReset();
+    addTearDown(ReferralService.instance.debugReset);
     await pumpRewards(tester);
 
-    await tester.ensureVisible(find.text('Refer now'));
-    await tester.tap(find.text('Refer now'));
+    expect(find.text('Refer & Earn'), findsOneWidget);
+    expect(find.text('Climb levels, unlock reward points'), findsOneWidget);
+    expect(find.text('Level 0 of 5'), findsOneWidget);
+    expect(find.text('Refer 2 more for 100 points'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Refer & Earn'));
+    await tester.tap(find.text('Refer & Earn'));
     await tester.pumpAndSettle();
 
     expect(find.byType(ReferEarnScreen), findsOneWidget);

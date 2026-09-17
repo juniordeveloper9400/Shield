@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/labtest/lab_cart_screen.dart';
 import 'package:shield/module/menu/menu_drawer.dart';
+import 'package:shield/module/registration/registration_screen.dart';
 import 'package:shield/module/wallet/wallet_screen.dart';
 import 'package:shield/screens/app_shell.dart';
 
@@ -54,6 +55,21 @@ void main() {
     );
     expect(find.text('Refer & earn'), findsOneWidget);
   });
+
+  testWidgets(
+    '"Add more user details" opens the registration form, same as the '
+    'Account tab\'s edit button',
+    (tester) async {
+      await pumpShell(tester);
+      await openMenu(tester);
+
+      await tester.tap(find.text('Add more user details >'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Menu'), findsNothing);
+      expect(find.byType(RegistrationScreen), findsOneWidget);
+    },
+  );
 
   testWidgets('close button dismisses the drawer', (tester) async {
     await pumpShell(tester);

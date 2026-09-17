@@ -608,7 +608,12 @@ CREATE TABLE app.bill (
     status     app.order_payment_status NOT NULL DEFAULT 'PENDING',
     paid_at    timestamptz,
     sent_at    timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now()
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    -- migration 0041: how a PAID bill's amount was actually collected --
+    -- the wallet is drawn down first (up to what it holds), and anything
+    -- still owed is collected in cash at the counter in the same action.
+    wallet_collected numeric(12,2) NOT NULL DEFAULT 0,
+    cash_collected   numeric(12,2) NOT NULL DEFAULT 0
 );
 
 -- Itemised breakdown for a priced bill (migration 0031) -- same shape as
@@ -656,6 +661,21 @@ CREATE TABLE app.prescription (
 );
 CREATE INDEX prescription_member_idx ON app.prescription(member_id) WHERE deleted_at IS NULL;
 CREATE INDEX prescription_store_idx  ON app.prescription(store_id);
+
+-- migration 0040: up to a handful of photos per prescription (a script is
+-- often more than one page), each independently rotatable. `image` /
+-- `image_rotation` on app.prescription above are legacy — no longer written
+-- to; every reader uses this table instead, backfilled once from those two
+-- columns for prescriptions uploaded before this table existed.
+CREATE TABLE app.prescription_image (
+    id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    prescription_id bigint NOT NULL REFERENCES app.prescription(id) ON DELETE CASCADE,
+    sort            integer NOT NULL DEFAULT 0,
+    image           text NOT NULL,                        -- resized JPEG data URI
+    image_rotation  smallint NOT NULL DEFAULT 0,           -- 0/90/180/270, fixed by a reviewer per image
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX prescription_image_prescription_idx ON app.prescription_image(prescription_id, sort);
 
 -- Lines the pharmacy keyed in after reading the file. Dose is morning-afternoon-night.
 CREATE TABLE app.prescription_medicine (
@@ -1005,11 +1025,18 @@ CREATE INDEX commission_reserve_entry_card_idx ON app.commission_reserve_entry(w
 
 -- Approves a pending/on-hold Health Pass activation and, in the one atomic
 -- call, credits the ledger, the wallet balance, the pre-existing
--- agent_customer_plan bookkeeping, AND the commission split above — see
--- migration 0033's own doc for the split itself and why this had to be a
--- function rather than shieldweb's usual plain-CTE style: its Neon driver
--- is one HTTP call per statement, with no cross-statement transaction, so a
--- multi-step write this size can only be atomic as a single function call.
+-- agent_customer_plan bookkeeping, AND the commission split below — see
+-- migration 0033's own doc for why this had to be a function rather than
+-- shieldweb's usual plain-CTE style (its Neon driver is one HTTP call per
+-- statement, with no cross-statement transaction), and migration 0036-0039's
+-- own doc for the decaying-chain-walk split logic itself:
+--   60% of the pool to the seller; then walking the seller's own real
+--   parent_id chain, 10% to whoever is 1 hop up, 6% to whoever is 2 hops
+--   up, 5% to whoever is 3 hops up, 4% to whoever is 4 hops up, 3% to
+--   whoever is 5 hops up, 2% to whoever is 6 hops up (each only if that
+--   specific ancestor is a real APPROVED agent); whatever is left over is
+--   reserved. This covers every level down to WARD, the deepest in
+--   app.agent_level — nothing left to extend unless a new level is added.
 CREATE OR REPLACE FUNCTION app.approve_wallet_card_activation(p_card_id bigint)
 RETURNS TABLE(approved_id bigint) AS $$
 DECLARE
@@ -1025,8 +1052,11 @@ DECLARE
     v_pool             numeric(12,2);
     v_direct_share     numeric(12,2);
     v_distributed      numeric(12,2) := 0;
-    v_national_id      bigint;
-    v_override_share   numeric(12,2);
+    v_ancestor_id      bigint;
+    v_credit_id        bigint;
+    v_hop_share        numeric(12,2);
+    v_hop_rates        numeric[] := ARRAY[0.10, 0.06, 0.05, 0.04, 0.03, 0.02];
+    v_hop              int;
     v_reserve          numeric(12,2);
 BEGIN
     UPDATE app.wallet_card
@@ -1083,18 +1113,21 @@ BEGIN
 
         v_distributed := v_direct_share;
 
-        IF v_seller_level <> 'NATIONAL' THEN
-            SELECT id INTO v_national_id
-            FROM app.agent
-            WHERE level = 'NATIONAL' AND approval_status = 'APPROVED'
-            LIMIT 1;
+        v_ancestor_id := v_seller_id;
+        FOR v_hop IN 1..array_length(v_hop_rates, 1) LOOP
+            SELECT parent_id INTO v_ancestor_id FROM app.agent WHERE id = v_ancestor_id;
+            EXIT WHEN v_ancestor_id IS NULL;
 
-            IF v_national_id IS NOT NULL THEN
-                v_override_share := ROUND(v_pool * 0.10, 2);
-                UPDATE app.agent SET earned = earned + v_override_share WHERE id = v_national_id;
-                v_distributed := v_distributed + v_override_share;
+            SELECT id INTO v_credit_id
+            FROM app.agent
+            WHERE id = v_ancestor_id AND approval_status = 'APPROVED';
+
+            IF v_credit_id IS NOT NULL THEN
+                v_hop_share := ROUND(v_pool * v_hop_rates[v_hop], 2);
+                UPDATE app.agent SET earned = earned + v_hop_share WHERE id = v_credit_id;
+                v_distributed := v_distributed + v_hop_share;
             END IF;
-        END IF;
+        END LOOP;
 
         v_reserve := ROUND(v_pool - v_distributed, 2);
         IF v_reserve > 0 THEN

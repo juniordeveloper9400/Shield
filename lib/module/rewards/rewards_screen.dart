@@ -4,8 +4,7 @@ import '../../money.dart';
 import '../../theme/app_colors.dart';
 import '../categories/categories_screen.dart';
 import '../home/points_badge.dart' show RewardCoin;
-import '../refer/refer_earn_screen.dart';
-import '../wallet/wallet_service.dart';
+import '../home/refer_earn_card.dart';
 import 'rewards_service.dart';
 
 /// The reward-points home, opened from the coin in the header.
@@ -35,9 +34,6 @@ class RewardsScreen extends StatefulWidget {
   /// What the "three orders this month" offer coupon is worth.
   static const int milestoneReward = 350;
 
-  /// What a completed referral is worth, matching the home refer card.
-  static const int referralReward = 10000;
-
   /// `124.00` — [points] as a rupee amount, always two decimals.
   static String rupeesFor(int points) =>
       (points / pointsPerRupee).toStringAsFixed(2);
@@ -50,11 +46,6 @@ class RewardsScreen extends StatefulWidget {
 }
 
 class _RewardsScreenState extends State<RewardsScreen> {
-  /// The notify-me strip is waved away for the session, the same way the
-  /// registration prompt is — the entry is never truly lost, it just stops
-  /// taking up room once the member has answered it.
-  bool _notifyDismissed = false;
-
   @override
   void initState() {
     super.initState();
@@ -107,26 +98,14 @@ class _RewardsScreenState extends State<RewardsScreen> {
 
               const _SectionLabel('GET INSTANT COINS'),
               const SizedBox(height: 14),
+              // Carries its own horizontal padding and bottom margin, unlike
+              // the flat card it replaced.
+              const ReferEarnCard(),
+              const SizedBox(height: 4),
+
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 16),
-                child: _ReferCard(),
-              ),
-              const SizedBox(height: 22),
-
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: [
-                    if (!_notifyDismissed) ...[
-                      _NotifyStrip(
-                        onDismiss: () =>
-                            setState(() => _notifyDismissed = true),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    const _NeedHelpRow(),
-                  ],
-                ),
+                child: _NeedHelpRow(),
               ),
 
               const SizedBox(height: 40),
@@ -213,48 +192,19 @@ class _Hero extends StatelessWidget {
   }
 }
 
-/// The white card notched into the hero: the rate, the balance restated in
-/// rupees, and what those coins can do — spent at checkout, the way every
-/// member already reads this card, or redeemed [WalletService.minRedeemPoints]
-/// or more at a time straight into the SHIELD wallet, where a plan is open to
-/// receive them.
-class _CoinWorthCard extends StatefulWidget {
+/// The white card notched into the hero: the rate, and the balance restated
+/// in rupees — spent at checkout, the way every member already reads this
+/// card. Coins are a discount, not a balance: they never leave as cash or
+/// move to the wallet.
+class _CoinWorthCard extends StatelessWidget {
   final int points;
 
   const _CoinWorthCard({required this.points});
 
   @override
-  State<_CoinWorthCard> createState() => _CoinWorthCardState();
-}
-
-class _CoinWorthCardState extends State<_CoinWorthCard> {
-  bool _redeeming = false;
-
-  Future<void> _redeem() async {
-    final error = WalletService.instance.redeemPointsError(widget.points);
-    if (error != null) {
-      _toast(context, error);
-      return;
-    }
-    setState(() => _redeeming = true);
-    final ok = await WalletService.instance.redeemPoints();
-    if (!mounted) return;
-    setState(() => _redeeming = false);
-    _toast(
-      context,
-      ok
-          ? '${formatRupees(widget.points)} points moved to your wallet'
-          : 'Could not redeem right now — try again in a moment.',
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final points = widget.points;
     final rupees = RewardsScreen.rupeesFor(points);
     final canSpend = RewardsScreen.wholeRupeesFor(points) > 0;
-    final redeemError = WalletService.instance.redeemPointsError(points);
-    final canRedeem = redeemError == null && !_redeeming;
 
     return Container(
       decoration: BoxDecoration(
@@ -381,41 +331,11 @@ class _CoinWorthCardState extends State<_CoinWorthCard> {
             ],
           ),
           const SizedBox(height: 10),
-          Row(
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: AppColors.brandBlue.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.account_balance_wallet_rounded,
-                  size: 22,
-                  color: AppColors.brandBlue,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _DarkButton(
-                  label: _redeeming
-                      ? 'Redeeming…'
-                      : 'Redeem ${formatRupees(points)} pts to wallet',
-                  onTap: canRedeem ? _redeem : null,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            redeemError != null && points > 0
-                ? redeemError
-                : 'Coins come off your bill at checkout, or redeem '
-                    '${WalletService.minRedeemPoints}+ at a time straight '
-                    'into your SHIELD wallet.',
+          const Text(
+            'Coins come off your bill at checkout. They can’t be withdrawn '
+            'as cash or moved to your wallet.',
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               height: 1.35,
               fontWeight: FontWeight.w500,
@@ -439,41 +359,24 @@ class _ExclusiveOffers extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: _OfferCoupon(
-              icon: Icons.card_giftcard_rounded,
-              headline: 'Win flat',
-              amount: RewardsScreen.referralReward,
-              body: 'when your friend places their first order',
-              accent: 'first order',
-              cta: 'Refer now',
-              action: _OfferAction.refer,
-            ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 210),
+          child: const _OfferCoupon(
+            icon: Icons.workspace_premium_rounded,
+            headline: 'Win flat',
+            amount: RewardsScreen.milestoneReward,
+            body: 'on three orders placed this month',
+            accent: 'this month',
+            cta: 'Start now',
           ),
-          SizedBox(width: 12),
-          Expanded(
-            child: _OfferCoupon(
-              icon: Icons.workspace_premium_rounded,
-              headline: 'Win flat',
-              amount: RewardsScreen.milestoneReward,
-              body: 'on three orders placed this month',
-              accent: 'this month',
-              cta: 'Start now',
-              action: _OfferAction.shop,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
-
-enum _OfferAction { refer, shop }
 
 class _OfferCoupon extends StatelessWidget {
   final IconData icon;
@@ -485,7 +388,6 @@ class _OfferCoupon extends StatelessWidget {
   /// card highlights the part that names the thing being rewarded.
   final String accent;
   final String cta;
-  final _OfferAction action;
 
   const _OfferCoupon({
     required this.icon,
@@ -494,18 +396,12 @@ class _OfferCoupon extends StatelessWidget {
     required this.body,
     required this.accent,
     required this.cta,
-    required this.action,
   });
 
   void _run(BuildContext context) {
-    switch (action) {
-      case _OfferAction.refer:
-        ReferEarnScreen.open(context);
-      case _OfferAction.shop:
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const CategoriesScreen()),
-        );
-    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CategoriesScreen()),
+    );
   }
 
   @override
@@ -797,187 +693,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-/// The instant-earn route: hands off to the existing refer-and-earn journey.
-class _ReferCard extends StatelessWidget {
-  const _ReferCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: () => ReferEarnScreen.open(context),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.border),
-          ),
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [AppColors.offerTint, AppColors.greenTint],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.card_giftcard_rounded,
-                  size: 26,
-                  color: AppColors.brandGreenDeep,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Refer & Earn',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    const Text(
-                      'Refer your friend and earn points!',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.textBody,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.greenTint,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const RewardCoin(size: 14),
-                            const SizedBox(width: 5),
-                            Text(
-                              'Get flat ${formatRupees(RewardsScreen.referralReward)}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.brandGreenDark,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.arrow_forward_rounded,
-                size: 20,
-                color: AppColors.textMuted,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The dismissible notifications opt-in.
-class _NotifyStrip extends StatelessWidget {
-  final VoidCallback onDismiss;
-
-  const _NotifyStrip({required this.onDismiss});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
-      child: Row(
-        children: [
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Never miss exclusive offers',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark,
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Turn on notifications',
-                  style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          // A shrink-wrapping button rather than [_DarkButton], which is built
-          // to be stretched by an [Expanded] and cannot size itself here.
-          Material(
-            color: AppColors.brandNavy,
-            borderRadius: BorderRadius.circular(10),
-            child: InkWell(
-              onTap: () {
-                _toast(context, "We'll keep you posted on new offers.");
-                onDismiss();
-              },
-              borderRadius: BorderRadius.circular(10),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                child: Text(
-                  'Notify me',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.white,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed: onDismiss,
-            icon: const Icon(Icons.close_rounded, size: 20),
-            color: AppColors.textMuted,
-            tooltip: 'Dismiss',
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _NeedHelpRow extends StatelessWidget {
   const _NeedHelpRow();

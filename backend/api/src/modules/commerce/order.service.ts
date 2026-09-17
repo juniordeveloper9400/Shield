@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, getTableColumns, isNull } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, isNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
@@ -12,6 +12,7 @@ import {
   orderTrackStep,
   paymentMethod,
   prescription,
+  prescriptionImage,
   prescriptionOrder,
   referral,
   rewardPointTransaction,
@@ -298,24 +299,38 @@ export class OrderService {
    * The prescription(s) submitted into this order, via `prescription_order`
    * (one row per prescription — `submitForOrder` writes one for every id it
    * was given). Empty for a standard order, which never has one. `image`
-   * carries the member's own uploaded scan (a `data:` URI — see
-   * `PrescriptionService.upload`'s own validation), what the "Prescription
-   * uploaded" card on order tracking actually shows, as opposed to a generic
-   * icon standing in for it.
+   * carries the member's own uploaded scan's first page (a `data:` URI —
+   * see `PrescriptionService.upload`'s own validation and
+   * `prescriptionImage`, migration 0040) — a representative thumbnail for
+   * the "Prescription uploaded" card on order tracking, as opposed to a
+   * generic icon standing in for it. The full page-by-page set is only
+   * needed by the pharmacy review flow, not this tracking card.
    */
   async getPrescriptionsForOrder(memberId: number, orderId: number) {
     await this.getOwnedByMemberOrThrow(orderId, memberId);
-    return this.db
+    const rows = await this.db
       .select({
         id: prescription.id,
         code: prescription.code,
-        image: prescription.image,
         doctor: prescription.doctor,
         status: prescription.status,
       })
       .from(prescriptionOrder)
       .innerJoin(prescription, eq(prescription.id, prescriptionOrder.prescriptionId))
       .where(eq(prescriptionOrder.orderId, orderId));
+    if (rows.length === 0) return rows.map((r) => ({ ...r, image: null }));
+
+    const firstImages = await this.db
+      .select({ prescriptionId: prescriptionImage.prescriptionId, image: prescriptionImage.image })
+      .from(prescriptionImage)
+      .where(
+        and(
+          inArray(prescriptionImage.prescriptionId, rows.map((r) => r.id)),
+          eq(prescriptionImage.sort, 0),
+        ),
+      );
+    const imageByRx = new Map(firstImages.map((i) => [i.prescriptionId, i.image]));
+    return rows.map((r) => ({ ...r, image: imageByRx.get(r.id) ?? null }));
   }
 
   // ---- Staff (store-scoped, SUPERADMIN sees every store) -----------------

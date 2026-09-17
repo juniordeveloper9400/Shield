@@ -166,6 +166,9 @@ void main() {
 
       expect(find.byType(EarningsDetailScreen), findsOneWidget);
       expect(find.text('Your Earnings'), findsOneWidget);
+      // The three stat tiles below the hero card have their own heading, same
+      // as "Earnings Breakdown by Order" and "Health Pass Plan Bonus" do.
+      expect(find.text('Your Savings'), findsOneWidget);
       expect(find.text('Total price'), findsOneWidget);
       expect(find.text('You paid'), findsOneWidget);
       expect(find.text('You saved'), findsOneWidget);

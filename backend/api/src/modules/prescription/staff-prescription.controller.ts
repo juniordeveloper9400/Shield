@@ -7,10 +7,12 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   addMedicineLineSchema,
   raiseApprovalSchema,
+  setPrescriptionImageRotationSchema,
   updateMedicineStatusSchema,
   updatePrescriptionStatusSchema,
   type AddMedicineLineDto,
   type RaiseApprovalDto,
+  type SetPrescriptionImageRotationDto,
   type UpdateMedicineStatusDto,
   type UpdatePrescriptionStatusDto,
 } from './dto';
@@ -61,6 +63,16 @@ export class StaffPrescriptionController {
     @Body(new ZodValidationPipe(updatePrescriptionStatusSchema)) dto: UpdatePrescriptionStatusDto,
   ) {
     return this.prescriptions.updateStatus(user.role!, user.storeId ?? null, id, dto);
+  }
+
+  @Patch('prescriptions/:id/images/:imageId/rotation')
+  setImageRotation(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('imageId', ParseIntPipe) imageId: number,
+    @Body(new ZodValidationPipe(setPrescriptionImageRotationSchema)) dto: SetPrescriptionImageRotationDto,
+  ) {
+    return this.prescriptions.setImageRotation(user.role!, user.storeId ?? null, id, imageId, dto);
   }
 
   @Post('approvals')

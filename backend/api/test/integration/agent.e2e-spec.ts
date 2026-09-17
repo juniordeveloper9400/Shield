@@ -13,7 +13,8 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, agent, agentRequest, assembly, district, lsgd, region, state, users, ward } from '../../src/db/schema';
+import { adminUser, agent, agentRequest, assembly, authSession, district, lsgd, region, state, users, ward } from '../../src/db/schema';
+import { TokenService } from '../../src/modules/auth/token.service';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -22,17 +23,51 @@ describe('Agent & Geography (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
   let firebase: FakeFirebaseVerifier;
+  let tokens: TokenService;
   let superAdminToken: string;
   let wardId: string;
 
   async function memberToken(phone: string, firebaseUid: string, name: string) {
-    await db.insert(users).values({ phone, name, firebaseUid });
+    // registrationCompletedAt set: submitRequest/approveRequest both now
+    // refuse an agent request for a member who hasn't finished registering
+    // (see agent.service.ts) — every test in this file that gets this far
+    // is exercising the agent flow itself, not that gate, which has its
+    // own dedicated test below.
+    await db.insert(users).values({ phone, name, firebaseUid, registrationCompletedAt: new Date() });
     firebase.register(`token-${firebaseUid}`, { uid: firebaseUid });
     const res = await request(app.getHttpServer())
       .post('/v1/member/auth/session')
       .send({ idToken: `token-${firebaseUid}` })
       .expect(200);
     return res.body.accessToken as string;
+  }
+
+  /**
+   * A real, valid member access token — same shape AuthGuard checks
+   * (verified JWT + a live app.backend.auth_session row) — minted directly
+   * rather than through a real Firebase sign-in over
+   * POST /v1/member/auth/session. Every spec in this file shares one
+   * in-memory throttle bucket on that route (10/60s — see AuthThrottle),
+   * and this file now runs enough genuinely-necessary sign-ins that one
+   * more tips a later, unrelated test into a 429. Use this instead
+   * whenever a test needs *a* valid session for some member, not to
+   * exercise the sign-in route itself.
+   */
+  async function directMemberToken(userId: number): Promise<string> {
+    const [session] = await db
+      .insert(authSession)
+      .values({
+        subjectType: 'MEMBER',
+        subjectId: String(userId),
+        expiresAt: new Date(Date.now() + 60_000),
+      })
+      .returning();
+    const { token } = await tokens.issueAccessToken({
+      sessionId: session.id,
+      subjectType: 'MEMBER',
+      subjectId: String(userId),
+    });
+    return token;
   }
 
   beforeAll(async () => {
@@ -50,6 +85,7 @@ describe('Agent & Geography (e2e)', () => {
 
     app = moduleRef.createNestApplication();
     await app.init();
+    tokens = moduleRef.get(TokenService);
 
     // Real geo chain, real uuidv7-shaped ids (a random v4 is fine for a test double).
     const [r] = await db.insert(region).values({ id: randomUUID(), name: 'Region 1' }).returning();
@@ -147,6 +183,31 @@ describe('Agent & Geography (e2e)', () => {
       .expect(400);
   });
 
+  it('rejects submitting an agent request before the member has completed their SHIELD registration', async () => {
+    // Deliberately not memberToken — this member never had
+    // registrationCompletedAt set, the exact case being refused. And
+    // deliberately directMemberToken, not a real sign-in — this test only
+    // needs a valid session for this member, not to exercise
+    // POST /v1/member/auth/session itself, and that route is the one this
+    // whole file's throttle bucket is shared over (see directMemberToken's
+    // own doc).
+    const [unregistered] = await db
+      .insert(users)
+      .values({
+        phone: '9100000010',
+        name: 'Unregistered Candidate',
+        firebaseUid: 'member-agent-unregistered',
+      })
+      .returning();
+    const token = await directMemberToken(unregistered.id);
+
+    await request(app.getHttpServer())
+      .post('/v1/agent/requests')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ requestedLevel: 'WARD', requestedArea: 'Ward 1', requestedAreaId: wardId })
+      .expect(403);
+  });
+
   it("THE other bug fix: rejects approving a non-NATIONAL request whose requestedAreaId doesn't resolve to a real slot", async () => {
     const token = await memberToken('9100000004', 'member-agent-badslot', 'Bad Slot Candidate');
     const submit = await request(app.getHttpServer())
@@ -194,6 +255,39 @@ describe('Agent & Geography (e2e)', () => {
     // The rejected-at-approval request stays PENDING (an admin can retry it
     // later, e.g. once the member re-registers) — clean it up so it doesn't
     // throw off later tests that count pending requests by number.
+    await db.delete(agentRequest).where(eq(agentRequest.id, submitted.id));
+  });
+
+  it("rejects approving a request for a member who exists but hasn't completed registration — the second half of the same gate submitRequest enforces on the way in", async () => {
+    // A real app.users row this time (unlike the orphan case above) — just
+    // one that never finished registering. Inserted directly, the same
+    // reason as the orphan test: this checks approveRequest's own re-check,
+    // not the submit-time gate (which already has its own test and would
+    // have refused this request before it ever reached the queue).
+    await db.insert(users).values({
+      phone: '9100000011',
+      name: 'Half Registered',
+      firebaseUid: 'member-agent-half-registered',
+    });
+    const [submitted] = await db
+      .insert(agentRequest)
+      .values({
+        requestedLevel: 'WARD',
+        requestedArea: 'Ward 1',
+        requestedAreaId: wardId,
+        name: 'Half Registered',
+        phone: '9100000011',
+      })
+      .returning();
+
+    await request(app.getHttpServer())
+      .post(`/v1/staff/agent-requests/${submitted.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(403);
+
+    const created = await db.select().from(agent).where(eq(agent.phone, '9100000011'));
+    expect(created).toHaveLength(0);
+
     await db.delete(agentRequest).where(eq(agentRequest.id, submitted.id));
   });
 

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { validateEnv } from './config/env';
 import { DbModule } from './db/db.module';
 import { CacheModule } from './cache/cache.module';
@@ -20,6 +20,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { HealthController } from './modules/health/health.controller';
 import { AuthGuard } from './common/guards/auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { PerSubjectThrottlerGuard } from './common/guards/per-subject-throttler.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
 @Module({
@@ -54,7 +55,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     // Order matters: resolve identity first, then role, then rate limit.
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: PerSubjectThrottlerGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],
 })

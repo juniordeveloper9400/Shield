@@ -5,7 +5,7 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdempotencyKey } from '../../common/decorators/idempotency-key.decorator';
 import { RequireMember } from '../../common/decorators/require-role.decorator';
-import { FinancialThrottle } from '../../common/throttle';
+import { FinancialThrottle, ReceiptUploadThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   addCartLineSchema,
@@ -85,6 +85,7 @@ export class MemberCommerceController {
     return this.orders.getPrescriptionsForOrder(Number(user.subjectId), id);
   }
 
+  @ReceiptUploadThrottle()
   @Post('orders/:id/receipt')
   submitReceipt(
     @CurrentUser() user: RequestSubject,

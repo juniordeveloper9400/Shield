@@ -36,6 +36,20 @@ export class AgentService {
   async submitRequest(memberId: number, dto: SubmitAgentRequestDto) {
     const [member] = await this.db.select().from(users).where(eq(users.id, memberId)).limit(1);
     if (!member) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Member not found' } });
+    // Same gate approveRequest enforces on the way out — checked again here
+    // on the way in so a request never sits in the queue for staff to look
+    // at before it could ever legally be approved. registrationCompletedAt
+    // is set once, the first time the member's own profile is saved (see
+    // identity.service.ts's updateProfile) — the one real signal for "has
+    // this member actually finished registering."
+    if (!member.registrationCompletedAt) {
+      throw new ForbiddenException({
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Complete your SHIELD registration before requesting to become an agent',
+        },
+      });
+    }
 
     const [created] = await this.db
       .insert(agentRequest)
@@ -78,8 +92,14 @@ export class AgentService {
       // into app.agent and it must not reopen that gap just because the
       // recruit's phone no longer resolves (member deleted their account,
       // changed number, or the row was somehow never registered).
-      const memberId = await this.resolveMemberIdByPhone(tx, req.phone);
-      if (memberId === null) {
+      //
+      // submitRequest already refuses this on the way in, but a request can
+      // sit PENDING for a while — the member could delete their account, or
+      // (before that check existed) an old request could already be queued
+      // — so approval re-checks both "does an account exist" and "did they
+      // ever actually finish registering" rather than trusting the queue.
+      const member = await this.resolveRegisteredMemberByPhone(tx, req.phone);
+      if (member === null) {
         throw new ForbiddenException({
           error: {
             code: 'FORBIDDEN',
@@ -87,6 +107,16 @@ export class AgentService {
           },
         });
       }
+      if (!member.registrationCompletedAt) {
+        throw new ForbiddenException({
+          error: {
+            code: 'FORBIDDEN',
+            message:
+              "This member hasn't finished their SHIELD registration yet — an agent request can only be approved once they have",
+          },
+        });
+      }
+      const memberId = member.id;
 
       if (req.requestedLevel === 'NATIONAL') {
         const [existingNational] = await tx
@@ -177,9 +207,16 @@ export class AgentService {
     return !!found;
   }
 
-  private async resolveMemberIdByPhone(tx: Database, phone: string): Promise<number | null> {
-    const [found] = await tx.select({ id: users.id }).from(users).where(eq(users.phone, phone)).limit(1);
-    return found?.id ?? null;
+  private async resolveRegisteredMemberByPhone(
+    tx: Database,
+    phone: string,
+  ): Promise<{ id: number; registrationCompletedAt: Date | null } | null> {
+    const [found] = await tx
+      .select({ id: users.id, registrationCompletedAt: users.registrationCompletedAt })
+      .from(users)
+      .where(eq(users.phone, phone))
+      .limit(1);
+    return found ?? null;
   }
 
   // ---- Team tree -------------------------------------------------------

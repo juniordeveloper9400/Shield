@@ -9,6 +9,9 @@ import { product, shieldStore } from './app-catalogue';
  * storage_path` already exists in the live DDL for exactly the object-
  * storage migration backend/docs/security.md calls for — this module is
  * the first to actually use it instead of writing to `image` (a data: URI).
+ * A prescription's actual image content lives in `prescriptionImage`
+ * (migration 0040, up to a handful of photos per prescription) — the
+ * `image`/`imageRotation` columns on `prescription` itself are legacy.
  */
 export const medicineDurationEnum = appSchema.enum('medicine_duration', [
   'ONE_WEEK',
@@ -61,6 +64,21 @@ export const prescription = appSchema.table('prescription', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
+});
+
+/**
+ * Up to a handful of photos per prescription (a script is often more than
+ * one page), each independently rotatable — see migration 0040. `prescription.
+ * image` / `image_rotation` are legacy, no longer written to; this table is
+ * the one source of truth going forward.
+ */
+export const prescriptionImage = appSchema.table('prescription_image', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  prescriptionId: bigint('prescription_id', { mode: 'number' }).notNull(),
+  sort: integer('sort').notNull().default(0),
+  image: text('image').notNull(),
+  imageRotation: smallint('image_rotation').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const prescriptionMedicine = appSchema.table('prescription_medicine', {
