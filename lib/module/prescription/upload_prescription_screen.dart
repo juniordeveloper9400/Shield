@@ -103,6 +103,7 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
         record.id,
         doctor: card.doctor,
         ordered: card.status == 'ORDERED' || card.status == 'READ',
+        image: card.image,
         medicines: [
           for (final m in card.medicines)
             PrescriptionMedicine(

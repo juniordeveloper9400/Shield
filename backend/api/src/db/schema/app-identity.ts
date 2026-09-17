@@ -40,6 +40,10 @@ export const users = appSchema.table('users', {
   rewardPoints: integer('reward_points').notNull().default(0),
   referralCode: text('referral_code'),
   referredByMemberId: bigint('referred_by_member_id', { mode: 'number' }),
+  // migration 0042: the highest referral_level.level already paid out in
+  // reward points to this member as an inviter — see ReferralService's own
+  // level-crediting doc.
+  referralLevelAwarded: integer('referral_level_awarded').notNull().default(0),
   registrationCompletedAt: timestamp('registration_completed_at', { withTimezone: true }),
   registrationPromptDismissed: boolean('registration_prompt_dismissed').notNull().default(false),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),

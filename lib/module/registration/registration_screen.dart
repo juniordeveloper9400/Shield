@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../data/neon/agent_customer_repository.dart';
+import '../../data/neon/referral_repository.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/age_badge.dart';
 import '../../widgets/labelled_field.dart';
@@ -94,6 +95,30 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     StoreCatalog.instance.addListener(_onStoresChanged);
     StoreCatalog.instance.ensureLoaded();
     _syncSuggestedStore();
+    _loadSavedReferralCode();
+  }
+
+  /// Shows a code the member already used back to them on a later visit to
+  /// this form, rather than only while they are still typing it in — a code
+  /// submitted and then never seen again reads as "did that even work?".
+  /// Checks the member-referral path first, then the agent-link path (see
+  /// [_submit]'s own doc for why the one field tries both); whichever
+  /// resolves is what a member is ever shown, since only one can ever apply.
+  /// Best-effort and silent: nothing here overrides a code the member is
+  /// already mid-typing.
+  Future<void> _loadSavedReferralCode() async {
+    if (_referralCode.text.isNotEmpty) {
+      return;
+    }
+    final phone = AuthService.instance.currentUser.value?.phone;
+    if (phone == null || phone.isEmpty) {
+      return;
+    }
+    final code = await ReferralRepository.instance.codeUsedBy(phone) ??
+        await AgentCustomerRepository.instance.codeUsedBy(phone);
+    if (code != null && mounted && _referralCode.text.isEmpty) {
+      setState(() => _referralCode.text = code);
+    }
   }
 
   void _onStoresChanged() {

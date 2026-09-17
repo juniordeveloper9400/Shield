@@ -87,6 +87,14 @@ export class MemberWalletController {
     return this.referrals.getProgress(Number(user.subjectId));
   }
 
+  /** The code the caller themselves signed up with, if any — see
+   *  `ReferralService.getUsedCode`'s own doc. Lets the registration form
+   *  show it back on a later visit rather than only while typing it in. */
+  @Get('referrals/used-code')
+  getUsedReferralCode(@CurrentUser() user: RequestSubject) {
+    return this.referrals.getUsedCode(Number(user.subjectId)).then((code) => ({ code }));
+  }
+
   @Post('referrals')
   createReferral(
     @CurrentUser() user: RequestSubject,

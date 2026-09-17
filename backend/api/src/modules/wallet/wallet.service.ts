@@ -6,11 +6,14 @@ import {
   commissionReserveEntry,
   membershipTier,
   membershipTierLoad,
+  referral,
+  users,
   wallet,
   walletCard,
   walletEntry,
 } from '../../db/schema';
 import type { SubmitWalletCardDto } from './dto';
+import { ReferralService } from './referral.service';
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -74,6 +77,19 @@ const DIRECT_SALE_SHARE_RATE = 0.6;
 const HOP_OVERRIDE_RATES = [0.1, 0.06, 0.05, 0.04, 0.03, 0.02];
 
 /**
+ * The member-to-member referral commission, worked out on [approveCard]
+ * alongside (but independent of) the agent split above: whoever referred
+ * this card's own member (`users.referred_by_member_id`, set once at
+ * registration by `ReferralService.applySignupCode`) earns this share of
+ * every plan that member activates — not carved out of [COMMISSION_POOL_RATE]'s
+ * pool, since a referrer and a selling agent are different roles a member
+ * can hold at once, and both are owed on the same sale. See
+ * `lib/module/refer/referral_level.dart`'s `ReferralLadder.planCommissionPercent`
+ * — the one place this rate was ever documented before now.
+ */
+const REFERRAL_COMMISSION_RATE = 0.02;
+
+/**
  * Wallet balance is a stored column (matching the live schema), but it is
  * NEVER written directly by an endpoint — every change happens alongside
  * an appended wallet_entry row, in the same transaction, and only through
@@ -83,7 +99,10 @@ const HOP_OVERRIDE_RATES = [0.1, 0.06, 0.05, 0.04, 0.03, 0.02];
  */
 @Injectable()
 export class WalletService {
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly referrals: ReferralService,
+  ) {}
 
   async getOrCreateWallet(memberId: number) {
     const [existing] = await this.db.select().from(wallet).where(eq(wallet.memberId, memberId)).limit(1);
@@ -276,6 +295,67 @@ export class WalletService {
             await tx.insert(commissionReserveEntry).values({ walletCardId: card.id, amount: reserve.toString() });
           }
         }
+      }
+
+      // Member-to-member referral commission — every plan this member
+      // activates, not just their first, pays whoever referred them (if
+      // anyone did) this share of the load. Independent of the agent
+      // commission above: a referral and a direct sale are different
+      // relationships to the same card, and both are owed together.
+      const [member] = await tx.select().from(users).where(eq(users.id, currentWallet.memberId)).limit(1);
+      if (member?.referredByMemberId != null) {
+        const referrerId = member.referredByMemberId;
+        const referralCommission = round2(amount * REFERRAL_COMMISSION_RATE);
+
+        let [referrerWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, referrerId)).limit(1);
+        if (!referrerWallet) {
+          [referrerWallet] = await tx.insert(wallet).values({ memberId: referrerId }).returning();
+        }
+
+        await tx.insert(walletEntry).values({
+          walletId: referrerWallet.id,
+          kind: 'REFERRAL_EARNINGS',
+          label: 'Referral commission',
+          amount: referralCommission.toString(),
+          occurredOn: today,
+          walletCardId: card.id,
+        });
+        await tx
+          .update(wallet)
+          .set({ balance: (Number(referrerWallet.balance) + referralCommission).toString() })
+          .where(eq(wallet.id, referrerWallet.id));
+
+        // The most recent edge for this exact pair, if one already exists
+        // (from apply-code REGISTERED, or an earlier order's TRANSACTED) —
+        // this activation is otherwise the first evidence of the edge.
+        const [existingReferral] = await tx
+          .select()
+          .from(referral)
+          .where(and(eq(referral.inviterMemberId, referrerId), eq(referral.inviteeMemberId, currentWallet.memberId)))
+          .orderBy(desc(referral.id))
+          .limit(1);
+        if (existingReferral) {
+          await tx
+            .update(referral)
+            .set({
+              status: 'PLAN_ACTIVATED',
+              planAmount: amount.toString(),
+              commissionAmount: (Number(existingReferral.commissionAmount) + referralCommission).toString(),
+              planActivatedAt: new Date(),
+            })
+            .where(eq(referral.id, existingReferral.id));
+        } else {
+          await tx.insert(referral).values({
+            inviterMemberId: referrerId,
+            inviteeMemberId: currentWallet.memberId,
+            status: 'PLAN_ACTIVATED',
+            planAmount: amount.toString(),
+            commissionAmount: referralCommission.toString(),
+            planActivatedAt: new Date(),
+          });
+        }
+
+        await this.referrals.awardLevelPointsIfCrossed(tx, referrerId);
       }
 
       return updatedCard;

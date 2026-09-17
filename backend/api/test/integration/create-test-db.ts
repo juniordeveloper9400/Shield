@@ -32,7 +32,7 @@ export function createTestDb() {
     CREATE TYPE app.prescription_medicine_status AS ENUM ('AVAILABLE','OUT_OF_STOCK','NOT_POSSIBLE','ORDERED');
     CREATE TYPE app.approval_status AS ENUM ('PENDING','APPROVED','PARTIALLY_APPROVED','REJECTED','CANCELLED','ON_HOLD');
     CREATE TYPE app.privilege_card_kind AS ENUM ('SILVER','GOLD','PLATINUM');
-    CREATE TYPE app.wallet_entry_kind AS ENUM ('ACTIVATION','BONUS','TOPUP','SPEND','POINTS_REDEEMED','AGENT_EARNINGS');
+    CREATE TYPE app.wallet_entry_kind AS ENUM ('ACTIVATION','BONUS','TOPUP','SPEND','POINTS_REDEEMED','AGENT_EARNINGS','REFERRAL_EARNINGS');
     CREATE TYPE app.reward_txn_reason AS ENUM ('REGISTRATION','REFERRAL_LEVEL','ORDER','REDEMPTION','ADJUSTMENT');
     CREATE TYPE app.referral_status AS ENUM ('SHARED','REGISTERED','TRANSACTED','PLAN_ACTIVATED');
     CREATE TYPE app.appointment_kind AS ENUM ('CLINIC','TELE','DENTAL','DIETITIAN');
@@ -62,6 +62,7 @@ export function createTestDb() {
       reward_points integer NOT NULL DEFAULT 0,
       referral_code text UNIQUE,
       referred_by_member_id bigint,
+      referral_level_awarded integer NOT NULL DEFAULT 0,
       registration_completed_at timestamptz,
       registration_prompt_dismissed boolean NOT NULL DEFAULT false,
       last_login_at timestamptz,
@@ -544,6 +545,21 @@ export function createTestDb() {
       plan_activated_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now()
     );
+
+    CREATE TABLE app.referral_level (
+      id bigserial PRIMARY KEY,
+      level integer NOT NULL UNIQUE,
+      name text NOT NULL,
+      referrals_required integer NOT NULL,
+      points integer NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    INSERT INTO app.referral_level (level, name, referrals_required, points) VALUES
+      (1, 'Starter',   2,  100),
+      (2, 'Riser',     5,  200),
+      (3, 'Achiever', 10,  500),
+      (4, 'Champion', 20, 1500),
+      (5, 'Legend',   40, 3000);
 
     CREATE TABLE app.lab_package (
       id bigserial PRIMARY KEY,

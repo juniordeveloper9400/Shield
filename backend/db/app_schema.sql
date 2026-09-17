@@ -55,7 +55,7 @@ CREATE TYPE app.prescription_medicine_status AS ENUM ('AVAILABLE', 'OUT_OF_STOCK
 CREATE TYPE app.approval_status    AS ENUM ('PENDING', 'APPROVED', 'PARTIALLY_APPROVED', 'REJECTED', 'CANCELLED', 'ON_HOLD'); -- ON_HOLD: migration 0019
 
 CREATE TYPE app.privilege_card_kind AS ENUM ('SILVER', 'GOLD', 'PLATINUM');
-CREATE TYPE app.wallet_entry_kind  AS ENUM ('ACTIVATION', 'BONUS', 'TOPUP', 'SPEND', 'POINTS_REDEEMED', 'AGENT_EARNINGS');
+CREATE TYPE app.wallet_entry_kind  AS ENUM ('ACTIVATION', 'BONUS', 'TOPUP', 'SPEND', 'POINTS_REDEEMED', 'AGENT_EARNINGS', 'REFERRAL_EARNINGS');
 
 CREATE TYPE app.reward_txn_reason  AS ENUM ('REGISTRATION', 'REFERRAL_LEVEL', 'ORDER', 'REDEMPTION', 'ADJUSTMENT');
 CREATE TYPE app.referral_status    AS ENUM ('SHARED', 'REGISTERED', 'TRANSACTED', 'PLAN_ACTIVATED');
@@ -416,6 +416,10 @@ CREATE TABLE app.users (
     reward_points           integer NOT NULL DEFAULT 0,
     referral_code           text UNIQUE,                   -- this member's own invite code
     referred_by_member_id   bigint REFERENCES app.users(id) ON DELETE SET NULL,
+    -- migration 0042: the highest app.referral_level.level already paid out
+    -- in reward points to this member as an inviter (see
+    -- app.award_referral_level_points, migration 0043).
+    referral_level_awarded  integer NOT NULL DEFAULT 0,
     registration_completed_at timestamptz,
     registration_prompt_dismissed boolean NOT NULL DEFAULT false,
     last_login_at           timestamptz,

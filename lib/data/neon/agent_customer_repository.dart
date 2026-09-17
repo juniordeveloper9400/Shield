@@ -66,6 +66,33 @@ class AgentCustomerRepository {
     return result ?? false;
   }
 
+  /// The agent code [memberPhone] linked with at registration, if any —
+  /// `app.agent.code` for whichever agent's `app.agent_customer` row carries
+  /// this phone. The registration form's sibling lookup to
+  /// [ReferralRepository.codeUsedBy]: between the two, whichever resolves is
+  /// what the "Referral code" field shows back to the member on a later
+  /// visit. Null when this member was never linked to an agent this way, or
+  /// the database is unreachable.
+  Future<String?> codeUsedBy(String memberPhone) {
+    return _run('codeUsedBy', () async {
+      final rows = await NeonHttp.instance.query(
+        r'''
+          SELECT a.code
+          FROM app.agent_customer ac
+          JOIN app.agent a ON a.id = ac.agent_id
+          WHERE ac.phone = $1
+          LIMIT 1
+        ''',
+        [memberPhone],
+      );
+      if (rows.isEmpty) {
+        return null;
+      }
+      final code = rows.first['code']?.toString();
+      return (code == null || code.isEmpty) ? null : code;
+    });
+  }
+
   /// Every agent's direct-sale customers, plans included — [AgentService]
   /// folds these into its in-memory roster the same way it already folds in
   /// [AgentRepository.fetchAll]'s real agents on top of the seed demo data.

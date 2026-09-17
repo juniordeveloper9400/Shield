@@ -178,6 +178,15 @@ class PrescriptionRecord {
   /// is showing without holding the bytes.
   final String fileName;
 
+  /// The uploaded script itself, as a `data:` URI — the same value written to
+  /// `app.prescription.image`. Set the moment the picked photo finishes
+  /// compressing (see [PrescriptionFormController._persist]), so the member
+  /// can open their own upload again from the card rather than only seeing a
+  /// generic file icon. Null before that finishes, when there was no photo to
+  /// begin with, or when a returning session has not yet synced it back from
+  /// [PrescriptionBook.applyIntakeCard].
+  String? image;
+
   final MedicineDuration? duration;
   final int? customDays;
   final RecurringSchedule? recurring;
@@ -213,6 +222,7 @@ class PrescriptionRecord {
     this.inCart = false,
     this.ordered = false,
     this.remoteId,
+    this.image,
   }) : medicines = medicines ?? <PrescriptionMedicine>[];
 
   /// "RX-0004" — the prescription's number, as it is quoted at the counter
@@ -298,6 +308,7 @@ class PrescriptionBook extends ChangeNotifier {
     int? customDays,
     RecurringSchedule? recurring,
     List<PrescriptionMedicine>? medicines,
+    String? image,
   }) {
     final record = PrescriptionRecord(
       id: 'rx${_nextId++}',
@@ -308,10 +319,24 @@ class PrescriptionBook extends ChangeNotifier {
       customDays: customDays,
       recurring: recurring,
       medicines: medicines,
+      image: image,
     );
     _records.add(record);
     notifyListeners();
     return record;
+  }
+
+  /// Pins the compressed script image onto the record once it finishes
+  /// encoding — submitting the form does not wait on that, so this arrives a
+  /// moment after [add] returns. A no-op when the record was deleted again
+  /// before encoding finished.
+  void attachImage(String id, String image) {
+    final index = indexOf(id);
+    if (index == -1) {
+      return;
+    }
+    _records[index].image = image;
+    notifyListeners();
   }
 
   /// Puts a record back where it was, which is what Undo on the delete
@@ -382,6 +407,7 @@ class PrescriptionBook extends ChangeNotifier {
     required List<PrescriptionMedicine> medicines,
     String doctor = '',
     bool ordered = false,
+    String? image,
   }) {
     final index = indexOf(id);
     if (index == -1) {
@@ -399,6 +425,12 @@ class PrescriptionBook extends ChangeNotifier {
     }
     if (ordered && !record.ordered) {
       record.ordered = true;
+      changed = true;
+    }
+    // Only fills a gap — never overwrites the copy already in memory from
+    // this same session's own upload, which is already the same bytes.
+    if ((image ?? '').isNotEmpty && record.image == null) {
+      record.image = image;
       changed = true;
     }
     if (changed) {

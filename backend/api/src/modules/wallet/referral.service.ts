@@ -1,7 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { agent, agentCustomer, referral, users, wallet, walletCard } from '../../db/schema';
+import {
+  agent,
+  agentCustomer,
+  referral,
+  referralLevel,
+  rewardPointTransaction,
+  users,
+  wallet,
+  walletCard,
+} from '../../db/schema';
 import type { ApplyReferralCodeDto, CreateReferralDto } from './dto';
 
 @Injectable()
@@ -56,11 +65,15 @@ export class ReferralService {
 
   /**
    * The caller's standing as an inviter: how many of their invites have
-   * transacted, and the load amount of every `APPROVED` wallet card
-   * belonging to a member they referred. The client computes Sahakar money
-   * from `activatedWalletCards` itself (`ReferralLadder.planCommissionOn`)
-   * — same formula, same place it's always lived, just fed from here now
-   * instead of a direct Neon read.
+   * transacted, the load amount of every `APPROVED` wallet card belonging
+   * to a member they referred (kept for the client's own display, which
+   * still lists individual activations), and `sahakarMoneyEarned` — the
+   * real, already-credited sum of `referral.commission_amount` across every
+   * one of their invitees, rather than a client-side 2% projection. The two
+   * numbers agree by construction: `commission_amount` is written as
+   * exactly 2% of the load, the same moment (and the same load) each row in
+   * `activatedWalletCards` reflects — see `approve_wallet_card_activation`
+   * (migration 0043) and `WalletService.approveCard`'s own doc.
    */
   async getProgress(memberId: number) {
     const transacted = await this.db
@@ -84,7 +97,88 @@ export class ReferralService {
             .innerJoin(wallet, eq(wallet.id, walletCard.walletId))
             .where(and(inArray(wallet.memberId, inviteeIds), eq(walletCard.status, 'APPROVED')));
 
-    return { directReferrals, activatedWalletCards };
+    const [{ sahakarMoneyEarned }] = await this.db
+      .select({ sahakarMoneyEarned: sql<string>`coalesce(sum(${referral.commissionAmount}), 0)` })
+      .from(referral)
+      .where(eq(referral.inviterMemberId, memberId));
+
+    return { directReferrals, activatedWalletCards, sahakarMoneyEarned: Number(sahakarMoneyEarned) };
+  }
+
+  /**
+   * Credits real reward points the moment [inviterMemberId]'s own
+   * direct-referral count actually crosses one or more rungs of
+   * `referral_level` (Starter/Riser/Achiever/Champion/Legend —
+   * `ReferralLadder.levels` mirrored server-side) — called from wherever a
+   * referral's status can advance to `TRANSACTED` or `PLAN_ACTIVATED`
+   * (`OrderService.checkout`, `WalletService.approveCard`), inside that
+   * same transaction so a crossing is never counted without the referral
+   * that caused it actually having landed.
+   *
+   * `users.referral_level_awarded` is the guard against crediting the same
+   * rung twice: only levels strictly above it, and at or below the
+   * inviter's current count, are ever paid — and every one of those found
+   * in a single call (a member could clear two rungs between checks) is
+   * summed and paid together, in one ledger line.
+   */
+  async awardLevelPointsIfCrossed(tx: Database, inviterMemberId: number): Promise<void> {
+    const [{ directReferrals }] = await tx
+      .select({ directReferrals: sql<number>`count(*)` })
+      .from(referral)
+      .where(and(eq(referral.inviterMemberId, inviterMemberId), inArray(referral.status, ['TRANSACTED', 'PLAN_ACTIVATED'])));
+
+    const [member] = await tx.select({ referralLevelAwarded: users.referralLevelAwarded, rewardPoints: users.rewardPoints }).from(users).where(eq(users.id, inviterMemberId)).limit(1);
+    if (!member) return;
+
+    const crossedLevels = await tx
+      .select({ level: referralLevel.level, points: referralLevel.points })
+      .from(referralLevel)
+      .where(and(gt(referralLevel.level, member.referralLevelAwarded), lte(referralLevel.referralsRequired, Number(directReferrals))));
+    if (crossedLevels.length === 0) return;
+
+    const newPoints = crossedLevels.reduce((sum, l) => sum + l.points, 0);
+    const newLevel = Math.max(...crossedLevels.map((l) => l.level));
+
+    await tx.insert(rewardPointTransaction).values({
+      memberId: inviterMemberId,
+      points: newPoints,
+      reason: 'REFERRAL_LEVEL',
+      note: `Referral ladder — level ${newLevel}`,
+    });
+    await tx
+      .update(users)
+      .set({ rewardPoints: member.rewardPoints + newPoints, referralLevelAwarded: newLevel })
+      .where(eq(users.id, inviterMemberId));
+  }
+
+  /**
+   * The code this member themselves signed up with, if any — whichever of
+   * the two paths [applySignupCode] can resolve to actually applied, since a
+   * member links to at most one of them, ever. Lets the registration form
+   * show a member's own referral/agent code back to them on a later visit,
+   * rather than only while they are still typing it in.
+   *
+   * Checked in the same order `applySignupCode` tries them: an agent link
+   * (`app.agent_customer` → the linked agent's own printed code) first, then
+   * a member referral (`app.referral.code_used`). Null when neither applies.
+   */
+  async getUsedCode(memberId: number): Promise<string | null> {
+    const [asAgentCustomer] = await this.db
+      .select({ code: agent.code })
+      .from(agentCustomer)
+      .innerJoin(agent, eq(agent.id, agentCustomer.agentId))
+      .where(eq(agentCustomer.memberId, memberId))
+      .limit(1);
+    if (asAgentCustomer?.code) {
+      return asAgentCustomer.code;
+    }
+
+    const [asReferral] = await this.db
+      .select({ codeUsed: referral.codeUsed })
+      .from(referral)
+      .where(eq(referral.inviteeMemberId, memberId))
+      .limit(1);
+    return asReferral?.codeUsed ?? null;
   }
 
   /**

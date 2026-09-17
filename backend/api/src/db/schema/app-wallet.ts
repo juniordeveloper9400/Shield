@@ -20,6 +20,7 @@ export const walletEntryKindEnum = appSchema.enum('wallet_entry_kind', [
   'SPEND',
   'POINTS_REDEEMED',
   'AGENT_EARNINGS',
+  'REFERRAL_EARNINGS',
 ]);
 export const rewardTxnReasonEnum = appSchema.enum('reward_txn_reason', [
   'REGISTRATION',
@@ -128,6 +129,23 @@ export const rewardPointTransaction = appSchema.table('reward_point_transaction'
   refType: text('ref_type'),
   refId: bigint('ref_id', { mode: 'number' }),
   note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The refer-and-earn ladder (migration: pre-existing table, wired up in
+ * 0042) — exact mirror of `lib/module/refer/referral_level.dart`'s
+ * `ReferralLadder.levels`. Read by `ReferralService.awardLevelPointsIfCrossed`
+ * to credit real reward points the moment an inviter's own direct-referral
+ * count actually crosses a rung, rather than the client only ever
+ * projecting what a rung "would" pay.
+ */
+export const referralLevel = appSchema.table('referral_level', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  level: integer('level').notNull(),
+  name: text('name').notNull(),
+  referralsRequired: integer('referrals_required').notNull(),
+  points: integer('points').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

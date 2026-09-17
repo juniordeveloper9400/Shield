@@ -194,6 +194,12 @@ class PrescriptionFormController extends ChangeNotifier {
     if (rawImage != null) {
       try {
         image = await compressImageDataUrl(rawImage);
+        if (image != null) {
+          // Available the moment it is ready, independent of the server
+          // round trip below — so the member can open their own upload again
+          // from the card without waiting on (or depending on) the network.
+          book.attachImage(record.id, image);
+        }
       } catch (error) {
         debugPrint('prescription: could not encode the script image — $error');
       }

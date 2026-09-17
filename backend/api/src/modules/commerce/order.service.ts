@@ -24,6 +24,7 @@ import type { AdminRole } from '../auth/session.types';
 import { CartService } from './cart.service';
 import { assertLegalTransition, type OrderStatus } from './order-status';
 import type { CheckoutDto, SendBillDto, SubmitOrderReceiptDto, UpdateOrderStatusDto } from './dto';
+import { ReferralService } from '../wallet/referral.service';
 
 /** ₹100 → 10 points (ten rupees to the point) — mirrors the client's own `RewardsService.pointsForSpend`. */
 const RUPEES_PER_POINT = 10;
@@ -33,6 +34,7 @@ export class OrderService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly cartService: CartService,
+    private readonly referrals: ReferralService,
   ) {}
 
   async checkout(memberId: number, dto: CheckoutDto) {
@@ -148,10 +150,17 @@ export class OrderService {
             .where(eq(users.id, memberId));
         }
 
-        await tx
+        const [advanced] = await tx
           .update(referral)
           .set({ status: 'TRANSACTED', transactedAt: new Date() })
-          .where(and(eq(referral.inviteeMemberId, memberId), eq(referral.status, 'REGISTERED')));
+          .where(and(eq(referral.inviteeMemberId, memberId), eq(referral.status, 'REGISTERED')))
+          .returning({ inviterMemberId: referral.inviterMemberId });
+        // This buyer's first paid order is the other event (besides a plan
+        // activation — WalletService.approveCard) that can move their
+        // inviter's own direct-referral count across a referral_level rung.
+        if (advanced) {
+          await this.referrals.awardLevelPointsIfCrossed(tx, advanced.inviterMemberId);
+        }
       }
 
       // migration 0031: a wallet checkout settles instantly — debit the

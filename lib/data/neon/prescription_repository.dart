@@ -13,12 +13,17 @@ class RemotePrescriptionCard {
   final String doctor;
   final List<RemotePrescriptionMedicine> medicines;
 
+  /// The uploaded script, as the `data:` URI stored in `app.prescription
+  /// .image` — null when none was attached at upload.
+  final String? image;
+
   RemotePrescriptionCard({
     required this.code,
     required this.uuid,
     required this.status,
     required this.doctor,
     required this.medicines,
+    this.image,
   });
 
   /// The pharmacist has entered the lines — the app card can expand.
@@ -300,7 +305,7 @@ class PrescriptionRepository {
     try {
       final rows = await NeonHttp.instance.query(
         r'''
-          SELECT rx.code, rx.uuid, rx.status, rx.doctor,
+          SELECT rx.code, rx.uuid, rx.status, rx.doctor, rx.image,
                  pm.name, pm.pack,
                  pm.dose_morning, pm.dose_afternoon, pm.dose_night,
                  pm.total_units, pm.sort
@@ -322,12 +327,14 @@ class PrescriptionRepository {
         }
         final card = byUuid.putIfAbsent(uuid, () {
           order.add(uuid);
+          final rawImage = row['image']?.toString();
           return RemotePrescriptionCard(
             code: (row['code'] ?? '').toString(),
             uuid: uuid,
             status: (row['status'] ?? '').toString().toUpperCase(),
             doctor: (row['doctor'] ?? '').toString(),
             medicines: [],
+            image: rawImage == null || rawImage.isEmpty ? null : rawImage,
           );
         });
         final name = (row['name'] ?? '').toString().trim();

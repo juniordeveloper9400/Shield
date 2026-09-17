@@ -905,6 +905,48 @@ void main() {
       expect(find.text(copy.proceedToDelivery), findsOneWidget);
     });
 
+    testWidgets(
+      'a script with its image on file shows a thumbnail and opens it full-screen',
+      (tester) async {
+        // Same 1×1 PNG fixture used for the pre-upload preview, this time
+        // standing in for what came back attached to an already-filed record
+        // — either the same session's own upload, or a synced remote copy.
+        const dataUri =
+            'data:image/png;base64,'
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk'
+            '+P+/HgAFhAJ/wlseKgAAAABJRU5ErkJggg==';
+        final record = seedRecord();
+        PrescriptionBook.instance.attachImage(record.id, dataUri);
+        await pumpUpload(tester);
+
+        // The plain document icon is gone — a real thumbnail stands in its
+        // place, with the "tap to view" affordance beside the file name.
+        expect(find.byIcon(Icons.description_outlined), findsNothing);
+        expect(find.byIcon(Icons.visibility_outlined), findsOneWidget);
+        expect(find.byType(Image), findsWidgets);
+
+        await tester.tap(find.text('prescription.jpg'));
+        await tester.pumpAndSettle();
+
+        // Full-screen, pinch-zoomable, titled by the file — the same viewer
+        // the pre-upload preview opens, now fed the stored copy instead of
+        // freshly picked bytes.
+        expect(find.byType(InteractiveViewer), findsOneWidget);
+        expect(find.text('prescription.jpg'), findsWidgets);
+      },
+    );
+
+    testWidgets(
+      'a script with no image on file falls back to the plain icon, not tappable',
+      (tester) async {
+        seedRecord();
+        await pumpUpload(tester);
+
+        expect(find.byIcon(Icons.description_outlined), findsOneWidget);
+        expect(find.byIcon(Icons.visibility_outlined), findsNothing);
+      },
+    );
+
     testWidgets('the list asks for delivery details once something is up', (
       tester,
     ) async {

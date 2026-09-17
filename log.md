@@ -1925,3 +1925,75 @@ Append-only record of implementation passes. Newest entries go at the bottom.
 **Verification Commands**:
 - `flutter analyze` — clean of anything from this pass
 - `flutter test -j 2` — 320/320 passed
+
+---
+
+> **Note:** Entries 64+ resume this log after an untracked gap (2026-08-21 →
+> 2026-09-17) spanning a large amount of work — the NestJS `backend/api`,
+> the React admin console `shieldweb`, and the member app's split into its
+> own `shield agent_invester` repository — that was never logged here as it
+> happened. Those three entries cover the passes immediately preceding this
+> note; the gap itself is not reconstructed.
+
+## 64. Health Pass: Receipt Rate Limiting, Default Plan, and Inline Receipt Preview (2026-09-17)
+
+**High-level description**: A five-part pass on the Sahakar HealthPass plan-activation flow, spanning `backend/api` and the member app (now `shield agent_invester`). Two of the five items the request described turned out to already be correct in code — a stale build/screenshot, not a bug — and are noted as such rather than re-implemented.
+
+- **Receipt upload, 3 per hour**: `backend/api/src/common/throttle.ts` gained `ReceiptUploadThrottle` (3 requests / 3,600,000ms), applied to both `POST /v1/member/wallet/cards` (privilege-card receipts) and `POST /v1/member/orders/:id/receipt` (the latter previously had no throttle at all). Tracking a receipt-upload limit by IP (the framework's default) would let members on the same office/mobile-carrier NAT throttle each other, so a new `PerSubjectThrottlerGuard` (`backend/api/src/common/guards/per-subject-throttler.guard.ts`) tracks by the signed-in member's own id when `AuthGuard` has resolved one, falling back to IP only for unauthenticated routes — installed as the app-wide `APP_GUARD` in place of the stock `ThrottlerGuard`.
+  - Client-side: `BackendHttpException.isTooManyRequests` (429) added; `WalletRepository.submitCardForApproval` now captures the backend's own reason into `lastSubmitCardError` on a real failure; `PrivilegeScreen` reads it to show "You've submitted too many receipts recently — wait an hour and try again" instead of the previous, actively-wrong "check your connection" message on a rate-limited attempt.
+- **Plan pre-selected on open**: `PrivilegeScreen` had no `initState` — the carousel opened on the first tier but nothing was marked selected until a swipe or tap. Added `initState` setting `_selected = _faceAt(0)`.
+- **Map-based store picker** and **plain "free" wording on Tele/Dental consultation**: both already correct in the current code (`StoreMapPicker` was already wired into the plan-activation checkout via `storeSelectable: true`; the "free" copy was already removed) — the user's screenshots were from a build that predated an earlier session's fixes, not a live defect.
+- **Tap-to-preview the uploaded receipt**: `UploadedFileCard` already supported a `previewBytes`/`onView` thumbnail-to-full-screen affordance (built for the prescription upload flow) but the checkout's own `_ReceiptPanel` never passed them. `PickedFile` (`receipt_form.dart`) gained a `previewBytes` field alongside the existing base64 `dataUrl`; `checkout_screen.dart` wires it into a new `_viewReceipt` helper that opens `PrescriptionImageView` (reused as-is — nothing about it is prescription-specific despite the name) full-screen on tap.
+
+### Files Modified/Created
+**Modified**: `backend/api/src/common/throttle.ts`, `backend/api/src/app.module.ts`, `backend/api/src/modules/commerce/member-commerce.controller.ts`, `backend/api/src/modules/wallet/member-wallet.controller.ts`, `shield agent_invester/lib/data/backend/backend_http.dart`, `shield agent_invester/lib/data/backend/wallet_repository.dart`, `shield agent_invester/lib/module/privilege/privilege_screen.dart`, `shield agent_invester/lib/module/checkout/checkout_screen.dart`, `shield agent_invester/lib/module/checkout/receipt_form.dart`
+
+**Created**: `backend/api/src/common/guards/per-subject-throttler.guard.ts`
+
+**Verification Commands**:
+- `pnpm exec tsc --noEmit` (backend/api) — clean
+- `pnpm exec jest --runInBand` (backend/api) — 115/115 passed
+- `flutter analyze` (shield agent_invester) — no issues found
+- `flutter test` (shield agent_invester) — 47/47 passed
+- `flutter build web --release` and `flutter build apk --debug` — both succeed
+
+## 65. Admin Prescription Flow: Status Grouping, Place Order, and Bill Collection With a Complete-Order Gate (2026-09-17)
+
+**High-level description**: Reworked `shieldweb`'s `PrescriptionReviewModal` (the admin console's script-review + intake + billing flow) end to end, plus the shared bill-collection plumbing it and `BillEditorModal` both use, to match a described counter workflow: process the intake card into status groups, place the order, price and collect the bill (splitting automatically between wallet and cash when the wallet falls short), and only ever close the order out on an explicit, gated action.
+
+- **Process → status groups**: a new "Process ✓" button on the Intake step reorders the medicine cards by stock status (Available → Out of stock → Ordered → Not possible), each group under its own badge+count heading, via a `displayOrder` (stable-sorted index array — never reorders the underlying `draft`, so every existing per-row index-keyed handler keeps working unchanged). Toggling back to "← Unprocess" restores entry order.
+- **Place order →**: a new primary button on the Intake step, enabled once processed, that saves the Details-step fields using whatever's already on file (`saveDetailsAndIntake`, factored out of the existing `sendIntake`) and jumps straight to the Bill step — falling back to actually showing the Details step only if something on it needs a reviewer's attention first (a blank contact field, no patient picked, or the save failing).
+- **Automatic wallet/cash split on collection**: `shieldweb/src/api/billPayments.ts`'s `collectBillWithWallet` no longer requires the wallet to cover a bill in full — it now draws `LEAST(wallet.balance, bill.amount)` and treats the remainder as cash collected at the counter in the same OTP-verified action, recording the split on two new `app.bill` columns (`wallet_collected`, `cash_collected` — migration `0041_bill_wallet_cash_split.sql`). `BillEditorModal` and the Bill step's own new "Collect bill" section (mirroring the same OTP UI) both use it and show the resulting split ("Collected — ₹X from wallet + ₹Y in cash").
+- **Complete order, gated**: a "Complete order" button on the Bill step, disabled until every prescribed medicine not marked "Not possible" has a matching line on the sent bill *and* the bill is paid — computed client-side (`draft` vs. the bill's own line names) rather than left to accidentally follow from sending or paying the bill. Reuses the existing `delivered` order status rather than adding a new one.
+
+### Files Modified/Created
+**Modified**: `shieldweb/src/components/prescriptions/PrescriptionReviewModal.tsx`, `shieldweb/src/components/orders/BillEditorModal.tsx`, `shieldweb/src/api/billPayments.ts`
+
+**Created**: `backend/db/migrations/0041_bill_wallet_cash_split.sql`
+
+**Verification Commands**:
+- `pnpm exec tsc --noEmit` (shieldweb) — clean
+- `pnpm build` (shieldweb) — succeeds
+- migration applied to the live database (`dart run backend/db/apply_migration.dart ... --yes`)
+
+## 66. Member-to-Member Referral Commission Made Real (2026-09-17)
+
+**High-level description**: The refer-and-earn ladder (`ReferralLadder`, five rungs Starter→Legend) and its "2% Sahakar money on a referred member's plan" promise were both fully built in the UI but paid nothing — `getProgress` only let the client project a 2% figure client-side, and `app.referral_level` (the ladder's own reference table) existed unwired, with no reward-point crediting anywhere. Made both halves real, paid from the same two places a wallet-card approval already happens in this codebase (the Postgres function shieldweb's admin console calls directly, and `backend/api`'s own `WalletService.approveCard`), plus wherever a referral can advance without a plan activation (a referred member's first paid order, `OrderService.checkout`).
+
+- **Schema** — `backend/db/migrations/0042_member_referral_commission_schema.sql`: adds the `REFERRAL_EARNINGS` `wallet_entry_kind` (parallel to the existing `AGENT_EARNINGS`), seeds `app.referral_level` with the five rungs exactly mirroring `lib/module/refer/referral_level.dart`'s `ReferralLadder.levels`, and adds `users.referral_level_awarded` (the highest rung already paid, guarding against paying the same one twice).
+- **Crediting logic** — `backend/db/migrations/0043_member_referral_commission_function.sql` extends `app.approve_wallet_card_activation` (the real admin-approval path) and a new `app.award_referral_level_points` helper it calls; `backend/api/src/modules/wallet/wallet.service.ts`'s `approveCard` gets the equivalent TypeScript/Drizzle logic for the same function's `backend/api` counterpart. On every plan a referred member activates (not just their first): 2% of the load credits the referrer's own wallet as a `REFERRAL_EARNINGS` entry, independent of and additional to any agent commission on the same sale; the `referral` row for that pair advances to `PLAN_ACTIVATED` with `plan_amount`/`commission_amount` (cumulative) recorded; and the referrer's `referral_level` standing is re-checked, paying real `REFERRAL_LEVEL` reward points the moment their direct-referral count crosses a rung.
+- **`ReferralService.getProgress`** (`referral.service.ts`) now also returns `sahakarMoneyEarned` — the real sum of `referral.commission_amount` for that inviter — and `ReferralRepository.progressFor` (Flutter) reads it directly instead of projecting `activatedWalletCards.amount * 2%` client-side.
+- Module wiring: `WalletModule` now exports `ReferralService`; `CommerceModule` imports `WalletModule` so `OrderService` can call the same level-crossing check.
+- `backend/api/test/integration/create-test-db.ts` (the pg-mem in-memory schema the jest suite builds) updated to match — the new enum value, `users.referral_level_awarded` column, and a seeded `app.referral_level` table — since it's a hand-maintained mirror of `app_schema.sql`, not introspected from it.
+
+### Files Modified/Created
+**Modified**: `backend/api/src/modules/wallet/referral.service.ts`, `backend/api/src/modules/wallet/wallet.service.ts`, `backend/api/src/modules/wallet/wallet.module.ts`, `backend/api/src/modules/commerce/order.service.ts`, `backend/api/src/modules/commerce/commerce.module.ts`, `backend/api/src/db/schema/app-wallet.ts`, `backend/api/src/db/schema/app-identity.ts`, `backend/api/test/integration/create-test-db.ts`, `backend/db/app_schema.sql`, `shield agent_invester/lib/data/backend/referral_repository.dart`
+
+**Created**: `backend/db/migrations/0042_member_referral_commission_schema.sql`, `backend/db/migrations/0043_member_referral_commission_function.sql`
+
+**Verification Commands**:
+- `pnpm exec tsc --noEmit` (backend/api) — clean
+- `pnpm exec jest --runInBand` (backend/api) — 122/122 passed
+- `flutter analyze` (shield agent_invester) — no issues found
+- `flutter test` (shield agent_invester) — 52/52 passed
+- both migrations applied to the live database

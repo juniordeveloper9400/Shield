@@ -148,6 +148,25 @@ class ReferralRepository {
     return result ?? false;
   }
 
+  /// The code [phone] themselves signed up with, if any — `app.referral
+  /// .code_used` on the row where they are the invitee. Lets the
+  /// registration form show a member's own referral code back to them on
+  /// every later visit, rather than only while they are still typing it in.
+  /// Null when nobody referred this member, or the database is unreachable.
+  Future<String?> codeUsedBy(String phone) {
+    return _run('codeUsedBy', () async {
+      final rows = await NeonHttp.instance.query(
+        'SELECT code_used FROM app.referral WHERE invitee_phone = \$1',
+        [phone],
+      );
+      if (rows.isEmpty) {
+        return null;
+      }
+      final code = rows.first['code_used']?.toString();
+      return (code == null || code.isEmpty) ? null : code;
+    });
+  }
+
   /// Advances [phone]'s inbound referral (they are the one who was invited)
   /// from `REGISTERED` to `TRANSACTED` — the first paid order they complete.
   ///
