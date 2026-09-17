@@ -290,19 +290,21 @@ class PurchaseService extends ChangeNotifier {
   }
 
   @visibleForTesting
-  void reset() {
-    _purchases.clear();
-    seedSampleOrders();
-    notifyListeners();
-  }
-
-  @visibleForTesting
   void clear() {
     _purchases.clear();
     notifyListeners();
   }
 
-  /// The order history a fresh install is shown, newest first.
+  /// A representative order book — two active, one delivered, one cancelled,
+  /// one filled from a prescription — for tests that exercise the earnings
+  /// math and the orders list against something shaped like real use.
+  ///
+  /// Not used by the app itself: a signed-in member's real order book comes
+  /// from `OrderRepository.listForMember` via [replaceRemote] (see
+  /// `AppShell.initState`), and a fresh install with nothing recorded yet
+  /// shows an empty list, not this. Call it explicitly from a test's own
+  /// setup rather than reaching for it through [clear] — nothing here does
+  /// that on this class's behalf.
   ///
   /// Every line carries both prices, so the earnings card has something real
   /// to subtract rather than a percentage applied to a total.

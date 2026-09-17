@@ -14,7 +14,8 @@ import 'package:shield/screens/home_screen.dart';
 
 void main() {
   void resetAll() {
-    PurchaseService.instance.reset();
+    PurchaseService.instance.clear();
+    PurchaseService.instance.seedSampleOrders();
     WalletService.instance.reset();
   }
 

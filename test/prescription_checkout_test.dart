@@ -43,7 +43,7 @@ void main() {
   tearDown(() {
     PrescriptionBook.instance.reset();
     PatientBook.instance.reset();
-    PurchaseService.instance.reset();
+    PurchaseService.instance.clear();
     AddressBook.instance.reset();
     AuthService.instance.reset();
   });

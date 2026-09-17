@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/labtest/lab_cart_screen.dart';
 import 'package:shield/module/menu/menu_drawer.dart';
+import 'package:shield/module/orders/purchase_service.dart';
 import 'package:shield/module/registration/registration_screen.dart';
 import 'package:shield/module/wallet/wallet_screen.dart';
 import 'package:shield/screens/app_shell.dart';
@@ -106,14 +107,37 @@ void main() {
   }
 
   testWidgets('menu rows switch the active tab', (tester) async {
+    // A real order, not a dummy/sample one — PurchaseService starts every
+    // test empty, and the app itself never seeds it with sample data (see
+    // PurchaseService.seedSampleOrders' doc comment).
+    PurchaseService.instance.record(
+      id: 'SHD-100500',
+      placedOn: '27 Aug 2026',
+      itemCount: 2,
+      mrpTotal: 500,
+      paidTotal: 450,
+    );
+    addTearDown(PurchaseService.instance.clear);
+
     await pumpShell(tester);
     await openMenu(tester);
 
     await tapDrawerRow(tester, 'My orders');
 
-    // Drawer closed and the Orders destination is now foremost.
+    // Drawer closed and the Orders destination is now foremost, showing the
+    // order that was actually placed.
     expect(find.text('Menu'), findsNothing);
-    expect(find.text('SHD-100482'), findsOneWidget);
+    expect(find.text('SHD-100500'), findsOneWidget);
+  });
+
+  testWidgets('a member with no orders yet sees the empty state, not a '
+      'sample/dummy order', (tester) async {
+    await pumpShell(tester);
+    await openMenu(tester);
+
+    await tapDrawerRow(tester, 'My orders');
+
+    expect(find.text('No orders yet'), findsOneWidget);
   });
 
   testWidgets('account row reaches the Account destination', (tester) async {
