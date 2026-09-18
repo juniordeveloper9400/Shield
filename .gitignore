@@ -53,6 +53,10 @@ android/app/release/
 android/key.properties
 *.jks
 *.keystore
+# One-time signing-key transfer package (real upload keystore + passwords) —
+# has its own internal .gitignore too, this is belt-and-suspenders so a
+# broad `git add -A` never even considers walking into it.
+/SIGNING_TRANSFER/
 dart_defines.json
 shield-neon-ok.apk
 
