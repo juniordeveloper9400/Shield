@@ -24,9 +24,10 @@ Future<void> main() async {
 
   // Member sign-in is Firebase Phone Auth with no demo or offline fallback.
   // Bring Firebase up before the app starts; if the current platform has no
-  // configured options (only Android is wired today — see FIREBASE_SETUP.md)
-  // the app still starts so the UI is reachable, and the sign-in step reports
-  // that verification is unavailable instead of white-screening here.
+  // configured options (Android and web are wired today — see
+  // FIREBASE_SETUP.md) the app still starts so the UI is reachable, and the
+  // sign-in step reports that verification is unavailable instead of
+  // white-screening here.
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
