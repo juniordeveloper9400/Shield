@@ -19,7 +19,17 @@ async function bootstrap() {
   // request errors, not just bootstrap output) until app.useLogger() is
   // called, which nothing here ever does — so buffered logs never reach
   // Vercel's log viewer at all, not even on crash.
-  const app = await NestFactory.create(AppModule);
+  //
+  // bodyParser: false, replaced below with the same higher-limit parsers
+  // main.ts's own bootstrap() uses — see that file's doc comment for why:
+  // Nest's default 100kb JSON limit silently rejects any request carrying
+  // an image (every prescription scan, receipt, and bill photo in this app
+  // travels as a base64 data: URI inside a plain JSON body). This is the
+  // entrypoint Vercel actually serves in production, so the fix has to
+  // land here too, not just in the plain-Node bootstrap.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.useBodyParser('json', { limit: '15mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '15mb' });
   app.enableCors({ origin: true, credentials: true });
   await app.init();
   return app.getHttpAdapter().getInstance();
