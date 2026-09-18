@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { PrescriptionService } from './prescription.service';
 import { ApprovalService } from './approval.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -38,6 +38,12 @@ export class MemberPrescriptionController {
   @Get('prescriptions/:id')
   get(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
     return this.prescriptions.getForMember(Number(user.subjectId), id);
+  }
+
+  @Delete('prescriptions/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async delete(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    await this.prescriptions.deleteForMember(Number(user.subjectId), id);
   }
 
   @Post('prescription-orders')

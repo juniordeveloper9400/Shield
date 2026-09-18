@@ -184,7 +184,7 @@ export class PrescriptionService {
     const rows = await this.db
       .select()
       .from(prescription)
-      .where(eq(prescription.memberId, memberId))
+      .where(and(eq(prescription.memberId, memberId), isNull(prescription.deletedAt)))
       .orderBy(desc(prescription.createdAt));
     const imagesByRx = await this.attachImages(rows.map((r) => r.id));
     return rows.map((row) => this.toMemberView(row, imagesByRx.get(row.id) ?? []));
@@ -199,6 +199,21 @@ export class PrescriptionService {
       .where(eq(prescriptionImage.prescriptionId, id))
       .orderBy(asc(prescriptionImage.sort));
     return { ...this.toMemberView(found, images), medicines: lines.map(toMemberMedicine) };
+  }
+
+  /** Soft-deletes one of the caller's own prescriptions — same pattern as
+   *  IdentityService.softDeletePatient. The uploaded scan and any intake
+   *  card the pharmacist already sent are left in place (deletedAt merely
+   *  drops it from listForMember/getForMember going forward); a prescription
+   *  already linked to an order stays fully intact for that order's own
+   *  history. */
+  async deleteForMember(memberId: number, id: number) {
+    const [deleted] = await this.db
+      .update(prescription)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(prescription.id, id), eq(prescription.memberId, memberId), isNull(prescription.deletedAt)))
+      .returning();
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Prescription not found' } });
   }
 
   async listForStaff(role: AdminRole, storeId: number | null) {
@@ -291,7 +306,9 @@ export class PrescriptionService {
     const [found] = await this.db
       .select()
       .from(prescription)
-      .where(and(eq(prescription.id, id), eq(prescription.memberId, memberId)))
+      .where(
+        and(eq(prescription.id, id), eq(prescription.memberId, memberId), isNull(prescription.deletedAt)),
+      )
       .limit(1);
     if (!found) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Prescription not found' } });
     return found;

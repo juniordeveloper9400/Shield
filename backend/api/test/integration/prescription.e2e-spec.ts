@@ -314,6 +314,44 @@ describe('Prescription (e2e)', () => {
       .expect(403);
   });
 
+  it('rejects deleting a prescription that does not belong to the caller', async () => {
+    await request(app.getHttpServer())
+      .delete('/v1/member/prescriptions/999999')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(404);
+  });
+
+  it('deletes one of the caller\'s own prescriptions, dropping it from their list', async () => {
+    const uploaded = await request(app.getHttpServer())
+      .post('/v1/member/prescriptions')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ patientId, images: [PNG_DATA_URI] })
+      .expect(201);
+    const toDeleteId = uploaded.body.id;
+
+    await request(app.getHttpServer())
+      .delete(`/v1/member/prescriptions/${toDeleteId}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .get(`/v1/member/prescriptions/${toDeleteId}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(404);
+
+    const list = await request(app.getHttpServer())
+      .get('/v1/member/prescriptions')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(list.body.map((r: { id: number }) => r.id)).not.toContain(toDeleteId);
+
+    // A second delete of the same (now-deleted) row finds nothing to delete.
+    await request(app.getHttpServer())
+      .delete(`/v1/member/prescriptions/${toDeleteId}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(404);
+  });
+
   it('submits a prescription for fulfilment: an unpriced order, track steps, and ORDERED status', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/member/prescription-orders')
