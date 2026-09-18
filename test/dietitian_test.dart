@@ -1,10 +1,65 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/data/neon/care_repository.dart';
 import 'package:shield/module/dietitian/dietitian.dart';
 import 'package:shield/module/dietitian/dietitian_screen.dart';
 
+const _dietitians = [
+  Dietitian(
+    id: '1',
+    name: 'Dr. Anjali Menon',
+    qualification: 'PhD Clinical Nutrition, RD',
+    focus: ['Diabetes', 'Thyroid', 'PCOS'],
+    experienceYears: 12,
+    languages: ['Malayalam', 'English'],
+    fee: 400,
+    nextSlot: 'Today, 4:00 PM',
+    initials: 'AM',
+  ),
+  Dietitian(
+    id: '2',
+    name: 'Fathima Rasheed',
+    qualification: 'MSc Food & Nutrition, RD',
+    focus: ['Weight management', 'Pregnancy', 'Child nutrition'],
+    experienceYears: 8,
+    languages: ['Malayalam', 'English', 'Tamil'],
+    fee: 300,
+    nextSlot: 'Tomorrow, 10:30 AM',
+    initials: 'FR',
+  ),
+  Dietitian(
+    id: '3',
+    name: 'Vishnu Prasad',
+    qualification: 'MSc Dietetics',
+    focus: ['Heart health', 'Cholesterol', 'Sports nutrition'],
+    experienceYears: 6,
+    languages: ['Malayalam', 'English', 'Hindi'],
+    fee: 250,
+    nextSlot: 'Tomorrow, 6:00 PM',
+    initials: 'VP',
+  ),
+  Dietitian(
+    id: '4',
+    name: 'Dr. Sreelakshmi Nair',
+    qualification: 'MD Ayurveda, Diploma in Nutrition',
+    focus: ['Digestive health', 'Post-surgery recovery'],
+    experienceYears: 15,
+    languages: ['Malayalam', 'English'],
+    fee: 500,
+    nextSlot: 'Thu, 11:00 AM',
+    initials: 'SN',
+  ),
+];
+
 void main() {
+  setUp(() {
+    CareRepository.dietitiansOverride = () async => _dietitians;
+  });
+  tearDown(() {
+    CareRepository.dietitiansOverride = null;
+  });
+
   Future<void> pumpScreen(
     WidgetTester tester, {
     Size size = const Size(400, 2600),
@@ -19,9 +74,9 @@ void main() {
 
   group('the panel', () {
     test('every dietitian is bookable and priced', () {
-      expect(DietitianDirectory.all, isNotEmpty);
+      expect(_dietitians, isNotEmpty);
 
-      for (final dietitian in DietitianDirectory.all) {
+      for (final dietitian in _dietitians) {
         expect(dietitian.name, isNotEmpty, reason: dietitian.name);
         expect(dietitian.qualification, isNotEmpty, reason: dietitian.name);
         expect(dietitian.focus, isNotEmpty, reason: dietitian.name);
@@ -34,28 +89,37 @@ void main() {
 
     test('Malayalam is covered, which is where the counters are', () {
       expect(
-        DietitianDirectory.all.every((d) => d.languages.contains('Malayalam')),
+        _dietitians.every((d) => d.languages.contains('Malayalam')),
         isTrue,
       );
     });
 
     test('the summary reads as experience and languages', () {
-      expect(
-        DietitianDirectory.all.first.summary,
-        '12 yrs · Malayalam, English',
-      );
+      expect(_dietitians.first.summary, '12 yrs · Malayalam, English');
     });
 
     test('search matches a name, a qualification or a condition', () {
-      expect(DietitianDirectory.search('anjali').single.initials, 'AM');
-      expect(DietitianDirectory.search('THYROID').single.initials, 'AM');
-      expect(DietitianDirectory.search('Ayurveda').single.initials, 'SN');
-      expect(DietitianDirectory.search('quantum surgery'), isEmpty);
+      expect(
+        DietitianDirectory.search(_dietitians, 'anjali').single.initials,
+        'AM',
+      );
+      expect(
+        DietitianDirectory.search(_dietitians, 'THYROID').single.initials,
+        'AM',
+      );
+      expect(
+        DietitianDirectory.search(_dietitians, 'Ayurveda').single.initials,
+        'SN',
+      );
+      expect(
+        DietitianDirectory.search(_dietitians, 'quantum surgery'),
+        isEmpty,
+      );
     });
 
     test('an empty search returns the panel, not nothing', () {
-      expect(DietitianDirectory.search(''), DietitianDirectory.all);
-      expect(DietitianDirectory.search('   '), DietitianDirectory.all);
+      expect(DietitianDirectory.search(_dietitians, ''), _dietitians);
+      expect(DietitianDirectory.search(_dietitians, '   '), _dietitians);
     });
   });
 
@@ -72,12 +136,12 @@ void main() {
     testWidgets('lists everyone, with fee and next slot', (tester) async {
       await pumpScreen(tester);
 
-      for (final dietitian in DietitianDirectory.all) {
+      for (final dietitian in _dietitians) {
         expect(find.text(dietitian.name), findsOneWidget);
         expect(find.text(dietitian.nextSlot), findsOneWidget);
       }
       expect(find.text('₹400'), findsOneWidget);
-      expect(find.text('Book'), findsNWidgets(DietitianDirectory.all.length));
+      expect(find.text('Book'), findsNWidgets(_dietitians.length));
     });
 
     testWidgets('search narrows the list and can come back', (tester) async {
@@ -104,6 +168,15 @@ void main() {
       expect(find.text('Book'), findsNothing);
     });
 
+    testWidgets('a fetch with nothing to show explains itself', (
+      tester,
+    ) async {
+      CareRepository.dietitiansOverride = () async => const [];
+      await pumpScreen(tester);
+
+      expect(find.text('No dietitians available right now'), findsOneWidget);
+    });
+
     testWidgets('booking names the dietitian and the slot', (tester) async {
       await pumpScreen(tester);
 
@@ -112,7 +185,7 @@ void main() {
 
       // One string, not two finders: the card also shows the slot, so
       // matching on it alone would find the card as well as the notice.
-      final first = DietitianDirectory.all.first;
+      final first = _dietitians.first;
       expect(
         find.text(
           'Consultation with ${first.name} requested · ${first.nextSlot}',
@@ -125,7 +198,7 @@ void main() {
       await pumpScreen(tester, size: const Size(320, 3400));
 
       expect(find.text('Talk to a dietitian'), findsOneWidget);
-      expect(find.text(DietitianDirectory.all.last.name), findsOneWidget);
+      expect(find.text(_dietitians.last.name), findsOneWidget);
     });
   });
 }

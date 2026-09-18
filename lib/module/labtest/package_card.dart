@@ -461,7 +461,7 @@ class _PriceRow extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                package.saved,
+                package.savedLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

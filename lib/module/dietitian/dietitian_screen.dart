@@ -1,6 +1,7 @@
 
 import 'package:flutter/material.dart';
 
+import '../../data/neon/care_repository.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
 import 'dietitian.dart';
@@ -15,10 +16,29 @@ class DietitianScreen extends StatefulWidget {
 
 class _DietitianScreenState extends State<DietitianScreen> {
   String _query = '';
+  List<Dietitian>? _dietitians;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final dietitians = await CareRepository.instance.fetchDietitians();
+    if (mounted) {
+      // null means "unconfigured or unreachable", treated the same as
+      // "nothing to show" — see LabTestScreen's identical fallback.
+      setState(() => _dietitians = dietitians ?? const []);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final results = DietitianDirectory.search(_query);
+    final dietitians = _dietitians;
+    final results = dietitians == null
+        ? null
+        : DietitianDirectory.search(dietitians, _query);
 
     return Scaffold(
       backgroundColor: AppColors.pageTint,
@@ -47,8 +67,13 @@ class _DietitianScreenState extends State<DietitianScreen> {
           const SizedBox(height: 16),
           _SearchField(onChanged: (value) => setState(() => _query = value)),
           const SizedBox(height: 16),
-          if (results.isEmpty)
-            const _NoMatches()
+          if (results == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (results.isEmpty)
+            _NoMatches(hasQuery: _query.trim().isNotEmpty)
           else
             for (final dietitian in results) ...[
               _DietitianCard(dietitian: dietitian),
@@ -350,7 +375,11 @@ class _DietitianCard extends StatelessWidget {
 }
 
 class _NoMatches extends StatelessWidget {
-  const _NoMatches();
+  /// Whether this is "nothing matched the search" (a condition to try
+  /// instead makes sense) or "there is no panel to search yet" (it doesn't).
+  final bool hasQuery;
+
+  const _NoMatches({required this.hasQuery});
 
   @override
   Widget build(BuildContext context) {
@@ -362,32 +391,36 @@ class _NoMatches extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 34),
-      child: const Column(
+      child: Column(
         children: [
-          Icon(
+          const Icon(
             Icons.person_search_outlined,
             size: 38,
             color: AppColors.textMuted,
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
           Text(
-            'No dietitian matches that',
-            style: TextStyle(
+            hasQuery
+                ? 'No dietitian matches that'
+                : 'No dietitians available right now',
+            style: const TextStyle(
               fontSize: 15.5,
               fontWeight: FontWeight.w700,
               color: AppColors.textDark,
             ),
           ),
-          SizedBox(height: 4),
-          Text(
-            'Try a condition instead, such as diabetes or thyroid.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.4,
-              color: AppColors.textMuted,
+          if (hasQuery) ...[
+            const SizedBox(height: 4),
+            const Text(
+              'Try a condition instead, such as diabetes or thyroid.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: AppColors.textMuted,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

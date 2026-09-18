@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { clinic, clinicDoctor, dietitian, labPackage, labProfile } from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
@@ -14,10 +14,35 @@ export class CareService {
     private readonly cache: CacheService,
   ) {}
 
+  /**
+   * Every active package with its profiles attached — the client's package
+   * card (both the "Top Packages" strip and the full list) reads the
+   * breakdown straight off each card with nothing else to tap, so the list
+   * itself has to carry it, not just {@link getLabPackage}'s single-package
+   * detail.
+   */
   async listLabPackages() {
-    return this.cache.getOrSet('care:lab-packages', TTL, () =>
-      this.db.select().from(labPackage).where(eq(labPackage.isActive, true)).orderBy(asc(labPackage.sort)),
-    );
+    return this.cache.getOrSet('care:lab-packages', TTL, async () => {
+      const packages = await this.db
+        .select()
+        .from(labPackage)
+        .where(eq(labPackage.isActive, true))
+        .orderBy(asc(labPackage.sort));
+      if (packages.length === 0) return [];
+
+      const profiles = await this.db
+        .select()
+        .from(labProfile)
+        .where(inArray(labProfile.labPackageId, packages.map((p) => p.id)))
+        .orderBy(asc(labProfile.sort));
+      const byPackage = new Map<number, typeof profiles>();
+      for (const profile of profiles) {
+        const bucket = byPackage.get(profile.labPackageId);
+        if (bucket) bucket.push(profile);
+        else byPackage.set(profile.labPackageId, [profile]);
+      }
+      return packages.map((pkg) => ({ ...pkg, profiles: byPackage.get(pkg.id) ?? [] }));
+    });
   }
 
   async getLabPackage(id: number) {

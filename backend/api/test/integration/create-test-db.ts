@@ -568,9 +568,15 @@ export function createTestDb() {
       name text NOT NULL,
       test_count integer NOT NULL DEFAULT 0,
       profile_count integer NOT NULL DEFAULT 0,
+      rating text,
+      booked text,
+      report_in text,
       price numeric(12,2) NOT NULL DEFAULT 0,
       mrp numeric(12,2) NOT NULL DEFAULT 0,
       saved numeric(12,2) NOT NULL DEFAULT 0,
+      inherits_from text,
+      inherits_summary text,
+      extras_label text,
       for_whom text,
       age_range text,
       preparation text,
@@ -623,6 +629,7 @@ export function createTestDb() {
       experience_years integer NOT NULL DEFAULT 0,
       languages text[] NOT NULL DEFAULT '{}',
       fee numeric(12,2) NOT NULL DEFAULT 0,
+      next_slot text,
       is_active boolean NOT NULL DEFAULT true,
       sort integer NOT NULL DEFAULT 0
     );

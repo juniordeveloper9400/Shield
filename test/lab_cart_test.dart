@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/data/neon/care_repository.dart';
 import 'package:shield/module/cart/cart_service.dart';
 import 'package:shield/module/labtest/lab_cart_badge.dart';
 import 'package:shield/module/labtest/lab_cart_screen.dart';
@@ -10,14 +11,82 @@ import 'package:shield/module/labtest/lab_package_screen.dart';
 import 'package:shield/module/labtest/patient_count_sheet.dart';
 import 'package:shield/module/labtest/top_packages_screen.dart';
 
+const _activeLife = LabPackage(
+  id: '2',
+  name: 'Active Life',
+  testCount: 85,
+  profileCount: 8,
+  rating: '4.92',
+  booked: '8k+ booked',
+  reportIn: '15 hr',
+  price: '1,299',
+  mrp: '3,248',
+  saved: '433',
+  inheritsFrom: 'Everything in Preventive Plus',
+  inheritsSummary: 'All 83 tests · 8 profiles',
+  extrasLabel: '+ 2 MORE TESTS · DIABETES',
+  forWhom: 'For Male & Female',
+  ageRange: '5-99 yrs',
+  preparation: '12 hrs fasting',
+  sample: 'Blood, Urine',
+  organs: [
+    'Liver',
+    'Kidneys',
+    'Pancreas',
+    'Heart',
+    'Blood Vessels',
+    'Thyroid Gland',
+  ],
+  about: 'Everything in Preventive Plus, plus the two markers that show '
+      'how blood sugar has behaved over the past three months.',
+  extras: [
+    LabProfile('🩸', 'HbA1c', 0),
+    LabProfile('💠', 'Average blood glucose', 0),
+  ],
+);
+
+const _preventivePlus = LabPackage(
+  id: '1',
+  name: 'Preventive Plus',
+  testCount: 83,
+  profileCount: 8,
+  rating: '4.83',
+  booked: '12k+ booked',
+  reportIn: '15 hr',
+  price: '999',
+  mrp: '2,498',
+  saved: '333',
+  forWhom: 'For Male & Female',
+  ageRange: '5-99 yrs',
+  preparation: '10 hrs fasting',
+  sample: 'Blood, Urine',
+  organs: ['Liver', 'Kidneys', 'Heart', 'Thyroid Gland'],
+  about: 'A broad first look at how the body is running.',
+);
+
+const _completeCare = LabPackage(
+  id: '3',
+  name: 'Complete Care',
+  testCount: 92,
+  profileCount: 10,
+  price: '1,799',
+  mrp: '4,100',
+  saved: '560',
+  inheritsFrom: 'Everything in Active Life',
+  inheritsSummary: 'All 85 tests · 8 profiles',
+);
+
 void main() {
   setUp(() {
     LabCartService.instance.reset();
     CartService.instance.reset();
+    CareRepository.labPackagesOverride =
+        () async => [_preventivePlus, _activeLife, _completeCare];
   });
   tearDown(() {
     LabCartService.instance.reset();
     CartService.instance.reset();
+    CareRepository.labPackagesOverride = null;
   });
 
   Future<void> pump(
@@ -45,20 +114,20 @@ void main() {
 
   group('package pricing', () {
     test('parses the grouped strings back to numbers', () {
-      expect(LabCatalogue.activeLife.priceValue, 1299);
-      expect(LabCatalogue.activeLife.mrpValue, 3248);
-      expect(LabCatalogue.preventivePlus.priceValue, 999);
+      expect(_activeLife.priceValue, 1299);
+      expect(_activeLife.mrpValue, 3248);
+      expect(_preventivePlus.priceValue, 999);
     });
 
     test('the discount label matches the two prices', () {
       // 1 - 1299/3248 = 60.01%
-      expect(LabCatalogue.activeLife.discountLabel, '60.01% off');
+      expect(_activeLife.discountLabel, '60.01% off');
     });
   });
 
   group('the lab basket', () {
     test('is a different basket from the medicine cart', () {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 2);
 
       expect(LabCartService.instance.bookingCount, 1);
       // Booking a test does not put anything in the medicine cart.
@@ -71,7 +140,7 @@ void main() {
     });
 
     test('prices a booking per patient', () {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 3);
+      LabCartService.instance.book(_activeLife, patients: 3);
 
       final booking = LabCartService.instance.bookings.single;
       expect(booking.amount, 1299 * 3);
@@ -80,8 +149,8 @@ void main() {
     });
 
     test('booking the same package again corrects the count', () {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 2);
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 4);
+      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 4);
 
       // One line, not two visits.
       expect(LabCartService.instance.bookingCount, 1);
@@ -89,23 +158,23 @@ void main() {
     });
 
     test('counts packages, not heads', () {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 3);
-      LabCartService.instance.book(LabCatalogue.completeCare, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 3);
+      LabCartService.instance.book(_completeCare, patients: 2);
 
       expect(LabCartService.instance.bookingCount, 2);
       expect(LabCartService.instance.patientCount, 5);
     });
 
     test('the patient count is clamped to what the sheet offers', () {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 99);
+      LabCartService.instance.book(_activeLife, patients: 99);
       expect(LabCartService.instance.bookings.single.patients, 5);
 
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 0);
+      LabCartService.instance.book(_activeLife, patients: 0);
       expect(LabCartService.instance.bookings.single.patients, 1);
     });
 
     test('savings are the gap between MRP and price, per patient', () {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 2);
 
       expect(LabCartService.instance.mrpTotal, 3248 * 2);
       expect(LabCartService.instance.savings, (3248 - 1299) * 2);
@@ -114,15 +183,15 @@ void main() {
 
     test('patientsFor reports what is booked', () {
       expect(
-        LabCartService.instance.patientsFor(LabCatalogue.activeLife),
+        LabCartService.instance.patientsFor(_activeLife),
         null,
       );
 
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 2);
 
-      expect(LabCartService.instance.patientsFor(LabCatalogue.activeLife), 2);
+      expect(LabCartService.instance.patientsFor(_activeLife), 2);
       expect(
-        LabCartService.instance.patientsFor(LabCatalogue.completeCare),
+        LabCartService.instance.patientsFor(_completeCare),
         null,
       );
     });
@@ -136,7 +205,7 @@ void main() {
           body: Builder(
             builder: (context) => TextButton(
               onPressed: () =>
-                  PatientCountSheet.show(context, LabCatalogue.activeLife),
+                  PatientCountSheet.show(context, _activeLife),
               child: const Text('open'),
             ),
           ),
@@ -163,7 +232,7 @@ void main() {
           body: Builder(
             builder: (context) => TextButton(
               onPressed: () =>
-                  PatientCountSheet.show(context, LabCatalogue.activeLife),
+                  PatientCountSheet.show(context, _activeLife),
               child: const Text('open'),
             ),
           ),
@@ -192,7 +261,7 @@ void main() {
     testWidgets('shows the facts the reference calls for', (tester) async {
       await pump(
         tester,
-        const LabPackageScreen(package: LabCatalogue.activeLife),
+        const LabPackageScreen(package: _activeLife),
         size: const Size(400, 1800),
       );
 
@@ -218,7 +287,7 @@ void main() {
     ) async {
       await pump(
         tester,
-        const LabPackageScreen(package: LabCatalogue.activeLife),
+        const LabPackageScreen(package: _activeLife),
         size: const Size(400, 1800),
       );
 
@@ -241,7 +310,7 @@ void main() {
     testWidgets('the badge counts the booking', (tester) async {
       await pump(
         tester,
-        const LabPackageScreen(package: LabCatalogue.activeLife),
+        const LabPackageScreen(package: _activeLife),
         size: const Size(400, 1800),
       );
 
@@ -253,7 +322,7 @@ void main() {
         findsNothing,
       );
 
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 2);
       await tester.pumpAndSettle();
 
       expect(
@@ -276,7 +345,7 @@ void main() {
     testWidgets('lists the booking, the patients and the amount', (
       tester,
     ) async {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 2);
       await pump(tester, const LabCartScreen());
 
       expect(find.text('Active Life'), findsOneWidget);
@@ -290,7 +359,7 @@ void main() {
     testWidgets('the patient count can be changed from the basket', (
       tester,
     ) async {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 2);
       await pump(tester, const LabCartScreen());
 
       await tester.tap(find.text('2 patients'));
@@ -309,7 +378,7 @@ void main() {
     });
 
     testWidgets('a booking can be removed', (tester) async {
-      LabCartService.instance.book(LabCatalogue.activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: 2);
       await pump(tester, const LabCartScreen());
 
       await tester.tap(find.byTooltip('Remove booking'));

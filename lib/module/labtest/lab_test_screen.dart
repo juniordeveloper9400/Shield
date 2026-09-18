@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../../data/neon/care_repository.dart';
 import '../../theme/app_colors.dart';
 import '../location/location_sheet.dart';
 import 'lab_cart_badge.dart';
 import 'lab_package.dart';
 import 'package_card.dart';
 
+/// The strip shows the first [_topPackageCount] packages in the admin's own
+/// sort order — the whole point of setting `sort` on `app.lab_package` is to
+/// choose what leads here, so this reads directly off it rather than a
+/// separate "is this one featured" flag the schema doesn't have.
+const int _topPackageCount = 5;
+
 /// Lab landing: sample-collection location, search, the Top Packages strip,
-/// booking shortcuts, the running coupon, and individually bookable profiles.
+/// booking shortcuts, and the running coupon.
 class LabTestScreen extends StatefulWidget {
   /// Opens the Top Packages sub-tab.
   final VoidCallback? onSeeAllPackages;
@@ -20,6 +27,24 @@ class LabTestScreen extends StatefulWidget {
 
 class _LabTestScreenState extends State<LabTestScreen> {
   String? _pincode;
+  List<LabPackage>? _packages;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final packages = await CareRepository.instance.fetchLabPackages();
+    if (mounted) {
+      // null means "unconfigured or unreachable", same as "nothing to show"
+      // as far as this screen is concerned — without the fallback, a build
+      // with no database configured (or offline) would spin forever instead
+      // of settling on the empty state.
+      setState(() => _packages = packages ?? const []);
+    }
+  }
 
   Future<void> _chooseLocation() async {
     final chosen = await LocationSheet.show(context, _pincode ?? '');
@@ -30,6 +55,10 @@ class _LabTestScreenState extends State<LabTestScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final packages = _packages;
+    final topPackages = packages == null
+        ? const <LabPackage>[]
+        : packages.take(_topPackageCount).toList();
     return Scaffold(
       backgroundColor: AppColors.pageTint,
       body: SafeArea(
@@ -55,23 +84,34 @@ class _LabTestScreenState extends State<LabTestScreen> {
               onAction: widget.onSeeAllPackages,
             ),
             const SizedBox(height: 10),
-            SizedBox(
-              height: 470,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: LabCatalogue.topPackages.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 12),
-                itemBuilder: (context, index) => SizedBox(
-                  width: 330,
-                  child: PackageCard(
-                    package: LabCatalogue.topPackages[index],
-                    onViewAll: widget.onSeeAllPackages,
-                    fillHeight: true,
+            if (packages == null)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (topPackages.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                child: _NoPackages(),
+              )
+            else
+              SizedBox(
+                height: 470,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: topPackages.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, index) => SizedBox(
+                    width: 330,
+                    child: PackageCard(
+                      package: topPackages[index],
+                      onViewAll: widget.onSeeAllPackages,
+                      fillHeight: true,
+                    ),
                   ),
                 ),
               ),
-            ),
             const SizedBox(height: 18),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 16),
@@ -79,40 +119,46 @@ class _LabTestScreenState extends State<LabTestScreen> {
             ),
             const SizedBox(height: 14),
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
               child: _CouponBanner(),
-            ),
-            const SizedBox(height: 20),
-            const _SectionHeading(
-              title: 'Top Profiles and Tests',
-              actionLabel: 'See all ›',
-            ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: Column(
-                  children: [
-                    for (
-                      var i = 0;
-                      i < LabCatalogue.topProfiles.length;
-                      i++
-                    ) ...[
-                      _ProfileTile(profile: LabCatalogue.topProfiles[i]),
-                      if (i != LabCatalogue.topProfiles.length - 1)
-                        const Divider(height: 1, color: AppColors.border),
-                    ],
-                  ],
-                ),
-              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _NoPackages extends StatelessWidget {
+  const _NoPackages();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+      child: const Column(
+        children: [
+          Icon(
+            Icons.science_outlined,
+            size: 34,
+            color: AppColors.textMuted,
+          ),
+          SizedBox(height: 8),
+          Text(
+            'No packages available right now',
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -437,54 +483,3 @@ class _CouponBanner extends StatelessWidget {
   }
 }
 
-class _ProfileTile extends StatelessWidget {
-  final LabProfile profile;
-
-  const _ProfileTile({required this.profile});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {},
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-        child: Row(
-          children: [
-            Text(profile.emoji, style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    profile.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${profile.parameters} parameters',
-                    style: const TextStyle(
-                      fontSize: 12.5,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 22,
-              color: AppColors.textMuted,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}

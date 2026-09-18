@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 
-/// A dietitian a member can book a consultation with.
+/// A dietitian a member can book a consultation with — read from
+/// `app.dietitian` (see `CareRepository.fetchDietitians`), never hardcoded
+/// here.
 @immutable
 class Dietitian {
+  final String id;
   final String name;
   final String qualification;
 
@@ -16,12 +19,14 @@ class Dietitian {
   final int fee;
 
   /// Plain words rather than a timestamp: a slot the app cannot actually book
-  /// should not pretend to be a calendar entry.
+  /// should not pretend to be a calendar entry. Blank when the admin hasn't
+  /// set one.
   final String nextSlot;
 
   final String initials;
 
   const Dietitian({
+    required this.id,
     required this.name,
     required this.qualification,
     required this.focus,
@@ -36,7 +41,8 @@ class Dietitian {
   String get summary => '$experienceYears yrs · ${languages.join(', ')}';
 }
 
-/// The panel a member can book from.
+/// Search helper over a fetched panel — the panel itself is
+/// `CareRepository.fetchDietitians()`'s result, not a static list.
 class DietitianDirectory {
   const DietitianDirectory._();
 
@@ -48,52 +54,9 @@ class DietitianDirectory {
     'Notes shared with the pharmacist filling your prescription',
   ];
 
-  static const List<Dietitian> all = [
-    Dietitian(
-      name: 'Dr. Anjali Menon',
-      qualification: 'PhD Clinical Nutrition, RD',
-      focus: ['Diabetes', 'Thyroid', 'PCOS'],
-      experienceYears: 12,
-      languages: ['Malayalam', 'English'],
-      fee: 400,
-      nextSlot: 'Today, 4:00 PM',
-      initials: 'AM',
-    ),
-    Dietitian(
-      name: 'Fathima Rasheed',
-      qualification: 'MSc Food & Nutrition, RD',
-      focus: ['Weight management', 'Pregnancy', 'Child nutrition'],
-      experienceYears: 8,
-      languages: ['Malayalam', 'English', 'Tamil'],
-      fee: 300,
-      nextSlot: 'Tomorrow, 10:30 AM',
-      initials: 'FR',
-    ),
-    Dietitian(
-      name: 'Vishnu Prasad',
-      qualification: 'MSc Dietetics',
-      focus: ['Heart health', 'Cholesterol', 'Sports nutrition'],
-      experienceYears: 6,
-      languages: ['Malayalam', 'English', 'Hindi'],
-      fee: 250,
-      nextSlot: 'Tomorrow, 6:00 PM',
-      initials: 'VP',
-    ),
-    Dietitian(
-      name: 'Dr. Sreelakshmi Nair',
-      qualification: 'MD Ayurveda, Diploma in Nutrition',
-      focus: ['Digestive health', 'Post-surgery recovery'],
-      experienceYears: 15,
-      languages: ['Malayalam', 'English'],
-      fee: 500,
-      nextSlot: 'Thu, 11:00 AM',
-      initials: 'SN',
-    ),
-  ];
-
-  /// Everyone whose name, focus or qualification matches [query]. An empty
-  /// query returns the whole panel rather than nothing.
-  static List<Dietitian> search(String query) {
+  /// Everyone in [all] whose name, focus or qualification matches [query]. An
+  /// empty query returns [all] unfiltered.
+  static List<Dietitian> search(List<Dietitian> all, String query) {
     final needle = query.trim().toLowerCase();
     if (needle.isEmpty) {
       return all;

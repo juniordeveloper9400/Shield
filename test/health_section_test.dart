@@ -1,16 +1,54 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/data/neon/care_repository.dart';
 import 'package:shield/module/dietitian/dietitian_screen.dart';
 import 'package:shield/module/home/home_hero_banner.dart';
 import 'package:shield/module/health/health_section.dart';
+import 'package:shield/module/labtest/lab_package.dart';
 import 'package:shield/module/labtest/package_card.dart';
 import 'package:shield/module/labtest/top_packages_screen.dart';
 import 'package:shield/screens/app_shell.dart';
 import 'package:shield/widgets/bottom_nav.dart';
 import 'package:shield/module/registration/register_bar.dart';
 
+const _preventivePlus = LabPackage(
+  id: '1',
+  name: 'Preventive Plus',
+  testCount: 83,
+  profileCount: 8,
+  price: '999',
+  mrp: '2,498',
+  saved: '333',
+  profiles: [
+    LabProfile('🩸', 'CBC', 24),
+    LabProfile('🦋', 'Thyroid Profile', 3),
+  ],
+);
+
+const _activeLife = LabPackage(
+  id: '2',
+  name: 'Active Life',
+  testCount: 85,
+  profileCount: 8,
+  price: '1,299',
+  mrp: '3,248',
+  saved: '433',
+  inheritsFrom: 'Everything in Preventive Plus',
+  inheritsSummary: 'All 83 tests · 8 profiles',
+  extrasLabel: '+ 2 MORE TESTS · DIABETES',
+  extras: [LabProfile('🩸', 'HbA1c', 0)],
+);
+
 void main() {
+  setUp(() {
+    CareRepository.labPackagesOverride =
+        () async => [_preventivePlus, _activeLife];
+  });
+  tearDown(() {
+    CareRepository.labPackagesOverride = null;
+  });
+
   Future<void> pumpShell(
     WidgetTester tester, {
     Size size = const Size(400, 900),
@@ -43,7 +81,6 @@ void main() {
     expect(find.text('Preventive Plus'), findsWidgets);
     expect(find.text('Book via'), findsNWidgets(2));
     expect(find.text('Flat 25% off on all tests'), findsOneWidget);
-    expect(find.text('Top Profiles and Tests'), findsOneWidget);
   });
 
   testWidgets('the health section replaces the main bottom bar', (tester) async {
@@ -151,7 +188,7 @@ void main() {
     expect(find.text('83 tests · 8 profiles'), findsOneWidget);
     expect(find.text('₹999'), findsOneWidget);
     expect(find.text('₹2,498'), findsOneWidget);
-    expect(find.text('Saved ₹333 with coupon code'), findsOneWidget);
+    expect(find.text('Saved ₹333'), findsOneWidget);
     expect(find.text('CBC'), findsOneWidget);
     expect(find.text('Thyroid Profile'), findsWidgets);
 
