@@ -195,9 +195,10 @@ export class ReferralService {
    *    `COALESCE(sold_by_agent_id, agent_customer-linked agent)`.
    *  - A **fellow member's own referral code** (`SHIELD-1234`, from
    *    [getOrCreateCode]) records the referral edge (`app.referral`,
-   *    `REGISTERED`) — the reward crediting for this half is a separate,
-   *    not-yet-built piece; today [getProgress] only lets the client
-   *    project a Sahakar-money figure, nothing is actually credited yet.
+   *    `REGISTERED`) — real 2% commission and `referral_level` reward
+   *    points both actually credit later, off this same edge, once the
+   *    invitee transacts or activates a plan (`awardLevelPointsIfCrossed`,
+   *    `app.approve_wallet_card_activation`, migrations 0042-0043).
    *
    * Best-effort and idempotent: a code matching neither, a member who
    * already has an agent or a referrer on file, or referring yourself all
@@ -208,7 +209,16 @@ export class ReferralService {
    * is referred by at most one other member, ever.
    */
   async applySignupCode(memberId: number, dto: ApplyReferralCodeDto): Promise<{ linked: 'agent' | 'member' | 'none' }> {
-    const code = dto.code.trim();
+    // Both code formats are always issued upper-case (`SHD-WRD-004`,
+    // `SHIELD-1234`) and this lookup is a plain `=`, which Postgres treats
+    // case-sensitively — the same reason `WalletService.submitCard`
+    // upper-cases `dto.agentCode` before its own agent lookup. Without this,
+    // a member who types (or autocorrect/predictive text lower-cases) their
+    // code in anything but the exact stored casing gets the same silent
+    // "no match" this method already gives a genuinely wrong code — an
+    // invisible failure, since nothing here is allowed to error and block
+    // registration over a bad code.
+    const code = dto.code.trim().toUpperCase();
     if (!code) {
       return { linked: 'none' };
     }

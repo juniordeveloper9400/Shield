@@ -7,12 +7,14 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { hash } from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, agent, membershipTier, membershipTierLoad, referral, users } from '../../src/db/schema';
+import { adminUser, agent, authSession, membershipTier, membershipTierLoad, referral, users, wallet } from '../../src/db/schema';
+import { TokenService } from '../../src/modules/auth/token.service';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -21,6 +23,7 @@ describe('Wallet & Rewards (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
   let firebase: FakeFirebaseVerifier;
+  let tokens: TokenService;
   let memberAccessToken: string;
   let pharmacyStaffToken: string;
   let superAdminToken: string;
@@ -28,6 +31,36 @@ describe('Wallet & Rewards (e2e)', () => {
   let tierId: number;
   let memberId: number;
   let agentId: number;
+
+  /**
+   * A real, valid member access token minted directly rather than through a
+   * real Firebase sign-in over POST /v1/member/auth/session — this file
+   * already runs exactly 10 genuine sign-ins (one per member/staff needing
+   * a fresh session), which is AuthThrottle's own 10/60s ceiling on that
+   * route; one more real sign-in tips a later test into a 429. See
+   * agent.e2e-spec.ts's own copy of this helper for the same reasoning.
+   */
+  async function directMemberToken(userId: number): Promise<string> {
+    const [session] = await db
+      .insert(authSession)
+      // Explicit id: pg-mem's gen_random_uuid() default has produced the
+      // same value across back-to-back inserts in this file's own test
+      // (three calls in quick succession, the second colliding with the
+      // first) — sidestep it with a real, guaranteed-unique client id.
+      .values({
+        id: randomUUID(),
+        subjectType: 'MEMBER',
+        subjectId: String(userId),
+        expiresAt: new Date(Date.now() + 60_000),
+      })
+      .returning();
+    const { token } = await tokens.issueAccessToken({
+      sessionId: session.id,
+      subjectType: 'MEMBER',
+      subjectId: String(userId),
+    });
+    return token;
+  }
 
   beforeAll(async () => {
     db = createTestDb();
@@ -44,6 +77,7 @@ describe('Wallet & Rewards (e2e)', () => {
 
     app = moduleRef.createNestApplication();
     await app.init();
+    tokens = moduleRef.get(TokenService);
 
     const [tier] = await db
       .insert(membershipTier)
@@ -801,6 +835,50 @@ describe('Wallet & Rewards (e2e)', () => {
     expect(edge.inviterMemberId).toBe(memberId);
   });
 
+  it('applies an agent code typed in lowercase — the field is never forced to a fixed case, so this must resolve exactly like the upper-case original', async () => {
+    const [freshMember] = await db
+      .insert(users)
+      .values({ phone: '9000000023', name: 'Lowercase Agent Code Typist', firebaseUid: 'member-agent-code-lowercase' })
+      .returning();
+    const freshToken = await directMemberToken(freshMember.id);
+
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${freshToken}`)
+      .send({ code: 'shd-nat-test1' })
+      .expect(201);
+    expect(res.body.linked).toBe('agent');
+  });
+
+  it("applies a fellow member's referral code typed in lowercase — same reasoning as the agent-code case above", async () => {
+    const codeRes = await request(app.getHttpServer())
+      .get('/v1/member/referrals/code')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    const inviterCode = codeRes.body.code as string; // 'SHIELD-####'
+
+    const [freshInvitee] = await db
+      .insert(users)
+      .values({ phone: '9000000024', name: 'Lowercase Member Code Typist', firebaseUid: 'member-referral-code-lowercase' })
+      .returning();
+    const freshInviteeToken = await directMemberToken(freshInvitee.id);
+
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${freshInviteeToken}`)
+      .send({ code: inviterCode.toLowerCase() })
+      .expect(201);
+    expect(res.body.linked).toBe('member');
+
+    const [edge] = await db
+      .select()
+      .from(referral)
+      .where(and(eq(referral.inviterMemberId, memberId), eq(referral.inviteeMemberId, freshInvitee.id)));
+    expect(edge.status).toBe('REGISTERED');
+    // Stored as the canonical upper-case code, not whatever case was typed.
+    expect(edge.codeUsed).toBe(inviterCode);
+  });
+
   it('does nothing for a code that matches neither an agent nor a member', async () => {
     const res = await request(app.getHttpServer())
       .post('/v1/member/referrals/apply-code')
@@ -822,5 +900,109 @@ describe('Wallet & Rewards (e2e)', () => {
       .send({ code: codeRes.body.code })
       .expect(201);
     expect(res.body.linked).toBe('none');
+  });
+
+  it('credits the referring member 2% of every plan a referred member activates, and pays real reward points once their direct-referral count crosses a referral_level rung', async () => {
+    // A fresh inviter, so the wallet/points assertions below aren't
+    // polluted by anything an earlier test in this file already did to
+    // memberId's own wallet or points.
+    const [inviter] = await db
+      .insert(users)
+      .values({ phone: '9000000020', name: 'Referral Inviter', firebaseUid: 'member-referral-inviter' })
+      .returning();
+    const inviterToken = await directMemberToken(inviter.id);
+
+    const codeRes = await request(app.getHttpServer())
+      .get('/v1/member/referrals/code')
+      .set('Authorization', `Bearer ${inviterToken}`)
+      .expect(200);
+    const inviterCode = codeRes.body.code as string;
+
+    // referral_level's first rung (Starter) needs 2 direct referrals.
+    const [firstInvitee] = await db
+      .insert(users)
+      .values({ phone: '9000000021', name: 'First Invitee', firebaseUid: 'member-referral-invitee-1' })
+      .returning();
+    const [secondInvitee] = await db
+      .insert(users)
+      .values({ phone: '9000000022', name: 'Second Invitee', firebaseUid: 'member-referral-invitee-2' })
+      .returning();
+    const firstInviteeToken = await directMemberToken(firstInvitee.id);
+    const secondInviteeToken = await directMemberToken(secondInvitee.id);
+
+    await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${firstInviteeToken}`)
+      .send({ code: inviterCode })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/v1/member/referrals/apply-code')
+      .set('Authorization', `Bearer ${secondInviteeToken}`)
+      .send({ code: inviterCode })
+      .expect(201);
+
+    // First activation: a 2% commission, but only 1 of the 2 referrals
+    // Starter needs — no reward points yet.
+    const firstCard = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${firstInviteeToken}`)
+      .send({ tierId, amount: 10000 })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${firstCard.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [afterFirst] = await db.select().from(users).where(eq(users.id, inviter.id));
+    expect(afterFirst.referralLevelAwarded).toBe(0);
+    expect(afterFirst.rewardPoints).toBe(0);
+
+    const [walletAfterFirst] = await db.select().from(wallet).where(eq(wallet.memberId, inviter.id));
+    expect(Number(walletAfterFirst.balance)).toBe(200); // 2% of 10,000
+
+    const [referralAfterFirst] = await db
+      .select()
+      .from(referral)
+      .where(and(eq(referral.inviterMemberId, inviter.id), eq(referral.inviteeMemberId, firstInvitee.id)));
+    expect(referralAfterFirst.status).toBe('PLAN_ACTIVATED');
+    expect(Number(referralAfterFirst.commissionAmount)).toBe(200);
+    expect(Number(referralAfterFirst.planAmount)).toBe(10000);
+
+    // Second activation: a second 2% commission, and this is the referral
+    // that crosses Starter (2 referrals -> 100 points).
+    const secondCard = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${secondInviteeToken}`)
+      .send({ tierId, amount: 10000 })
+      .expect(201);
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${secondCard.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [walletAfterSecond] = await db.select().from(wallet).where(eq(wallet.memberId, inviter.id));
+    expect(Number(walletAfterSecond.balance)).toBe(400); // 2% x two ₹10,000 activations
+
+    const [afterSecond] = await db.select().from(users).where(eq(users.id, inviter.id));
+    expect(afterSecond.referralLevelAwarded).toBe(1); // Starter cleared
+    expect(afterSecond.rewardPoints).toBe(100); // Starter's own points payout
+
+    // getProgress is what the app's own Refer & Earn screen reads — assert
+    // the real, credited totals come back from there too, not just the DB.
+    const progress = await request(app.getHttpServer())
+      .get('/v1/member/referrals/progress')
+      .set('Authorization', `Bearer ${inviterToken}`)
+      .expect(200);
+    expect(progress.body.directReferrals).toBe(2);
+    expect(Number(progress.body.sahakarMoneyEarned)).toBe(400);
+
+    const entries = await request(app.getHttpServer())
+      .get('/v1/member/wallet/entries')
+      .set('Authorization', `Bearer ${inviterToken}`)
+      .expect(200);
+    const referralEntries = entries.body.filter(
+      (e: { kind: string }) => e.kind === 'REFERRAL_EARNINGS',
+    );
+    expect(referralEntries).toHaveLength(2);
   });
 });

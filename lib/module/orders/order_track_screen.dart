@@ -192,10 +192,10 @@ class _TrackCard extends StatefulWidget {
 }
 
 class _TrackCardState extends State<_TrackCard> {
-  // Open by default — collapsing is for putting the stepper away once a
-  // member already knows where the order stands, not for hiding it on
-  // first view.
-  bool _expanded = true;
+  // Collapsed by default: a single progress line is all most members come
+  // here to check. Tapping "Order tracking" expands it into the full graph —
+  // every stage named, dated, and explained.
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
@@ -278,64 +278,70 @@ class _TrackCardState extends State<_TrackCard> {
               ),
             ),
           ),
-          if (_expanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
-              child: Column(
-                children: [
-                  _StepGraph(steps: steps),
-                  const SizedBox(height: 16),
-                  _Callout(
-                    icon: _statusIcon(track.order.status),
-                    title: track.headline,
-                    sub: track.subhead,
-                    caretX: caretX,
-                  ),
-                  const SizedBox(height: 14),
-                  const Divider(height: 1, color: AppColors.border),
-                  const SizedBox(height: 12),
-                  Row(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+            child: _expanded
+                ? Column(
                     children: [
-                      const Icon(
-                        Icons.shopping_bag_outlined,
-                        size: 18,
-                        color: AppColors.textMuted,
+                      _StepGraph(steps: steps),
+                      const SizedBox(height: 16),
+                      _Callout(
+                        icon: _statusIcon(track.order.status),
+                        title: track.headline,
+                        sub: track.subhead,
+                        caretX: caretX,
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '${track.order.itemCount} '
-                          'item${track.order.itemCount == 1 ? '' : 's'} ordered',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textBody,
+                      const SizedBox(height: 14),
+                      const Divider(height: 1, color: AppColors.border),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.shopping_bag_outlined,
+                            size: 18,
+                            color: AppColors.textMuted,
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          track.order.mrpTotal > 0 || track.order.paidTotal > 0
-                              ? track.order.paidLabel
-                              : 'Price on confirmation',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.right,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textDark,
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${track.order.itemCount} '
+                              'item${track.order.itemCount == 1 ? '' : 's'} ordered',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textBody,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              track.order.mrpTotal > 0 ||
+                                      track.order.paidTotal > 0
+                                  ? track.order.paidLabel
+                                  : 'Price on confirmation',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textDark,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                ],
-              ),
-            ),
+                  )
+                // Collapsed: the graph and nothing else — a single line
+                // showing how far through the stages the order has got,
+                // for a member who just wants a glance rather than the
+                // full named, dated breakdown behind the arrow.
+                : _SingleLineProgress(steps: steps),
+          ),
         ],
       ),
     );
@@ -418,6 +424,36 @@ class _StepGraph extends StatelessWidget {
     return Container(
       height: 3,
       color: reached ? AppColors.brandGreen : AppColors.border,
+    );
+  }
+}
+
+/// The collapsed form of [_StepGraph]: the same stages as one continuous
+/// bar — a segment per stage, filled green up to wherever the order has
+/// got to — with every name, date and detail left behind the arrow.
+class _SingleLineProgress extends StatelessWidget {
+  final List<TrackStep> steps;
+
+  const _SingleLineProgress({required this.steps});
+
+  @override
+  Widget build(BuildContext context) {
+    final reached = steps.where((s) => s.state != TrackState.upcoming).length;
+
+    return Row(
+      children: [
+        for (var i = 0; i < steps.length; i++)
+          Expanded(
+            child: Container(
+              height: 6,
+              margin: EdgeInsets.only(left: i == 0 ? 0 : 3),
+              decoration: BoxDecoration(
+                color: i < reached ? AppColors.brandGreen : AppColors.border,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

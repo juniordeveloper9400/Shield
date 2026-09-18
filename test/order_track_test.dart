@@ -109,11 +109,16 @@ void main() {
       tester,
     ) async {
       await _pumpTrack(tester, _order());
+      expect(find.textContaining('Delivery by:'), findsOneWidget);
+
+      // The stage names sit behind the "Order tracking" arrow, collapsed by
+      // default to a single progress line.
+      await tester.tap(find.text('Order tracking'));
+      await tester.pumpAndSettle();
 
       expect(find.text('Order placed'), findsOneWidget);
       expect(find.text('Packed'), findsOneWidget);
       expect(find.text('Delivered'), findsOneWidget);
-      expect(find.textContaining('Delivery by:'), findsOneWidget);
       // The old "make payment now" nudge and pay-using footer are gone —
       // the real pay-now action lives on the bill card further down, not
       // pinned to the tracker.
@@ -127,6 +132,9 @@ void main() {
         tester,
         _order(kind: OrderKind.prescription, mrp: 0, paid: 0),
       );
+
+      await tester.tap(find.text('Order tracking'));
+      await tester.pumpAndSettle();
 
       expect(find.text('Prescription received'), findsOneWidget);
       expect(find.text('Pharmacist review'), findsOneWidget);
@@ -151,13 +159,8 @@ void main() {
         'own arrow', (tester) async {
       await _pumpTrack(tester, _order());
 
-      // Open by default — the stepper reads straight away.
-      expect(find.text('Order placed'), findsOneWidget);
-      expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
-
-      await tester.tap(find.text('Order tracking'));
-      await tester.pumpAndSettle();
-
+      // Collapsed by default: a single progress line, no stage names, dates
+      // or the callout — those sit behind the arrow.
       expect(find.text('Order placed'), findsNothing);
       expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
 
@@ -166,6 +169,12 @@ void main() {
 
       expect(find.text('Order placed'), findsOneWidget);
       expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
+
+      await tester.tap(find.text('Order tracking'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Order placed'), findsNothing);
+      expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
     });
   });
 
@@ -175,6 +184,17 @@ void main() {
     tester.view.physicalSize = const Size(400, 1600);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
+
+    // OrdersScreen reads PurchaseService.instance directly — nothing seeds
+    // it just by being pumped, so a Track order button has one to point to.
+    PurchaseService.instance.record(
+      id: 'SHD-900002',
+      placedOn: '20 Aug 2026',
+      itemCount: 2,
+      mrpTotal: 500,
+      paidTotal: 400,
+    );
+    addTearDown(PurchaseService.instance.clear);
 
     await tester.pumpWidget(const MaterialApp(home: OrdersScreen()));
     await tester.pumpAndSettle();
