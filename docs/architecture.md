@@ -40,6 +40,21 @@ Member sign-in and registration writes use `NeonHttp` over HTTPS. Other reposito
 
 The admin console uses `@neondatabase/serverless` directly from the browser. This is an internal implementation with a significant production security limitation; see [Security](security.md).
 
+## Product order tracking
+
+Both Flutter projects render standard product tracking from the stored
+`app.order.status` used by the admin console: Processing, Out for delivery,
+Delivered, or Cancelled. Checkout totals and payment do not imply that an
+administrator has billed, confirmed, or packed an order. Product tracking does
+not invent dispatch dates or delivery windows from the order date.
+
+The tracking screen reloads orders on entry, every 15 seconds while it is the
+current route, and on app resume. It also listens to order-book changes so
+the header, progress graph, and details use the same refreshed record. Failed
+loads retain the last known record; updates require connectivity. Prescription
+stage mapping remains unchanged. These source changes require rebuilding the
+relevant Flutter web/Android application before deployed clients receive them.
+
 ## Important boundary
 
 The `shield agent_invester/` directory is a parallel project tree, not part of the normal root build commands. Treat it as legacy or separately targeted until ownership is clarified.

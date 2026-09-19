@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/neon/order_repository.dart';
 import '../../theme/app_colors.dart';
+import '../auth/auth_service.dart';
 import 'order_detail_sections.dart';
 import 'order_track.dart';
 import 'purchase_service.dart';
@@ -8,16 +12,80 @@ import 'purchase_service.dart';
 /// Where an order has got to, drawn as a graph.
 ///
 /// Opened from the **Track order** button in My Orders. The stages across the
-/// top differ by [OrderKind]: a standard order is placed, packed, dispatched,
-/// delivered; a prescription order gains a *received* and a *pharmacist
-/// review* stage in front, because it is read and priced before it is packed.
-class OrderTrackScreen extends StatelessWidget {
+/// top differ by [OrderKind]. Product orders follow the admin order status;
+/// prescription orders also show their existing review and pricing stages.
+class OrderTrackScreen extends StatefulWidget {
   final Purchase order;
 
   const OrderTrackScreen({super.key, required this.order});
 
   @override
+  State<OrderTrackScreen> createState() => _OrderTrackScreenState();
+}
+
+class _OrderTrackScreenState extends State<OrderTrackScreen>
+    with WidgetsBindingObserver {
+  late Purchase _order = widget.order;
+  Timer? _refreshTimer;
+  bool _refreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    PurchaseService.instance.addListener(_syncOrder);
+    _syncOrder();
+    unawaited(_refresh());
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+          ModalRoute.of(context)?.isCurrent == true) {
+        unawaited(_refresh());
+      }
+    });
+  }
+
+  void _syncOrder() {
+    if (!mounted) return;
+    for (final purchase in PurchaseService.instance.purchases) {
+      if (purchase.id == widget.order.id) {
+        setState(() => _order = purchase);
+        return;
+      }
+    }
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    final phone = AuthService.instance.currentUser.value?.phone;
+    if (phone == null || phone.isEmpty) return;
+    _refreshing = true;
+    try {
+      final orders = await OrderRepository.instance.listForMember(phone);
+      if (!mounted || AuthService.instance.currentUser.value?.phone != phone) {
+        return;
+      }
+      if (orders != null) PurchaseService.instance.replaceRemote(orders);
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_refresh());
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    PurchaseService.instance.removeListener(_syncOrder);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final order = _order;
     final track = OrderTrack(order);
 
     return Scaffold(
@@ -201,9 +269,7 @@ class _TrackCardState extends State<_TrackCard> {
   Widget build(BuildContext context) {
     final track = widget.track;
     final steps = track.steps;
-    final currentIndex = steps.indexWhere(
-      (s) => s.state == TrackState.current,
-    );
+    final currentIndex = steps.indexWhere((s) => s.state == TrackState.current);
     // The caret hangs under the centre of the current node: nodes divide the
     // width evenly, so node i is centred at (i + 0.5) / n across it.
     final caretX = steps.isEmpty || currentIndex < 0

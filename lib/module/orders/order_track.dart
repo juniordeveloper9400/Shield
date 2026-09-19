@@ -62,7 +62,7 @@ class OrderTrack {
           'Dispatched',
           'Delivered',
         ]
-      : const ['Order placed', 'Packed', 'Dispatched', 'Delivered'];
+      : const ['Order placed', 'Processing', 'Out for delivery', 'Delivered'];
 
   /// The graph, newest stage last.
   ///
@@ -98,6 +98,7 @@ class OrderTrack {
   }
 
   String? _detailFor(int index) {
+    if (order.kind == OrderKind.standard) return null;
     final last = _stageTitles.length - 1;
     // The last node carries the delivery promise (dropped once it has
     // landed); the one before it carries the dispatch-by date.
@@ -112,6 +113,14 @@ class OrderTrack {
 
   /// The line above the graph: what is happening at the current stage.
   String get headline {
+    if (order.kind == OrderKind.standard) {
+      return switch (order.status) {
+        OrderStatus.processing => 'Your order is being processed by the store.',
+        OrderStatus.outForDelivery => 'Your order is out for delivery.',
+        OrderStatus.delivered => 'Delivered. Thanks for shopping with SHIELD.',
+        OrderStatus.cancelled => 'This order was cancelled.',
+      };
+    }
     if (isCancelled) {
       return 'This order was cancelled. Nothing was charged.';
     }
@@ -161,7 +170,9 @@ class OrderTrack {
   /// What the "Delivery by" strip shows, or null when the order has already
   /// arrived or been called off.
   String? get deliveryWindow =>
-      (isDelivered || isCancelled) ? null : _deliveryBy;
+      (order.kind == OrderKind.standard || isDelivered || isCancelled)
+      ? null
+      : _deliveryBy;
 
   /// The dispatch date shown mid-graph on the strip, `by 27 Aug`.
   String get dispatchBy {

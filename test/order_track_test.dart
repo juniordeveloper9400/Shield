@@ -27,9 +27,7 @@ Future<void> _pumpTrack(WidgetTester tester, Purchase order) async {
   tester.view.physicalSize = const Size(400, 1400);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(
-    MaterialApp(home: OrderTrackScreen(order: order)),
-  );
+  await tester.pumpWidget(MaterialApp(home: OrderTrackScreen(order: order)));
   await tester.pumpAndSettle();
 }
 
@@ -39,8 +37,8 @@ void main() {
       final track = OrderTrack(_order());
       expect(track.steps.map((s) => s.title), [
         'Order placed',
-        'Packed',
-        'Dispatched',
+        'Processing',
+        'Out for delivery',
         'Delivered',
       ]);
     });
@@ -84,16 +82,17 @@ void main() {
         final current = track.steps.firstWhere(
           (s) => s.state == TrackState.current,
         );
-        expect(current.title, 'Dispatched', reason: kind.name);
+        expect(
+          current.title,
+          kind == OrderKind.standard ? 'Out for delivery' : 'Dispatched',
+          reason: kind.name,
+        );
       }
     });
 
     test('a delivered order has every node done and no window', () {
       final track = OrderTrack(_order(status: OrderStatus.delivered));
-      expect(
-        track.steps.every((s) => s.state == TrackState.done),
-        isTrue,
-      );
+      expect(track.steps.every((s) => s.state == TrackState.done), isTrue);
       expect(track.deliveryWindow, isNull);
     });
 
@@ -105,26 +104,27 @@ void main() {
   });
 
   group('OrderTrackScreen', () {
-    testWidgets('draws the standard route with a delivery window', (
-      tester,
-    ) async {
-      await _pumpTrack(tester, _order());
-      expect(find.textContaining('Delivery by:'), findsOneWidget);
+    testWidgets(
+      'draws the standard route without an invented delivery window',
+      (tester) async {
+        await _pumpTrack(tester, _order());
+        expect(find.textContaining('Delivery by:'), findsNothing);
 
-      // The stage names sit behind the "Order tracking" arrow, collapsed by
-      // default to a single progress line.
-      await tester.tap(find.text('Order tracking'));
-      await tester.pumpAndSettle();
+        // The stage names sit behind the "Order tracking" arrow, collapsed by
+        // default to a single progress line.
+        await tester.tap(find.text('Order tracking'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Order placed'), findsOneWidget);
-      expect(find.text('Packed'), findsOneWidget);
-      expect(find.text('Delivered'), findsOneWidget);
-      // The old "make payment now" nudge and pay-using footer are gone —
-      // the real pay-now action lives on the bill card further down, not
-      // pinned to the tracker.
-      expect(find.text('Make payment now'), findsNothing);
-      expect(find.text('Pay using'), findsNothing);
-    });
+        expect(find.text('Order placed'), findsOneWidget);
+        expect(find.text('Processing'), findsOneWidget);
+        expect(find.text('Delivered'), findsOneWidget);
+        // The old "make payment now" nudge and pay-using footer are gone —
+        // the real pay-now action lives on the bill card further down, not
+        // pinned to the tracker.
+        expect(find.text('Make payment now'), findsNothing);
+        expect(find.text('Pay using'), findsNothing);
+      },
+    );
 
     testWidgets('a prescription order shows the pharmacist stages, with no '
         'payment nudge or footer', (tester) async {
@@ -143,9 +143,7 @@ void main() {
       expect(find.text('Pay using'), findsNothing);
     });
 
-    testWidgets('a delivered order drops the delivery window', (
-      tester,
-    ) async {
+    testWidgets('a delivered order drops the delivery window', (tester) async {
       await _pumpTrack(
         tester,
         _order(kind: OrderKind.prescription, status: OrderStatus.delivered),
