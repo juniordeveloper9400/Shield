@@ -397,6 +397,37 @@ class PrescriptionRepository {
     });
   }
 
+  /// Soft-deletes a prescription by its [idOrUuid] — sets `deleted_at = now()`.
+  Future<String?> softDelete(String idOrUuid) async {
+    if (!NeonHttp.isConfigured || idOrUuid.trim().isEmpty) {
+      return 'database not configured';
+    }
+    return _run<String?>('softDelete', () async {
+      final raw = idOrUuid.trim();
+      final isInt = int.tryParse(raw) != null;
+      if (isInt) {
+        await NeonHttp.instance.query(
+          '''
+            UPDATE app.prescription
+               SET deleted_at = now(), updated_at = now()
+             WHERE id = \$1::bigint AND deleted_at IS NULL
+          ''',
+          [int.parse(raw)],
+        );
+      } else {
+        await NeonHttp.instance.query(
+          '''
+            UPDATE app.prescription
+               SET deleted_at = now(), updated_at = now()
+             WHERE uuid = \$1::uuid AND deleted_at IS NULL
+          ''',
+          [raw],
+        );
+      }
+      return null;
+    });
+  }
+
   static int _toInt(Object? v) {
     if (v is int) return v;
     if (v is num) return v.toInt();
