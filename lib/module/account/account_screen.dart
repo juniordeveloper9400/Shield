@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../theme/app_colors.dart';
 import '../../money.dart';
@@ -9,6 +10,7 @@ import '../investor/investor_service.dart';
 import '../location/manage_addresses_screen.dart';
 import '../patients/manage_patients_screen.dart';
 import '../refer/refer_earn_screen.dart';
+import '../refer/referral_service.dart';
 import '../registration/registration_flow.dart';
 import '../registration/registration_service.dart';
 import '../wallet/wallet_screen.dart';
@@ -341,10 +343,18 @@ class _ProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Listens so completing the form fills the store line in without the tab
+    // Loads the member's own code the moment this card is first shown, so
+    // the Member ID line below has it without waiting for a visit to Refer
+    // & Earn.
+    ReferralService.instance.ensureLoaded();
+    // Listens so completing the form fills the store line in, and the real
+    // Member ID replaces the placeholder once it loads, without the tab
     // having to be left and come back.
     return ListenableBuilder(
-      listenable: RegistrationService.instance,
+      listenable: Listenable.merge([
+        RegistrationService.instance,
+        ReferralService.instance,
+      ]),
       builder: (context, _) => _build(context),
     );
   }
@@ -352,6 +362,7 @@ class _ProfileCard extends StatelessWidget {
   Widget _build(BuildContext context) {
     final user = AuthService.instance.currentUser.value;
     final store = RegistrationService.instance.profile?.store;
+    final memberId = ReferralService.instance.code;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -431,6 +442,42 @@ class _ProfileCard extends StatelessWidget {
                     ],
                   ),
                 ],
+                const SizedBox(height: 5),
+                InkWell(
+                  onTap: () async {
+                    await Clipboard.setData(ClipboardData(text: memberId));
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        const SnackBar(content: Text('Member ID copied')),
+                      );
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Member ID: $memberId',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.brandBlue,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Icon(
+                        Icons.copy_rounded,
+                        size: 13,
+                        color: AppColors.brandBlue,
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
