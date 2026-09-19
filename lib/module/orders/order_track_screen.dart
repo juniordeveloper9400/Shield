@@ -165,8 +165,6 @@ class _OrderTrackScreenState extends State<OrderTrackScreen>
                   StoreInvoiceCard(order: order),
                 ],
                 const SizedBox(height: 14),
-                BillDetailsCard(order: order),
-                const SizedBox(height: 14),
                 const SocialMediaCard(),
               ],
             ),

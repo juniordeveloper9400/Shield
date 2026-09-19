@@ -36,33 +36,20 @@ class OrderTrack {
 
   /// The stage the order sits on, as an index into [_stageTitles].
   int get _reachedIndex {
-    final titles = _stageTitles;
     switch (order.status) {
       case OrderStatus.delivered:
-        return titles.length - 1;
+        return 3;
       case OrderStatus.outForDelivery:
-        // The dispatch stage — second from the end on both routes.
-        return titles.length - 2;
+        return 2;
+      case OrderStatus.processing:
+        return 1;
       case OrderStatus.cancelled:
         return 0;
-      case OrderStatus.processing:
-        if (order.kind == OrderKind.prescription) {
-          // Reading and pricing, then packing once the bill is in.
-          return _priced ? 2 : 1;
-        }
-        return 1;
     }
   }
 
-  List<String> get _stageTitles => order.kind == OrderKind.prescription
-      ? const [
-          'Prescription received',
-          'Pharmacist review',
-          'Order confirmed',
-          'Dispatched',
-          'Delivered',
-        ]
-      : const ['Order placed', 'Processing', 'Out for delivery', 'Delivered'];
+  List<String> get _stageTitles =>
+      const ['Order placed', 'Processing', 'Out for delivery', 'Delivered'];
 
   /// The graph, newest stage last.
   ///
@@ -98,14 +85,10 @@ class OrderTrack {
   }
 
   String? _detailFor(int index) {
-    if (order.kind == OrderKind.standard) return null;
-    final last = _stageTitles.length - 1;
-    // The last node carries the delivery promise (dropped once it has
-    // landed); the one before it carries the dispatch-by date.
-    if (index == last) {
+    if (index == 3) {
       return isDelivered ? null : _deliveryBy;
     }
-    if (index == last - 1) {
+    if (index == 2) {
       return dispatchBy;
     }
     return null;
@@ -113,31 +96,17 @@ class OrderTrack {
 
   /// The line above the graph: what is happening at the current stage.
   String get headline {
-    if (order.kind == OrderKind.standard) {
-      return switch (order.status) {
-        OrderStatus.processing => 'Your order is being processed by the store.',
-        OrderStatus.outForDelivery => 'Your order is out for delivery.',
-        OrderStatus.delivered => 'Delivered. Thanks for shopping with SHIELD.',
-        OrderStatus.cancelled => 'This order was cancelled.',
-      };
-    }
     if (isCancelled) {
-      return 'This order was cancelled. Nothing was charged.';
+      return 'This order was cancelled.';
     }
     if (isDelivered) {
       return 'Delivered. Thanks for shopping with SHIELD.';
     }
     switch (order.status) {
       case OrderStatus.outForDelivery:
-        return 'Out for delivery — it reaches you today.';
+        return 'Your order is out for delivery.';
       case OrderStatus.processing:
-        if (order.kind == OrderKind.prescription && !_priced) {
-          return 'A pharmacist is reading your prescription and pricing it.';
-        }
-        if (order.kind == OrderKind.prescription) {
-          return 'Priced and confirmed. Your order is being packed.';
-        }
-        return 'We have your order and are packing it now.';
+        return 'Your order is being processed by the store.';
       case OrderStatus.delivered:
       case OrderStatus.cancelled:
         return '';

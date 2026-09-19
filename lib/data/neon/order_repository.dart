@@ -774,16 +774,15 @@ class OrderRepository {
 
   static const List<String> _standardStages = [
     'Order placed',
-    'Packed',
-    'Dispatched',
+    'Processing',
+    'Out for delivery',
     'Delivered',
   ];
 
   static const List<String> _prescriptionStages = [
-    'Prescription received',
-    'Pharmacist review',
-    'Order confirmed',
-    'Dispatched',
+    'Order placed',
+    'Processing',
+    'Out for delivery',
     'Delivered',
   ];
 

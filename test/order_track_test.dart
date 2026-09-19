@@ -43,38 +43,17 @@ void main() {
       ]);
     });
 
-    test('a prescription order gains the two pharmacist stages', () {
+    test('a prescription order runs the same four-stage route', () {
       final track = OrderTrack(_order(kind: OrderKind.prescription));
       expect(track.steps.map((s) => s.title), [
-        'Prescription received',
-        'Pharmacist review',
-        'Order confirmed',
-        'Dispatched',
+        'Order placed',
+        'Processing',
+        'Out for delivery',
         'Delivered',
       ]);
     });
 
-    test('an unpriced prescription order sits on pharmacist review', () {
-      final track = OrderTrack(
-        _order(kind: OrderKind.prescription, mrp: 0, paid: 0),
-      );
-      final current = track.steps.firstWhere(
-        (s) => s.state == TrackState.current,
-      );
-      expect(current.title, 'Pharmacist review');
-      expect(track.awaitingPayment, isTrue);
-    });
-
-    test('a priced prescription order has moved on to confirmed', () {
-      final track = OrderTrack(_order(kind: OrderKind.prescription));
-      final current = track.steps.firstWhere(
-        (s) => s.state == TrackState.current,
-      );
-      expect(current.title, 'Order confirmed');
-      expect(track.awaitingPayment, isFalse);
-    });
-
-    test('out for delivery lights the dispatch node on both routes', () {
+    test('out for delivery lights the out for delivery node on both routes', () {
       for (final kind in OrderKind.values) {
         final track = OrderTrack(
           _order(kind: kind, status: OrderStatus.outForDelivery),
@@ -84,7 +63,7 @@ void main() {
         );
         expect(
           current.title,
-          kind == OrderKind.standard ? 'Out for delivery' : 'Dispatched',
+          'Out for delivery',
           reason: kind.name,
         );
       }
@@ -126,7 +105,7 @@ void main() {
       },
     );
 
-    testWidgets('a prescription order shows the pharmacist stages, with no '
+    testWidgets('a prescription order shows the standard stages, with no '
         'payment nudge or footer', (tester) async {
       await _pumpTrack(
         tester,
@@ -136,9 +115,9 @@ void main() {
       await tester.tap(find.text('Order tracking'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Prescription received'), findsOneWidget);
-      expect(find.text('Pharmacist review'), findsOneWidget);
-      expect(find.text('Order confirmed'), findsOneWidget);
+      expect(find.text('Order placed'), findsOneWidget);
+      expect(find.text('Processing'), findsOneWidget);
+      expect(find.text('Out for delivery'), findsOneWidget);
       expect(find.text('Make payment now'), findsNothing);
       expect(find.text('Pay using'), findsNothing);
     });
