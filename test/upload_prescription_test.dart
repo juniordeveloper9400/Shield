@@ -1113,7 +1113,9 @@ void main() {
       );
     });
 
-    testWidgets('deleting offers the way back', (tester) async {
+    testWidgets('deleting asks for confirmation, then removes the record', (
+      tester,
+    ) async {
       seedRecord();
       await pumpUpload(tester);
 
@@ -1121,39 +1123,35 @@ void main() {
       await tester.tap(find.text(copy.delete));
       await tester.pumpAndSettle();
 
+      // Confirmation first — nothing removed yet.
+      expect(find.text(copy.deleteConfirmTitle), findsOneWidget);
+      expect(PrescriptionBook.instance.isEmpty, isFalse);
+
+      // The dialog's own destructive action, not the card's delete row.
+      await tester.tap(find.text(copy.delete).last);
+      await tester.pumpAndSettle();
+
       expect(PrescriptionBook.instance.isEmpty, isTrue);
       // Empty again, so the screen is the upload form again.
       expect(find.text('Use\nCamera'), findsOneWidget);
       expect(find.text(copy.prescriptionRemoved), findsOneWidget);
+    });
 
-      await tester.tap(find.text(copy.undo));
+    testWidgets('cancelling the delete confirmation keeps the record', (
+      tester,
+    ) async {
+      seedRecord();
+      await pumpUpload(tester);
+
+      const copy = PrescriptionCopy.english;
+      await tester.tap(find.text(copy.delete));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(copy.cancel));
       await tester.pumpAndSettle();
 
       expect(PrescriptionBook.instance.length, 1);
       expect(find.text('prescription.jpg'), findsOneWidget);
-    });
-
-    testWidgets('a restored prescription goes back where it was', (
-      tester,
-    ) async {
-      final first = seedRecord();
-      PrescriptionBook.instance.add(
-        patient: asha,
-        fileName: 'second.jpg',
-        duration: MedicineDuration.oneWeek,
-      );
-      await pumpUpload(tester, size: const Size(400, 4200));
-
-      const copy = PrescriptionCopy.english;
-      await tester.tap(find.text(copy.delete).first);
-      await tester.pumpAndSettle();
-      expect(PrescriptionBook.instance.records.single.fileName, 'second.jpg');
-
-      await tester.tap(find.text(copy.undo));
-      await tester.pumpAndSettle();
-
-      expect(PrescriptionBook.instance.records.first.id, first.id);
-      expect(PrescriptionBook.instance.records.last.fileName, 'second.jpg');
     });
 
     testWidgets('add new prescription opens the upload form over the list', (

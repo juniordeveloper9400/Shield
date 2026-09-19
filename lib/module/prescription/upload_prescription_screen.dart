@@ -158,23 +158,63 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
     }
   }
 
-  void _delete(PrescriptionRecord record) {
-    final index = _book.indexOf(record.id);
+  /// Confirms, then deletes for good — on the backend first, and only takes
+  /// the card off the local book once that has actually landed.
+  ///
+  /// The previous version removed the card locally straight away and showed
+  /// an "Undo" snackbar instead of asking first, with nothing actually
+  /// telling the backend — the card came back on the very next refresh
+  /// because `app.prescription.deleted_at` was never set. Deliberately
+  /// awaited, not fired-and-forgotten: an "Undo" that only ever undid the
+  /// local list, while the row was already (or about to be) marked deleted
+  /// server-side, could not be honoured for real, so it is not offered here
+  /// — confirming first is the same trade the sibling `shield agent_invester`
+  /// build already made for this exact bug.
+  ///
+  /// [PrescriptionRecord.remoteId] null means this card never made it to the
+  /// backend in the first place — nothing to delete there, so it comes off
+  /// the local book with no network call at all.
+  Future<void> _delete(PrescriptionRecord record) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(_copy.deleteConfirmTitle),
+        content: Text(_copy.deleteConfirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(_copy.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: Text(_copy.delete),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    final remoteId = record.remoteId;
+    if (remoteId != null) {
+      final error = await PrescriptionRepository.instance.softDelete(remoteId);
+      if (!mounted) {
+        return;
+      }
+      if (error != null) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(content: Text('${_copy.deleteFailedMessage} ($error)')),
+          );
+        return;
+      }
+    }
     _book.remove(record.id);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(_copy.prescriptionRemoved),
-          action: SnackBarAction(
-            label: _copy.undo,
-            // Deleting a card takes the pharmacy's whole reading of it with
-            // it, so the way back is offered rather than a confirmation
-            // asked for.
-            onPressed: () => _book.insert(index, record),
-          ),
-        ),
-      );
+      ..showSnackBar(SnackBar(content: Text(_copy.prescriptionRemoved)));
   }
 
   void _say(String message) {

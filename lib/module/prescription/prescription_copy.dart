@@ -113,6 +113,10 @@ class PrescriptionCopy {
   final String delete;
   final String prescriptionRemoved;
   final String undo;
+  final String deleteConfirmTitle;
+  final String deleteConfirmMessage;
+  final String cancel;
+  final String deleteFailedMessage;
   final String sentToCart;
 
   // ---- Order-first flow ----
@@ -187,6 +191,10 @@ class PrescriptionCopy {
     required this.delete,
     required this.prescriptionRemoved,
     required this.undo,
+    required this.deleteConfirmTitle,
+    required this.deleteConfirmMessage,
+    required this.cancel,
+    required this.deleteFailedMessage,
     required this.sentToCart,
     required this.proceedToDelivery,
     required this.beforeOrderNote,
@@ -308,6 +316,13 @@ class PrescriptionCopy {
     delete: 'Delete',
     prescriptionRemoved: 'Prescription removed',
     undo: 'Undo',
+    deleteConfirmTitle: 'Delete this prescription?',
+    deleteConfirmMessage:
+        'This removes the prescription and its scan for good — the '
+        'pharmacy will no longer be able to read it.',
+    cancel: 'Cancel',
+    deleteFailedMessage:
+        'Could not delete this — check your connection and try again.',
     sentToCart: 'sent to the cart',
     proceedToDelivery: 'Proceed to delivery',
     beforeOrderNote:
@@ -433,6 +448,13 @@ class PrescriptionCopy {
     delete: 'ഇല്ലാതാക്കുക',
     prescriptionRemoved: 'കുറിപ്പടി നീക്കി',
     undo: 'തിരികെ',
+    deleteConfirmTitle: 'ഈ കുറിപ്പടി ഇല്ലാതാക്കണോ?',
+    deleteConfirmMessage:
+        'ഇത് കുറിപ്പടിയും അതിന്റെ സ്കാനും ശാശ്വതമായി നീക്കും — ഫാർമസിക്ക് ഇനി '
+        'ഇത് വായിക്കാൻ കഴിയില്ല.',
+    cancel: 'റദ്ദാക്കുക',
+    deleteFailedMessage:
+        'ഇത് ഇല്ലാതാക്കാനായില്ല — കണക്ഷൻ പരിശോധിച്ച് വീണ്ടും ശ്രമിക്കുക.',
     sentToCart: 'കാർട്ടിലേക്ക് അയച്ചു',
     proceedToDelivery: 'ഡെലിവറിയിലേക്ക് തുടരുക',
     beforeOrderNote:
