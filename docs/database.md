@@ -32,6 +32,11 @@ The customer-facing schema is defined by `backend/db/app_schema.sql` and describ
 - `app.admin_role` gains `DELIVERY` — a delivery boy's own console login, store-scoped the same way `PHARMACY` is.
 - `app.wallet_entry.order_id` (already present, previously unused) starts getting populated: paying an order from the wallet posts a `SPEND` entry referencing that order and debits `app.wallet.balance` directly, alongside the existing monthly reward-release counter, which SPEND does not touch.
 
+**Order review and explicit bill conversion (migration `0044_order_review_and_bill_conversion.sql`, folded into `app_schema.sql`, NOT yet applied to the live database):**
+
+- `app.order_line` gains `stock_status` (`app.order_line_status`: `AVAILABLE` / `OUT_OF_STOCK` / `NOT_POSSIBLE` / `CUSTOMER_NOT_NEEDED`, default `AVAILABLE`) — a counter-only note set from the console's Orders review modal, never read by the member's app.
+- `app."order"` gains `reviewed_at` (the review's "Submit") and `converted_to_bill_at` ("Convert to bill"); the console's Bills page lists only orders where the latter is set. The migration backfills both from `app.bill.sent_at` for orders that already have a bill, and is additive and idempotent. The `backend/api` Drizzle schema (`app-commerce.ts`) does not declare these columns yet; nothing there reads them.
+
 Commands:
 
 ```powershell

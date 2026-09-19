@@ -48,6 +48,8 @@ CREATE TYPE app.track_state        AS ENUM ('DONE', 'CURRENT', 'UPCOMING');
 -- migration 0031: how the order reaches the member, and whether it's paid.
 CREATE TYPE app.fulfillment_type    AS ENUM ('HOME_DELIVERY', 'STORE_PICKUP');
 CREATE TYPE app.order_payment_status AS ENUM ('PENDING', 'PAID');
+-- migration 0044: counter-only stock status per order line, never shown to the member.
+CREATE TYPE app.order_line_status    AS ENUM ('AVAILABLE', 'OUT_OF_STOCK', 'NOT_POSSIBLE', 'CUSTOMER_NOT_NEEDED');
 
 CREATE TYPE app.medicine_duration  AS ENUM ('ONE_WEEK', 'FIFTEEN_DAYS', 'ONE_MONTH', 'TWO_MONTHS', 'THREE_MONTHS');
 CREATE TYPE app.prescription_status AS ENUM ('AWAITING_REVIEW', 'READ', 'IN_CART', 'ORDERED');
@@ -553,6 +555,10 @@ CREATE TABLE app."order" (
     payment_status      app.order_payment_status NOT NULL DEFAULT 'PENDING',
     delivery_boy_id     bigint,                            -- FK added after app.admin_user
     paid_at             timestamptz,
+    -- migration 0044: reviewed_at = Submit on the console's Orders review modal;
+    -- converted_to_bill_at = "Convert to bill" (only these orders show on Bills).
+    reviewed_at          timestamptz,
+    converted_to_bill_at timestamptz,
     placed_on           date NOT NULL DEFAULT current_date,
     placed_at           timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()
@@ -567,7 +573,8 @@ CREATE TABLE app.order_line (
     pack        text NOT NULL DEFAULT '',
     unit_price  numeric(12,2) NOT NULL DEFAULT 0,
     mrp         numeric(12,2) NOT NULL DEFAULT 0,
-    qty         integer NOT NULL DEFAULT 1
+    qty         integer NOT NULL DEFAULT 1,
+    stock_status app.order_line_status NOT NULL DEFAULT 'AVAILABLE' -- migration 0044: counter-only, never shown to the member
 );
 CREATE INDEX order_line_order_idx ON app.order_line(order_id);
 
