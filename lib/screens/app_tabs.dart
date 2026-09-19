@@ -48,3 +48,32 @@ enum AppTab {
   });
 }
 
+/// Exists purely to be seen by Flutter's icon tree-shaker — never read,
+/// never rendered.
+///
+/// A release build (web included) strips every `IconData` out of the icon
+/// font except the ones it can find used as a literal `Icon(Icons.foo)`
+/// argument somewhere in the source. [AppTab.icon] / [AppTab.activeIcon] are
+/// only ever reached *indirectly* — every call site reads them off an enum
+/// value (`tab.icon`, in `ShieldBottomNav`) rather than naming the constant
+/// directly — which the tree-shaker's static scan does not trace through.
+/// Most of these tabs' icons happen to also appear directly elsewhere in the
+/// app and so survive by accident; [Icons.biotech_rounded] (the Lab tab's
+/// selected-state icon) does not, and silently went missing from the bottom
+/// bar on web release builds while still working in every debug run — this
+/// keeps the whole set safe regardless of where else they are or are not
+/// used elsewhere.
+// ignore: unused_element
+const List<IconData> _keepAppTabIconsInTreeShaking = [
+  Icons.home_outlined,
+  Icons.home_rounded,
+  Icons.biotech_outlined,
+  Icons.biotech_rounded,
+  Icons.calendar_month_outlined,
+  Icons.calendar_month_rounded,
+  Icons.receipt_long_outlined,
+  Icons.receipt_long_rounded,
+  Icons.person_outline_rounded,
+  Icons.person_rounded,
+];
+
