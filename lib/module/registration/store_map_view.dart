@@ -176,7 +176,7 @@ class _StoreMapViewState extends State<StoreMapView> {
                 TileLayer(
                   urlTemplate:
                       'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.zabnix.shield',
+                  userAgentPackageName: 'com.zabnix.sahakar360',
                 ),
                 MarkerLayer(
                   markers: [

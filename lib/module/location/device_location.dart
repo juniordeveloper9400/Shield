@@ -118,7 +118,7 @@ class DeviceLocation {
         uri,
         // Nominatim wants a real identifier; the browser sets its own on web
         // and drops this one, which Nominatim accepts for a web origin.
-        headers: const {'User-Agent': 'SHIELD-App/1.0 (com.zabnix.shield)'},
+        headers: const {'User-Agent': 'SHIELD-App/1.0 (com.zabnix.sahakar360)'},
       ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode != 200) {
