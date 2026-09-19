@@ -350,7 +350,7 @@ class PrescriptionBook extends ChangeNotifier {
       medicines: medicines,
       image: image,
     );
-    _records.add(record);
+    _records.insert(0, record);
     notifyListeners();
     return record;
   }
