@@ -208,12 +208,22 @@ export class PrescriptionService {
    *  already linked to an order stays fully intact for that order's own
    *  history. */
   async deleteForMember(memberId: number, id: number) {
-    const [deleted] = await this.db
-      .update(prescription)
-      .set({ deletedAt: new Date() })
-      .where(and(eq(prescription.id, id), eq(prescription.memberId, memberId), isNull(prescription.deletedAt)))
-      .returning();
-    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Prescription not found' } });
+    const [found] = await this.db
+      .select({ id: prescription.id, deletedAt: prescription.deletedAt })
+      .from(prescription)
+      .where(and(eq(prescription.id, id), eq(prescription.memberId, memberId)))
+      .limit(1);
+
+    if (!found) {
+      throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Prescription not found' } });
+    }
+
+    if (found.deletedAt == null) {
+      await this.db
+        .update(prescription)
+        .set({ deletedAt: new Date() })
+        .where(eq(prescription.id, id));
+    }
   }
 
   async listForStaff(role: AdminRole, storeId: number | null) {

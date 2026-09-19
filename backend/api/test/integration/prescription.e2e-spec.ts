@@ -345,11 +345,11 @@ describe('Prescription (e2e)', () => {
       .expect(200);
     expect(list.body.map((r: { id: number }) => r.id)).not.toContain(toDeleteId);
 
-    // A second delete of the same (now-deleted) row finds nothing to delete.
+    // A second delete of the same (now-deleted) row succeeds idempotently.
     await request(app.getHttpServer())
       .delete(`/v1/member/prescriptions/${toDeleteId}`)
       .set('Authorization', `Bearer ${memberAccessToken}`)
-      .expect(404);
+      .expect(204);
   });
 
   it('submits a prescription for fulfilment: an unpriced order, track steps, and ORDERED status', async () => {
