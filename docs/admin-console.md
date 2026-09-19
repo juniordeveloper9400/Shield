@@ -34,6 +34,30 @@ Each `shieldweb/src/api/*.ts` module is a thin query layer over Neon. Pages call
 
 ## Local commands
 
+### Bill collection OTP
+
+The Bills and Orders invoice modal sends member SMS codes through Firebase
+Phone Authentication in project `shield-zabnix`, separately from staff login.
+The exact admin website hostname must be registered under Firebase Console →
+Authentication → Settings → Authorized domains. Each production, custom, or
+preview hostname used for collection must be registered individually. A
+`Hostname match not found (auth/captcha-check-failed)` response rejects the
+website before an SMS is sent; changing frontend code or Android fingerprints
+does not authorize a missing web hostname.
+
+After adding the hostname, reload the admin page and send a new code. The modal
+accepts six-digit SMS codes, resets the verification when resending, and cleans
+up reCAPTCHA after each send attempt and when closing. Local Indian numbers and
+numbers already prefixed with `+91` are normalized to one recipient format.
+Wallet collection is invoked by the UI only after Firebase confirms the code;
+an unsuccessful collection after verification requires a fresh code. This is
+still a client-side gate over the existing direct database API, not server-side
+OTP enforcement; the existing security limitations above remain.
+
+Run `npm run test:otp` from `shieldweb/` with Node 22.18+ for the OTP regression
+tests, plus the typecheck and build commands below. A real SMS and successful
+bill settlement still need end-to-end verification on the authorized hostname.
+
 ```powershell
 Set-Location shieldweb
 npm install
