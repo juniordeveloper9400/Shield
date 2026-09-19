@@ -130,6 +130,18 @@ class _PrescriptionCheckoutScreenState
       // unreachable database must not stop the order.
       final user = AuthService.instance.currentUser.value;
       if (user != null) {
+        // Make sure each prescription's own upload write has actually
+        // landed on Neon before asking `savePrescriptionOrder` to link
+        // against it. Without this, a slow connection (web's per-call CORS
+        // preflight especially) can lose the race: `_resolvePrescriptionId`
+        // finds no row yet, so the order save falls back to filing a fresh,
+        // image-less prescription row instead of the one the member
+        // actually uploaded. A no-op once the write has already finished,
+        // which is the common case.
+        await Future.wait([
+          for (final record in widget.records)
+            PrescriptionBook.instance.awaitPendingUpload(record.id),
+        ]);
         unawaited(
           OrderRepository.instance.savePrescriptionOrder(
             phone: user.phone,
