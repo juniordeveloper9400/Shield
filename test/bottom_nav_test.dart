@@ -311,8 +311,8 @@ void main() {
       expect(other.color, AppColors.textMuted, reason: tab.label);
       expect(other.fontWeight, FontWeight.w500, reason: tab.label);
       expect(
-        home.fontWeight!.index,
-        greaterThan(other.fontWeight!.index),
+        home.fontWeight!.value,
+        greaterThan(other.fontWeight!.value),
         reason: 'Home must out-weigh ${tab.label}',
       );
     }

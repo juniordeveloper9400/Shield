@@ -287,7 +287,7 @@ class OrderRepository {
             DateTime.now();
     return Purchase(
       id: (row['code'] ?? '').toString(),
-      placedOn: formatDate(placedAt),
+      placedOn: formatDateTime12h(placedAt),
       itemCount: int.tryParse(row['item_count']?.toString() ?? '') ?? 0,
       mrpTotal:
           double.tryParse(row['mrp_total']?.toString() ?? '')?.round() ?? 0,
