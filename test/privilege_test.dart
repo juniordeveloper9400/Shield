@@ -903,9 +903,9 @@ void main() {
       // The balance is masked, not merely absent from the panel.
       expect(find.text('₹3,472.00'), findsNothing);
       expect(find.text('₹0.00'), findsNothing);
-      // Shield points are not part of this screen any more, masked or not.
-      expect(find.textContaining('Shield Points'), findsNothing);
-      expect(find.textContaining('Shield points'), findsNothing);
+      // Sahakar 360 points are not part of this screen any more, masked or not.
+      expect(find.textContaining('Sahakar 360 Points'), findsNothing);
+      expect(find.textContaining('Sahakar 360 points'), findsNothing);
 
       // Twice: the button on the locked panel, and the heading of the offer
       // that replaces the rest of the screen.
@@ -1034,7 +1034,7 @@ void main() {
       expect(find.byType(PrivilegeCardChip), findsNothing);
       expect(find.text(gold.cardNumber), findsNothing);
 
-      // The SHIELD mark stays: it says whose panel this is, which is true.
+      // The Sahakar 360 mark stays: it says whose panel this is, which is true.
       expect(find.byType(PrivilegeIssuerMark), findsOneWidget);
     });
 
@@ -1044,7 +1044,7 @@ void main() {
       openWallet();
       await pump(tester, const WalletScreen());
 
-      expect(find.text('SHIELD wallet'), findsOneWidget);
+      expect(find.text('Sahakar 360 wallet'), findsOneWidget);
       expect(find.text('TOTAL BALANCE'), findsOneWidget);
       expect(find.text('Tap to see your plan'), findsOneWidget);
       // The silver activation and nothing else: ₹10,000 loaded plus its
@@ -1202,7 +1202,7 @@ void main() {
       // One control, and it is the programme. Points had a strip and a
       // button here; neither is left.
       expect(find.text('Redeem points'), findsNothing);
-      expect(find.textContaining('Shield points'), findsNothing);
+      expect(find.textContaining('Sahakar 360 points'), findsNothing);
       expect(find.text('Top up your Health Pass Programme'), findsOneWidget);
       expect(find.text('Load ₹10,000 or more and we add 10%.'), findsOneWidget);
     });
@@ -1537,7 +1537,7 @@ void main() {
         findsWidgets,
       );
       expect(find.text('HOLDER'), findsWidgets);
-      expect(find.text('SHIELD MEMBER'), findsWidgets);
+      expect(find.text('SAHAKAR 360 MEMBER'), findsWidgets);
     });
 
     testWidgets(

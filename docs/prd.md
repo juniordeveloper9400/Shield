@@ -1,4 +1,4 @@
-# SHIELD Product Requirements Document
+# Sahakar 360 Product Requirements Document
 
 **Status:** Baseline for the current repository  
 **Scope:** Flutter member app and React operations console  
@@ -6,7 +6,7 @@
 
 ## 1. Product definition
 
-SHIELD is a member health-commerce platform. Members discover health products and services, choose a local SHIELD store, manage patients and addresses, purchase products, submit prescriptions, book labs and appointments, use privilege wallets, earn rewards, and participate in referral or partner programmes. Staff operate fulfilment and care-service workflows through `shieldweb/`.
+Sahakar 360 is a member health-commerce platform. Members discover health products and services, choose a local Sahakar 360 store, manage patients and addresses, purchase products, submit prescriptions, book labs and appointments, use privilege wallets, earn rewards, and participate in referral or partner programmes. Staff operate fulfilment and care-service workflows through `shieldweb/`.
 
 ## 2. Users and actors
 

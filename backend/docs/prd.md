@@ -2,7 +2,7 @@
 
 ## Problem
 
-SHIELD has three clients (member Flutter app, `shieldweb` admin console,
+Sahakar 360 has three clients (member Flutter app, `shieldweb` admin console,
 `shield agent_invester/`) that all read and write the same Neon `app` schema
 **directly** — each holding a live database credential, with no server-side
 authentication, authorization, rate limiting, or audit trail. This is

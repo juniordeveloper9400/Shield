@@ -41,14 +41,14 @@ class InvoiceView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'SHIELD Pharmacy',
+                      'Sahakar 360 Pharmacy',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w800,
                         color: AppColors.brandBlue,
                       ),
                     ),
-                    if (invoice.storeName != 'SHIELD Pharmacy') ...[
+                    if (invoice.storeName != 'Sahakar 360 Pharmacy') ...[
                       const SizedBox(height: 2),
                       Text(
                         invoice.storeName,
@@ -121,7 +121,7 @@ class InvoiceView extends StatelessWidget {
           const _SectionLabel('BILLED TO'),
           const SizedBox(height: 4),
           Text(
-            invoice.customerName.isEmpty ? 'SHIELD Member' : invoice.customerName,
+            invoice.customerName.isEmpty ? 'Sahakar 360 Member' : invoice.customerName,
             style: const TextStyle(
               fontSize: 14.5,
               fontWeight: FontWeight.w700,
@@ -184,7 +184,7 @@ class InvoiceView extends StatelessWidget {
           const SizedBox(height: 14),
           const Center(
             child: Text(
-              'Thank you for choosing SHIELD Pharmacy.',
+              'Thank you for choosing Sahakar 360 Pharmacy.',
               style: TextStyle(fontSize: 12, color: _muted),
             ),
           ),

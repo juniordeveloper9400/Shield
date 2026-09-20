@@ -1,6 +1,6 @@
-# SHIELD
+# Sahakar 360
 
-SHIELD is a Flutter health-commerce member app backed by Neon Postgres, with a separate React/Vite operations console in `shieldweb/`.
+Sahakar 360 is a Flutter health-commerce member app backed by Neon Postgres, with a separate React/Vite operations console in `shieldweb/`.
 
 ## Start here
 

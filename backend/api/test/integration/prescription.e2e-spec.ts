@@ -11,7 +11,8 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, patient, shieldStore, users } from '../../src/db/schema';
+import { eq } from 'drizzle-orm';
+import { adminUser, bill, order, patient, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -388,5 +389,58 @@ describe('Prescription (e2e)', () => {
     expect(linked.body).toHaveLength(1);
     expect(linked.body[0].id).toBe(prescriptionId);
     expect(linked.body[0].image).toBe(rx.body.images[0].image);
+  });
+
+  describe('the order-tracking status on a prescription', () => {
+    const getRx = async () =>
+      (
+        await request(app.getHttpServer())
+          .get(`/v1/member/prescriptions/${prescriptionId}`)
+          .set('Authorization', `Bearer ${memberAccessToken}`)
+          .expect(200)
+      ).body;
+
+    it('links the order the prescription was placed into, at its first stage', async () => {
+      const rx = await getRx();
+
+      expect(rx.order).toEqual(
+        expect.objectContaining({
+          code: expect.stringMatching(/^RX-/),
+          status: 'PROCESSING',
+          storeContactedAt: null,
+          billed: false,
+        }),
+      );
+      expect(typeof rx.order.id).toBe('number');
+    });
+
+    it('follows the order through store contact and billing', async () => {
+      const { order: linked } = await getRx();
+
+      await db.update(order).set({ storeContactedAt: new Date('2026-09-20T10:15:00Z') }).where(eq(order.id, linked.id));
+      const contacted = (await getRx()).order;
+      expect(new Date(contacted.storeContactedAt).toISOString()).toBe('2026-09-20T10:15:00.000Z');
+      expect(contacted.billed).toBe(false);
+
+      await db.insert(bill).values({ orderId: linked.id, image: '' });
+      expect((await getRx()).order.billed).toBe(true);
+
+      await db.update(order).set({ status: 'DELIVERED' }).where(eq(order.id, linked.id));
+      expect((await getRx()).order.status).toBe('DELIVERED');
+    });
+
+    it('carries the same order on the list, and null for a prescription never ordered', async () => {
+      const list = (
+        await request(app.getHttpServer())
+          .get('/v1/member/prescriptions')
+          .set('Authorization', `Bearer ${memberAccessToken}`)
+          .expect(200)
+      ).body as { id: number; order: { code: string } | null }[];
+
+      const ordered = list.find((r) => r.id === prescriptionId);
+      expect(ordered?.order?.code).toMatch(/^RX-/);
+      // Other prescriptions in this file were uploaded but never ordered.
+      expect(list.some((r) => r.id !== prescriptionId && r.order === null)).toBe(true);
+    });
   });
 });

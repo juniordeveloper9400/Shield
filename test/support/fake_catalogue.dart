@@ -118,7 +118,7 @@ const List<Product> kFakeCatalogue = [
   ),
   Product(
     id: 'fake-immunity',
-    name: 'SHIELD Immunity Plus',
+    name: 'Sahakar 360 Immunity Plus',
     pack: 'Jar of 30 sachets',
     price: '400',
     mrp: '520',

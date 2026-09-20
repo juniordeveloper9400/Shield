@@ -297,8 +297,8 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
         children: [
           const Text(
             'This permanently removes your profile, saved addresses and '
-            'patients from SHIELD. It cannot be undone, and you will need '
-            'to sign up again — with a fresh account — to use SHIELD on '
+            'patients from Sahakar 360. It cannot be undone, and you will need '
+            'to sign up again — with a fresh account — to use Sahakar 360 on '
             'this number.',
           ),
           const SizedBox(height: 14),

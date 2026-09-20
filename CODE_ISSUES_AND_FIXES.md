@@ -1,4 +1,4 @@
-# SHIELD — Current Code Issues & Fixes
+# Sahakar 360 — Current Code Issues & Fixes
 
 **Date:** 2026-09-16
 **Scope:** Findings derived exclusively from reading the current source code (not from `log.md`, git history, or narrative docs under `docs/`). Covers optimization/performance, UI/UX, and forward-looking scaling risks across the Flutter member app, the `shieldweb` admin console, and the `backend` NestJS API/database. This is a companion to `AUDIT_REPORT.md`, which covers correctness/authorization bugs — findings already listed there are not repeated here.

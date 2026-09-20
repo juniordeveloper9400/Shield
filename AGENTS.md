@@ -1,4 +1,4 @@
-# SHIELD Repository Agent Guide
+# Sahakar 360 Repository Agent Guide
 
 ## Scope
 
@@ -6,7 +6,7 @@ This guide applies to the entire repository. More specific guidance may be added
 
 ## Repository shape
 
-- The root project is a Flutter app for SHIELD members.
+- The root project is a Flutter app for Sahakar 360 members.
 - `shieldweb/` is an independent React + TypeScript + Vite operations console.
 - `backend/` contains Neon/Postgres schema snapshots, migrations, and database tools.
 - `test/` contains Flutter widget and service tests.

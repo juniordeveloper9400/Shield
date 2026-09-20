@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
+  bill,
   memberAddress,
   order,
   orderTrackStep,
@@ -186,8 +187,13 @@ export class PrescriptionService {
       .from(prescription)
       .where(and(eq(prescription.memberId, memberId), isNull(prescription.deletedAt)))
       .orderBy(desc(prescription.createdAt));
-    const imagesByRx = await this.attachImages(rows.map((r) => r.id));
-    return rows.map((row) => this.toMemberView(row, imagesByRx.get(row.id) ?? []));
+    const ids = rows.map((r) => r.id);
+    const imagesByRx = await this.attachImages(ids);
+    const ordersByRx = await this.latestOrders(ids);
+    return rows.map((row) => ({
+      ...this.toMemberView(row, imagesByRx.get(row.id) ?? []),
+      order: ordersByRx.get(row.id) ?? null,
+    }));
   }
 
   async getForMember(memberId: number, id: number) {
@@ -198,7 +204,55 @@ export class PrescriptionService {
       .from(prescriptionImage)
       .where(eq(prescriptionImage.prescriptionId, id))
       .orderBy(asc(prescriptionImage.sort));
-    return { ...this.toMemberView(found, images), medicines: lines.map(toMemberMedicine) };
+    const linkedOrder = (await this.latestOrders([id])).get(id) ?? null;
+    return { ...this.toMemberView(found, images), medicines: lines.map(toMemberMedicine), order: linkedOrder };
+  }
+
+  /**
+   * The order each prescription was most recently placed into — what the
+   * member's "Your prescriptions" card shows as its order-tracking status.
+   * A prescription can sit in several orders (a reorder places a fresh one for
+   * the same uploaded script), so the newest link wins; null for one that was
+   * never ordered.
+   *
+   * Carries just what the app needs to work out the tracking stage
+   * (Placed → Store contact → Billed → Complete, or Cancelled): the order's
+   * status, when staff first contacted the member, and whether a bill row
+   * exists — the same three signals `Purchase.stage` reads off the orders list.
+   */
+  private async latestOrders(prescriptionIds: number[]) {
+    const byRx = new Map<
+      number,
+      { id: number; code: string; status: string; storeContactedAt: Date | null; billed: boolean }
+    >();
+    if (prescriptionIds.length === 0) return byRx;
+
+    const rows = await this.db
+      .select({
+        prescriptionId: prescriptionOrder.prescriptionId,
+        id: order.id,
+        code: order.code,
+        status: order.status,
+        storeContactedAt: order.storeContactedAt,
+        billId: bill.id,
+      })
+      .from(prescriptionOrder)
+      .innerJoin(order, eq(order.id, prescriptionOrder.orderId))
+      .leftJoin(bill, eq(bill.orderId, order.id))
+      .where(inArray(prescriptionOrder.prescriptionId, prescriptionIds))
+      .orderBy(desc(prescriptionOrder.submittedAt), desc(prescriptionOrder.id));
+
+    for (const row of rows) {
+      if (byRx.has(row.prescriptionId)) continue; // rows arrive newest first
+      byRx.set(row.prescriptionId, {
+        id: row.id,
+        code: row.code,
+        status: row.status,
+        storeContactedAt: row.storeContactedAt,
+        billed: row.billId !== null,
+      });
+    }
+    return byRx;
   }
 
   /** Soft-deletes one of the caller's own prescriptions — same pattern as

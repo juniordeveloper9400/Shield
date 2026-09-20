@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../data/neon/neon_http.dart';
+import '../../data/neon/order_repository.dart';
 import '../../data/neon/prescription_repository.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
 import '../location/address_book.dart';
 import '../location/address_form_screen.dart';
+import '../orders/purchase_service.dart';
 import 'prescription_checkout_screen.dart';
 import 'prescription_copy.dart';
 import 'prescription_detail_card.dart';
@@ -61,15 +66,37 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
   List<PrescriptionRecord> get _unordered =>
       _book.records.where((record) => record.isAwaitingOrder).toList();
 
+  /// Re-reads the order book while the screen is open, so each card's order
+  /// status moves without a pull-to-refresh — the same 15-second rhythm as
+  /// Track order — and looks for the link of a prescription that is ordered
+  /// but has none yet. Never started without a database, so tests see no timer.
+  Timer? _orderTimer;
+
   @override
   void initState() {
     super.initState();
     _book.addListener(_onBookChanged);
     _refreshFromBackend();
+    _refreshOrders();
+    if (NeonHttp.isConfigured) {
+      _orderTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+        if (WidgetsBinding.instance.lifecycleState ==
+                AppLifecycleState.resumed &&
+            ModalRoute.of(context)?.isCurrent == true) {
+          unawaited(_refreshOrders());
+          if (_book.records.any(
+            (r) => r.ordered && r.order == null && r.remoteId != null,
+          )) {
+            unawaited(_refreshFromBackend());
+          }
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _orderTimer?.cancel();
     _book.removeListener(_onBookChanged);
     _form.dispose();
     super.dispose();
@@ -80,6 +107,25 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
       setState(() {});
     }
   }
+
+  /// Reads the member's order book, so each card can say where its order has
+  /// got to. Same read Track order makes; a failed one leaves what is on
+  /// screen alone.
+  Future<void> _refreshOrders() async {
+    final phone = AuthService.instance.currentUser.value?.phone;
+    if (phone == null) {
+      return;
+    }
+    final orders = await OrderRepository.instance.listForMember(phone);
+    if (orders != null && mounted) {
+      PurchaseService.instance.replaceRemote(orders);
+    }
+  }
+
+  /// Pull-to-refresh: the prescriptions (and the order each is linked to) and
+  /// the order book that says where those orders have got to.
+  Future<void> _pullToRefresh() =>
+      Future.wait([_refreshFromBackend(), _refreshOrders()]);
 
   /// Reads the pharmacist-built intake cards from Neon and folds them into the
   /// in-memory records — so a card that was "waiting on the pharmacist" fills
@@ -104,6 +150,8 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
         doctor: card.doctor,
         ordered: card.status == 'ORDERED' || card.status == 'READ',
         image: card.image,
+        // The order this script was placed into, for the card's order status.
+        order: card.order,
         medicines: [
           for (final m in card.medicines)
             PrescriptionMedicine(
@@ -155,6 +203,10 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
     );
     if (mounted) {
       setState(() {});
+      // The order just placed is on the database now — read its link so each
+      // card starts showing its order status straight away.
+      unawaited(_refreshFromBackend());
+      unawaited(_refreshOrders());
     }
   }
 
@@ -297,7 +349,7 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
     final records = _book.records;
 
     return RefreshIndicator(
-      onRefresh: _refreshFromBackend,
+      onRefresh: _pullToRefresh,
       child: ListView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
       children: [

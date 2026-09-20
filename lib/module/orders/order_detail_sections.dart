@@ -373,7 +373,7 @@ class DeliverToCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final address = AddressBook.instance.deliverTo;
     final user = AuthService.instance.currentUser.value;
-    final receiver = address?.receiver ?? user?.name ?? 'SHIELD Member';
+    final receiver = address?.receiver ?? user?.name ?? 'Sahakar 360 Member';
     final pincode = AddressBook.instance.pincode;
     final label = address?.label.label ?? 'Home';
     final summary = address?.summary ?? AddressBook.describePincode(pincode);
@@ -852,7 +852,7 @@ class NeedHelpCard extends StatelessWidget {
           _linkButton(
             icon: Icons.call_rounded,
             label: 'Call us',
-            onPressed: () => _toast(context, 'Connecting you to SHIELD support'),
+            onPressed: () => _toast(context, 'Connecting you to Sahakar 360 support'),
           ),
         ],
       ),

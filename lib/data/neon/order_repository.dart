@@ -510,7 +510,7 @@ class OrderRepository {
     DeliveryAddressInput? address,
     OrderReceiptInput? receipt,
     FulfillmentType fulfillmentType = FulfillmentType.homeDelivery,
-    /// Set when the order was paid off the SHIELD wallet at checkout — the
+    /// Set when the order was paid off the Sahakar 360 wallet at checkout — the
     /// order is inserted `payment_status = 'PAID'` and the debit is posted
     /// against its id once it exists. Left null for cash, which stays at the
     /// column's own `PENDING` default.

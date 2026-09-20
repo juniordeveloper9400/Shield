@@ -46,7 +46,7 @@ export class AgentService {
       throw new ForbiddenException({
         error: {
           code: 'FORBIDDEN',
-          message: 'Complete your SHIELD registration before requesting to become an agent',
+          message: 'Complete your Sahakar 360 registration before requesting to become an agent',
         },
       });
     }
@@ -112,7 +112,7 @@ export class AgentService {
           error: {
             code: 'FORBIDDEN',
             message:
-              "This member hasn't finished their SHIELD registration yet — an agent request can only be approved once they have",
+              "This member hasn't finished their Sahakar 360 registration yet — an agent request can only be approved once they have",
           },
         });
       }

@@ -56,8 +56,8 @@ class AccountDeletedScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 const Text(
-                  "Your SHIELD account is no longer active and can't be used "
-                  'on the app. If you think this is a mistake, contact SHIELD '
+                  "Your Sahakar 360 account is no longer active and can't be used "
+                  'on the app. If you think this is a mistake, contact Sahakar 360 '
                   'support.',
                   textAlign: TextAlign.center,
                   style: TextStyle(

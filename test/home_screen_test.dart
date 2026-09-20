@@ -97,7 +97,7 @@ void main() {
     await pumpHome(tester, const Size(400, 8000));
 
     expect(find.text(seededReview.name), findsOneWidget);
-    expect(find.text('SHIELD Immunity Plus'), findsWidgets);
+    expect(find.text('Sahakar 360 Immunity Plus'), findsWidgets);
     expect(find.text('ADD'), findsWidgets);
   });
 
@@ -591,7 +591,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byType(HomeHeader),
-        matching: find.text('SHIELD'),
+        matching: find.text('Sahakar 360'),
       ),
       findsNothing,
     );
@@ -624,8 +624,8 @@ void main() {
     final quote = tester.getTopLeft(find.byType(BrandQuote)).dy;
     final categories = tester.getTopLeft(find.byType(CategorySection)).dy;
 
-    // It is the last thing in the feed now: "Why shop with SHIELD", "How
-    // SHIELD works" and the footer used to sit under it and no longer do.
+    // It is the last thing in the feed now: "Why shop with Sahakar 360", "How
+    // Sahakar 360 works" and the footer used to sit under it and no longer do.
     expect(
       quote,
       greaterThan(categories),

@@ -22,8 +22,8 @@ const List<_Clause> _clauses = [
   _Clause(
     '1. Acceptance of these terms',
     [
-      'These Terms & Conditions ("Terms") govern the use of the SHIELD '
-          'mobile application ("SHIELD", "the app", "we", "us") by every '
+      'These Terms & Conditions ("Terms") govern the use of the Sahakar 360 '
+          'mobile application ("Sahakar 360", "the app", "we", "us") by every '
           'member who signs in ("you"). Creating an account, verifying your '
           'mobile number, or placing an order means you accept these Terms '
           'in full. If you do not agree with any part of them, please do '
@@ -33,7 +33,7 @@ const List<_Clause> _clauses = [
   _Clause(
     '2. Eligibility and your account',
     [
-      'You must be at least 18 years old, or using SHIELD under the '
+      'You must be at least 18 years old, or using Sahakar 360 under the '
           'supervision of a parent or guardian, to create an account. Your '
           'account is identified by the mobile number you verify by OTP — '
           'keep that number and any device you stay signed in on secure, '
@@ -50,7 +50,7 @@ const List<_Clause> _clauses = [
     '3. Using the app',
     [
       'We grant you a limited, non-exclusive, non-transferable right to '
-          'use SHIELD on your own devices to browse, purchase, and manage '
+          'use Sahakar 360 on your own devices to browse, purchase, and manage '
           'orders for yourself and the patients on your account. You agree '
           'not to:',
     ],
@@ -69,7 +69,7 @@ const List<_Clause> _clauses = [
     '4. Products, pricing and availability',
     [
       'Product listings, prices, images, and stock shown in the app are '
-          'provided by the SHIELD store network and may change without '
+          'provided by the Sahakar 360 store network and may change without '
           'prior notice. We make reasonable efforts to keep prices and '
           'availability accurate, but errors can occur — if an item you '
           'ordered turns out to be mispriced or out of stock, we will '
@@ -88,7 +88,7 @@ const List<_Clause> _clauses = [
           'dispensed, and may contact you, adjust quantities, or decline '
           'to fulfil an item that does not match a valid, current '
           'prescription.',
-      'SHIELD does not provide medical advice. Information shown for '
+      'Sahakar 360 does not provide medical advice. Information shown for '
           'products, lab packages, or health articles in the app is '
           'general in nature and is not a substitute for consulting a '
           'qualified doctor, pharmacist or dietitian.',
@@ -108,10 +108,10 @@ const List<_Clause> _clauses = [
     ],
   ),
   _Clause(
-    '7. Payments and the SHIELD Wallet',
+    '7. Payments and the Sahakar 360 Wallet',
     [
       'Orders may be paid by the payment methods offered at checkout, '
-          'including the SHIELD Wallet balance loaded to your account. '
+          'including the Sahakar 360 Wallet balance loaded to your account. '
           'Wallet balance is for use within the app and is not '
           'transferable to another member and not redeemable for cash '
           'except where a specific plan explicitly allows it.',
@@ -137,14 +137,14 @@ const List<_Clause> _clauses = [
   _Clause(
     '9. Agent and Investor programs',
     [
-      'A member may be enrolled by SHIELD as an Agent or Investor, which '
-          'unlocks a separate portal (in this app and on the SHIELD web '
+      'A member may be enrolled by Sahakar 360 as an Agent or Investor, which '
+          'unlocks a separate portal (in this app and on the Sahakar 360 web '
           'portal) with its own commission, payout, or return terms shared '
           'with you at enrolment. Agent commissions and investor returns '
           'are calculated on verified activity and are subject to review, '
           'and may be withheld or reversed where that activity is found to '
           'be fraudulent or in breach of these Terms.',
-      'Only SHIELD administrators enrol or remove a member from these '
+      'Only Sahakar 360 administrators enrol or remove a member from these '
           'programs; a member cannot self-enrol as an Agent or Investor '
           'through the app.',
     ],
@@ -164,7 +164,7 @@ const List<_Clause> _clauses = [
     '11. Your data and privacy',
     [
       'We collect and use your account, order, health and prescription '
-          'information to run SHIELD’s services for you, as described in '
+          'information to run Sahakar 360’s services for you, as described in '
           'our Privacy Policy. Prescription images and other health '
           'information are treated as sensitive and are only used to '
           'process the order, appointment, or lab booking they were '
@@ -189,7 +189,7 @@ const List<_Clause> _clauses = [
   _Clause(
     '13. Liability',
     [
-      'To the fullest extent permitted by law, SHIELD and its store '
+      'To the fullest extent permitted by law, Sahakar 360 and its store '
           'network are not liable for indirect, incidental or '
           'consequential loss arising from your use of the app, delays '
           'outside our reasonable control, or decisions made on the basis '
@@ -202,7 +202,7 @@ const List<_Clause> _clauses = [
   _Clause(
     '14. Changes to these Terms',
     [
-      'We may update these Terms from time to time as SHIELD’s services '
+      'We may update these Terms from time to time as Sahakar 360’s services '
           'change. The date at the top of this page always shows when it '
           'was last revised. Continuing to use the app after an update '
           'means you accept the revised Terms; if a change is significant, '
@@ -214,7 +214,7 @@ const List<_Clause> _clauses = [
     [
       'These Terms are governed by the laws of India, and any dispute '
           'arising from them is subject to the exclusive jurisdiction of '
-          'the courts local to SHIELD’s registered place of business.',
+          'the courts local to Sahakar 360’s registered place of business.',
     ],
   ),
   _Clause(
@@ -269,7 +269,7 @@ class TermsAndConditionsScreen extends StatelessWidget {
               children: [
                 const Text(
                   'These Terms & Conditions explain the rules for using the '
-                  'SHIELD app. Please read them carefully.',
+                  'Sahakar 360 app. Please read them carefully.',
                   style: TextStyle(
                     fontSize: 14,
                     height: 1.5,

@@ -158,6 +158,61 @@ class Purchase {
   String get savedLabel => '₹${formatRupees(saved)}';
 }
 
+/// The order a prescription was placed into — its code and where it has got to
+/// — as read off the prescription's row (`app.prescription_order` →
+/// `app."order"`). What a prescription's card shows as its order status.
+///
+/// The app's own order book ([PurchaseService.purchaseFor]) is preferred when
+/// it has the order, since it also carries the bill and payment; this is what
+/// the card falls back on until the book has loaded it.
+@immutable
+class LinkedOrder {
+  /// The order's own code (`RX-MU8BWHGBD56A`) — not the prescription's
+  /// `RX-0003`.
+  final String code;
+  final OrderStatus status;
+
+  const LinkedOrder({required this.code, required this.status});
+
+  /// Reads an `app."order".status` token — `PROCESSING` / `OUT_FOR_DELIVERY`
+  /// / `DELIVERED` / `CANCELLED` — into a link; null when there is no order
+  /// code (a prescription that was never ordered).
+  static LinkedOrder? fromTokens({Object? code, Object? status}) {
+    final orderCode = (code ?? '').toString().trim();
+    if (orderCode.isEmpty) {
+      return null;
+    }
+    return LinkedOrder(
+      code: orderCode,
+      status: switch ((status ?? '').toString().toUpperCase()) {
+        'DELIVERED' => OrderStatus.delivered,
+        'OUT_FOR_DELIVERY' => OrderStatus.outForDelivery,
+        'CANCELLED' => OrderStatus.cancelled,
+        _ => OrderStatus.processing,
+      },
+    );
+  }
+
+  /// A bare [Purchase] carrying just what the tracker draws from — its status
+  /// — for a link the order book has not loaded yet.
+  Purchase toPurchase() => Purchase(
+    id: code,
+    placedOn: '',
+    itemCount: 0,
+    mrpTotal: 0,
+    paidTotal: 0,
+    status: status,
+    kind: OrderKind.prescription,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is LinkedOrder && other.code == code && other.status == status;
+
+  @override
+  int get hashCode => Object.hash(code, status);
+}
+
 /// The order book, and the earnings that come out of it.
 ///
 /// One place, because the orders list and the earnings card were otherwise
@@ -174,6 +229,16 @@ class PurchaseService extends ChangeNotifier {
   final List<Purchase> _purchases = [];
 
   List<Purchase> get purchases => List.unmodifiable(_purchases);
+
+  /// The loaded order [link] points at, matched by order code, or null when
+  /// the order book has not loaded it (yet).
+  Purchase? purchaseFor(LinkedOrder? link) {
+    if (link == null) return null;
+    for (final purchase in _purchases) {
+      if (purchase.id == link.code) return purchase;
+    }
+    return null;
+  }
 
   bool get isEmpty => _purchases.isEmpty;
 
@@ -198,7 +263,7 @@ class PurchaseService extends ChangeNotifier {
   int get paidTotal =>
       _counted.fold(0, (sum, purchase) => sum + purchase.paidTotal);
 
-  /// The whole of what buying through SHIELD has earned.
+  /// The whole of what buying through Sahakar 360 has earned.
   ///
   /// Added up from the orders rather than stored, so it cannot fall behind
   /// the list it is a sum of.

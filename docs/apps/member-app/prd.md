@@ -1,12 +1,12 @@
 # Member App PRD
 
-**Product:** SHIELD member health-commerce app  
+**Product:** Sahakar 360 member health-commerce app  
 **Implementation:** Root Flutter project  
 **Status:** Current-state baseline
 
 ## Problem
 
-Members need one mobile-first place to obtain health products and services through a selected local SHIELD store, while retaining their patients, addresses, prescriptions, orders, wallet, rewards, and referrals.
+Members need one mobile-first place to obtain health products and services through a selected local Sahakar 360 store, while retaining their patients, addresses, prescriptions, orders, wallet, rewards, and referrals.
 
 ## Users
 

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/neon/store_repository.dart';
 
-/// A SHIELD outlet. Every registered member is assigned one, and it is the
+/// A Sahakar 360 outlet. Every registered member is assigned one, and it is the
 /// branch their orders are packed and dispatched from.
 @immutable
 class ShieldStore {
@@ -137,7 +137,7 @@ class StoreDirectory {
   /// it, otherwise [_seed].
   static List<ShieldStore> get all => StoreCatalog.instance.stores;
 
-  /// The bundled fallback: the branches SHIELD shipped with, in listing order.
+  /// The bundled fallback: the branches Sahakar 360 shipped with, in listing order.
   /// Shown until (and if) the database copy loads, and the only list `flutter
   /// test` ever sees (`NeonHttp.isConfigured` is false under test).
   ///
@@ -147,7 +147,7 @@ class StoreDirectory {
   static const List<ShieldStore> _seed = [
     ShieldStore(
       id: 'SHD-MEL',
-      name: 'SHIELD Pharmacy Melattur',
+      name: 'Sahakar 360 Pharmacy Melattur',
       area: 'Melattur',
       city: 'Malappuram',
       state: 'Kerala',
@@ -157,7 +157,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-MKP',
-      name: 'SHIELD Pharmacy Makkaraparamba',
+      name: 'Sahakar 360 Pharmacy Makkaraparamba',
       area: 'Makkaraparamba',
       city: 'Malappuram',
       state: 'Kerala',
@@ -167,7 +167,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-TIR',
-      name: 'SHIELD Pharmacy Tirur',
+      name: 'Sahakar 360 Pharmacy Tirur',
       area: 'Tirur',
       city: 'Malappuram',
       state: 'Kerala',
@@ -177,7 +177,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-KKT',
-      name: 'SHIELD Pharmacy Karinkallathani',
+      name: 'Sahakar 360 Pharmacy Karinkallathani',
       area: 'Karinkallathani',
       city: 'Malappuram',
       state: 'Kerala',
@@ -187,7 +187,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-MJR',
-      name: 'SHIELD Pharmacy Manjery',
+      name: 'Sahakar 360 Pharmacy Manjery',
       area: 'Manjery',
       city: 'Malappuram',
       state: 'Kerala',
@@ -197,7 +197,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-ALN',
-      name: 'SHIELD Pharmacy Alanallur',
+      name: 'Sahakar 360 Pharmacy Alanallur',
       area: 'Alanallur',
       city: 'Palakkad',
       state: 'Kerala',
@@ -207,7 +207,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-TRD',
-      name: 'SHIELD Pharmacy Tirurangadi',
+      name: 'Sahakar 360 Pharmacy Tirurangadi',
       area: 'Tirurangadi',
       city: 'Malappuram',
       state: 'Kerala',
@@ -217,7 +217,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-KNP',
-      name: 'SHIELD Pharmacy Kunnumpuram',
+      name: 'Sahakar 360 Pharmacy Kunnumpuram',
       area: 'Kunnumpuram',
       city: 'Malappuram',
       state: 'Kerala',
@@ -227,7 +227,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-KND',
-      name: 'SHIELD Pharmacy Kondotty',
+      name: 'Sahakar 360 Pharmacy Kondotty',
       area: 'Kondotty',
       city: 'Malappuram',
       state: 'Kerala',
@@ -237,7 +237,7 @@ class StoreDirectory {
     ),
     ShieldStore(
       id: 'SHD-ARK',
-      name: 'SHIELD Pharmacy Areekode',
+      name: 'Sahakar 360 Pharmacy Areekode',
       area: 'Areekode',
       city: 'Malappuram',
       state: 'Kerala',

@@ -1,4 +1,4 @@
-# SHIELD Documentation
+# Sahakar 360 Documentation
 
 This is the maintained documentation index for the repository. It describes the implementation currently in the workspace; known gaps and risks are called out rather than hidden.
 
@@ -50,3 +50,9 @@ Each application folder contains its own PRD, FRD, TRD, ERD, tech-stack, and UI/
 - App schema: `backend/db/app_schema.sql`
 - Public schema snapshot: `backend/db/SCHEMA.md`
 - Firebase setup: `FIREBASE_SETUP.md`
+
+## Product name
+
+The product is called **Sahakar 360** (written in capitals as SAHAKAR 360 where the surrounding text is all-caps). Everything a person reads — screens, messages, invoices and PDFs, the app label, web titles, the terms and privacy pages, stored branch/clinic/staff display names (migration `0047_rebrand_display_names.sql`) and these docs — uses it.
+
+Identifiers still say `shield` on purpose, because renaming them would break builds, sign-in, deployments and existing data: the `shield` Dart package and `shield_*` file names, `shieldweb/`, `shield agent_invester/`, the `app.shield_store` table, the Firebase project `shield-zabnix`, Android/bundle ids, `SHD-` branch codes, and the member referral code prefix `SHIELD-####` (also promo codes such as `SHIELD20`). Two things are left unchanged pending a decision: the plan tier names ("Silver / Gold / Platinum Shield", stored in `app.membership_tier`) and the branch bank **account holder names** on the payment screen (`shield_payee.dart`), which must match the real bank accounts. The logo image `assets/logos/shield_wordmark.png` still reads "Mission S.H.I.E.L.D" and needs new artwork.

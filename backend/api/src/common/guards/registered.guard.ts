@@ -5,7 +5,7 @@ import { users } from '../../db/schema';
 import type { RequestSubject } from '../../modules/auth/session.types';
 
 /**
- * Lets a member through only once their SHIELD registration is complete
+ * Lets a member through only once their Sahakar 360 registration is complete
  * (`app.users.registration_completed_at`, which only the server ever sets — see
  * `IdentityService.updateProfile`). Applied per route with `@RequireRegistered()`
  * to the actions that create something on a member's behalf: adding to the cart,
@@ -35,7 +35,7 @@ export class RegisteredGuard implements CanActivate {
       throw new ForbiddenException({
         error: {
           code: 'REGISTRATION_REQUIRED',
-          message: 'Complete your SHIELD registration first — only registered members can do this.',
+          message: 'Complete your Sahakar 360 registration first — only registered members can do this.',
         },
       });
     }

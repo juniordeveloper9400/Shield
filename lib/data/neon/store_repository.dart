@@ -1,7 +1,7 @@
 import '../../module/registration/shield_store.dart';
 import 'neon_http.dart';
 
-/// Reads the SHIELD branch list — `app.shield_store` — from Neon over the HTTP
+/// Reads the Sahakar 360 branch list — `app.shield_store` — from Neon over the HTTP
 /// SQL endpoint (see [NeonHttp]).
 ///
 /// Read-only. Branches are created and maintained from the admin console

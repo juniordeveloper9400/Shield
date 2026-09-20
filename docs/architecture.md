@@ -73,6 +73,16 @@ Processing, Out for delivery, Delivered or Cancelled straight from
 `app.order.status`. These source changes require rebuilding the relevant
 Flutter web/Android application before deployed clients receive them.
 
+### Order status on the prescription cards
+
+Each card on **Upload Prescription → Your prescriptions** now has an **Order status** section once its prescription is linked to an order (`app.prescription_order.order_id`): the order code, a stage chip, a four-step progress line, a one-line explanation (English and Malayalam, following the screen's language switch) and a **Track order** link. A prescription that was only uploaded shows nothing. When a script was reordered it is linked to several orders, and the newest one is shown.
+
+- **`shield agent_invester/`** shows the four stages above (Placed → Store contact → Billed → Complete, or Cancelled). `GET /v1/member/prescriptions` and `/:id` (`backend/api`, `PrescriptionService.latestOrders`) now return an `order` block — `id`, `code`, `status`, `storeContactedAt` and `billed` — which the app reads into `PrescriptionRecord.order` (`LinkedOrder`). The stage comes from `OrderStage.derive`, the same rule `Purchase.stage` uses on Track order, and the card prefers the app's loaded order book (`PurchaseService.purchaseFor`) over the block because it is refreshed more often. `backend/api` must be deployed with this change; until then the cards look as before.
+- **Root app (`lib/`)** shows its own statuses (Order placed → Processing → Out for delivery → Delivered, or Cancelled), drawn from the same `OrderTrack` steps as Track order. `PrescriptionRepository.fetchForMember` reads the linked order with a `LATERAL` join in the same Neon query.
+- Both screens load the order book on open, refresh it every 15 seconds while the screen is current (only with a backend/database configured), look for the link of a prescription that is ordered but not linked yet, and re-read after checkout returns and on pull-to-refresh.
+
+The yellow diagnostic line some cards show (`picked=1 | … | insertUpload ok, id=44`) is the agent app's temporary `PrescriptionRecord.imageDebugNote`, added for the "photo never reached the counter" bug. It is not part of this feature and is still there; remove it once that bug is closed.
+
 ## Bills and invoices in the apps
 
 Tapping a bill (Account → **Bills**, or **Bill** on an order card) opens the bill

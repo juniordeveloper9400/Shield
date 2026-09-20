@@ -1,12 +1,12 @@
 # Agent / Investor App PRD
 
-**Product:** SHIELD partner-enabled Flutter app  
+**Product:** Sahakar 360 partner-enabled Flutter app  
 **Implementation:** `shield agent_invester/`  
 **Status:** Current implementation requires product-boundary confirmation
 
 ## Problem
 
-Converted SHIELD members need access to agent and investor status, earnings/investment information, and partner workflows without accidentally retaining an unauthorized member-only or partner-only state.
+Converted Sahakar 360 members need access to agent and investor status, earnings/investment information, and partner workflows without accidentally retaining an unauthorized member-only or partner-only state.
 
 ## Actors
 

@@ -106,7 +106,7 @@ class PersonaWebOnlyScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  "You're now a SHIELD $persona",
+                  "You're now a Sahakar 360 $persona",
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     fontSize: 22,
@@ -116,7 +116,7 @@ class PersonaWebOnlyScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'The SHIELD app is for members. ${persona}s manage their '
+                  'The Sahakar 360 app is for members. ${persona}s manage their '
                   'portfolio, team and earnings on the web portal — open it in '
                   'your browser to sign in with this same mobile number.',
                   textAlign: TextAlign.center,

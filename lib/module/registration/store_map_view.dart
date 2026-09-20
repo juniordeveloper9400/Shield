@@ -7,7 +7,7 @@ import '../../theme/app_colors.dart';
 import 'shield_store.dart';
 import 'store_locator.dart';
 
-/// The "Your SHIELD store" branch map.
+/// The "Your Sahakar 360 store" branch map.
 ///
 /// Every branch is a **red pin with its name on a tag above it**; the chosen
 /// branch is a deeper red and larger. Tapping a pin selects that branch. A

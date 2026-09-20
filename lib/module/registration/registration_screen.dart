@@ -540,7 +540,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         _showAllStores ? ordered : ordered.take(4).toList();
 
     return _Section(
-      title: 'Your SHIELD store',
+      title: 'Your Sahakar 360 store',
       subtitle: _located?.ok == true
           ? 'Nearest to you is pre-selected. Tap a pin or a branch to change it.'
           : suggested == null

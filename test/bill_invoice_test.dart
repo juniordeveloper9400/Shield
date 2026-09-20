@@ -22,7 +22,7 @@ BillInvoice _invoice({bool paid = false, List<InvoiceLine> lines = _lines}) =>
       placedAt: DateTime(2026, 9, 18, 9, 30),
       customerName: 'Asaruuuu',
       customerPhone: '8137922524',
-      storeName: 'SHIELD Melattur',
+      storeName: 'Sahakar 360 Melattur',
       storeAddress: 'Melattur, Malappuram, Kerala, 679325',
       storePhone: '9000000001',
       deliveryAddress: 'hhha, jaja, Kerala, 679325',
@@ -208,7 +208,7 @@ void main() {
       expect(find.text('TOTAL'), findsOneWidget);
       expect(find.text('₹181.00'), findsWidgets);
       expect(find.textContaining('19 Sep 2026'), findsWidgets);
-      expect(find.text('SHIELD Melattur'), findsOneWidget);
+      expect(find.text('Sahakar 360 Melattur'), findsOneWidget);
       expect(find.text('Asaruuuu'), findsOneWidget);
       expect(find.text('PAYMENT PENDING'), findsOneWidget);
       expect(find.text('Share invoice'), findsOneWidget);

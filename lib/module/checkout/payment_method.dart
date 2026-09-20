@@ -52,7 +52,7 @@ abstract final class PaymentMethods {
   static const PaymentMethod bankTransfer = PaymentMethod(
     id: 'bank-transfer',
     name: 'Bank account',
-    blurb: 'Transfer to SHIELD and upload the receipt',
+    blurb: 'Transfer to Sahakar 360 and upload the receipt',
     icon: Icons.account_balance_rounded,
     accent: AppColors.brandBlue,
     tint: AppColors.chipBlueTint,
@@ -100,12 +100,12 @@ abstract final class PaymentMethods {
   static List<PaymentMethod> get live =>
       all.where((method) => method.isLive).toList();
 
-  /// Pay from the SHIELD wallet balance — instant, and never "coming soon":
+  /// Pay from the Sahakar 360 wallet balance — instant, and never "coming soon":
   /// the balance either covers the order or it does not.
   static const PaymentMethod wallet = PaymentMethod(
     id: 'wallet',
     name: 'Wallet balance',
-    blurb: 'Pay from your SHIELD wallet',
+    blurb: 'Pay from your Sahakar 360 wallet',
     icon: Icons.account_balance_wallet_rounded,
     accent: AppColors.brandGreenDark,
     tint: AppColors.greenTint,

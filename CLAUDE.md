@@ -1,4 +1,4 @@
-# SHIELD Claude Code Instructions
+# Sahakar 360 Claude Code Instructions
 
 Use `AGENTS.md` as the canonical repository guidance and `docs/README.md` as the documentation index.
 

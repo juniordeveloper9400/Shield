@@ -1,6 +1,6 @@
 # AI Agent Engineering Playbook
 
-This document defines how AI agents should build and maintain SHIELD. `AGENTS.md` remains the repository-wide instruction file.
+This document defines how AI agents should build and maintain Sahakar 360. `AGENTS.md` remains the repository-wide instruction file.
 
 ## 1. Required context sequence
 

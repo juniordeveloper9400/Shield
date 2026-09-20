@@ -49,7 +49,7 @@ class WalletCard {
   /// was issued for.
   final int recharged;
 
-  /// The SHIELD branch this plan was activated against — the one a member with
+  /// The Sahakar 360 branch this plan was activated against — the one a member with
   /// more than one plan can bill a later order to by picking this plan at
   /// checkout. Null on plans activated before the branch was recorded.
   final ShieldStore? store;
@@ -248,7 +248,7 @@ class PendingWalletCard {
   );
 }
 
-/// The SHIELD wallet: a balance and the ledger behind it.
+/// The Sahakar 360 wallet: a balance and the ledger behind it.
 ///
 /// Real state rather than a hardcoded figure, because the privilege programme
 /// credits a bonus into it — a number that is never shown anywhere would not
@@ -753,7 +753,7 @@ class WalletService extends ChangeNotifier {
     _entries.insert(
       0,
       WalletEntry(
-        label: 'Shield points redeemed · $toRedeem pts',
+        label: 'Sahakar 360 points redeemed · $toRedeem pts',
         date: date,
         amount: rupees,
       ),

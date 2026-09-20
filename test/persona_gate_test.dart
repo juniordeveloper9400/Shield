@@ -59,7 +59,7 @@ void main() {
 
     expect(find.byType(AppShell), findsNothing);
     expect(find.byType(PersonaWebOnlyScreen), findsOneWidget);
-    expect(find.text("You're now a SHIELD Agent"), findsOneWidget);
+    expect(find.text("You're now a Sahakar 360 Agent"), findsOneWidget);
     expect(
       find.text('https://shield-webapp-xq85.vercel.app/'),
       findsOneWidget,
@@ -73,7 +73,7 @@ void main() {
     await pumpRoot(tester);
 
     expect(find.byType(PersonaWebOnlyScreen), findsOneWidget);
-    expect(find.text("You're now a SHIELD Investor"), findsOneWidget);
+    expect(find.text("You're now a Sahakar 360 Investor"), findsOneWidget);
   });
 
   testWidgets(

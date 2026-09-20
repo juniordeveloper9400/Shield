@@ -3,13 +3,13 @@
          own manifests. Firebase Phone Auth, the Neon backend and every remote
          image or video all talk over the network. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Optional: the "Your SHIELD store" map offers to rank branches by how
+    <!-- Optional: the "Your Sahakar 360 store" map offers to rank branches by how
          close they are. Registration still works without it (pincode ranking). -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 
     <application
-        android:label="SHIELD"
+        android:label="Sahakar 360"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

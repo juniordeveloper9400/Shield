@@ -112,7 +112,7 @@ void main() {
   }
 
   group('the store directory', () {
-    test('every published branch is a SHIELD branch', () {
+    test('every published branch is a Sahakar 360 branch', () {
       expect(
         StoreDirectory.all.map((store) => store.area),
         [
@@ -128,7 +128,7 @@ void main() {
           'Areekode',
         ],
         reason:
-            'the list is the shops that exist, in the order SHIELD lists '
+            'the list is the shops that exist, in the order Sahakar 360 lists '
             'them',
       );
       // No two members can be assigned the same branch under two codes.
@@ -190,13 +190,13 @@ void main() {
 
     test('the database copy replaces the seed once it loads', () {
       // Before a load, the directory is the bundled seed.
-      expect(StoreDirectory.byId('SHD-MEL')?.name, 'SHIELD Pharmacy Melattur');
+      expect(StoreDirectory.byId('SHD-MEL')?.name, 'Sahakar 360 Pharmacy Melattur');
       expect(StoreCatalog.instance.isFromDatabase, isFalse);
 
       StoreCatalog.instance.useStores(const [
         ShieldStore(
           id: 'SHD-NEW',
-          name: 'SHIELD Pharmacy Nilambur',
+          name: 'Sahakar 360 Pharmacy Nilambur',
           area: 'Nilambur',
           city: 'Malappuram',
           state: 'Kerala',
@@ -225,7 +225,7 @@ void main() {
     test('ShieldStore.fromRow maps an app.shield_store text row', () {
       final store = ShieldStore.fromRow(<String, dynamic>{
         'code': 'SHD-XYZ',
-        'name': 'SHIELD Pharmacy Somewhere',
+        'name': 'Sahakar 360 Pharmacy Somewhere',
         'area': 'Somewhere',
         'city': 'Malappuram',
         'state': 'Kerala',
@@ -301,7 +301,7 @@ void main() {
     test('a profile names its store and reads back as an address', () {
       final registration = sample();
 
-      expect(registration.store?.name, 'SHIELD Pharmacy Melattur');
+      expect(registration.store?.name, 'Sahakar 360 Pharmacy Melattur');
       expect(registration.dobLabel, '04 Sep 1994');
       expect(registration.age, ageInYears(DateTime(1994, 9, 4)));
       expect(registration.ageLabel, ageLabel(DateTime(1994, 9, 4)));
@@ -325,7 +325,7 @@ void main() {
       expect(find.text('Place'), findsOneWidget);
       expect(find.text('Pincode'), findsOneWidget);
       expect(find.text('State'), findsOneWidget);
-      expect(find.text('Your SHIELD store'), findsOneWidget);
+      expect(find.text('Your Sahakar 360 store'), findsOneWidget);
     });
 
     testWidgets(
@@ -472,7 +472,7 @@ void main() {
 
       await fill(tester, '6-digit pincode', '679326');
 
-      expect(find.text('SHIELD Pharmacy Melattur'), findsOneWidget);
+      expect(find.text('Sahakar 360 Pharmacy Melattur'), findsOneWidget);
       expect(find.text('Nearest'), findsOneWidget);
       expect(find.textContaining('Nearest to 679326'), findsOneWidget);
     });
@@ -484,14 +484,14 @@ void main() {
       await fill(tester, '6-digit pincode', '679326');
 
       // Areekode is the far end of the district, and so off the short list.
-      expect(find.text('SHIELD Pharmacy Areekode'), findsNothing);
+      expect(find.text('Sahakar 360 Pharmacy Areekode'), findsNothing);
 
       await tester.tap(
         find.text('Show all ${StoreDirectory.all.length} stores'),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('SHIELD Pharmacy Areekode'), findsOneWidget);
+      expect(find.text('Sahakar 360 Pharmacy Areekode'), findsOneWidget);
     });
 
     testWidgets('a completed form registers and assigns the store', (
@@ -526,11 +526,11 @@ void main() {
 
       // The full-screen reward celebration is up (a first registration earns
       // the bonus), captioned with the welcome line.
-      expect(find.textContaining('welcome to SHIELD'), findsOneWidget);
+      expect(find.textContaining('welcome to Sahakar 360'), findsOneWidget);
 
       // It plays out and dismisses itself; the form is left registered.
       await tester.pumpAndSettle();
-      expect(find.textContaining('welcome to SHIELD'), findsNothing);
+      expect(find.textContaining('welcome to Sahakar 360'), findsNothing);
       expect(RegistrationService.instance.isRegistered, isTrue);
     });
 
@@ -575,7 +575,7 @@ void main() {
       await pumpForm(tester);
       await completeForm(tester);
 
-      await tester.tap(find.text('SHIELD Pharmacy Alanallur'));
+      await tester.tap(find.text('Sahakar 360 Pharmacy Alanallur'));
       await tester.pumpAndSettle();
 
       // Re-ranking the list must not move a choice the member made.
@@ -627,7 +627,7 @@ void main() {
         find.widgetWithText(TextFormField, 'you@example.com'),
       );
       expect(email.controller?.text, 'asha@example.com');
-      expect(find.text('SHIELD Pharmacy Melattur'), findsWidgets);
+      expect(find.text('Sahakar 360 Pharmacy Melattur'), findsWidgets);
     });
   });
 
@@ -772,7 +772,7 @@ void main() {
       await submit(tester);
 
       expect(find.text('Complete your registration'), findsNothing);
-      expect(find.text('SHIELD Pharmacy Melattur'), findsOneWidget);
+      expect(find.text('Sahakar 360 Pharmacy Melattur'), findsOneWidget);
     });
   });
 

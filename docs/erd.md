@@ -1,4 +1,4 @@
-# SHIELD Entity Relationship Document
+# Sahakar 360 Entity Relationship Document
 
 **Status:** Logical ERD derived from `backend/db/app_schema.sql` and `backend/db/APP_SCHEMA.md`. The SQL DDL remains authoritative.
 

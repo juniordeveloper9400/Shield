@@ -100,7 +100,7 @@ class OrderTrack {
       return 'This order was cancelled.';
     }
     if (isDelivered) {
-      return 'Delivered. Thanks for shopping with SHIELD.';
+      return 'Delivered. Thanks for shopping with Sahakar 360.';
     }
     switch (order.status) {
       case OrderStatus.outForDelivery:

@@ -5,7 +5,7 @@ import '../../theme/app_colors.dart';
 import 'shield_store.dart';
 import 'store_locator.dart';
 
-/// A bottom sheet for picking a SHIELD branch, with a "Use my location" action
+/// A bottom sheet for picking a Sahakar 360 branch, with a "Use my location" action
 /// that re-orders the list by real distance and tags each branch with how far
 /// it is.
 ///

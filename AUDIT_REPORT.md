@@ -1,4 +1,4 @@
-# SHIELD Repository Audit Report
+# Sahakar 360 Repository Audit Report
 
 **Date:** 2026-09-16
 **Scope:** Full repository — root Flutter member app (`lib/`, `test/`, `android/`), `shieldweb/` (React/TS/Vite admin console), `backend/` (NestJS API + Neon/Postgres schema and migrations). `shield agent_invester/` (legacy parallel tree) was excluded per `AGENTS.md`.

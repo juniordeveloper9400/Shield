@@ -1,7 +1,7 @@
-# SHIELD Backend Service — Planning Docs
+# Sahakar 360 Backend Service — Planning Docs
 
 This folder specifies a **new backend API service** that will sit between all
-three SHIELD clients (root Flutter member app, `shieldweb` admin console,
+three Sahakar 360 clients (root Flutter member app, `shieldweb` admin console,
 `shield agent_invester/`) and Neon Postgres. It does not exist as code yet —
 these are the planning documents, written to be complete enough for an AI
 coding agent (or a human vibe-coding fast) to build the service end to end

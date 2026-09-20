@@ -183,7 +183,7 @@ describe('Agent & Geography (e2e)', () => {
       .expect(400);
   });
 
-  it('rejects submitting an agent request before the member has completed their SHIELD registration', async () => {
+  it('rejects submitting an agent request before the member has completed their Sahakar 360 registration', async () => {
     // Deliberately not memberToken — this member never had
     // registrationCompletedAt set, the exact case being refused. And
     // deliberately directMemberToken, not a real sign-in — this test only

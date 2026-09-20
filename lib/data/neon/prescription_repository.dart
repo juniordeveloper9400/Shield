@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
+import '../../module/orders/purchase_service.dart' show LinkedOrder;
 import '../../module/patients/patient_book.dart';
 import '../../module/prescription/medicine_duration.dart';
 import '../../module/prescription/prescription_record.dart';
@@ -17,6 +20,10 @@ class RemotePrescriptionCard {
   /// .image` — null when none was attached at upload.
   final String? image;
 
+  /// The order this prescription was most recently placed into — null for one
+  /// that was only uploaded. What the card's order-tracking status reads.
+  final LinkedOrder? order;
+
   RemotePrescriptionCard({
     required this.code,
     required this.uuid,
@@ -24,6 +31,7 @@ class RemotePrescriptionCard {
     required this.doctor,
     required this.medicines,
     this.image,
+    this.order,
   });
 
   /// The pharmacist has entered the lines — the app card can expand.
@@ -286,6 +294,15 @@ class PrescriptionRepository {
     });
   }
 
+  /// The `order_code` / `order_status` columns of a [fetchForMember] row as a
+  /// [LinkedOrder], or null when the script was never ordered.
+  @visibleForTesting
+  static LinkedOrder? linkedOrderFromRow(Map<String, dynamic> row) =>
+      LinkedOrder.fromTokens(
+        code: row['order_code'],
+        status: row['order_status'],
+      );
+
   /// The pharmacist-built intake cards for every prescription on the account.
   ///
   /// The app reads this when the prescription screen opens and on pull-to-
@@ -306,11 +323,23 @@ class PrescriptionRepository {
       final rows = await NeonHttp.instance.query(
         r'''
           SELECT rx.code, rx.uuid, rx.status, rx.doctor, rx.image,
+                 lo.order_code, lo.order_status,
                  pm.name, pm.pack,
                  pm.dose_morning, pm.dose_afternoon, pm.dose_night,
                  pm.total_units, pm.sort
           FROM app.prescription rx
           JOIN app.users u ON u.id = rx.member_id
+          -- The order this script was most recently placed into (a reorder
+          -- places a fresh one for the same script), for the card's order
+          -- status; no row for a script that was only uploaded.
+          LEFT JOIN LATERAL (
+            SELECT o.code AS order_code, o.status::text AS order_status
+            FROM app.prescription_order po
+            JOIN app."order" o ON o.id = po.order_id
+            WHERE po.prescription_id = rx.id
+            ORDER BY po.submitted_at DESC, po.id DESC
+            LIMIT 1
+          ) lo ON true
           LEFT JOIN app.prescription_medicine pm ON pm.prescription_id = rx.id
           WHERE u.phone = $1 AND rx.deleted_at IS NULL
           ORDER BY rx.created_at DESC, pm.sort, pm.id
@@ -335,6 +364,7 @@ class PrescriptionRepository {
             doctor: (row['doctor'] ?? '').toString(),
             medicines: [],
             image: rawImage == null || rawImage.isEmpty ? null : rawImage,
+            order: linkedOrderFromRow(row),
           );
         });
         final name = (row['name'] ?? '').toString().trim();

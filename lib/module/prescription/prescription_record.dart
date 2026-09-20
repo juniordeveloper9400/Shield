@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../dates.dart';
+import '../orders/purchase_service.dart' show LinkedOrder;
 import '../patients/patient_book.dart';
 import 'medicine_duration.dart';
 
@@ -209,6 +210,13 @@ class PrescriptionRecord {
   /// the database was unreachable. Carried so the pharmacy read and, later,
   /// the order update the same row instead of inserting another.
   String? remoteId;
+
+  /// The order this prescription was most recently placed into, once Neon has
+  /// one on file — read back with each refresh of the account's prescriptions.
+  /// What the card's "Order status" section follows. Null for a script that
+  /// was only uploaded, or one ordered a moment ago before the next refresh
+  /// has seen the link.
+  LinkedOrder? order;
 
   PrescriptionRecord({
     required this.id,
@@ -437,6 +445,7 @@ class PrescriptionBook extends ChangeNotifier {
     String doctor = '',
     bool ordered = false,
     String? image,
+    LinkedOrder? order,
   }) {
     final index = indexOf(id);
     if (index == -1) {
@@ -444,6 +453,10 @@ class PrescriptionBook extends ChangeNotifier {
     }
     final record = _records[index];
     var changed = false;
+    if (order != null && record.order != order) {
+      record.order = order;
+      changed = true;
+    }
     if (!_sameMedicines(record.medicines, medicines)) {
       record.medicines = List.unmodifiable(medicines);
       changed = true;

@@ -1,6 +1,6 @@
 # Combined System Documentation
 
-This folder is the cross-application authority for SHIELD. It covers shared product intent, requirements, architecture, data, security, release controls, and AI-agent maintenance.
+This folder is the cross-application authority for Sahakar 360. It covers shared product intent, requirements, architecture, data, security, release controls, and AI-agent maintenance.
 
 - [Combined PRD](../prd.md)
 - [Combined FRD](../frd.md)

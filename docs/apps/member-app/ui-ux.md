@@ -6,7 +6,7 @@ The persistent shell exposes Home, Health/Labs, Clinics, Orders, and Account. Th
 
 ## Visual language
 
-Use Material 3 and the SHIELD blue/green palette defined in `lib/theme/app_colors.dart`. Category panels, privilege cards, rewards, and status colors have distinct semantic roles; do not repurpose them casually.
+Use Material 3 and the Sahakar 360 blue/green palette defined in `lib/theme/app_colors.dart`. Category panels, privilege cards, rewards, and status colors have distinct semantic roles; do not repurpose them casually.
 
 ## Workflow principles
 

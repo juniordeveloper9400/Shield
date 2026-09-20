@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 /// The languages the prescription flow is written in.
 ///
-/// Scoped to this screen rather than the app. SHIELD's counters are in Kerala
+/// Scoped to this screen rather than the app. Sahakar 360's counters are in Kerala
 /// and this is the screen a member reads instructions on — the rest of the app
 /// is names, prices and buttons, which need no translating to be usable.
 enum AppLanguage {
@@ -124,6 +124,20 @@ class PrescriptionCopy {
   final String beforeOrderNote;
   final String orderPlacedTitle;
   final String orderPlacedDetail;
+
+  // ---- Order status (the order this prescription was placed into) ----
+  final String orderStatusTitle;
+  final String trackOrder;
+  final String stagePlaced;
+  final String stageProcessing;
+  final String stageOutForDelivery;
+  final String stageDelivered;
+  final String stageCancelled;
+  final String stagePlacedDetail;
+  final String stageOutForDeliveryDetail;
+  final String stageDeliveredDetail;
+  final String stageCancelledDetail;
+
   final String intakeCardReady;
   final String viewMedicines;
   final String hideMedicines;
@@ -200,6 +214,17 @@ class PrescriptionCopy {
     required this.beforeOrderNote,
     required this.orderPlacedTitle,
     required this.orderPlacedDetail,
+    required this.orderStatusTitle,
+    required this.trackOrder,
+    required this.stagePlaced,
+    required this.stageProcessing,
+    required this.stageOutForDelivery,
+    required this.stageDelivered,
+    required this.stageCancelled,
+    required this.stagePlacedDetail,
+    required this.stageOutForDeliveryDetail,
+    required this.stageDeliveredDetail,
+    required this.stageCancelledDetail,
     required this.intakeCardReady,
     required this.viewMedicines,
     required this.hideMedicines,
@@ -259,7 +284,7 @@ class PrescriptionCopy {
       ),
       OrderStep(
         'Delivered, or collect it',
-        'We deliver to your address, or hold it at your SHIELD store.',
+        'We deliver to your address, or hold it at your Sahakar 360 store.',
       ),
     ],
     pharmacistTitle: 'Pharmacist call',
@@ -332,6 +357,17 @@ class PrescriptionCopy {
     orderPlacedDetail:
         'The pharmacist will call you to confirm the medicines and the '
         'price. This card fills in once they send the details.',
+    orderStatusTitle: 'Order status',
+    trackOrder: 'Track order',
+    stagePlaced: 'Order placed',
+    stageProcessing: 'Processing',
+    stageOutForDelivery: 'Out for delivery',
+    stageDelivered: 'Delivered',
+    stageCancelled: 'Cancelled',
+    stagePlacedDetail: 'We have your order. The pharmacist will call you soon.',
+    stageOutForDeliveryDetail: 'Your order is on its way.',
+    stageDeliveredDetail: 'Your order has been delivered.',
+    stageCancelledDetail: 'This order was cancelled.',
     intakeCardReady: 'Intake card ready',
     viewMedicines: 'View medicines',
     hideMedicines: 'Hide',
@@ -390,7 +426,7 @@ class PrescriptionCopy {
       ),
       OrderStep(
         'വീട്ടിലെത്തിക്കും, അല്ലെങ്കിൽ വാങ്ങാം',
-        'നിങ്ങളുടെ വിലാസത്തിൽ എത്തിക്കും, അല്ലെങ്കിൽ SHIELD സ്റ്റോറിൽ '
+        'നിങ്ങളുടെ വിലാസത്തിൽ എത്തിക്കും, അല്ലെങ്കിൽ Sahakar 360 സ്റ്റോറിൽ '
             'സൂക്ഷിച്ചുവയ്ക്കും.',
       ),
     ],
@@ -464,6 +500,17 @@ class PrescriptionCopy {
     orderPlacedDetail:
         'മരുന്നുകളും വിലയും സ്ഥിരീകരിക്കാൻ ഫാർമസിസ്റ്റ് നിങ്ങളെ വിളിക്കും. '
         'അവർ വിവരങ്ങൾ അയയ്ക്കുമ്പോൾ ഈ കാർഡ് പൂർത്തിയാകും.',
+    orderStatusTitle: 'ഓർഡർ നില',
+    trackOrder: 'ഓർഡർ ട്രാക്ക് ചെയ്യുക',
+    stagePlaced: 'ഓർഡർ നൽകി',
+    stageProcessing: 'തയ്യാറാക്കുന്നു',
+    stageOutForDelivery: 'ഡെലിവറിക്ക് പുറപ്പെട്ടു',
+    stageDelivered: 'എത്തിച്ചു',
+    stageCancelled: 'റദ്ദാക്കി',
+    stagePlacedDetail: 'നിങ്ങളുടെ ഓർഡർ ഞങ്ങൾക്ക് ലഭിച്ചു. ഫാർമസിസ്റ്റ് ഉടൻ വിളിക്കും.',
+    stageOutForDeliveryDetail: 'നിങ്ങളുടെ ഓർഡർ വഴിയിലാണ്.',
+    stageDeliveredDetail: 'നിങ്ങളുടെ ഓർഡർ എത്തിച്ചു.',
+    stageCancelledDetail: 'ഈ ഓർഡർ റദ്ദാക്കി.',
     intakeCardReady: 'അളവ് കാർഡ് തയ്യാറായി',
     viewMedicines: 'മരുന്നുകൾ കാണുക',
     hideMedicines: 'മറയ്ക്കുക',

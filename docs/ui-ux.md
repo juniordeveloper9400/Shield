@@ -1,4 +1,4 @@
-# SHIELD UI/UX Specification
+# SAHAKAR 360 UI/UX Specification
 
 **Status:** Current design baseline derived from Flutter theme/widgets and the admin console styles. This document guides additions; it does not replace component code.
 
@@ -27,7 +27,7 @@
 
 ## 4. Visual system
 
-Flutter uses Material 3 with the SHIELD logo-derived blue/green palette in `lib/theme/app_colors.dart`, plus distinct category, wallet, reward, and status colors. Admin uses Tailwind tokens and the existing Inter font setup in `shieldweb/src/index.css`.
+Flutter uses Material 3 with the Sahakar 360 logo-derived blue/green palette in `lib/theme/app_colors.dart`, plus distinct category, wallet, reward, and status colors. Admin uses Tailwind tokens and the existing Inter font setup in `shieldweb/src/index.css`.
 
 Do not introduce a new palette or typography system for an isolated feature. Extend the existing tokens and verify text contrast for normal, disabled, error, and selected states.
 

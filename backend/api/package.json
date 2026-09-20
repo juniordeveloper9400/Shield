@@ -2,7 +2,7 @@
   "name": "shield-backend-api",
   "version": "0.1.0",
   "private": true,
-  "description": "SHIELD backend API — single service for the member app, shieldweb, and shield agent_invester. See backend/docs/.",
+  "description": "Sahakar 360 backend API — single service for the member app, shieldweb, and shield agent_invester. See backend/docs/.",
   "engines": {
     "node": ">=22.0.0"
   },

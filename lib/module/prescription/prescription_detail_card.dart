@@ -4,6 +4,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import 'prescription_copy.dart';
 import 'prescription_image_view.dart';
+import 'prescription_order_status.dart';
 import 'prescription_record.dart';
 
 /// One uploaded prescription on the account, through its life:
@@ -86,6 +87,13 @@ class _PrescriptionDetailCardState extends State<PrescriptionDetailCard> {
                 const SizedBox(height: 13),
                 const Divider(height: 1, color: AppColors.border),
                 const SizedBox(height: 11),
+                // Where the order this script was placed into has got to, so a
+                // member need not leave this list to see it. Only once the
+                // script is actually linked to an order.
+                if (record.order != null) ...[
+                  PrescriptionOrderStatus(record: record, copy: copy),
+                  const SizedBox(height: 10),
+                ],
                 if (record.isAwaitingOrder)
                   _InfoStrip(
                     icon: Icons.local_shipping_outlined,

@@ -33,7 +33,7 @@ async function bootstrap() {
 
   const port = config.get('PORT', { infer: true });
   await app.listen(port);
-  Logger.log(`SHIELD backend listening on :${port}`, 'Bootstrap');
+  Logger.log(`Sahakar 360 backend listening on :${port}`, 'Bootstrap');
 }
 
 bootstrap().catch((err) => {

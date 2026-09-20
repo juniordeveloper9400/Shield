@@ -1,6 +1,6 @@
 # Admin Console PRD
 
-**Product:** SHIELD operations console  
+**Product:** Sahakar 360 operations console  
 **Implementation:** `shieldweb/` React/Vite app  
 **Status:** Internal current-state baseline
 

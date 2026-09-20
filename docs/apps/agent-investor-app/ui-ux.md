@@ -2,7 +2,7 @@
 
 ## Current experience
 
-The app uses the SHIELD Material 3 theme and member shell. Converted Android users see a web-access state; converted web users see persona cards in the home experience.
+The app uses the Sahakar 360 Material 3 theme and member shell. Converted Android users see a web-access state; converted web users see persona cards in the home experience.
 
 ## Partner experience requirements
 

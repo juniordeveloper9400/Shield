@@ -106,11 +106,11 @@ void main() {
     );
 
     expect(find.text('Your store & agent'), findsOneWidget);
-    expect(find.text('SHIELD Pharmacy Melattur'), findsWidgets);
+    expect(find.text('Sahakar 360 Pharmacy Melattur'), findsWidgets);
     // The store is fixed to the one on the account — no picker, so no other
     // branch is offered.
     expect(find.byWidgetPredicate((w) => w is DropdownButtonFormField), findsNothing);
-    expect(find.text('SHIELD Pharmacy Alanallur'), findsNothing);
+    expect(find.text('Sahakar 360 Pharmacy Alanallur'), findsNothing);
     expect(find.text('State Bank of India · Melattur'), findsOneWidget);
     expect(find.text('Google Pay'), findsOneWidget);
 
@@ -177,8 +177,8 @@ void main() {
       ),
     );
 
-    expect(find.text('SHIELD Pharmacy Manjery'), findsWidgets);
-    expect(find.text('SHIELD Pharmacy Melattur'), findsNothing);
+    expect(find.text('Sahakar 360 Pharmacy Manjery'), findsWidgets);
+    expect(find.text('Sahakar 360 Pharmacy Melattur'), findsNothing);
     expect(
       find.textContaining('store you chose during registration'),
       findsOneWidget,
@@ -401,13 +401,13 @@ void main() {
       );
       expect(find.text('Silver Shield'), findsOneWidget);
       expect(find.text('Gold Shield'), findsOneWidget);
-      expect(find.text('SHIELD Pharmacy Melattur'), findsWidgets);
+      expect(find.text('Sahakar 360 Pharmacy Melattur'), findsWidgets);
 
       // Pick the Gold plan: the locked branch moves to the one it was
       // activated at, and the note names the plan.
       await tester.tap(find.text('Gold Shield'));
       await tester.pumpAndSettle();
-      expect(find.text('SHIELD Pharmacy Alanallur'), findsWidgets);
+      expect(find.text('Sahakar 360 Pharmacy Alanallur'), findsWidgets);
       expect(
         find.textContaining('Serving branch for your Gold Shield'),
         findsOneWidget,
@@ -459,7 +459,7 @@ void main() {
       findsNothing,
     );
     // The branch stays the registration one, locked.
-    expect(find.text('SHIELD Pharmacy Manjery'), findsWidgets);
+    expect(find.text('Sahakar 360 Pharmacy Manjery'), findsWidgets);
     expect(
       find.textContaining('store you chose during registration'),
       findsOneWidget,

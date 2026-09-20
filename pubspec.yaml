@@ -1,5 +1,5 @@
 name: shield
-description: SHIELD customer app.
+description: Sahakar 360 customer app.
 publish_to: 'none'
 version: 1.0.0+9
 
@@ -37,7 +37,7 @@ dependencies:
   # endpoint instead of the socket above: plain HTTPS on 443, same behaviour in
   # debug and release, reliable from a phone. See data/neon/neon_http.dart.
   http: ^1.6.0
-  # "Your SHIELD store" branch picker map. OpenStreetMap tiles (no API key, no
+  # "Your Sahakar 360 store" branch picker map. OpenStreetMap tiles (no API key, no
   # billing); geolocator adds the optional "nearest to me" ranking. Renders the
   # same on the APK and the web build. See registration/store_map_view.dart.
   flutter_map: ^7.0.2

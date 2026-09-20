@@ -1,4 +1,4 @@
-# SHIELD Technology Stack
+# Sahakar 360 Technology Stack
 
 **Status:** Inventory verified from package manifests and source configuration.
 

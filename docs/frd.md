@@ -1,4 +1,4 @@
-# SHIELD Functional Requirements Document
+# Sahakar 360 Functional Requirements Document
 
 **Status:** Current-state functional baseline  
 **Requirement IDs:** `AUTH`, `REG`, `CAT`, `COM`, `RX`, `CARE`, `WAL`, `REF`, `OPS`, `DATA`

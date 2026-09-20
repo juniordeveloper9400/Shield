@@ -288,7 +288,7 @@ void main() {
 
       expect(find.byType(SplashScreen), findsOneWidget);
       expect(
-        find.text('SHIELD'),
+        find.text('Sahakar 360'),
         findsNothing,
         reason: 'the splash carries the mark only',
       );
@@ -308,7 +308,7 @@ void main() {
         findsNothing,
         reason: 'nothing below the gate may be built before signing in',
       );
-      expect(find.text('Sign in to SHIELD'), findsOneWidget);
+      expect(find.text('Sign in to Sahakar 360'), findsOneWidget);
     });
 
     testWidgets('the gate cannot be dismissed', (tester) async {

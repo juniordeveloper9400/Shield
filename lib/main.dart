@@ -89,7 +89,7 @@ Future<void> main() async {
   // the agent registration form draw the database copy, not the bundled seed.
   unawaited(AgentGeo.instance.ensureLoaded());
 
-  // Warm the SHIELD branch list so registration, the branch map and checkout
+  // Warm the Sahakar 360 branch list so registration, the branch map and checkout
   // show the admin console's own branches (with their real coordinates) rather
   // than the bundled seed.
   unawaited(StoreCatalog.instance.ensureLoaded());
@@ -124,7 +124,7 @@ class ShieldApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SHIELD',
+      title: 'Sahakar 360',
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: rootMessengerKey,
       theme: ThemeData(

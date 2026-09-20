@@ -241,7 +241,7 @@ void main() {
       await pumpSection(tester);
 
       expect(
-        find.text('Buy at SHIELD prices and the difference is yours.'),
+        find.text('Buy at Sahakar 360 prices and the difference is yours.'),
         findsOneWidget,
       );
       expect(find.textContaining('Kept out of'), findsNothing);

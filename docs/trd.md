@@ -1,4 +1,4 @@
-# SHIELD Technical Requirements Document
+# Sahakar 360 Technical Requirements Document
 
 **Status:** Current-state technical baseline with mandatory release remediation  
 **Owners:** Flutter app, admin console, and database maintainers
