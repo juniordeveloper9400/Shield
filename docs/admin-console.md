@@ -29,6 +29,36 @@ This depends on migration `backend/db/migrations/0044_order_review_and_bill_conv
 
 A user can also be made an agent directly, bypassing the request queue: `UserDetailPage`'s "Convert to agent" (`convertToAgent` in `src/api/users.ts`) creates the `app.agent` row on the spot. Every level below national must pick a real named slot — a cascading region → state → district → assembly → lsgd → ward picker (`src/api/geo.ts`, reading `app.region`/`state`/`district`/`assembly`/`lsgd`/`ward`) sized to however many tiers that level needs — so the new agent gets a real `area_id` and locks into a slot in the team tree instead of floating with no area. A slot already held by an approved agent is refused, same as the request-approval path.
 
+### Category images (Banners → Categories)
+
+`CategoryBannerPanel` (`src/components/banners/`, data in `src/api/categoryBanners.ts`) edits `app.product_category` and `app.product_subcategory`. Three separate image slots feed the storefront's "Shop by categories" surfaces:
+
+- **Chip image** (`product_category.image`) — the artwork on the category's chip in the home strip.
+- **Tile image** (`product_subcategory.image`) — one per sub-category, uploaded beside its label; the card in the home panel and the Categories tab.
+- **Promotional banner** (`product_category.banner_image`) — the top of the category's listing.
+
+Chip and tile images are stored as resized WebP data URIs (PNG on a browser whose canvas cannot encode WebP), so transparent cut-outs keep their alpha on the category's tint; banners stay JPEG. A blank image falls back to the slot's icon (`icon_name`). Rows seeded before uploads existed may hold a bundled asset path, which the console previews as "Bundled artwork".
+
+Both apps read this data: the member app straight from Neon (`lib/data/neon/category_repository.dart`), and `shield agent_invester/` through the backend API's public catalogue routes (`lib/data/backend/category_repository.dart`). The API caches those lists for 5 minutes and the console writes to Neon directly, so a change reaches the agent / investor app within about 5 minutes; the member app sees it on its next catalogue load.
+
+### Customer videos (Supabase Storage)
+
+"What our customers have to say" on the app home screen is managed from **Customer Videos** (`CustomerVideosPage`, data in `src/api/customerReviewVideos.ts` over `app.customer_review_video`). Each clip is an **uploaded video file** stored in a public Supabase Storage bucket — YouTube links are no longer accepted, and the apps have no YouTube player any more. The video files live in Supabase Storage, not in a Postgres table; the table row only keeps the clip's name, caption, poster image and the video's public URL.
+
+How a clip gets there: the console never holds the Supabase key. On save it asks the backend (`POST /v1/staff/catalogue/review-videos/upload-url`, `SUPERADMIN`/`ADMIN` only) for a single-use signed upload link — the backend checks the file type and size first, and mints the link with the service-role key, which only ever exists on the server — then sends the file straight to Supabase with progress, and saves the row with the clip's public URL as `video_url`. The console also grabs a poster frame from the file in the browser (`src/lib/videoPoster.ts`) and stores it as the row's `thumbnail`, so the app draws the reel from images and never downloads a video just to show a card; an admin-chosen image overrides it. Replacing a video, deleting a clip, or a save that fails after the upload removes the now-unused file from the bucket (`POST .../review-videos/media/delete`, restricted to this feature's `review-videos/` prefix in our own bucket). Accepted: MP4, WebM or MOV. The size limit is `REVIEW_VIDEO_MAX_MB` on the backend (50 by default, hard ceiling 200) and is checked before the upload starts.
+
+In the apps (`shield agent_invester/` and the root app), tapping a card opens a full-screen viewer (`review_video_player_screen.dart`, built on `video_player`): tap the sides or swipe for the previous/next clip, tap the middle to pause, mute, swipe down or close to leave; a finished clip moves on by itself. Only `http(s)` non-YouTube URLs are shown — rows from before uploads existed (a YouTube link, or a bundled `assets/reviews/…` path whose file no longer ships) are flagged in the console list and skipped in the app until someone uploads a video for them. The agent / investor app reads through the backend's public catalogue route, which caches for about a minute.
+
+**One-time Supabase setup** (until this is done the console reports "Video storage isn't set up yet" and uploads are refused):
+
+1. In your Supabase project, open **Storage → New bucket**. Name it `customer-reviews` (or anything, and set `SUPABASE_PUBLIC_BUCKET` to match) and turn **Public bucket** on — the apps read the videos by plain URL. Use this bucket for nothing else.
+2. On that bucket, set **Restrict file size** (50 MB on the free plan — Supabase caps every file at that; higher only on a paid plan, and then raise `REVIEW_VIDEO_MAX_MB` to match) and **Restrict MIME types** to `video/mp4, video/webm, video/quicktime`. The API checks these too; this is the second lock.
+3. From **Project Settings → API**, copy the project URL and the `service_role` key (or a secret key). Set these on the backend (`backend/api`, e.g. the Vercel project's environment variables; see `backend/api/.env.example`) and redeploy: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_PUBLIC_BUCKET`, and optionally `REVIEW_VIDEO_MAX_MB`.
+
+The service-role key bypasses row-level security, so treat it like a database password: server-side only, never in the console, the apps or git. Supabase Storage answers browser uploads and playback with CORS enabled, so no bucket CORS rule is needed.
+
+The signed-link request, the upload flow, error handling and both apps' viewers are covered by tests, but those use a stand-in for Supabase — the first real upload against your project has not been exercised. Try one short clip from the console and open it in the app once step 3 is done.
+
 ## Roles
 
 Permission definitions and landing paths live in `shieldweb/src/config/permissions.ts`. Current roles are `superadmin`, `admin`, `pharmacy`, `lab`, `appointments`, and `delivery` (migration `0031_wallet_cash_delivery.sql`, adding `app.admin_role.DELIVERY`); pharmacy and delivery access are both scoped by `storeCode`.

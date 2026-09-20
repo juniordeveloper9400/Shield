@@ -275,10 +275,10 @@ class WalletService extends ChangeNotifier {
 
   /// The fewest reward points a member can move into the wallet in one go —
   /// below this, [redeemPoints] refuses outright rather than posting a
-  /// trivial ledger line. 100 points, matching the "100 = ₹10" rate already
-  /// stated on the Rewards screen ([RewardsScreen.rateLabel]), so the figure
-  /// a member reads there is the same one that gates the button.
-  static const int minRedeemPoints = 100;
+  /// trivial ledger line. 100 points — ₹1, the "100 = ₹1" rate stated on the
+  /// Rewards screen ([RewardsScreen.rateLabel]) — so the figure a member
+  /// reads there is the same one that gates the button.
+  static const int minRedeemPoints = RewardsService.pointsPerRupee;
 
   /// The ledger a wallet opens with. Empty: every line in the wallet is put
   /// there by something the member did.
@@ -323,7 +323,7 @@ class WalletService extends ChangeNotifier {
   /// that could still be topped up through some other path would not be
   /// locked at all. A card that is only submitted, not approved, does not
   /// count: it has credited nothing.
-  bool get isActivated => _cards.isNotEmpty;
+  bool get isActivated => _cards.isNotEmpty || _balance > 0;
 
   /// Cards submitted and not yet on the wallet — awaiting approval or rejected.
   /// Newest first, the order the wallet screen lists them.
@@ -590,7 +590,7 @@ class WalletService extends ChangeNotifier {
     String date = 'Today',
     DateTime? on,
   }) {
-    if (!isActivated || amount <= 0) {
+    if (_cards.isEmpty || amount <= 0) {
       return false;
     }
     _cards[_cards.length - 1] = _cards.last.rechargedWith(
@@ -707,12 +707,19 @@ class WalletService extends ChangeNotifier {
   /// screen reads this to gate its own button and show the reason, rather
   /// than letting a member tap it and learn nothing from a silent failure.
   String? redeemPointsError([int? points]) {
-    final toRedeem = points ?? RewardsService.instance.balance;
+    // With no amount named, everything that makes whole rupees: 250 points
+    // redeems 200 and leaves 50 rather than refusing the lot.
+    final toRedeem =
+        points ?? RewardsService.wholeRupeePoints(RewardsService.instance.balance);
     if (!isActivated) {
       return 'Activate a plan to open your wallet before redeeming points.';
     }
     if (toRedeem < minRedeemPoints) {
       return 'Redeem at least $minRedeemPoints points at a time.';
+    }
+    if (toRedeem % RewardsService.pointsPerRupee != 0) {
+      return 'Redeem in multiples of ${RewardsService.pointsPerRupee} points '
+          '(${RewardsService.pointsPerRupee} points = ₹1).';
     }
     if (toRedeem > RewardsService.instance.balance) {
       return 'You don\'t have that many points.';
@@ -720,15 +727,19 @@ class WalletService extends ChangeNotifier {
     return null;
   }
 
-  /// Spends reward points and moves their value into the wallet balance.
+  /// Spends reward points and moves their value into the wallet balance, at
+  /// 100 points to the rupee ([RewardsService.pointsPerRupee]).
   ///
   /// The points side is a negative `REDEMPTION` row on the reward-points
-  /// ledger ([RewardsService.redeem]); the wallet side is a credit line here.
-  /// Points become wallet balance, so they cannot be redeemed into a wallet
-  /// that is not open yet, and [minRedeemPoints] is the fewest that can move
-  /// in one go — see [redeemPointsError] for the same checks with a reason.
+  /// ledger ([RewardsService.redeem]); the wallet side is a credit line here,
+  /// in rupees — 500 points are ₹5, not ₹500. Points become wallet balance,
+  /// so they cannot be redeemed into a wallet that is not open yet,
+  /// [minRedeemPoints] is the fewest that can move in one go, and only whole
+  /// rupees move (a multiple of the rate) — see [redeemPointsError] for the
+  /// same checks with a reason.
   Future<bool> redeemPoints({int? points, String date = 'Today'}) async {
-    final toRedeem = points ?? RewardsService.instance.balance;
+    final toRedeem =
+        points ?? RewardsService.wholeRupeePoints(RewardsService.instance.balance);
     if (redeemPointsError(toRedeem) != null) {
       return false;
     }
@@ -738,15 +749,16 @@ class WalletService extends ChangeNotifier {
       return false;
     }
 
+    final rupees = RewardsService.rupeesForPoints(toRedeem);
     _entries.insert(
       0,
       WalletEntry(
         label: 'Shield points redeemed · $toRedeem pts',
         date: date,
-        amount: toRedeem,
+        amount: rupees,
       ),
     );
-    _balance += toRedeem;
+    _balance += rupees;
     notifyListeners();
     return true;
   }

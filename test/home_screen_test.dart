@@ -38,7 +38,7 @@ void main() {
   const seededReview = CustomerReviewItem(
     id: 'test-review',
     name: 'Melattur',
-    video: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
+    video: 'https://media.example.com/review-videos/test-review.mp4',
   );
   setUp(() {
     seedFakeCatalogue();

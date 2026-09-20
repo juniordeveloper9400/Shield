@@ -257,6 +257,83 @@ CREATE TABLE app.lab_profile (
     sort            integer NOT NULL DEFAULT 0
 );
 
+-- Lab test master (migration 0046): the laboratory's own tests, group tests
+-- and packages, as edited on the console's Lab Tests > Test Master tab.
+-- Separate from lab_package above, which is what members book in the app.
+CREATE SEQUENCE app.lab_test_lis_code_seq START 1001;
+
+CREATE TABLE app.lab_test (
+    id                    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    uuid                  uuid NOT NULL DEFAULT gen_random_uuid(),
+    lis_code              integer NOT NULL UNIQUE DEFAULT nextval('app.lab_test_lis_code_seq'),
+    test_type             text NOT NULL DEFAULT 'TEST'
+                          CHECK (test_type IN ('TEST', 'GROUP', 'PACKAGE')),
+    name                  text NOT NULL,
+    short_name            text NOT NULL DEFAULT '',
+    calc_code             text NOT NULL DEFAULT '',
+    division              text NOT NULL DEFAULT 'LAB',
+    department            text NOT NULL DEFAULT '',
+    method                text NOT NULL DEFAULT '',
+    unit                  text NOT NULL DEFAULT '',
+    rate                  numeric(12,2) NOT NULL DEFAULT 0 CHECK (rate >= 0),
+    discount_percent      numeric(5,2)  NOT NULL DEFAULT 0
+                          CHECK (discount_percent >= 0 AND discount_percent <= 100),
+    amount                numeric(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+    sample                text NOT NULL DEFAULT '',
+    volume                text NOT NULL DEFAULT '',
+    cut_of_time           text NOT NULL DEFAULT '',
+    technology            text NOT NULL DEFAULT '',
+    test_mode             text NOT NULL DEFAULT '',
+    report_on_value       integer NOT NULL DEFAULT 0 CHECK (report_on_value >= 0),
+    report_on_unit        text NOT NULL DEFAULT 'Minutes'
+                          CHECK (report_on_unit IN ('Minutes', 'Hours', 'Days')),
+    perform_at            text NOT NULL DEFAULT 'In House',
+    internal_note         text NOT NULL DEFAULT '',
+    nabl_accredited       boolean NOT NULL DEFAULT false,
+    send_sms              boolean NOT NULL DEFAULT false,
+    sample_type_barcode   boolean NOT NULL DEFAULT false,
+    free_test             boolean NOT NULL DEFAULT false,
+    avoid_incentive       boolean NOT NULL DEFAULT false,
+    alphanumeric_critical boolean NOT NULL DEFAULT false,
+    common_technology     boolean NOT NULL DEFAULT false,
+    avoid_result_entry    boolean NOT NULL DEFAULT false,
+    hide_head             boolean NOT NULL DEFAULT false,
+    edit_test_rate        boolean NOT NULL DEFAULT false,
+    ref1                  text NOT NULL DEFAULT '',
+    ref2                  text NOT NULL DEFAULT '',
+    specification_1       text NOT NULL DEFAULT '',
+    specification_2       text NOT NULL DEFAULT '',
+    specification_3       text NOT NULL DEFAULT '',
+    result_template       text NOT NULL DEFAULT '',
+    is_active             boolean NOT NULL DEFAULT true,
+    created_by            text NOT NULL DEFAULT '',
+    updated_by            text NOT NULL DEFAULT '',
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    updated_at            timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX lab_test_name_uidx ON app.lab_test (lower(name));
+CREATE INDEX lab_test_type_idx ON app.lab_test (test_type, is_active);
+
+CREATE TABLE app.lab_test_group_item (
+    id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    group_id    bigint NOT NULL REFERENCES app.lab_test(id) ON DELETE CASCADE,
+    test_id     bigint NOT NULL REFERENCES app.lab_test(id) ON DELETE RESTRICT,
+    amount      numeric(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+    set_order   integer NOT NULL DEFAULT 0,
+    is_subhead  boolean NOT NULL DEFAULT false,
+    CONSTRAINT lab_test_group_item_not_self CHECK (group_id <> test_id),
+    CONSTRAINT lab_test_group_item_unique UNIQUE (group_id, test_id)
+);
+CREATE INDEX lab_test_group_item_test_idx ON app.lab_test_group_item (test_id);
+
+CREATE TABLE app.lab_test_special_rate (
+    id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    test_id   bigint NOT NULL REFERENCES app.lab_test(id) ON DELETE CASCADE,
+    ref_lab   text NOT NULL,
+    rate      numeric(12,2) NOT NULL DEFAULT 0 CHECK (rate >= 0),
+    CONSTRAINT lab_test_special_rate_unique UNIQUE (test_id, ref_lab)
+);
+
 -- Partner clinics for the appointments screen.
 CREATE TABLE app.clinic (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

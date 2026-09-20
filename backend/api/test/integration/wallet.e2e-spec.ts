@@ -657,7 +657,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .expect(403);
   });
 
-  it('rejects redemption below the minimum or not a multiple of 10', async () => {
+  it('rejects redemption below the minimum or not a whole number of rupees (multiple of 100 points)', async () => {
     await request(app.getHttpServer())
       .post('/v1/member/rewards/redeem')
       .set('Authorization', `Bearer ${memberAccessToken}`)
@@ -671,6 +671,15 @@ describe('Wallet & Rewards (e2e)', () => {
       .set('Idempotency-Key', 'redeem-key-notmultiple')
       .send({ points: 105 })
       .expect(403);
+
+    // A multiple of 10 but not of 100 — under the old 10-to-a-rupee rate this
+    // was valid; at 100 points to the rupee it would strand half a rupee.
+    await request(app.getHttpServer())
+      .post('/v1/member/rewards/redeem')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .set('Idempotency-Key', 'redeem-key-halfrupee')
+      .send({ points: 150 })
+      .expect(403);
   });
 
   it('redeems points into the wallet, ledger and denormalized fields agreeing exactly', async () => {
@@ -682,8 +691,8 @@ describe('Wallet & Rewards (e2e)', () => {
       .expect(201);
 
     expect(res.body.pointsRedeemed).toBe(100);
-    expect(res.body.rupeesCredited).toBe(10);
-    expect(Number(res.body.wallet.balance)).toBe(11010);
+    expect(res.body.rupeesCredited).toBe(1); // 100 points = ₹1
+    expect(Number(res.body.wallet.balance)).toBe(11001);
     expect(res.body.wallet.rewardPoints).toBe(-100); // wallet.reward_points started at 0, never credited by the card path
 
     const member = await request(app.getHttpServer())

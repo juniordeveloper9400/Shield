@@ -19,14 +19,26 @@ const envSchema = z
     // Optional outside production: CacheService degrades to "always miss,
     // always hit the DB" if Redis is unreachable — see cache/cache.service.ts.
     REDIS_URL: z.string().default('redis://localhost:6379'),
-    // Object storage — currently unused (prescription images are stored as
-    // base64 in app.prescription.image directly, see prescription.service.ts).
-    // Kept optional for a future re-migration back to S3-compatible storage.
+    // Private S3-compatible object storage — currently unused (prescription
+    // images are stored as base64 in app.prescription.image directly, see
+    // prescription.service.ts). Kept optional for a future re-migration back to
+    // S3-compatible storage.
     OBJECT_STORAGE_ENDPOINT: z.string().optional(),
     OBJECT_STORAGE_REGION: z.string().default('auto'),
     OBJECT_STORAGE_BUCKET: z.string().optional(),
     OBJECT_STORAGE_ACCESS_KEY: z.string().optional(),
     OBJECT_STORAGE_SECRET_KEY: z.string().optional(),
+    // Supabase Storage, for customer review videos uploaded from the admin
+    // console (see storage/supabase-public-media-storage.service.ts). The key is
+    // the project's service-role (or secret) key — server-side only, it bypasses
+    // row-level security. The bucket must be public and used for nothing else.
+    SUPABASE_URL: z.string().url().optional(),
+    SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+    SUPABASE_PUBLIC_BUCKET: z.string().default('customer-reviews'),
+    // Largest review video the API will hand out an upload link for. Supabase's
+    // free plan caps every file at 50 MB; raise this (and the bucket's own
+    // limit in Supabase) on a paid plan. The hard ceiling is 200 MB.
+    REVIEW_VIDEO_MAX_MB: z.coerce.number().positive().max(200).default(50),
   })
   .superRefine((val, ctx) => {
     if (val.NODE_ENV === 'production') {

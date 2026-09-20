@@ -54,6 +54,8 @@
 - `WAL-03`: approve/reject activations with a reviewer note and corresponding ledger entries.
 - `REF-01`: display referral code and referral progress.
 - `REF-02`: record referral states and reward ledger entries without presenting derived earnings as stored facts.
+- `REF-03`: pay reward points by referral level (`app.referral_level`: Starter 100, Riser 200, Achiever 500, Champion 1,500, Legend 3,000). A rung is paid once, at the moment the inviter's count of referred members who have transacted or activated a plan reaches it, and every rung crossed since the last check is paid together.
+- `REF-04`: value reward points at 100 points = Rs 1. The rate is defined once per client (`RewardsService.pointsPerRupee`) and once in the API (`POINTS_PER_RUPEE` in `rewards.service.ts`); redemption into the wallet moves whole rupees only, so it must be a multiple of 100 points, with 100 points as the minimum. Points earned for registering and for paid orders are unchanged by the rate.
 
 ## 7. Operations console
 

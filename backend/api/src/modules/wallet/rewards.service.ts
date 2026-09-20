@@ -4,14 +4,14 @@ import { DRIZZLE, type Database } from '../../db/client';
 import { rewardPointTransaction, users, wallet, walletEntry } from '../../db/schema';
 import type { RedeemPointsDto } from './dto';
 
-// From lib/module/wallet/wallet_service.dart WalletService.minRedeemPoints and
-// the Rewards screen's stated rate ("100 = ₹10"). Built against the number
-// already live in the app, not a guess. The "must be a multiple of 10"
-// check is inferred from that rate to keep the rupee conversion exact —
-// it isn't something explicitly enforced client-side today; flagging that
-// this is a slightly stricter server-side rule than the current client has.
+// The programme's one exchange rate: 100 points are worth ₹1. Mirrors
+// `RewardsService.pointsPerRupee` in both Flutter apps — change them
+// together. Points move to the wallet in whole rupees only, so a redemption
+// must be a multiple of the rate (which keeps the credit an exact rupee
+// figure and never strands a fraction of a rupee), and 100 points — ₹1 — is
+// the least that can move, matching `WalletService.minRedeemPoints`.
 export const MIN_REDEEM_POINTS = 100;
-const POINTS_PER_RUPEE = 10;
+export const POINTS_PER_RUPEE = 100;
 
 @Injectable()
 export class RewardsService {
@@ -40,7 +40,7 @@ export class RewardsService {
     }
     if (dto.points % POINTS_PER_RUPEE !== 0) {
       throw new ForbiddenException({
-        error: { code: 'FORBIDDEN', message: `Points must be a multiple of ${POINTS_PER_RUPEE}` },
+        error: { code: 'FORBIDDEN', message: `Redeem in multiples of ${POINTS_PER_RUPEE} points (${POINTS_PER_RUPEE} points = ₹1)` },
       });
     }
 

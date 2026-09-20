@@ -702,6 +702,16 @@ void main() {
       await pumpBar(tester);
 
       expect(find.text('Register'), findsNothing);
+      expect(
+        find.textContaining('Registered'),
+        findsNothing,
+        reason: 'once registered the strip goes away rather than confirming',
+      );
+      expect(
+        tester.getSize(find.byType(RegisterBar)).height,
+        0,
+        reason: 'a registered member gets the strip\'s height back',
+      );
     });
 
     testWidgets('it sits above the bottom navigation', (tester) async {

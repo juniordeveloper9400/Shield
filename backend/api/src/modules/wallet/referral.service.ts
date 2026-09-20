@@ -10,6 +10,7 @@ import {
   users,
   wallet,
   walletCard,
+  walletEntry,
 } from '../../db/schema';
 import type { ApplyReferralCodeDto, CreateReferralDto } from './dto';
 
@@ -77,10 +78,10 @@ export class ReferralService {
    */
   async getProgress(memberId: number) {
     const transacted = await this.db
-      .select({ id: referral.id })
+      .selectDistinct({ id: referral.inviteeMemberId })
       .from(referral)
       .where(and(eq(referral.inviterMemberId, memberId), inArray(referral.status, ['TRANSACTED', 'PLAN_ACTIVATED'])));
-    const directReferrals = transacted.length;
+    const directReferrals = transacted.filter((r) => r.id !== null).length;
 
     const referredInvitees = await this.db
       .select({ inviteeMemberId: referral.inviteeMemberId })
@@ -98,9 +99,10 @@ export class ReferralService {
             .where(and(inArray(wallet.memberId, inviteeIds), eq(walletCard.status, 'APPROVED')));
 
     const [{ sahakarMoneyEarned }] = await this.db
-      .select({ sahakarMoneyEarned: sql<string>`coalesce(sum(${referral.commissionAmount}), 0)` })
-      .from(referral)
-      .where(eq(referral.inviterMemberId, memberId));
+      .select({ sahakarMoneyEarned: sql<string>`coalesce(sum(${walletEntry.amount}), 0)` })
+      .from(walletEntry)
+      .innerJoin(wallet, eq(wallet.id, walletEntry.walletId))
+      .where(and(eq(wallet.memberId, memberId), eq(walletEntry.kind, 'REFERRAL_EARNINGS')));
 
     return { directReferrals, activatedWalletCards, sahakarMoneyEarned: Number(sahakarMoneyEarned) };
   }
@@ -122,13 +124,15 @@ export class ReferralService {
    * summed and paid together, in one ledger line.
    */
   async awardLevelPointsIfCrossed(tx: Database, inviterMemberId: number): Promise<void> {
-    const [{ directReferrals }] = await tx
-      .select({ directReferrals: sql<number>`count(*)` })
+    // Serialize crossings before counting: another transaction may have just
+    // qualified a different invitee for this same inviter.
+    const [member] = await tx.select({ referralLevelAwarded: users.referralLevelAwarded }).from(users).where(eq(users.id, inviterMemberId)).limit(1).for('update');
+    if (!member) return;
+    const qualified = await tx
+      .selectDistinct({ id: referral.inviteeMemberId })
       .from(referral)
       .where(and(eq(referral.inviterMemberId, inviterMemberId), inArray(referral.status, ['TRANSACTED', 'PLAN_ACTIVATED'])));
-
-    const [member] = await tx.select({ referralLevelAwarded: users.referralLevelAwarded, rewardPoints: users.rewardPoints }).from(users).where(eq(users.id, inviterMemberId)).limit(1);
-    if (!member) return;
+    const directReferrals = qualified.filter((r) => r.id !== null).length;
 
     const crossedLevels = await tx
       .select({ level: referralLevel.level, points: referralLevel.points })
@@ -147,7 +151,7 @@ export class ReferralService {
     });
     await tx
       .update(users)
-      .set({ rewardPoints: member.rewardPoints + newPoints, referralLevelAwarded: newLevel })
+      .set({ rewardPoints: sql`${users.rewardPoints} + ${newPoints}`, referralLevelAwarded: newLevel })
       .where(eq(users.id, inviterMemberId));
   }
 

@@ -1,0 +1,74 @@
+import { eq } from 'drizzle-orm';
+import { createTestDb, type TestDb } from './create-test-db';
+import { ReferralService } from '../../src/modules/wallet/referral.service';
+import { WalletService } from '../../src/modules/wallet/wallet.service';
+import { agent, agentCustomer, commissionReserveEntry, membershipTier, referral, users, wallet, walletCard, walletEntry } from '../../src/db/schema';
+
+describe('Referral attribution and activation accounting', () => {
+  let db: TestDb;
+  let referrals: ReferralService;
+  let wallets: WalletService;
+  beforeEach(() => {
+    db = createTestDb();
+    referrals = new ReferralService(db);
+    wallets = new WalletService(db, referrals);
+  });
+
+  async function members() {
+    const [inviter] = await db.insert(users).values({ name: 'Inviter', phone: '9000010001', referralCode: 'SHIELD-7891' }).returning();
+    const [invitee] = await db.insert(users).values({ name: 'Invitee', phone: '9000010002' }).returning();
+    const [seller] = await db.insert(agent).values({ code: 'SHD-WRD-REF', name: 'Seller', phone: '9000010003', level: 'WARD', approvalStatus: 'APPROVED' }).returning();
+    return { inviter, invitee, seller };
+  }
+
+  it('accepts the displayed Member ID, retries idempotently, and prevents either direction of cross attribution', async () => {
+    const { inviter, invitee, seller } = await members();
+    expect(await referrals.applySignupCode(invitee.id, { code: ' shield-7891 ' })).toEqual({ linked: 'member' });
+    expect(await referrals.applySignupCode(invitee.id, { code: 'SHIELD-7891' })).toEqual({ linked: 'member' });
+    expect(await referrals.applySignupCode(invitee.id, { code: seller.code })).toEqual({ linked: 'none' });
+    expect(await db.select().from(agentCustomer)).toHaveLength(0);
+    expect(await db.select().from(referral)).toHaveLength(1);
+    expect(await referrals.applySignupCode(inviter.id, { code: 'SHIELD-7891' })).toEqual({ linked: 'none' });
+    const [other] = await db.insert(users).values({ name: 'Other', phone: '9000010004' }).returning();
+    expect(await referrals.applySignupCode(other.id, { code: seller.code })).toEqual({ linked: 'agent' });
+    expect(await referrals.applySignupCode(other.id, { code: seller.code })).toEqual({ linked: 'agent' });
+    expect(await referrals.applySignupCode(other.id, { code: 'SHIELD-7891' })).toEqual({ linked: 'none' });
+  });
+
+  it('pays one 10% pool: 2% member and 8% reserve on every activation, never double approval or duplicate levels', async () => {
+    const { inviter, invitee, seller } = await members();
+    await referrals.applySignupCode(invitee.id, { code: inviter.referralCode! });
+    const [tier] = await db.insert(membershipTier).values({ kind: 'SILVER', name: 'Silver', bin: '1234', bonusRate: '0.1', validityMonths: 12 }).returning();
+    const [account] = await db.insert(wallet).values({ memberId: invitee.id }).returning();
+    for (const status of ['PENDING', 'ON_HOLD'] as const) {
+      const [card] = await db.insert(walletCard).values({ walletId: account.id, tierId: tier.id, amount: '10000', bonus: '1000', soldByAgentId: seller.id, status, issuedOn: '2026-09-20', rechargedOn: '2026-09-20', expiresOn: '2027-09-20' }).returning();
+      await wallets.approveCard(card.id);
+      await expect(wallets.approveCard(card.id)).rejects.toThrow();
+    }
+    const [earned] = await db.select().from(wallet).where(eq(wallet.memberId, inviter.id));
+    expect(Number(earned.balance)).toBe(400);
+    const reserves = await db.select().from(commissionReserveEntry);
+    expect(reserves.map((r) => Number(r.amount))).toEqual([800, 800]);
+    const [agentAfter] = await db.select().from(agent).where(eq(agent.id, seller.id));
+    expect(Number(agentAfter.earned)).toBe(0);
+    expect((await referrals.getProgress(inviter.id)).directReferrals).toBe(1);
+    expect((await referrals.getProgress(inviter.id)).sahakarMoneyEarned).toBe(400);
+    const [member] = await db.select().from(users).where(eq(users.id, inviter.id));
+    expect(member.rewardPoints).toBe(0);
+    expect(await db.select().from(walletEntry).where(eq(walletEntry.kind, 'REFERRAL_EARNINGS'))).toHaveLength(2);
+  });
+
+  it('counts unique qualifying members and only posted referral earnings, not projected commissions', async () => {
+    const { inviter, invitee } = await members();
+    await db.insert(referral).values([
+      { inviterMemberId: inviter.id, inviteeMemberId: invitee.id, status: 'TRANSACTED', commissionAmount: '200' },
+      { inviterMemberId: inviter.id, inviteeMemberId: invitee.id, status: 'PLAN_ACTIVATED', commissionAmount: '200' },
+    ]);
+    const progress = await referrals.getProgress(inviter.id);
+    expect(progress.directReferrals).toBe(1);
+    expect(progress.sahakarMoneyEarned).toBe(0);
+    await db.transaction(async (tx) => referrals.awardLevelPointsIfCrossed(tx, inviter.id));
+    const [member] = await db.select().from(users).where(eq(users.id, inviter.id));
+    expect(member.rewardPoints).toBe(0);
+  });
+});

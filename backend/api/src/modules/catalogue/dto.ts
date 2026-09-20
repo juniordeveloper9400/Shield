@@ -52,6 +52,18 @@ export const createReviewVideoSchema = z.object({
 
 export const updateReviewVideoSchema = createReviewVideoSchema.partial();
 
+/** What the console may upload as a customer review clip. */
+export const REVIEW_VIDEO_CONTENT_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'] as const;
+export const MAX_REVIEW_VIDEO_BYTES = 200 * 1024 * 1024;
+
+export const createReviewVideoUploadSchema = z.object({
+  contentType: z.enum(REVIEW_VIDEO_CONTENT_TYPES),
+  /** Exact file size in bytes — signed into the upload URL, so it can't be exceeded. */
+  size: z.number().int().positive().max(MAX_REVIEW_VIDEO_BYTES),
+});
+
+export const deleteReviewVideoMediaSchema = z.object({ url: z.string().min(1) });
+
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;
 export type CreateCategoryDto = z.infer<typeof createCategorySchema>;
 export type UpdateCategoryDto = z.infer<typeof updateCategorySchema>;
@@ -59,3 +71,5 @@ export type CreateProductDto = z.infer<typeof createProductSchema>;
 export type UpdateProductDto = z.infer<typeof updateProductSchema>;
 export type CreateReviewVideoDto = z.infer<typeof createReviewVideoSchema>;
 export type UpdateReviewVideoDto = z.infer<typeof updateReviewVideoSchema>;
+export type CreateReviewVideoUploadDto = z.infer<typeof createReviewVideoUploadSchema>;
+export type DeleteReviewVideoMediaDto = z.infer<typeof deleteReviewVideoMediaSchema>;

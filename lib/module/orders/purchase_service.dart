@@ -246,7 +246,9 @@ class PurchaseService extends ChangeNotifier {
     // Reward points for what was actually paid (₹100 → 10 pts).
     // Best-effort and signed-in only; a prescription order still awaiting
     // pricing has paidTotal 0 and earns nothing until it is paid.
-    if (purchase.status.counts && paidTotal > 0) {
+    if (purchase.status.counts &&
+        paymentStatus == OrderPaymentStatus.paid &&
+        paidTotal > 0) {
       unawaited(
         RewardsService.instance.awardForOrder(code: id, paidRupees: paidTotal),
       );

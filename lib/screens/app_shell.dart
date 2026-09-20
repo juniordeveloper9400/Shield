@@ -141,8 +141,8 @@ class _AppShellState extends State<AppShell> {
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Owns its own visibility through RegistrationService, so
-                // dismissing it here and anywhere else is the one decision.
+                // Owns its own visibility through RegistrationService: shown
+                // until the member registers, then gone.
                 const RegisterBar(),
                 ShieldBottomNav(
                   currentIndex: _index,

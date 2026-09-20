@@ -172,18 +172,34 @@ class ReferralRepository {
   ///
   /// A no-op when nobody referred this member, or their referral has already
   /// moved past `REGISTERED`: the status only ever moves forward.
+  ///
+  /// When it does advance one, the inviter's ladder is re-checked straight
+  /// away (`app.award_referral_level_points`, migration 0043): a referral
+  /// reaching `TRANSACTED` is exactly what can carry them across a rung, and
+  /// the reward points that rung pays are credited here, at that moment — the
+  /// same thing `OrderService.checkout` does on the backend. It pays each
+  /// rung once (guarded by `users.referral_level_awarded`) and pays every rung
+  /// crossed since the last check, so a failed attempt is made good the next
+  /// time a referral transacts or a plan activates.
   Future<void> markTransacted(String phone) async {
     await _run('markTransacted', () async {
-      await NeonHttp.instance.query(
+      final advanced = await NeonHttp.instance.query(
         '''
           UPDATE app.referral r
           SET status = 'TRANSACTED', transacted_at = now()
           FROM app.users u
           WHERE u.id = r.invitee_member_id AND u.phone = \$1
             AND r.status = 'REGISTERED'
+          RETURNING r.inviter_member_id
         ''',
         [phone],
       );
+      for (final row in advanced) {
+        await NeonHttp.instance.query(
+          'SELECT app.award_referral_level_points(\$1::bigint)',
+          [row['inviter_member_id']],
+        );
+      }
     });
   }
 
