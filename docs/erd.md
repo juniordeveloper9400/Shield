@@ -61,6 +61,7 @@ erDiagram
 | Wallet | `wallet`, `wallet_card`, `wallet_entry`, membership tiers and loads | Privilege plan accounting |
 | Rewards | `reward_point_transaction`, `referral`, `referral_level` | Points and referral progression |
 | Care | `lab_package`, `lab_profile`, `lab_booking`, booking patients, `clinic`, `clinic_doctor`, `dietitian`, `appointment` | Labs and appointments |
+| Lab test master | `lab_test`, `lab_test_group_item`, `lab_test_special_rate` | The lab's own tests, group tests and packages (console only) |
 | Partners | `agent`, `agent_request`, agent customer/plan/withdrawal/transfer, `investor`, investor plan requests | Agent and investor programmes |
 | Geography | `region`, `state`, `district`, `assembly`, `lsgd`, `ward` | Fixed administrative hierarchy an agent's slot (`agent.area_id`) resolves into |
 | Operations | `admin_user` | Staff identity/role model intended by schema |

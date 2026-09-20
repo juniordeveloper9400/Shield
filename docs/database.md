@@ -22,6 +22,8 @@ The customer-facing schema is defined by `backend/db/app_schema.sql` and describ
 - `agent.area_id` — the real slot id (into whichever geo table `agent.level` implies) behind the free-text `agent.area` display name. Deliberately not a DB-level FK (polymorphic by level); see the comment in `0017_agent_area_id.sql`.
 - `agent_request` — an app-submitted recruitment (KYC + requested level/parent/area, phone already OTP-verified) awaiting an admin's review in the web console. Registering a lower-tier agent from the app or `shield agent_invester/` never writes `agent` directly; approving a request inserts the real row and links back via `agent_request.agent_id`.
 
+- `lab_test`, `lab_test_group_item`, `lab_test_special_rate` — the laboratory's own test master (single tests, group tests and packages, with the tests inside a group and per-referring-lab rates), edited on the console's Lab Tests → Test Master tab. Separate from `lab_package` / `lab_profile`, which are what members book. Migration `0046_lab_test_master.sql`.
+
 `backend/db/app_schema.sql` already has `agent_request` (folded in separately), but does **not** yet define the six geo tables or `agent.area_id` — see [ERD known drift](erd.md#5-known-erd-drift) before running a schema recreation.
 
 **Wallet/cash checkout, delivery method, delivery-boy role, priced prescription bills (migration `0031_wallet_cash_delivery.sql`, folded into `app_schema.sql`, NOT yet applied to the live database):**

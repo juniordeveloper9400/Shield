@@ -41,6 +41,17 @@ Chip and tile images are stored as resized WebP data URIs (PNG on a browser whos
 
 Both apps read this data: the member app straight from Neon (`lib/data/neon/category_repository.dart`), and `shield agent_invester/` through the backend API's public catalogue routes (`lib/data/backend/category_repository.dart`). The API caches those lists for 5 minutes and the console writes to Neon directly, so a change reaches the agent / investor app within about 5 minutes; the member app sees it on its next catalogue load.
 
+### Lab Tests → Test Master
+
+`LabsPage` (`/lab-tests`, open to the `lab`, `admin` and `superadmin` roles) has two tabs. **Member packages** is the earlier screen over `app.lab_package` (price, MRP, active) — what members can book in the app. **Test Master** (`components/labtests/LabTestMaster.tsx`) is the laboratory's own catalogue, laid out like its LIS "Test" screen: search a test by name, short name or Lis Code, edit it, then **Delete**, **New** or **Save**.
+
+- **Test Type** is a single *Test*, a *Group Test* or a *Package*. Group tests and packages are built on the **Set Grouptest** tab from other saved, active single tests: each row has the member test, its amount inside the group, set order and an *Is Subhead* flag. **Total Amount** is the group's own selling price; **Group Amount** is the sum of its rows.
+- **Test Details** holds the name, short name, calc code, division, department, method, rate, Disc% (Amount = rate less discount, calculated), unit, sample, volume, cut of time, technology, test mode, report-on time, perform-at, internal note and the ten switches (NABL Accredited, Send SMS, Sample Type(Barcode), Free Test, Avoid Incentive, Alphanumeric Critical, Common Technology, Avoid Result Entry, Hide Head, Edit TestRate). Department, sample, volume, cut of time, technology, test mode and perform-at offer common values but accept anything typed. The **Lis Code** is handed out by the database (`app.lab_test_lis_code_seq`, from 1001) when a test is first saved.
+- The other tabs are free text (**Ref1 & Ref2**, **Specification 1–3**, **Result Template**) and a per-referring-lab rate table (**Special Rate & Ref Lab**).
+- Test names are unique ignoring case. A test that a group still lists cannot be deleted, or changed to a group type, until it is removed from that group.
+
+Data is in `app.lab_test`, `app.lab_test_group_item` and `app.lab_test_special_rate` (migration `backend/db/migrations/0046_lab_test_master.sql`; also in `app_schema.sql`). Saving is one SQL statement (`src/api/labTestSql.ts buildSaveStatement`) so a test and its rows save together or not at all. **Until that migration is applied the Test Master tab fails to load.** The master is separate from `app.lab_package`: nothing here changes what a member sees or can book in the apps yet.
+
 ### Customer videos (Supabase Storage)
 
 "What our customers have to say" on the app home screen is managed from **Customer Videos** (`CustomerVideosPage`, data in `src/api/customerReviewVideos.ts` over `app.customer_review_video`). Each clip is an **uploaded video file** stored in a public Supabase Storage bucket — YouTube links are no longer accepted, and the apps have no YouTube player any more. The video files live in Supabase Storage, not in a Postgres table; the table row only keeps the clip's name, caption, poster image and the video's public URL.
