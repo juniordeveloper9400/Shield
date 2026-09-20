@@ -269,12 +269,11 @@ class PrescriptionUploadedCard extends StatelessWidget {
 /// The invoice the store has attached to this order, once one has been sent
 /// from the admin console.
 ///
-/// Distinct from [BillDetailsCard]: that card is a breakdown worked out from
-/// the two figures [Purchase] already carries, and can never disagree with
-/// them because it is derived, not stored. This one is the store's own
-/// document — a picture handed back through the app — and simply is not
-/// there to show until an admin sends it, so the card renders nothing at all
-/// rather than a card with an empty middle.
+/// This is the store's own picture of the bill, handed back through the app.
+/// The itemised invoice (items, prices, totals) is a separate document, drawn
+/// by `InvoiceView` on the bill screen this card leads to. The card simply is
+/// not there to show until an admin sends a picture, so it renders nothing at
+/// all rather than a card with an empty middle.
 class StoreInvoiceCard extends StatelessWidget {
   final Purchase order;
 
@@ -1132,199 +1131,40 @@ class LabPackagePromoCard extends StatelessWidget {
 // Bill
 // ---------------------------------------------------------------------------
 
-/// The itemised bill for the order.
-class BillDetailsCard extends StatelessWidget {
+/// The "Pay now" button under a bill's invoice — only there while a priced
+/// prescription bill is still owed ([OrderBill.canPayNow]), and nothing at all
+/// otherwise.
+///
+/// This used to sit at the foot of a derived "Bill Details" estimate (MRP,
+/// discount, a guessed 5% tax, a fixed delivery line). The bill screen now
+/// prints the store's real itemised invoice instead (`InvoiceView`), so the
+/// estimate is gone and only the way to pay it remains.
+class PayBillButton extends StatelessWidget {
   final Purchase order;
 
-  const BillDetailsCard({super.key, required this.order});
+  const PayBillButton({super.key, required this.order});
 
   @override
   Widget build(BuildContext context) {
-    final bill = OrderBill(order);
-
-    if (!bill.priced) {
-      return _PlainCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text('Bill Details', style: _titleStyle),
-            SizedBox(height: 10),
-            Text(
-              'The pharmacist prices your prescription and shares the bill '
-              'before anything is charged.',
-              style: _mutedStyle,
-            ),
-          ],
-        ),
-      );
+    if (!OrderBill(order).canPayNow) {
+      return const SizedBox.shrink();
     }
-
-    return _PlainCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text('Bill Details', style: _titleStyle),
-          const SizedBox(height: 10),
-          _BillRow(
-            icon: Icons.shopping_cart_outlined,
-            label: const Text('MRP'),
-            value: Text(bill.mrpLabel, style: _billValueStyle),
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: () => _PayBillSheet.show(context, order),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppColors.brandBlue,
+          side: const BorderSide(color: AppColors.brandBlue, width: 1.4),
+          padding: const EdgeInsets.symmetric(vertical: 13),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
           ),
-          _BillRow(
-            icon: Icons.percent_rounded,
-            label: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Flexible(child: Text('Discount')),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: AppColors.greenTint,
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: Text(
-                    bill.discountPercentLabel,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.brandGreenDark,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            value: Text(
-              bill.discountLabel,
-              style: const TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w800,
-                color: AppColors.brandGreenDark,
-              ),
-            ),
-          ),
-          _BillRow(
-            icon: Icons.receipt_long_outlined,
-            label: const Text('Taxes and charges'),
-            value: Text(bill.taxesLabel, style: _billValueStyle),
-          ),
-          _BillRow(
-            icon: Icons.local_shipping_outlined,
-            label: const Text('Delivery charge'),
-            value: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: const [
-                Text(
-                  '₹149',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textMuted,
-                    decoration: TextDecoration.lineThrough,
-                  ),
-                ),
-                SizedBox(width: 6),
-                Text(
-                  'FREE',
-                  style: TextStyle(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.brandGreenDark,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          _line,
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Estimated Payable',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Inclusive of all taxes',
-                      style: TextStyle(fontSize: 11, color: AppColors.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                bill.payableLabel,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _line,
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Payment mode',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textDark,
-                  ),
-                ),
-              ),
-              Text(
-                bill.paymentMode,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textDark,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Invoice will be available to download once the order is delivered',
-            style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-          ),
-          if (bill.canPayNow) ...[
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton(
-                onPressed: () => _PayBillSheet.show(context, order),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.brandBlue,
-                  side: const BorderSide(color: AppColors.brandBlue, width: 1.4),
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: Text(
-                  'Pay ₹${formatRupees(order.billAmount ?? 0)} now',
-                  style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-          ],
-        ],
+        ),
+        child: Text(
+          'Pay ₹${formatRupees(order.billAmount ?? 0)} now',
+          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800),
+        ),
       ),
     );
   }
@@ -1540,39 +1380,3 @@ class _PayOptionTile extends StatelessWidget {
     );
   }
 }
-
-const TextStyle _billValueStyle = TextStyle(
-  fontSize: 13.5,
-  fontWeight: FontWeight.w800,
-  color: AppColors.textDark,
-);
-
-class _BillRow extends StatelessWidget {
-  final IconData icon;
-  final Widget label;
-  final Widget value;
-
-  const _BillRow({required this.icon, required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: AppColors.textMuted),
-          const SizedBox(width: 10),
-          Expanded(
-            child: DefaultTextStyle.merge(
-              style: const TextStyle(fontSize: 13.5, color: AppColors.textBody),
-              child: label,
-            ),
-          ),
-          const SizedBox(width: 10),
-          value,
-        ],
-      ),
-    );
-  }
-}
-

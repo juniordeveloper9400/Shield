@@ -5,7 +5,7 @@ import { ReferralService } from './referral.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdempotencyKey } from '../../common/decorators/idempotency-key.decorator';
-import { RequireMember } from '../../common/decorators/require-role.decorator';
+import { RequireMember, RequireRegistered } from '../../common/decorators/require-role.decorator';
 import { FinancialThrottle, ReceiptUploadThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
@@ -40,6 +40,7 @@ export class MemberWalletController {
     return this.wallet.listEntries(Number(user.subjectId));
   }
 
+  @RequireRegistered()
   @ReceiptUploadThrottle()
   @Post('wallet/cards')
   submitCard(

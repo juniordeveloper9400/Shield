@@ -83,10 +83,9 @@ class Purchase {
   /// the counter or on the delivery round collects it.
   final OrderPaymentStatus paymentStatus;
 
-  /// What the pharmacist priced this prescription's bill at, in whole
-  /// rupees. Null until `app.bill` has been priced — see [BillDetailsCard]'s
-  /// `priced` check, which reads [mrpTotal] / [paidTotal] instead for the
-  /// same reason.
+  /// What the store billed this order at, in whole rupees. Null when no
+  /// `app.bill` row exists for it yet; a row still at zero is a draft the
+  /// counter has not priced (see [hasBill]).
   final int? billAmount;
 
   /// Whether [billAmount] has actually been paid. Null until the bill has a
@@ -109,7 +108,11 @@ class Purchase {
     this.billStatus,
   });
 
-  bool get hasBill => billImage != null;
+  /// Whether the store has sent a bill for this order: either a picture it
+  /// attached, or a priced bill it typed in line by line (which carries no
+  /// picture at all). A bill row still at ₹0 with nothing attached is a draft
+  /// the counter has not finished, so it does not count.
+  bool get hasBill => billImage != null || (billAmount ?? 0) > 0;
 
   /// A copy with just the payment fields swapped in — what a wallet "Pay now"
   /// applies once the debit has gone through, so the order and its bill read

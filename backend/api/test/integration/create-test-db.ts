@@ -322,7 +322,10 @@ export function createTestDb() {
       pack text NOT NULL DEFAULT '',
       unit_price numeric(12,2) NOT NULL DEFAULT 0,
       mrp numeric(12,2) NOT NULL DEFAULT 0,
-      qty integer NOT NULL DEFAULT 1
+      qty integer NOT NULL DEFAULT 1,
+      -- migration 0044: counter-only, never returned to the member; a plain
+      -- text column here stands in for the app.order_line_status enum.
+      stock_status text NOT NULL DEFAULT 'AVAILABLE'
     );
 
     CREATE TABLE app.order_track_step (
@@ -345,6 +348,15 @@ export function createTestDb() {
       paid_at timestamptz,
       sent_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE app.bill_line (
+      id bigserial PRIMARY KEY,
+      bill_id bigint NOT NULL REFERENCES app.bill(id) ON DELETE CASCADE,
+      name text NOT NULL,
+      pack text NOT NULL DEFAULT '',
+      unit_price numeric(12,2) NOT NULL DEFAULT 0,
+      qty integer NOT NULL DEFAULT 1
     );
 
     CREATE TABLE app.order_receipt (

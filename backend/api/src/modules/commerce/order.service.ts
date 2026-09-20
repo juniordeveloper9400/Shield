@@ -1,9 +1,10 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, getTableColumns, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   bill,
+  billLine,
   cartLine,
   memberAddress,
   order,
@@ -16,6 +17,7 @@ import {
   prescriptionOrder,
   referral,
   rewardPointTransaction,
+  shieldStore,
   users,
   wallet,
   walletEntry,
@@ -297,11 +299,96 @@ export class OrderService {
     return created;
   }
 
+  /**
+   * The bill the store sent for this order, plus the itemised `invoice` the
+   * member's app prints under it: the items with their prices, who sold it
+   * (the store), who it is billed to and where it goes. The bill's own columns
+   * are unchanged, so existing clients keep working.
+   */
   async getBillForMember(memberId: number, orderId: number) {
-    await this.getOwnedByMemberOrThrow(orderId, memberId);
+    const theOrder = await this.getOwnedByMemberOrThrow(orderId, memberId);
     const [theBill] = await this.db.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
     if (!theBill) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'No bill sent for this order yet' } });
-    return theBill;
+    return { ...theBill, invoice: await this.buildInvoice(theOrder, theBill.id) };
+  }
+
+  private async buildInvoice(theOrder: typeof order.$inferSelect, billId: number) {
+    const [customer] = await this.db
+      .select({ name: users.name, phone: users.phone })
+      .from(users)
+      .where(eq(users.id, theOrder.memberId))
+      .limit(1);
+
+    const [store] =
+      theOrder.storeId === null
+        ? []
+        : await this.db
+            .select({
+              name: shieldStore.name,
+              area: shieldStore.area,
+              city: shieldStore.city,
+              state: shieldStore.state,
+              pincode: shieldStore.pincode,
+              phone: shieldStore.phone,
+            })
+            .from(shieldStore)
+            .where(eq(shieldStore.id, theOrder.storeId))
+            .limit(1);
+
+    // Not filtered on `deletedAt`: an address the member has since removed is
+    // still where this order went, and the invoice is a record of that.
+    const [address] =
+      theOrder.deliveryAddressId === null
+        ? []
+        : await this.db
+            .select({
+              house: memberAddress.house,
+              area: memberAddress.area,
+              landmark: memberAddress.landmark,
+              city: memberAddress.city,
+              state: memberAddress.state,
+              pincode: memberAddress.pincode,
+            })
+            .from(memberAddress)
+            .where(eq(memberAddress.id, theOrder.deliveryAddressId))
+            .limit(1);
+
+    // The bill's own lines — what the counter typed in when it priced the bill.
+    let lines: { name: string; pack: string; unitPrice: string; qty: number }[] = await this.db
+      .select({ name: billLine.name, pack: billLine.pack, unitPrice: billLine.unitPrice, qty: billLine.qty })
+      .from(billLine)
+      .where(eq(billLine.billId, billId))
+      .orderBy(billLine.id);
+
+    // A bill that was only a picture has none, so fall back to the order's own
+    // lines the counter could supply. `stock_status` (migration 0044) is
+    // counter-only and deliberately not on the drizzle model — `getForMember`
+    // selects every column of it — so it is filtered here in SQL and never
+    // returned.
+    if (lines.length === 0) {
+      const result = await this.db.execute(sql`
+        SELECT name, pack, unit_price AS "unitPrice", qty
+        FROM app.order_line
+        WHERE order_id = ${theOrder.id} AND stock_status = 'AVAILABLE'
+        ORDER BY id
+      `);
+      lines = result.rows as typeof lines;
+    }
+
+    return {
+      number: theOrder.code,
+      placedAt: theOrder.placedAt,
+      status: theOrder.status,
+      fulfillmentType: theOrder.fulfillmentType,
+      paymentStatus: theOrder.paymentStatus,
+      paidAt: theOrder.paidAt,
+      paidTotal: theOrder.paidTotal,
+      deliveryFee: theOrder.deliveryFee,
+      customer: customer ?? null,
+      store: store ?? null,
+      deliveryAddress: address ?? null,
+      lines,
+    };
   }
 
   /**

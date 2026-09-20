@@ -88,7 +88,7 @@ describe('Wallet & Rewards (e2e)', () => {
 
     const [member] = await db
       .insert(users)
-      .values({ phone: '9000000003', name: 'Wallet Member', firebaseUid: 'member-wallet-1' })
+      .values({ phone: '9000000003', name: 'Wallet Member', firebaseUid: 'member-wallet-1', registrationCompletedAt: new Date() })
       .returning();
     memberId = member.id;
     firebase.register('member-token', { uid: 'member-wallet-1' });
@@ -245,7 +245,7 @@ describe('Wallet & Rewards (e2e)', () => {
     // A separate member — approving into memberAccessToken's own wallet
     // here would shift the balance later tests assert an exact figure
     // against.
-    await db.insert(users).values({ phone: '9000000004', name: 'Another Member', firebaseUid: 'member-wallet-2' });
+    await db.insert(users).values({ phone: '9000000004', name: 'Another Member', firebaseUid: 'member-wallet-2', registrationCompletedAt: new Date() });
     firebase.register('member-2-token', { uid: 'member-wallet-2' });
     const otherMemberToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-2-token' }).expect(200)
@@ -289,7 +289,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .values({ code: 'SHD-REG-TEST1', name: 'Region Agent', phone: '9000000098', level: 'REGION', parentId: agentId })
       .returning();
 
-    await db.insert(users).values({ phone: '9000000005', name: 'Third Member', firebaseUid: 'member-wallet-3' });
+    await db.insert(users).values({ phone: '9000000005', name: 'Third Member', firebaseUid: 'member-wallet-3', registrationCompletedAt: new Date() });
     firebase.register('member-3-token', { uid: 'member-wallet-3' });
     const thirdMemberToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-3-token' }).expect(200)
@@ -340,7 +340,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .values({ code: 'SHD-STA-TEST1', name: 'State Agent', phone: '9000000096', level: 'STATE', parentId: regionAgent.id })
       .returning();
 
-    await db.insert(users).values({ phone: '9000000006', name: 'Fourth Member', firebaseUid: 'member-wallet-4' });
+    await db.insert(users).values({ phone: '9000000006', name: 'Fourth Member', firebaseUid: 'member-wallet-4', registrationCompletedAt: new Date() });
     firebase.register('member-4-token', { uid: 'member-wallet-4' });
     const fourthMemberToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-4-token' }).expect(200)
@@ -395,7 +395,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .values({ code: 'SHD-DIS-TEST1', name: 'District Agent', phone: '9000000093', level: 'DISTRICT', parentId: stateAgent.id })
       .returning();
 
-    await db.insert(users).values({ phone: '9000000007', name: 'Fifth Member', firebaseUid: 'member-wallet-5' });
+    await db.insert(users).values({ phone: '9000000007', name: 'Fifth Member', firebaseUid: 'member-wallet-5', registrationCompletedAt: new Date() });
     firebase.register('member-5-token', { uid: 'member-wallet-5' });
     const fifthMemberToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-5-token' }).expect(200)
@@ -456,7 +456,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .values({ code: 'SHD-ASM-TEST1', name: 'Assembly Agent', phone: '9000000089', level: 'ASSEMBLY', parentId: districtAgent.id })
       .returning();
 
-    await db.insert(users).values({ phone: '9000000008', name: 'Sixth Member', firebaseUid: 'member-wallet-6' });
+    await db.insert(users).values({ phone: '9000000008', name: 'Sixth Member', firebaseUid: 'member-wallet-6', registrationCompletedAt: new Date() });
     firebase.register('member-6-token', { uid: 'member-wallet-6' });
     const sixthMemberToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-6-token' }).expect(200)
@@ -524,7 +524,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .values({ code: 'SHD-LSG-TEST1', name: 'Lsgd Agent', phone: '9000000084', level: 'LSGD', parentId: assemblyAgent.id })
       .returning();
 
-    await db.insert(users).values({ phone: '9000000009', name: 'Seventh Member', firebaseUid: 'member-wallet-7' });
+    await db.insert(users).values({ phone: '9000000009', name: 'Seventh Member', firebaseUid: 'member-wallet-7', registrationCompletedAt: new Date() });
     firebase.register('member-7-token', { uid: 'member-wallet-7' });
     const seventhMemberToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-7-token' }).expect(200)
@@ -599,7 +599,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .values({ code: 'SHD-WRD-TEST1', name: 'Ward Agent', phone: '9000000078', level: 'WARD', parentId: lsgdAgent.id })
       .returning();
 
-    await db.insert(users).values({ phone: '9000000077', name: 'Eighth Member', firebaseUid: 'member-wallet-8' });
+    await db.insert(users).values({ phone: '9000000077', name: 'Eighth Member', firebaseUid: 'member-wallet-8', registrationCompletedAt: new Date() });
     firebase.register('member-8-token', { uid: 'member-wallet-8' });
     const eighthMemberToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-8-token' }).expect(200)
@@ -758,7 +758,7 @@ describe('Wallet & Rewards (e2e)', () => {
   it("reports direct referrals and activated wallet cards for the caller's own progress", async () => {
     const [invitee] = await db
       .insert(users)
-      .values({ phone: '9000000010', name: 'Referred Invitee', firebaseUid: 'member-referred-invitee' })
+      .values({ phone: '9000000010', name: 'Referred Invitee', firebaseUid: 'member-referred-invitee', registrationCompletedAt: new Date() })
       .returning();
     await db.insert(referral).values({
       inviterMemberId: memberId,
@@ -823,7 +823,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .expect(200);
     const inviterCode = codeRes.body.code as string;
 
-    await db.insert(users).values({ phone: '9000000013', name: 'New Signup', firebaseUid: 'member-signup-code-member' });
+    await db.insert(users).values({ phone: '9000000013', name: 'New Signup', firebaseUid: 'member-signup-code-member', registrationCompletedAt: new Date() });
     firebase.register('signup-code-member-token', { uid: 'member-signup-code-member' });
     const inviteeToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'signup-code-member-token' }).expect(200)
@@ -847,7 +847,7 @@ describe('Wallet & Rewards (e2e)', () => {
   it('applies an agent code typed in lowercase — the field is never forced to a fixed case, so this must resolve exactly like the upper-case original', async () => {
     const [freshMember] = await db
       .insert(users)
-      .values({ phone: '9000000023', name: 'Lowercase Agent Code Typist', firebaseUid: 'member-agent-code-lowercase' })
+      .values({ phone: '9000000023', name: 'Lowercase Agent Code Typist', firebaseUid: 'member-agent-code-lowercase', registrationCompletedAt: new Date() })
       .returning();
     const freshToken = await directMemberToken(freshMember.id);
 
@@ -868,7 +868,7 @@ describe('Wallet & Rewards (e2e)', () => {
 
     const [freshInvitee] = await db
       .insert(users)
-      .values({ phone: '9000000024', name: 'Lowercase Member Code Typist', firebaseUid: 'member-referral-code-lowercase' })
+      .values({ phone: '9000000024', name: 'Lowercase Member Code Typist', firebaseUid: 'member-referral-code-lowercase', registrationCompletedAt: new Date() })
       .returning();
     const freshInviteeToken = await directMemberToken(freshInvitee.id);
 
@@ -917,7 +917,7 @@ describe('Wallet & Rewards (e2e)', () => {
     // memberId's own wallet or points.
     const [inviter] = await db
       .insert(users)
-      .values({ phone: '9000000020', name: 'Referral Inviter', firebaseUid: 'member-referral-inviter' })
+      .values({ phone: '9000000020', name: 'Referral Inviter', firebaseUid: 'member-referral-inviter', registrationCompletedAt: new Date() })
       .returning();
     const inviterToken = await directMemberToken(inviter.id);
 
@@ -930,11 +930,11 @@ describe('Wallet & Rewards (e2e)', () => {
     // referral_level's first rung (Starter) needs 2 direct referrals.
     const [firstInvitee] = await db
       .insert(users)
-      .values({ phone: '9000000021', name: 'First Invitee', firebaseUid: 'member-referral-invitee-1' })
+      .values({ phone: '9000000021', name: 'First Invitee', firebaseUid: 'member-referral-invitee-1', registrationCompletedAt: new Date() })
       .returning();
     const [secondInvitee] = await db
       .insert(users)
-      .values({ phone: '9000000022', name: 'Second Invitee', firebaseUid: 'member-referral-invitee-2' })
+      .values({ phone: '9000000022', name: 'Second Invitee', firebaseUid: 'member-referral-invitee-2', registrationCompletedAt: new Date() })
       .returning();
     const firstInviteeToken = await directMemberToken(firstInvitee.id);
     const secondInviteeToken = await directMemberToken(secondInvitee.id);

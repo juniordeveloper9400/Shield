@@ -31,15 +31,55 @@ export class IdentityService {
         pincode: users.pincode,
         state: users.state,
         homeStoreId: users.homeStoreId,
+        // The branch's code whether or not the branch is still active — a
+        // member's registration must read back the same after a branch is
+        // switched off, and the apps' public store list only carries active ones.
+        homeStoreCode: shieldStore.code,
         rewardPoints: users.rewardPoints,
         registrationCompletedAt: users.registrationCompletedAt,
       })
       .from(users)
+      .leftJoin(shieldStore, eq(shieldStore.id, users.homeStoreId))
       .where(and(eq(users.id, memberId), isNull(users.deletedAt)))
       .limit(1);
 
     if (!member) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Member not found' } });
     return member;
+  }
+
+  /**
+   * The branch a profile save names, by code or id — or undefined when it names
+   * none. A branch must exist, and must be active to be *newly* chosen; a
+   * member may always keep the branch they already have, so editing a
+   * profile keeps working after that branch is switched off.
+   */
+  private async resolveHomeStore(memberId: number, dto: UpdateMemberProfileDto): Promise<number | undefined> {
+    if (dto.homeStoreCode === undefined && dto.homeStoreId === undefined) return undefined;
+
+    const [store] = await this.db
+      .select({ id: shieldStore.id, isActive: shieldStore.isActive })
+      .from(shieldStore)
+      .where(dto.homeStoreCode !== undefined ? eq(shieldStore.code, dto.homeStoreCode) : eq(shieldStore.id, dto.homeStoreId!))
+      .limit(1);
+    if (!store) {
+      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'The home store is not a known store' } });
+    }
+    if (!store.isActive) {
+      const [current] = await this.db
+        .select({ homeStoreId: users.homeStoreId })
+        .from(users)
+        .where(eq(users.id, memberId))
+        .limit(1);
+      if (current?.homeStoreId !== store.id) {
+        throw new ForbiddenException({
+          error: {
+            code: 'STORE_UNAVAILABLE',
+            message: "That branch isn't taking new registrations right now. Choose another branch.",
+          },
+        });
+      }
+    }
+    return store.id;
   }
 
   /**
@@ -51,16 +91,11 @@ export class IdentityService {
    * atomic check here.
    */
   async updateProfile(memberId: number, dto: UpdateMemberProfileDto) {
-    if (dto.homeStoreId !== undefined) {
-      const [store] = await this.db
-        .select({ id: shieldStore.id })
-        .from(shieldStore)
-        .where(and(eq(shieldStore.id, dto.homeStoreId), eq(shieldStore.isActive, true)))
-        .limit(1);
-      if (!store) {
-        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'homeStoreId is not a known active store' } });
-      }
-    }
+    const homeStoreId = await this.resolveHomeStore(memberId, dto);
+    // The store arrives as a code or an id; only the resolved id is written.
+    const { homeStoreCode: _code, homeStoreId: _id, ...profile } = dto;
+    void _code;
+    void _id;
 
     return this.db.transaction(async (tx) => {
       const [before] = await tx
@@ -75,7 +110,8 @@ export class IdentityService {
       const [updated] = await tx
         .update(users)
         .set({
-          ...dto,
+          ...profile,
+          ...(homeStoreId !== undefined ? { homeStoreId } : {}),
           ...(isFirstCompletion ? { registrationCompletedAt: new Date() } : {}),
           updatedAt: new Date(),
         })
@@ -111,7 +147,11 @@ export class IdentityService {
         updated.rewardPoints += REGISTRATION_BONUS_POINTS;
       }
 
-      return updated;
+      const [store] =
+        updated.homeStoreId === null
+          ? []
+          : await tx.select({ code: shieldStore.code }).from(shieldStore).where(eq(shieldStore.id, updated.homeStoreId)).limit(1);
+      return { ...updated, homeStoreCode: store?.code ?? null };
     });
   }
 

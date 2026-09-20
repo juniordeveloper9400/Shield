@@ -1,4 +1,5 @@
-import { SetMetadata } from '@nestjs/common';
+import { SetMetadata, UseGuards } from '@nestjs/common';
+import { RegisteredGuard } from '../guards/registered.guard';
 import type { AdminRole, SubjectType } from '../../modules/auth/session.types';
 
 export const ROLES_KEY = 'requiredRoles';
@@ -25,3 +26,10 @@ export const RequireSubject = (...types: SubjectType[]) => SetMetadata(SUBJECT_T
 
 /** Restricts a route to an authenticated member session — the MEMBER-side counterpart to RequireStaff. */
 export const RequireMember = () => RequireSubject('MEMBER');
+
+/**
+ * Restricts a member route to members who have completed registration — see
+ * `RegisteredGuard`. Answers 403 `REGISTRATION_REQUIRED` otherwise, which the
+ * apps turn into the "register to continue" prompt.
+ */
+export const RequireRegistered = () => UseGuards(RegisteredGuard);

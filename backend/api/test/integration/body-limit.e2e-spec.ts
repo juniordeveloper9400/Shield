@@ -71,7 +71,7 @@ describe('Request body size limit (e2e)', () => {
 
     const [member] = await db
       .insert(users)
-      .values({ phone: '9000000030', name: 'Body Limit Member', firebaseUid: 'member-body-limit-1' })
+      .values({ phone: '9000000030', name: 'Body Limit Member', firebaseUid: 'member-body-limit-1', registrationCompletedAt: new Date() })
       .returning();
     firebase.register('member-token', { uid: 'member-body-limit-1' });
 

@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseIntPip
 import { PrescriptionService } from './prescription.service';
 import { ApprovalService } from './approval.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequireMember } from '../../common/decorators/require-role.decorator';
+import { RequireMember, RequireRegistered } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   respondApprovalSchema,
@@ -22,6 +22,7 @@ export class MemberPrescriptionController {
     private readonly approvals: ApprovalService,
   ) {}
 
+  @RequireRegistered()
   @Post('prescriptions')
   upload(
     @CurrentUser() user: RequestSubject,
@@ -46,6 +47,7 @@ export class MemberPrescriptionController {
     await this.prescriptions.deleteForMember(Number(user.subjectId), id);
   }
 
+  @RequireRegistered()
   @Post('prescription-orders')
   submitForOrder(
     @CurrentUser() user: RequestSubject,

@@ -7,13 +7,15 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { hash } from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import {
   adminUser,
+  bill,
+  billLine,
   memberAddress,
   order,
   paymentMethod,
@@ -75,7 +77,7 @@ describe('Commerce (e2e)', () => {
 
     const [member] = await db
       .insert(users)
-      .values({ phone: '9000000001', name: 'Commerce Member', firebaseUid: 'member-commerce-1', homeStoreId: storeA.id })
+      .values({ phone: '9000000001', name: 'Commerce Member', firebaseUid: 'member-commerce-1', homeStoreId: storeA.id, registrationCompletedAt: new Date() })
       .returning();
     firebase.register('member-token', { uid: 'member-commerce-1' });
 
@@ -299,6 +301,66 @@ describe('Commerce (e2e)', () => {
     expect(bill.body.image).toBe('data:image/png;base64,AAAA');
   });
 
+  it("returns an itemised invoice with the bill: store, customer and only the order lines the counter could supply", async () => {
+    // A line the counter marked out of stock must never reach the member.
+    await db.execute(sql`
+      INSERT INTO app.order_line (order_id, name, unit_price, qty, stock_status)
+      VALUES (${orderId}, 'Not supplied', 5, 1, 'OUT_OF_STOCK')
+    `);
+
+    const res = await request(app.getHttpServer())
+      .get(`/v1/member/orders/${orderId}/bill`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+
+    // The bill's own columns are untouched.
+    expect(res.body.image).toBe('data:image/png;base64,AAAA');
+
+    const invoice = res.body.invoice;
+    expect(invoice.number).toMatch(/^SH/);
+    expect(invoice.customer).toEqual({ name: 'Commerce Member', phone: '9000000001' });
+    // An earlier test in this file walked the order through to delivery.
+    expect(invoice.status).toBe('DELIVERED');
+    expect(invoice.paymentStatus).toBe('PENDING');
+    // The bill was only a picture, so the lines are the order's own.
+    expect(invoice.lines.map((l: { name: string }) => l.name)).toEqual(['Vitamin C']);
+    expect(Number(invoice.lines[0].unitPrice)).toBe(100);
+    expect(invoice.lines[0].qty).toBe(2);
+    // The counter-only status is filtered in SQL and never serialised.
+    expect(JSON.stringify(res.body)).not.toContain('stock');
+    expect(JSON.stringify(res.body)).not.toContain('Not supplied');
+  });
+
+  it("uses the bill's own priced lines once the counter has entered them", async () => {
+    const [theBill] = await db.select().from(bill).where(eq(bill.orderId, orderId));
+    await db.insert(billLine).values([
+      { billId: theBill.id, name: 'Paracetamol 500mg', pack: 'Strip of 15', unitPrice: '30.50', qty: 2 },
+      { billId: theBill.id, name: 'Cetirizine 10mg', pack: '', unitPrice: '120.00', qty: 1 },
+    ]);
+
+    const res = await request(app.getHttpServer())
+      .get(`/v1/member/orders/${orderId}/bill`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+
+    const lines = res.body.invoice.lines as { name: string; pack: string; unitPrice: string; qty: number }[];
+    expect(lines.map((l) => l.name)).toEqual(['Paracetamol 500mg', 'Cetirizine 10mg']);
+    expect(lines[0].pack).toBe('Strip of 15');
+    expect(Number(lines[0].unitPrice)).toBe(30.5);
+  });
+
+  it("does not show another member the bill or its invoice", async () => {
+    const otherLogin = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'other-member-token' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get(`/v1/member/orders/${orderId}/bill`)
+      .set('Authorization', `Bearer ${otherLogin.body.accessToken}`)
+      .expect(404);
+  });
+
   it('rejects checkout of an empty cart', async () => {
     await request(app.getHttpServer())
       .post('/v1/member/orders')
@@ -346,7 +408,7 @@ describe('Commerce (e2e)', () => {
       .returning();
     const [invitee] = await db
       .insert(users)
-      .values({ phone: '9000000051', name: 'Invitee', firebaseUid: 'member-commerce-invitee' })
+      .values({ phone: '9000000051', name: 'Invitee', firebaseUid: 'member-commerce-invitee', registrationCompletedAt: new Date() })
       .returning();
     await db.insert(referral).values({
       inviterMemberId: inviter.id,
@@ -388,7 +450,7 @@ describe('Commerce (e2e)', () => {
     beforeAll(async () => {
       const [walletMember] = await db
         .insert(users)
-        .values({ phone: '9000000060', name: 'Wallet Checkout Member', firebaseUid: 'member-commerce-wallet' })
+        .values({ phone: '9000000060', name: 'Wallet Checkout Member', firebaseUid: 'member-commerce-wallet', registrationCompletedAt: new Date() })
         .returning();
       firebase.register('wallet-member-token', { uid: 'member-commerce-wallet' });
       const login = await request(app.getHttpServer())

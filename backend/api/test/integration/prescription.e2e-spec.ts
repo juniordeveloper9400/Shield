@@ -56,7 +56,7 @@ describe('Prescription (e2e)', () => {
 
     const [member] = await db
       .insert(users)
-      .values({ phone: '9000000002', name: 'Rx Member', firebaseUid: 'member-rx-1', homeStoreId: storeA.id })
+      .values({ phone: '9000000002', name: 'Rx Member', firebaseUid: 'member-rx-1', homeStoreId: storeA.id, registrationCompletedAt: new Date() })
       .returning();
     firebase.register('member-token', { uid: 'member-rx-1' });
 

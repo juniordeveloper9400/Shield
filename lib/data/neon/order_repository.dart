@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../dates.dart';
 import '../../module/checkout/fulfillment_type.dart';
+import '../../module/orders/bill_invoice.dart';
 import '../../module/orders/purchase_service.dart';
 import 'neon_http.dart';
 import 'wallet_repository.dart';
@@ -275,6 +276,163 @@ class OrderRepository {
     } catch (error) {
       NeonHttp.log('OrderRepository.listForMember failed', error: error);
       return null;
+    }
+  }
+
+  /// The store's itemised invoice for one of [phone]'s orders — the bill, its
+  /// line items, the store that sold it, who it is billed to and where it went
+  /// — for the bill screen's "Invoice" section.
+  ///
+  /// A separate read from [listForMember], and best-effort on its own: the
+  /// order list stays exactly as it was if this fails. Returns `null` when the
+  /// database is off, the order is not this member's, or the query fails, and
+  /// the screen then prints what the order already carries.
+  ///
+  /// The lines are the bill's own (`app.bill_line`, what the counter typed in
+  /// when it priced the bill). A bill that was only a picture has none, so it
+  /// falls back to the order's lines the counter marked *available* — never
+  /// the ones it could not supply.
+  Future<BillInvoice?> fetchInvoice({
+    required String phone,
+    required String orderCode,
+  }) async {
+    if (!NeonHttp.isConfigured) {
+      return null;
+    }
+    try {
+      final rows = await NeonHttp.instance.query(
+        r'''
+          SELECT o.id AS order_id, o.status::text AS status, o.placed_at,
+                 o.fulfillment_type::text AS fulfillment_type,
+                 o.payment_status::text AS payment_status,
+                 o.delivery_fee, o.paid_total, o.paid_at AS order_paid_at,
+                 u.name AS customer_name, u.phone AS customer_phone,
+                 s.name AS store_name, s.area AS store_area,
+                 s.city AS store_city, s.state AS store_state,
+                 s.pincode AS store_pincode, s.phone AS store_phone,
+                 a.house, a.area AS address_area, a.landmark,
+                 a.city AS address_city, a.state AS address_state,
+                 a.pincode AS address_pincode,
+                 b.id AS bill_id, b.amount AS bill_amount,
+                 b.status::text AS bill_status, b.sent_at, b.paid_at
+          FROM app."order" o
+          JOIN app.users u ON u.id = o.member_id
+          LEFT JOIN app.shield_store s ON s.id = o.store_id
+          LEFT JOIN app.member_address a ON a.id = o.delivery_address_id
+          LEFT JOIN app.bill b ON b.order_id = o.id
+          WHERE o.code = $1 AND u.phone = $2
+          LIMIT 1
+        ''',
+        [orderCode, phone],
+      );
+      if (rows.isEmpty) {
+        return null;
+      }
+      final row = rows.first;
+
+      var lines = <InvoiceLine>[];
+      if (row['bill_id'] != null) {
+        lines = _toInvoiceLines(
+          await NeonHttp.instance.query(
+            r'''
+              SELECT name, pack, unit_price, qty
+              FROM app.bill_line
+              WHERE bill_id = $1
+              ORDER BY id
+            ''',
+            [row['bill_id']],
+          ),
+        );
+      }
+      if (lines.isEmpty) {
+        lines = await _availableOrderLines(row['order_id']);
+      }
+
+      String text(String key) => (row[key] ?? '').toString().trim();
+      String joined(List<String> keys) =>
+          keys.map(text).where((part) => part.isNotEmpty).join(', ');
+
+      final status = text('status');
+      return BillInvoice.compose(
+        number: orderCode,
+        billedAt: DateTime.tryParse(text('sent_at')),
+        placedAt: DateTime.tryParse(text('placed_at')),
+        customerName: text('customer_name'),
+        customerPhone: text('customer_phone'),
+        storeName: text('store_name'),
+        storeAddress: joined([
+          'store_area',
+          'store_city',
+          'store_state',
+          'store_pincode',
+        ]),
+        storePhone: text('store_phone'),
+        homeDelivery: text('fulfillment_type') != 'STORE_PICKUP',
+        deliveryAddress: joined([
+          'house',
+          'address_area',
+          'landmark',
+          'address_city',
+          'address_state',
+          'address_pincode',
+        ]),
+        orderStatus: status == 'DELIVERED'
+            ? 'Completed'
+            : status == 'CANCELLED'
+            ? 'Cancelled'
+            : 'In progress',
+        paid: text('payment_status') == 'PAID' || text('bill_status') == 'PAID',
+        paidAt: DateTime.tryParse(text('paid_at')) ??
+            DateTime.tryParse(text('order_paid_at')),
+        lines: lines,
+        billPaise: paiseFrom(row['bill_amount']),
+        paidTotalPaise: paiseFrom(row['paid_total']),
+        deliveryFeePaise: paiseFrom(row['delivery_fee']),
+      );
+    } catch (error) {
+      NeonHttp.log('OrderRepository.fetchInvoice failed', error: error);
+      return null;
+    }
+  }
+
+  static List<InvoiceLine> _toInvoiceLines(List<Map<String, dynamic>> rows) => [
+    for (final row in rows)
+      InvoiceLine(
+        name: (row['name'] ?? '').toString().trim(),
+        pack: (row['pack'] ?? '').toString().trim(),
+        qty: int.tryParse((row['qty'] ?? '1').toString()) ?? 1,
+        unitPaise: paiseFrom(row['unit_price']),
+      ),
+  ];
+
+  /// The order's own lines the counter could actually supply. Tries the
+  /// stock-status filter first (migration 0044); on a database that predates
+  /// it, takes every line rather than failing the whole invoice.
+  Future<List<InvoiceLine>> _availableOrderLines(Object? orderId) async {
+    try {
+      return _toInvoiceLines(
+        await NeonHttp.instance.query(
+          r'''
+            SELECT name, pack, unit_price, qty
+            FROM app.order_line
+            WHERE order_id = $1 AND stock_status = 'AVAILABLE'
+            ORDER BY id
+          ''',
+          [orderId],
+        ),
+      );
+    } catch (_) {
+      return _toInvoiceLines(
+        await NeonHttp.instance.query(
+          r'''
+            SELECT name, pack, unit_price, qty
+            FROM app.order_line
+            WHERE order_id = $1
+            ORDER BY id
+          ''',
+          [orderId],
+        ),
+      );
     }
   }
 

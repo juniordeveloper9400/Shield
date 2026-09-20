@@ -43,6 +43,10 @@ export const updateMemberProfileSchema = z.object({
   pincode: z.string().optional(),
   state: z.string().optional(),
   homeStoreId: z.number().int().positive().optional(),
+  // The branch by its stable code (`SHD-MEL`) — what the apps hold. Resolved
+  // server-side, so a client never needs the (active-only) public store list
+  // just to save or read back its own registration. Wins over homeStoreId.
+  homeStoreCode: z.string().min(1).max(32).optional(),
 });
 
 export type CreateAddressDto = z.infer<typeof createAddressSchema>;

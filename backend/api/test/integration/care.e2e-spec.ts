@@ -53,7 +53,7 @@ describe('Care Services (e2e)', () => {
 
     const [member] = await db
       .insert(users)
-      .values({ phone: '9000000004', name: 'Care Member', firebaseUid: 'member-care-1' })
+      .values({ phone: '9000000004', name: 'Care Member', firebaseUid: 'member-care-1', registrationCompletedAt: new Date() })
       .returning();
     firebase.register('member-token', { uid: 'member-care-1' });
 

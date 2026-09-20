@@ -4,7 +4,7 @@ import { OrderService } from './order.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdempotencyKey } from '../../common/decorators/idempotency-key.decorator';
-import { RequireMember } from '../../common/decorators/require-role.decorator';
+import { RequireMember, RequireRegistered } from '../../common/decorators/require-role.decorator';
 import { FinancialThrottle, ReceiptUploadThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
@@ -33,6 +33,7 @@ export class MemberCommerceController {
     return this.cart.getCart(Number(user.subjectId));
   }
 
+  @RequireRegistered()
   @Post('cart/lines')
   addLine(@CurrentUser() user: RequestSubject, @Body(new ZodValidationPipe(addCartLineSchema)) dto: AddCartLineDto) {
     return this.cart.addLine(Number(user.subjectId), dto);
@@ -53,6 +54,7 @@ export class MemberCommerceController {
   }
 
   /** Idempotent — a retried checkout with the same Idempotency-Key never creates a second order. */
+  @RequireRegistered()
   @FinancialThrottle()
   @Post('orders')
   checkout(
