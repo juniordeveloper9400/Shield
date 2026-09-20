@@ -15,6 +15,7 @@ import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import {
   adminUser,
   memberAddress,
+  order,
   paymentMethod,
   product,
   productCategory,
@@ -187,6 +188,28 @@ describe('Commerce (e2e)', () => {
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .expect(200);
     expect(orders.body).toHaveLength(1); // not two
+  });
+
+  it("lists the order's storeContactedAt for the member's Track order — null until staff contact them", async () => {
+    const before = await request(app.getHttpServer())
+      .get('/v1/member/orders')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(before.body[0]).toEqual(expect.objectContaining({ id: orderId, storeContactedAt: null }));
+
+    // The admin console stamps this directly (shieldweb/src/api/orders.ts).
+    const contactedAt = new Date('2026-09-20T10:15:00.000Z');
+    await db.update(order).set({ storeContactedAt: contactedAt }).where(eq(order.id, orderId));
+
+    const after = await request(app.getHttpServer())
+      .get('/v1/member/orders')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(after.body[0]).toEqual(
+      expect.objectContaining({ id: orderId, storeContactedAt: contactedAt.toISOString() }),
+    );
+
+    await db.update(order).set({ storeContactedAt: null }).where(eq(order.id, orderId));
   });
 
   it("scopes staff order visibility to the order's store — a different store sees nothing", async () => {

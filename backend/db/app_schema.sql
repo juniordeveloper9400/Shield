@@ -559,6 +559,8 @@ CREATE TABLE app."order" (
     -- converted_to_bill_at = "Convert to bill" (only these orders show on Bills).
     reviewed_at          timestamptz,
     converted_to_bill_at timestamptz,
+    -- migration 0045: first Call/WhatsApp click by staff; the member's "Store contact" stage.
+    store_contacted_at   timestamptz,
     placed_on           date NOT NULL DEFAULT current_date,
     placed_at           timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now()

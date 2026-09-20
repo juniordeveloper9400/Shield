@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../theme/app_colors.dart';
 import '../../money.dart';
+import '../agent/agent_service.dart';
 import '../auth/auth_service.dart';
 import '../cart/cart_screen.dart';
 import '../investor/investor_portal_screen.dart';
@@ -357,11 +358,14 @@ class _ProfileCard extends StatelessWidget {
     ReferralService.instance.ensureLoaded();
     // Listens so completing the form fills the store line in, and the real
     // Member ID replaces the placeholder once it loads, without the tab
-    // having to be left and come back.
+    // having to be left and come back. AgentService is in the mix for the
+    // same reason: the moment the admin console converts this member to an
+    // agent, the Member ID line gives way to their Agent ID.
     return ListenableBuilder(
       listenable: Listenable.merge([
         RegistrationService.instance,
         ReferralService.instance,
+        AgentService.instance,
       ]),
       builder: (context, _) => _build(context),
     );
@@ -370,7 +374,14 @@ class _ProfileCard extends StatelessWidget {
   Widget _build(BuildContext context) {
     final user = AuthService.instance.currentUser.value;
     final store = RegistrationService.instance.profile?.store;
-    final memberId = ReferralService.instance.code;
+    // An approved agent is identified by their Agent ID alone — the Member ID
+    // (their referral code) is not shown once they have one. A plain member,
+    // or a recruit still pending approval, keeps the Member ID.
+    final agent = AgentService.instance.agentForPhone(user?.phone);
+    final idLabel = agent != null ? 'Agent ID' : 'Member ID';
+    final idValue = agent != null
+        ? agent.agentCode
+        : ReferralService.instance.code;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -453,12 +464,12 @@ class _ProfileCard extends StatelessWidget {
                 const SizedBox(height: 5),
                 InkWell(
                   onTap: () async {
-                    await Clipboard.setData(ClipboardData(text: memberId));
+                    await Clipboard.setData(ClipboardData(text: idValue));
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context)
                       ..hideCurrentSnackBar()
                       ..showSnackBar(
-                        const SnackBar(content: Text('Member ID copied')),
+                        SnackBar(content: Text('$idLabel copied')),
                       );
                   },
                   borderRadius: BorderRadius.circular(6),
@@ -467,7 +478,7 @@ class _ProfileCard extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          'Member ID: $memberId',
+                          '$idLabel: $idValue',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(

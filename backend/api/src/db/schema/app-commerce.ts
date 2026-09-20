@@ -79,6 +79,9 @@ export const order = appSchema.table('order', {
   paymentStatus: orderPaymentStatusEnum('payment_status').notNull().default('PENDING'),
   deliveryBoyId: bigint('delivery_boy_id', { mode: 'number' }),
   paidAt: timestamp('paid_at', { withTimezone: true }),
+  // migration 0045: first time staff used the console's Call / WhatsApp for
+  // this order's member — the member's "Store contact" stage. Read-only here.
+  storeContactedAt: timestamp('store_contacted_at', { withTimezone: true }),
   placedOn: date('placed_on').notNull(),
   placedAt: timestamp('placed_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

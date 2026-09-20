@@ -308,6 +308,7 @@ export function createTestDb() {
       payment_status app.order_payment_status NOT NULL DEFAULT 'PENDING',
       delivery_boy_id bigint,
       paid_at timestamptz,
+      store_contacted_at timestamptz,
       placed_on date NOT NULL DEFAULT current_date,
       placed_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
