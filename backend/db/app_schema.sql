@@ -282,6 +282,9 @@ CREATE TABLE app.lab_test (
     -- migration 0048: what the lab charges (rate/amount are the patient's price),
     -- and when the test runs / its report is ready, from the rate list.
     lab_rate              numeric(12,2) NOT NULL DEFAULT 0 CHECK (lab_rate >= 0),
+    -- migration 0050: ADMIN = created in the console; RATE_LIST = the imported
+    -- reference-lab rate list (hidden from Saved tests, offered for groups).
+    source                text NOT NULL DEFAULT 'ADMIN' CHECK (source IN ('ADMIN', 'RATE_LIST')),
     scheduled_days        text NOT NULL DEFAULT '',
     reporting_time        text NOT NULL DEFAULT '',
     sample                text NOT NULL DEFAULT '',
