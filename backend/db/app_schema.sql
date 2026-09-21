@@ -1132,6 +1132,11 @@ CREATE TABLE app.commission_reserve_entry (
     id             bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     wallet_card_id bigint NOT NULL REFERENCES app.wallet_card(id),
     amount         numeric(12,2) NOT NULL,
+    -- migration 0053: POOL_LEFTOVER = the unspent agent pool (agent sales only);
+    -- COMPANY_SHARE = the company's 8% of the load, on every approved activation.
+    source         text NOT NULL DEFAULT 'POOL_LEFTOVER'
+                       CONSTRAINT commission_reserve_entry_source_check
+                       CHECK (source IN ('POOL_LEFTOVER', 'COMPANY_SHARE')),
     created_at     timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX commission_reserve_entry_card_idx ON app.commission_reserve_entry(wallet_card_id);
@@ -1244,9 +1249,15 @@ BEGIN
 
         v_reserve := ROUND(v_pool - v_distributed, 2);
         IF v_reserve > 0 THEN
-            INSERT INTO app.commission_reserve_entry (wallet_card_id, amount) VALUES (p_card_id, v_reserve);
+            INSERT INTO app.commission_reserve_entry (wallet_card_id, amount, source)
+            VALUES (p_card_id, v_reserve, 'POOL_LEFTOVER');
         END IF;
     END IF;
+
+    -- migration 0053: the company's own 8% of the load, on every activation.
+    INSERT INTO app.commission_reserve_entry (wallet_card_id, amount, source)
+    SELECT p_card_id, ROUND(v_amount * 0.08, 2), 'COMPANY_SHARE'
+     WHERE ROUND(v_amount * 0.08, 2) > 0;
 
     RETURN QUERY SELECT p_card_id;
 END;

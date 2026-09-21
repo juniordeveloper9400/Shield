@@ -43,6 +43,19 @@ Chip and tile images are stored as resized WebP data URIs (PNG on a browser whos
 
 Both apps read this data: the member app straight from Neon (`lib/data/neon/category_repository.dart`), and `shield agent_invester/` through the backend API's public catalogue routes (`lib/data/backend/category_repository.dart`). The API caches those lists for 5 minutes and the console writes to Neon directly, so a change reaches the agent / investor app within about 5 minutes; the member app sees it on its next catalogue load.
 
+### Reserved — the company's money from Health Pass activations
+
+**Reserved** (`/commission-reserve`, Super Admin only) is the company's own share of Health Pass plans. It is a ledger (`app.commission_reserve_entry`) that never touches a member's or an agent's wallet, and is not shown anywhere in the apps. Approving an activation (Health Pass plan approvals → Approve, i.e. `app.approve_wallet_card_activation`) writes up to two rows for that card, told apart by `source` (migration `0053_company_reserve_on_activation.sql`):
+
+| Source | Amount | When |
+| --- | --- | --- |
+| `COMPANY_SHARE` | **8% of the loaded amount** | Every approved activation — sold by an agent or not, referred or not. |
+| `POOL_LEFTOVER` | What the agent commission pool did not pay out | Only when an approved agent sold the plan. |
+
+Nothing else about an approval changed: the member is still credited the load plus bonus, the seller and up-line still earn from the 10% pool (60% direct + 10/6/5/4/3/2% overrides), and a referring member still earns 2%. A card that is rejected, or already decided, reserves nothing, and approving twice cannot reserve twice. On a 10,000 load: 800 to Reserved for a walk-in; for an agent sale, 800 plus the pool's leftover (for example 400 for a ward agent with no up-line).
+
+Migration `0053` also **backfilled** an 8% row for every activation approved before it, dated when it was reviewed, so the total covers every approved activation to date. The page shows the total, the company-share total and the pool-leftover total, and each row's source. `WalletService.approveCard` in `backend/api` mirrors the same rule. Deploy the console and backend after applying the migration — the page reads the new `source` column.
+
 ### Lab Orders — the Lab Admin's desk
 
 A **Lab Admin** (`lab` role; create one from **Admins → Add**, role *Lab Admin*, or `pnpm seed:staff -- --login-id=lab_admin --name="Lab Admin" --password=… --role=LAB` in `backend/api`) sees the Dashboard, **Lab Orders** and **Lab Tests** — nothing else. `admin` and `superadmin` can open the same pages.

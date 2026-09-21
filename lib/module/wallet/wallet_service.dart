@@ -288,6 +288,11 @@ class WalletService extends ChangeNotifier {
   int _redeemed = 0;
   final List<WalletEntry> _entries = List.of(_seed);
 
+  /// The `app.wallet_entry` ids of the referral commission already added to
+  /// [_balance] and the ledger, so a refresh that returns the same credit again
+  /// (every refresh does) adds it once.
+  final Set<String> _referralEarningIds = {};
+
   /// The cards on the account, oldest first, or empty while the wallet is
   /// still closed.
   final List<WalletCard> _cards = [];
@@ -457,14 +462,51 @@ class WalletService extends ChangeNotifier {
     }
   }
 
+  /// Adds the referral commission the database has credited to this member's
+  /// wallet — 2% of a friend's plan, paid when the plan is approved — to the
+  /// balance and the ledger, once each.
+  ///
+  /// The commission is paid on the server, into `app.wallet`, whoever the
+  /// referrer is and whether or not they were looking at the app; this is how
+  /// it reaches the balance they see here. Recognised by ledger id, so it is
+  /// safe to call with the full list on every refresh.
+  void applyReferralEarnings(List<RemoteReferralEarning> earnings) {
+    var changed = false;
+    for (final earning in earnings) {
+      if (earning.amount <= 0 || !_referralEarningIds.add(earning.id)) {
+        continue;
+      }
+      _balance += earning.amount;
+      _entries.insert(
+        0,
+        WalletEntry(
+          label: earning.label,
+          date: formatDate(earning.occurredOn),
+          amount: earning.amount,
+        ),
+      );
+      changed = true;
+    }
+    if (changed) {
+      notifyListeners();
+    }
+  }
+
   /// Pulls the member's privilege cards from Neon and applies any approvals or
-  /// rejections. Best-effort: a no-op without a database or on a failed read.
+  /// rejections, and adds any referral commission credited since. Best-effort:
+  /// a no-op without a database or on a failed read.
   Future<void> refreshFromDatabase(String memberPhone) async {
-    final remote = await WalletRepository.instance.fetchCards(
-      memberPhone: memberPhone,
-    );
+    final results = await Future.wait([
+      WalletRepository.instance.fetchCards(memberPhone: memberPhone),
+      WalletRepository.instance.fetchReferralEarnings(memberPhone: memberPhone),
+    ]);
+    final remote = results[0] as List<RemoteWalletCard>?;
     if (remote != null) {
       applyRemoteCards(remote);
+    }
+    final earnings = results[1] as List<RemoteReferralEarning>?;
+    if (earnings != null) {
+      applyReferralEarnings(earnings);
     }
   }
 
@@ -710,7 +752,8 @@ class WalletService extends ChangeNotifier {
     // With no amount named, everything that makes whole rupees: 250 points
     // redeems 200 and leaves 50 rather than refusing the lot.
     final toRedeem =
-        points ?? RewardsService.wholeRupeePoints(RewardsService.instance.balance);
+        points ??
+        RewardsService.wholeRupeePoints(RewardsService.instance.balance);
     if (!isActivated) {
       return 'Activate a plan to open your wallet before redeeming points.';
     }
@@ -739,7 +782,8 @@ class WalletService extends ChangeNotifier {
   /// same checks with a reason.
   Future<bool> redeemPoints({int? points, String date = 'Today'}) async {
     final toRedeem =
-        points ?? RewardsService.wholeRupeePoints(RewardsService.instance.balance);
+        points ??
+        RewardsService.wholeRupeePoints(RewardsService.instance.balance);
     if (redeemPointsError(toRedeem) != null) {
       return false;
     }
@@ -767,6 +811,7 @@ class WalletService extends ChangeNotifier {
   void reset() {
     _cards.clear();
     _pending.clear();
+    _referralEarningIds.clear();
     _balance = openingBalance;
     _redeemed = 0;
     _entries

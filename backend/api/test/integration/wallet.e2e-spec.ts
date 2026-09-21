@@ -323,8 +323,16 @@ describe('Wallet & Rewards (e2e)', () => {
       .get('/v1/staff/wallet-cards/reserve')
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
-    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    const thisEntry = reserve.body.entries.find(
+      (e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'POOL_LEFTOVER',
+    );
     expect(Number(thisEntry.amount)).toBe(300); // 1000 pool - 600 direct - 100 override
+    // ...plus the company's own 8% of the 10000 load, on top of the unspent pool.
+    expect(
+      reserve.body.entries
+        .filter((e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'COMPANY_SHARE')
+        .map((e: { amount: string }) => Number(e.amount)),
+    ).toEqual([800]);
   });
 
   it('splits a state-level direct sale four ways: 60% seller, 10% real region parent, 6% national, 24% reserved', async () => {
@@ -376,8 +384,16 @@ describe('Wallet & Rewards (e2e)', () => {
       .get('/v1/staff/wallet-cards/reserve')
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
-    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    const thisEntry = reserve.body.entries.find(
+      (e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'POOL_LEFTOVER',
+    );
     expect(Number(thisEntry.amount)).toBe(240); // 1000 pool - 600 direct - 100 parent - 60 national
+    // ...plus the company's own 8% of the 10000 load, on top of the unspent pool.
+    expect(
+      reserve.body.entries
+        .filter((e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'COMPANY_SHARE')
+        .map((e: { amount: string }) => Number(e.amount)),
+    ).toEqual([800]);
   });
 
   it('splits a district-level direct sale five ways: 60% seller, 10% state, 6% region, 5% national, 19% reserved', async () => {
@@ -433,8 +449,16 @@ describe('Wallet & Rewards (e2e)', () => {
       .get('/v1/staff/wallet-cards/reserve')
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
-    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    const thisEntry = reserve.body.entries.find(
+      (e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'POOL_LEFTOVER',
+    );
     expect(Number(thisEntry.amount)).toBe(190); // 1000 pool - 600 direct - 100 - 60 - 50
+    // ...plus the company's own 8% of the 10000 load, on top of the unspent pool.
+    expect(
+      reserve.body.entries
+        .filter((e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'COMPANY_SHARE')
+        .map((e: { amount: string }) => Number(e.amount)),
+    ).toEqual([800]);
   });
 
   it('splits an assembly-level direct sale six ways: 60% seller, 10% district, 6% state, 5% region, 4% national, 15% reserved', async () => {
@@ -497,8 +521,16 @@ describe('Wallet & Rewards (e2e)', () => {
       .get('/v1/staff/wallet-cards/reserve')
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
-    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    const thisEntry = reserve.body.entries.find(
+      (e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'POOL_LEFTOVER',
+    );
     expect(Number(thisEntry.amount)).toBe(150); // 1000 pool - 600 direct - 100 - 60 - 50 - 40
+    // ...plus the company's own 8% of the 10000 load, on top of the unspent pool.
+    expect(
+      reserve.body.entries
+        .filter((e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'COMPANY_SHARE')
+        .map((e: { amount: string }) => Number(e.amount)),
+    ).toEqual([800]);
   });
 
   it('splits an lsgd-level direct sale seven ways: 60% seller, 10% assembly, 6% district, 5% state, 4% region, 3% national, 12% reserved', async () => {
@@ -568,8 +600,16 @@ describe('Wallet & Rewards (e2e)', () => {
       .get('/v1/staff/wallet-cards/reserve')
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
-    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    const thisEntry = reserve.body.entries.find(
+      (e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'POOL_LEFTOVER',
+    );
     expect(Number(thisEntry.amount)).toBe(120); // 1000 pool - 600 direct - 100 - 60 - 50 - 40 - 30
+    // ...plus the company's own 8% of the 10000 load, on top of the unspent pool.
+    expect(
+      reserve.body.entries
+        .filter((e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'COMPANY_SHARE')
+        .map((e: { amount: string }) => Number(e.amount)),
+    ).toEqual([800]);
   });
 
   it('splits a ward-level direct sale eight ways: 60% seller, 10% lsgd, 6% assembly, 5% district, 4% state, 3% region, 2% national, 10% reserved', async () => {
@@ -646,8 +686,16 @@ describe('Wallet & Rewards (e2e)', () => {
       .get('/v1/staff/wallet-cards/reserve')
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
-    const thisEntry = reserve.body.entries.find((e: { walletCardId: number }) => e.walletCardId === submitted.body.id);
+    const thisEntry = reserve.body.entries.find(
+      (e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'POOL_LEFTOVER',
+    );
     expect(Number(thisEntry.amount)).toBe(100); // 1000 pool - 600 direct - 100 - 60 - 50 - 40 - 30 - 20
+    // ...plus the company's own 8% of the 10000 load, on top of the unspent pool.
+    expect(
+      reserve.body.entries
+        .filter((e: { walletCardId: number; source: string }) => e.walletCardId === submitted.body.id && e.source === 'COMPANY_SHARE')
+        .map((e: { amount: string }) => Number(e.amount)),
+    ).toEqual([800]);
   });
 
   it('rejects the commission reserve to ADMIN, even though that role can approve/reject wallet cards themselves', async () => {

@@ -106,6 +106,8 @@ export const commissionReserveEntry = appSchema.table('commission_reserve_entry'
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   walletCardId: bigint('wallet_card_id', { mode: 'number' }).notNull(),
   amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  /** 'POOL_LEFTOVER' (unspent agent pool) or 'COMPANY_SHARE' (8% of every activation) — migration 0053. */
+  source: text('source').notNull().default('POOL_LEFTOVER'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

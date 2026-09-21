@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
@@ -27,11 +27,22 @@ function shortName(name: string | null): string {
   return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
 }
 
+/**
+ * The member-to-member referral commission: this share of every Health Pass
+ * plan a referred member activates goes to whoever referred them, into that
+ * member's wallet. Mirrors `lib/module/refer/referral_level.dart`'s
+ * `ReferralLadder.planCommissionPercent` and the 2% in
+ * `app.pay_referral_commission` (migration 0054).
+ */
+export const REFERRAL_COMMISSION_RATE = 0.02;
+
 /** The prefix members were issued before the rename to Sahakar 360. */
 const LEGACY_MEMBER_CODE_PREFIX = /^SHIELD-/;
 
 @Injectable()
 export class ReferralService {
+  private readonly logger = new Logger(ReferralService.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
   async create(memberId: number, dto: CreateReferralDto) {
@@ -154,6 +165,116 @@ export class ReferralService {
       activatedWalletCards,
       sahakarMoneyEarned: Number(sahakarMoneyEarned),
     };
+  }
+
+  /**
+   * Pays [referrerId] their commission on one approved plan — a
+   * `REFERRAL_EARNINGS` ledger line in their wallet plus the balance — and
+   * moves the referral to `PLAN_ACTIVATED`, recording the plan and the running
+   * commission. Returns what was paid, 0 when nothing was.
+   *
+   * **Idempotent per card**: a plan pays once however many paths reach it. In
+   * production the database's own trigger (`app.pay_referral_commission`,
+   * migration 0054) has usually paid it already by the time this runs, so this
+   * sees the ledger line and stands down; the test database has no triggers, so
+   * here it does the paying. Either way the referrer is credited exactly once.
+   */
+  async payPlanCommission(
+    tx: Database,
+    input: { cardId: number; planAmount: number; referrerId: number; inviteeId: number },
+  ): Promise<number> {
+    const { cardId, planAmount, referrerId, inviteeId } = input;
+    if (referrerId === inviteeId) return 0;
+    const commission = Math.round(planAmount * REFERRAL_COMMISSION_RATE * 100) / 100;
+    if (commission <= 0) return 0;
+
+    // The referrer's wallet row is the lock: two approvals landing together
+    // queue here, and the second sees the first's ledger line.
+    let [referrerWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, referrerId)).limit(1).for('update');
+    if (!referrerWallet) {
+      [referrerWallet] = await tx.insert(wallet).values({ memberId: referrerId }).returning();
+    }
+
+    const [alreadyPaid] = await tx
+      .select({ id: walletEntry.id })
+      .from(walletEntry)
+      .where(and(eq(walletEntry.walletId, referrerWallet.id), eq(walletEntry.kind, 'REFERRAL_EARNINGS'), eq(walletEntry.walletCardId, cardId)))
+      .limit(1);
+    if (alreadyPaid) return 0;
+
+    await tx.insert(walletEntry).values({
+      walletId: referrerWallet.id,
+      kind: 'REFERRAL_EARNINGS',
+      label: 'Referral commission',
+      amount: commission.toString(),
+      occurredOn: new Date().toISOString().slice(0, 10),
+      walletCardId: cardId,
+    });
+    await tx
+      .update(wallet)
+      .set({ balance: (Number(referrerWallet.balance) + commission).toString() })
+      .where(eq(wallet.id, referrerWallet.id));
+
+    // The most recent edge for this exact pair, if one already exists (from
+    // apply-code REGISTERED, or an earlier order's TRANSACTED) — a plan is also
+    // proof the friend transacted, so it moves all the way to PLAN_ACTIVATED.
+    const [existingReferral] = await tx
+      .select()
+      .from(referral)
+      .where(and(eq(referral.inviterMemberId, referrerId), eq(referral.inviteeMemberId, inviteeId)))
+      .orderBy(desc(referral.id))
+      .limit(1);
+    const now = new Date();
+    if (existingReferral) {
+      await tx
+        .update(referral)
+        .set({
+          status: 'PLAN_ACTIVATED',
+          planAmount: planAmount.toString(),
+          commissionAmount: (Number(existingReferral.commissionAmount) + commission).toString(),
+          transactedAt: existingReferral.transactedAt ?? now,
+          planActivatedAt: now,
+        })
+        .where(eq(referral.id, existingReferral.id));
+    } else {
+      await tx.insert(referral).values({
+        inviterMemberId: referrerId,
+        inviteeMemberId: inviteeId,
+        status: 'PLAN_ACTIVATED',
+        planAmount: planAmount.toString(),
+        commissionAmount: commission.toString(),
+        transactedAt: now,
+        planActivatedAt: now,
+      });
+    }
+
+    await this.awardLevelPointsIfCrossed(tx, referrerId);
+    return commission;
+  }
+
+  /**
+   * A member who already holds approved plans has just been linked to
+   * [referrerId] (they bought first and entered a referral ID afterwards).
+   * Nothing was owed when those plans were approved, so nothing was paid —
+   * pay them now. Idempotent (see [payPlanCommission]).
+   */
+  async payEarlierPlans(inviteeId: number, referrerId: number): Promise<void> {
+    try {
+      await this.db.transaction(async (tx) => {
+        const cards = await tx
+          .select({ id: walletCard.id, amount: walletCard.amount })
+          .from(walletCard)
+          .innerJoin(wallet, eq(wallet.id, walletCard.walletId))
+          .where(and(eq(wallet.memberId, inviteeId), eq(walletCard.status, 'APPROVED')))
+          .orderBy(walletCard.id);
+        for (const card of cards) {
+          await this.payPlanCommission(tx, { cardId: card.id, planAmount: Number(card.amount), referrerId, inviteeId });
+        }
+      });
+    } catch (error) {
+      // Linking a referral must never fail because paying for an earlier plan did.
+      this.logger.warn(`Could not pay referral commission on earlier plans for member ${inviteeId}: ${String(error)}`);
+    }
   }
 
   /**
@@ -323,6 +444,9 @@ export class ReferralService {
           status: 'REGISTERED',
           registeredAt: new Date(),
         });
+        // They may already hold approved plans (bought before entering the
+        // code): those pay their referrer now.
+        await this.payEarlierPlans(memberId, asMember.id);
         return { linked: 'member' };
       }
     }

@@ -1,6 +1,25 @@
 import '../../module/privilege/privilege_tier.dart';
 import 'neon_http.dart';
 
+/// One referral commission credited to the member's wallet — a
+/// `REFERRAL_EARNINGS` line in `app.wallet_entry`, written by the database when
+/// a friend they referred has a plan approved.
+class RemoteReferralEarning {
+  /// `app.wallet_entry.id` — what makes a credit recognisable across refreshes,
+  /// so the same one is never added to the balance twice.
+  final String id;
+  final String label;
+  final int amount;
+  final DateTime occurredOn;
+
+  const RemoteReferralEarning({
+    required this.id,
+    required this.label,
+    required this.amount,
+    required this.occurredOn,
+  });
+}
+
 /// A privilege card as it stands on Neon — what the app reads back to learn
 /// whether a submitted plan has been approved yet.
 class RemoteWalletCard {
@@ -155,6 +174,35 @@ class WalletRepository {
     });
   }
 
+  /// The referral commission credited to the member's wallet, oldest first.
+  /// Null when nothing could be read (so a blip is not mistaken for "none").
+  Future<List<RemoteReferralEarning>?> fetchReferralEarnings({
+    required String memberPhone,
+  }) {
+    return _run('fetchReferralEarnings', () async {
+      final rows = await NeonHttp.instance.query(
+        '''
+          SELECT e.id, e.label, e.amount, e.occurred_on
+          FROM app.wallet_entry e
+          JOIN app.wallet w ON w.id = e.wallet_id
+          JOIN app.users u  ON u.id = w.member_id
+          WHERE u.phone = \$1 AND e.kind = 'REFERRAL_EARNINGS'
+          ORDER BY e.id
+        ''',
+        [memberPhone],
+      );
+      return [
+        for (final r in rows)
+          RemoteReferralEarning(
+            id: r['id'].toString(),
+            label: (r['label'] ?? 'Referral commission').toString(),
+            amount: _int(r['amount']),
+            occurredOn: _date(r['occurred_on']) ?? DateTime.now(),
+          ),
+      ];
+    });
+  }
+
   /// Every privilege card on the member's wallet, oldest first — pending,
   /// approved and rejected. The app merges this into [WalletService] to reflect
   /// what the console has decided. Returns null when nothing could be read.
@@ -260,11 +308,11 @@ class WalletRepository {
   }
 
   static PrivilegeCardKind? _kindFor(String? token) => switch (token) {
-        'SILVER' => PrivilegeCardKind.silver,
-        'GOLD' => PrivilegeCardKind.gold,
-        'PLATINUM' => PrivilegeCardKind.platinum,
-        _ => null,
-      };
+    'SILVER' => PrivilegeCardKind.silver,
+    'GOLD' => PrivilegeCardKind.gold,
+    'PLATINUM' => PrivilegeCardKind.platinum,
+    _ => null,
+  };
 
   static int _int(Object? value, [int fallback = 0]) {
     if (value is int) return value;

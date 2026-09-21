@@ -242,30 +242,32 @@ class ReferralRepository {
           .where((p) => p.stage != ReferredStage.joined)
           .length;
 
-      // One row per approved privilege card issued to somebody this member
-      // referred — a member can activate more than one card, and each pays
-      // its own share.
-      final activatedRows = await NeonHttp.instance.query(
+      // What has actually been paid: one `REFERRAL_EARNINGS` line in this
+      // member's own wallet ledger per plan a friend of theirs activated. The
+      // database writes it when the plan is approved (migration 0054), so this is
+      // the same money the wallet shows — never a 2% guess at what a plan
+      // should have paid, which is how a plan approved before the friend joined
+      // once showed as "earned" while the wallet stayed put.
+      final paidRows = await NeonHttp.instance.query(
         '''
-          SELECT wc.amount
-          FROM app.referral r
-          JOIN app.users inviter  ON inviter.id = r.inviter_member_id
-          JOIN app.wallet w       ON w.member_id = r.invitee_member_id
-          JOIN app.wallet_card wc ON wc.wallet_id = w.id AND wc.status = 'APPROVED'
-          WHERE inviter.phone = \$1
+          SELECT e.amount
+          FROM app.wallet_entry e
+          JOIN app.wallet w ON w.id = e.wallet_id
+          JOIN app.users u  ON u.id = w.member_id
+          WHERE u.phone = \$1 AND e.kind = 'REFERRAL_EARNINGS'
         ''',
         [phone],
       );
       var sahakarMoney = 0;
-      for (final row in activatedRows) {
-        sahakarMoney += ReferralLadder.planCommissionOn(_int(row['amount']));
+      for (final row in paidRows) {
+        sahakarMoney += _int(row['amount']);
       }
 
       return ReferralProgress(
         directReferrals: directReferrals,
         pendingReferrals: invitees.length - directReferrals,
         invitees: invitees,
-        plansActivated: activatedRows.length,
+        plansActivated: paidRows.length,
         sahakarMoney: sahakarMoney,
       );
     });

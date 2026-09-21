@@ -529,6 +529,7 @@ export function createTestDb() {
       id bigserial PRIMARY KEY,
       wallet_card_id bigint NOT NULL REFERENCES app.wallet_card(id),
       amount numeric(12,2) NOT NULL,
+      source text NOT NULL DEFAULT 'POOL_LEFTOVER',
       created_at timestamptz NOT NULL DEFAULT now()
     );
 
