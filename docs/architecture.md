@@ -112,6 +112,16 @@ The root Flutter app (`lib/`) does not use `backend/api` and is unchanged.
 
 Note for whoever runs the console: only branches marked active can be *newly* chosen at registration, so a registration form for a member whose nearest branch is switched off will be refused with a clear message until a different branch is chosen or that branch is re-activated.
 
+## Sign-in and create account
+
+Both Flutter apps (`lib/` and `shield agent_invester/`) open the login screen on **Sign in** only — one mobile-number field, no tabs and no "Create an account" link. **Get OTP** first asks `app.users` whether the number has a live account (`AuthService.hasAccount`):
+
+- **Has an account** — the code is sent straight away and no name is asked.
+- **No account** — no code yet. The screen says *"You're a new user"*, switches to the **Create your Sahakar 360 account** view with a name field (the number is kept), and the next **Get OTP** sends the code with that name. *Back to sign in* returns to the number-only view.
+- **Could not check** (database unreachable) — the code is sent as a sign-in; the check never blocks a real member.
+
+An existing number always keeps the name stored on it. If the number is edited on the create view to one that already has an account, the typed name is ignored and the code step says the saved name is used. This is enforced in three places so a typed name can never rename a member: the screen, `AuthService` (`_nameFor` prefers the stored name from `MemberRepository.nameByPhone`), and `MemberRepository.upsertOnSignIn`, whose `ON CONFLICT` keeps `app.users.name` for a live row. Only a new row, a row with no name, or a reactivated deleted account takes the incoming name; `nameByPhone` ignores deleted accounts so a re-signup does not inherit "Deleted user".
+
 ## Important boundary
 
 The `shield agent_invester/` directory is a parallel project tree, not part of the normal root build commands. Treat it as legacy or separately targeted until ownership is clarified.

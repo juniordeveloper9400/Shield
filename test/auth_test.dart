@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/auth/login_screen.dart';
@@ -16,8 +17,15 @@ import 'support/fake_auth_gateway.dart';
 
 void main() {
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     AuthService.instance.reset();
     AuthService.instance.useGateway(FakeAuthGateway());
+    // No member exists yet, so every number typed on the login screen is a new
+    // user's. (The existing-member paths are in login_new_user_flow_test.dart.)
+    AuthService.instance.useMemberLookup(
+      phoneExists: (_) async => false,
+      nameByPhone: (_) async => null,
+    );
     CartService.instance.reset();
     RegistrationService.instance.reset();
   });
@@ -56,9 +64,13 @@ void main() {
     await settle(tester);
   }
 
+  /// Sign in opens on the number alone; a number with no account reveals the
+  /// name field, and the second tap sends the code.
   Future<void> requestCode(WidgetTester tester) async {
-    await fillName(tester);
     await fillPhone(tester);
+    await tester.tap(find.text('Get OTP'));
+    await settle(tester);
+    await fillName(tester);
     await tester.tap(find.text('Get OTP'));
     await settle(tester);
   }
@@ -362,45 +374,34 @@ void main() {
   });
 
   group('the login screen', () {
-    testWidgets('asks for the name first and hides the number', (tester) async {
-      await pumpLogin(tester);
-
-      expect(find.text('Full name'), findsOneWidget);
-      expect(
-        find.text('Mobile number'),
-        findsNothing,
-        reason: 'the number is a second question, not a second field',
-      );
-    });
-
-    testWidgets('filling the name reveals the number field', (tester) async {
-      await pumpLogin(tester);
-
-      await fillName(tester);
-      await tester.pumpAndSettle();
-
-      expect(find.text('Mobile number'), findsOneWidget);
-      expect(find.text('+91  '), findsOneWidget);
-    });
-
-    testWidgets('a name too short to use keeps the number hidden', (
+    testWidgets('opens on the number alone, with no name field', (
       tester,
     ) async {
       await pumpLogin(tester);
+
+      expect(find.text('Mobile number'), findsOneWidget);
+      expect(find.text('+91  '), findsOneWidget);
+      expect(find.text('Full name'), findsNothing);
+    });
+
+    testWidgets('a name too short to use is flagged on the create view', (
+      tester,
+    ) async {
+      await pumpLogin(tester);
+      await fillPhone(tester);
+      await tester.tap(find.text('Get OTP'));
+      await settle(tester);
 
       await fillName(tester, 'A');
       await tester.pumpAndSettle();
 
-      expect(find.text('Mobile number'), findsNothing);
       expect(find.text('Enter at least 2 characters'), findsOneWidget);
     });
 
-    testWidgets('Get OTP stays inert until both answers are valid', (
+    testWidgets('Get OTP stays inert until the number is valid', (
       tester,
     ) async {
       await pumpLogin(tester);
-      await fillName(tester);
-      await tester.pumpAndSettle();
 
       await fillPhone(tester, '12345');
       await tester.pumpAndSettle();

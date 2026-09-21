@@ -279,6 +279,11 @@ CREATE TABLE app.lab_test (
     discount_percent      numeric(5,2)  NOT NULL DEFAULT 0
                           CHECK (discount_percent >= 0 AND discount_percent <= 100),
     amount                numeric(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+    -- migration 0048: what the lab charges (rate/amount are the patient's price),
+    -- and when the test runs / its report is ready, from the rate list.
+    lab_rate              numeric(12,2) NOT NULL DEFAULT 0 CHECK (lab_rate >= 0),
+    scheduled_days        text NOT NULL DEFAULT '',
+    reporting_time        text NOT NULL DEFAULT '',
     sample                text NOT NULL DEFAULT '',
     volume                text NOT NULL DEFAULT '',
     cut_of_time           text NOT NULL DEFAULT '',

@@ -16,6 +16,9 @@ class FakeAuthGateway implements AuthGateway {
   final String acceptedCode;
   bool _sent = false;
 
+  /// How many codes [sendCode] has been asked to send.
+  int codesSent = 0;
+
   /// Stands in for Firebase's on-device session. Set it via the constructor to
   /// test [AuthService.restoreSession]; [saveDisplayName] updates its name.
   AuthUser? _persisted;
@@ -25,6 +28,7 @@ class FakeAuthGateway implements AuthGateway {
   @override
   Future<OtpError?> sendCode(String e164Phone) async {
     _sent = true;
+    codesSent++;
     return null;
   }
 

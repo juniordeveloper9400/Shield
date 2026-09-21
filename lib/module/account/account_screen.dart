@@ -17,6 +17,7 @@ import '../registration/registration_flow.dart';
 import '../registration/registration_service.dart';
 import '../wallet/wallet_screen.dart';
 import '../wallet/wallet_service.dart';
+import 'privacy_policy_screen.dart';
 import 'terms_and_conditions_screen.dart';
 
 /// Profile summary plus the account menu.
@@ -159,6 +160,11 @@ class AccountScreen extends StatelessWidget {
                 icon: Icons.settings_outlined,
                 label: 'Settings',
                 onTap: () {},
+              ),
+              _MenuItem(
+                icon: Icons.privacy_tip_outlined,
+                label: 'Privacy Policy',
+                onTap: () => PrivacyPolicyScreen.open(context),
               ),
               _MenuItem(
                 icon: Icons.gavel_rounded,
