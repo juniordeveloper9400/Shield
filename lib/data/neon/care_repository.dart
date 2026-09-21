@@ -23,6 +23,8 @@ class CareRepository {
   @visibleForTesting
   static Future<List<LabPackage>?> Function()? labPackagesOverride;
   @visibleForTesting
+  static Future<List<LabCategory>?> Function()? labCategoriesOverride;
+  @visibleForTesting
   static Future<List<Dietitian>?> Function()? dietitiansOverride;
 
   bool get isAvailable => NeonHttp.isConfigured;
@@ -37,10 +39,10 @@ class CareRepository {
     }
     return _run('fetchLabPackages', () async {
       final rows = await NeonHttp.instance.query('''
-        SELECT id, slug, name, test_count, profile_count, rating, booked,
-               report_in, price, mrp, saved, inherits_from, inherits_summary,
-               extras_label, for_whom, age_range, preparation, sample, organs,
-               about
+        SELECT id, slug, name, category_id, test_count, profile_count, rating,
+               booked, report_in, price, mrp, saved, inherits_from,
+               inherits_summary, extras_label, for_whom, age_range,
+               preparation, sample, organs, about
           FROM app.lab_package
          WHERE is_active = true
          ORDER BY sort, name
@@ -80,6 +82,7 @@ class CareRepository {
             id: row['id'].toString(),
             slug: row['slug']?.toString() ?? '',
             name: row['name']?.toString() ?? '',
+            categoryId: row['category_id']?.toString() ?? '',
             testCount: _int(row['test_count']),
             profileCount: _int(row['profile_count']),
             rating: row['rating']?.toString() ?? '',
@@ -101,6 +104,35 @@ class CareRepository {
             sample: row['sample']?.toString() ?? '',
             organs: _stringArray(row['organs']),
             about: row['about']?.toString() ?? '',
+          ),
+      ];
+    });
+  }
+
+  /// "Explore by health concern" — every active category, each carrying how
+  /// many active packages currently sit under it, worked out here rather
+  /// than trusted as a stored figure.
+  Future<List<LabCategory>?> fetchLabCategories() {
+    final override = labCategoriesOverride;
+    if (override != null) {
+      return override();
+    }
+    return _run('fetchLabCategories', () async {
+      final rows = await NeonHttp.instance.query('''
+        SELECT c.id, c.name, c.image,
+               (SELECT count(*) FROM app.lab_package p
+                 WHERE p.category_id = c.id AND p.is_active = true) AS test_count
+          FROM app.lab_category c
+         WHERE c.is_active = true
+         ORDER BY c.sort, c.name
+      ''');
+      return [
+        for (final row in rows)
+          LabCategory(
+            id: row['id'].toString(),
+            name: row['name']?.toString() ?? '',
+            image: row['image']?.toString() ?? '',
+            testCount: _int(row['test_count']),
           ),
       ];
     });
@@ -147,9 +179,14 @@ class CareRepository {
     final words = name
         .split(RegExp(r'\s+'))
         .where((w) => w.isNotEmpty && w.replaceAll('.', '').isNotEmpty)
-        .where((w) => !{'dr', 'mr', 'mrs', 'ms'}.contains(
-              w.replaceAll('.', '').toLowerCase(),
-            ))
+        .where(
+          (w) => !{
+            'dr',
+            'mr',
+            'mrs',
+            'ms',
+          }.contains(w.replaceAll('.', '').toLowerCase()),
+        )
         .toList();
     if (words.isEmpty) {
       return '';
