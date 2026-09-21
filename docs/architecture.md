@@ -98,6 +98,13 @@ The invoice is built by `BillInvoice.compose` (`bill_invoice.dart`) the same way
 
 Rebuild the relevant Flutter web/Android application before deployed clients receive these changes.
 
+## Order and prescription pictures on My Orders / Track order
+
+Both apps show what an order actually is, not just its name and total: a thumbnail on each My Orders card, an itemised "Items in this order" card with each product's real picture on a standard order's tracker, and the member's own uploaded scan (not a generic icon and a toast) on a prescription order's tracker. Every fetch is best-effort and lazy — fired once a card or tracker actually opens, never carried on the cheap list read, and rendering nothing rather than an error when it fails or has not landed yet.
+
+- **Root app (`lib/`, Android and web build):** `OrderRepository.fetchItems` / `.fetchPrescriptions` (`lib/data/neon/order_repository.dart`) query Neon directly by the order's own `code`. `PrescriptionUploadedCard` (`order_detail_sections.dart`) is no longer a static placeholder — it fetches the real scan the same way `OrderItemsCard` fetches product pictures.
+- **`shield agent_invester/`:** `GET /v1/member/orders/:id/items` (`backend/api`, `OrderService.getItemsForOrder`) is new alongside the existing `.../prescriptions` route — `app.order_line` left-joined to `app.product` for `image`, filtered to `stock_status = 'AVAILABLE'` the same way the invoice's own lines are. Empty for a prescription order, which never gets `order_line` rows. `OrderRepository.fetchItems` (`lib/data/backend/order_repository.dart`) reads it; `OrderItemsCard` and the My Orders thumbnail call it lazily. `backend/api` must be deployed with this change before that app can show product pictures; until then the card and thumbnail simply show nothing.
+
 ## Registration in `shield agent_invester/`
 
 Whether a member is registered is the backend's call: `app.users.registration_completed_at`, which only `PATCH /v1/member/me` ever sets (on the first successful save, which also credits the 500-point bonus). The app never infers it from other fields.
@@ -111,6 +118,14 @@ Whether a member is registered is the backend's call: `app.users.registration_co
 The root Flutter app (`lib/`) does not use `backend/api` and is unchanged.
 
 Note for whoever runs the console: only branches marked active can be *newly* chosen at registration, so a registration form for a member whose nearest branch is switched off will be refused with a clear message until a different branch is chosen or that branch is re-activated.
+
+## Wallet transaction history (root app)
+
+`WalletService.balance` and `entries` (Account → My Wallet → Transaction history) are read back from the real `app.wallet_entry` ledger, not kept as a running local total. `WalletService.refreshFromDatabase` (called on sign-in, session restore, app resume, and after checkout) pulls `app.wallet.balance` and every `wallet_entry` row for the member (`WalletRepository.fetchWallet` / `fetchEntries`) and `applyRemoteWallet` replaces the balance and the whole list with them — matching `shield agent_invester/`'s backend-based `WalletService`, which already worked this way.
+
+This is what keeps an order's transaction honest: the database only writes a `SPEND` row once money has actually moved — at checkout for a standard order paid by wallet, or, for a prescription order, only once the store has billed it and staff have collected it with the member's OTP (`collectBillWithWallet`, `shieldweb/src/api/billPayments.ts`). Reading the ledger back is what makes an order's debit appear "only after bill received and OTP validation" — nothing on the client decides that, the row simply does not exist in the database until then. The same reasoning `MemberEarnings` already uses, reading fresh off the order list rather than a locally kept total.
+
+`ACTIVATION`/`BONUS`/`REFERRAL_EARNINGS`/`AGENT_EARNINGS` rows read back the same way, superseding the narrower `applyReferralEarnings` (REFERRAL_EARNINGS-only) path this replaced. Optimistic local entries (`creditEarnings`, `spendBalance`, a card `applyRemoteCards` has just approved) show immediately and are reconciled to the ledger on the next refresh.
 
 ## Sign-in and create account
 

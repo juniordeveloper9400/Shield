@@ -23,11 +23,27 @@ export const labBookingStatusEnum = appSchema.enum('lab_booking_status', [
   'CANCELLED',
 ]);
 
+/**
+ * "Explore by health concern" — a member-browsable category (migration
+ * 0055), managed on the console's Lab Tests → Categories tab. `image` is an
+ * uploaded data URI, the same shape as `app.product_category.image`.
+ */
+export const labCategory = appSchema.table('lab_category', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  uuid: uuid('uuid').notNull().defaultRandom(),
+  name: text('name').notNull(),
+  image: text('image'),
+  sort: integer('sort').notNull().default(0),
+  isActive: boolean('is_active').notNull().default(true),
+});
+
 export const labPackage = appSchema.table('lab_package', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   uuid: uuid('uuid').notNull().defaultRandom(),
   slug: text('slug').notNull(),
   name: text('name').notNull(),
+  /** Migration 0055 — which "Explore by health concern" tile this sits under. */
+  categoryId: bigint('category_id', { mode: 'number' }),
   testCount: integer('test_count').notNull().default(0),
   profileCount: integer('profile_count').notNull().default(0),
   rating: text('rating'),

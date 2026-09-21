@@ -361,6 +361,70 @@ describe('Commerce (e2e)', () => {
       .expect(404);
   });
 
+  it("lists the order's own line items with the product's picture, skipping the counter-only out-of-stock line", async () => {
+    await db.update(product).set({ image: 'data:image/png;base64,VITC' }).where(eq(product.id, productId));
+
+    const res = await request(app.getHttpServer())
+      .get(`/v1/member/orders/${orderId}/items`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+
+    // Only the checkout's own line — the "Not supplied" row a staff test
+    // inserted straight into app.order_line for the invoice test above has no
+    // productId and belongs to a different scenario, not this order's cart.
+    expect(res.body).toEqual([
+      expect.objectContaining({
+        name: 'Vitamin C',
+        qty: 2,
+        image: 'data:image/png;base64,VITC',
+      }),
+    ]);
+    expect(Number(res.body[0].unitPrice)).toBe(100);
+  });
+
+  it('reports no image for a line whose product carries none', async () => {
+    await db.update(product).set({ image: null }).where(eq(product.id, productId));
+
+    const res = await request(app.getHttpServer())
+      .get(`/v1/member/orders/${orderId}/items`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+
+    expect(res.body[0].image).toBeNull();
+  });
+
+  it('is empty for a prescription order, which never has order_line rows', async () => {
+    const [rxOrder] = await db
+      .insert(order)
+      .values({
+        memberId: (await db.select({ id: users.id }).from(users).where(eq(users.phone, '9000000001')))[0].id,
+        code: 'RX-ITEMS-TEST',
+        kind: 'PRESCRIPTION',
+        itemCount: 1,
+        placedOn: new Date().toISOString().slice(0, 10),
+      })
+      .returning();
+
+    const res = await request(app.getHttpServer())
+      .get(`/v1/member/orders/${rxOrder.id}/items`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+
+    expect(res.body).toEqual([]);
+  });
+
+  it("does not show another member this order's items", async () => {
+    const otherLogin = await request(app.getHttpServer())
+      .post('/v1/member/auth/session')
+      .send({ idToken: 'other-member-token' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get(`/v1/member/orders/${orderId}/items`)
+      .set('Authorization', `Bearer ${otherLogin.body.accessToken}`)
+      .expect(404);
+  });
+
   it('rejects checkout of an empty cart', async () => {
     await request(app.getHttpServer())
       .post('/v1/member/orders')

@@ -575,11 +575,21 @@ export function createTestDb() {
       (4, 'Champion', 20, 1500),
       (5, 'Legend',   40, 3000);
 
+    CREATE TABLE app.lab_category (
+      id bigserial PRIMARY KEY,
+      uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+      name text NOT NULL,
+      image text,
+      sort integer NOT NULL DEFAULT 0,
+      is_active boolean NOT NULL DEFAULT true
+    );
+
     CREATE TABLE app.lab_package (
       id bigserial PRIMARY KEY,
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),
       slug text NOT NULL UNIQUE,
       name text NOT NULL,
+      category_id bigint REFERENCES app.lab_category(id) ON DELETE SET NULL,
       test_count integer NOT NULL DEFAULT 0,
       profile_count integer NOT NULL DEFAULT 0,
       rating text,

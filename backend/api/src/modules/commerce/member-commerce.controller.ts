@@ -87,6 +87,11 @@ export class MemberCommerceController {
     return this.orders.getPrescriptionsForOrder(Number(user.subjectId), id);
   }
 
+  @Get('orders/:id/items')
+  getOrderItems(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    return this.orders.getItemsForOrder(Number(user.subjectId), id);
+  }
+
   @ReceiptUploadThrottle()
   @Post('orders/:id/receipt')
   submitReceipt(

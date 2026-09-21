@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { clinic, clinicDoctor, dietitian, labPackage, labProfile } from '../../db/schema';
+import { clinic, clinicDoctor, dietitian, labCategory, labPackage, labProfile } from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
 
 const TTL = 300; // near-static reference data, same tier as catalogue's TTL.LONG
@@ -42,6 +42,40 @@ export class CareService {
         else byPackage.set(profile.labPackageId, [profile]);
       }
       return packages.map((pkg) => ({ ...pkg, profiles: byPackage.get(pkg.id) ?? [] }));
+    });
+  }
+
+  /**
+   * "Explore by health concern" — every active category, each carrying how
+   * many active packages currently sit under it (counted here, not a stored
+   * column, so it can never drift from what {@link listLabPackages} itself
+   * would show for that category).
+   *
+   * Two plain queries merged in JS rather than one grouped join — the join
+   * count needs every selected category column repeated in a GROUP BY, and
+   * this reads the same either way while staying easy to follow (the same
+   * shape {@link listLabPackages} already merges its profiles in).
+   */
+  async listLabCategories() {
+    return this.cache.getOrSet('care:lab-categories', TTL, async () => {
+      const categories = await this.db
+        .select()
+        .from(labCategory)
+        .where(eq(labCategory.isActive, true))
+        .orderBy(asc(labCategory.sort), asc(labCategory.name));
+      if (categories.length === 0) return [];
+
+      const counts = await this.db
+        .select({ categoryId: labPackage.categoryId, testCount: sql<number>`count(*)::int` })
+        .from(labPackage)
+        .where(eq(labPackage.isActive, true))
+        .groupBy(labPackage.categoryId);
+      const countByCategory = new Map(counts.map((c) => [c.categoryId, c.testCount]));
+
+      return categories.map((category) => ({
+        ...category,
+        testCount: countByCategory.get(category.id) ?? 0,
+      }));
     });
   }
 

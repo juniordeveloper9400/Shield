@@ -144,9 +144,15 @@ class _OrderTrackScreenState extends State<OrderTrackScreen>
                 const _ReminderRow(),
                 if (order.kind == OrderKind.prescription) ...[
                   const SizedBox(height: 14),
-                  const PrescriptionUploadedCard(),
+                  PrescriptionUploadedCard(order: order),
+                  const SizedBox(height: 14),
+                ] else ...[
+                  const SizedBox(height: 14),
+                  // Adds its own trailing gap only once it actually has
+                  // something to show — nothing here yet must not leave a
+                  // bare gap floating above DeliverToCard.
+                  OrderItemsCard(order: order),
                 ],
-                const SizedBox(height: 14),
                 DeliverToCard(order: order),
                 const SizedBox(height: 14),
                 const EmailIdCard(),

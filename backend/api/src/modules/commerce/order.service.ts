@@ -446,6 +446,36 @@ export class OrderService {
     return rows.map((r) => ({ ...r, image: imageByRx.get(r.id) ?? null }));
   }
 
+  /**
+   * This order's own line items with a picture to show against each one —
+   * `app.order_line` left-joined to `app.product` on the `productId` pinned
+   * at checkout for `image`, which the line itself does not carry. Raw SQL,
+   * the same way `buildInvoice`'s own order-line read is: `stock_status`
+   * (migration 0044) is counter-only and deliberately left off the Drizzle
+   * model, so it can only be filtered here, the same "never shown to the
+   * member" rule the invoice's own lines already follow.
+   *
+   * Empty for a prescription order, which never gets `order_line` rows (see
+   * `PrescriptionService.submitForOrder` — it only ever inserts
+   * `prescription` / `prescription_medicine`). `image` is null when the line
+   * carries no `productId` (a stale cart add that never resolved one — see
+   * `checkout`'s own line-mapping) or the product has since been deleted; the
+   * line itself (name, pack, qty) still prints either way.
+   */
+  async getItemsForOrder(memberId: number, orderId: number) {
+    await this.getOwnedByMemberOrThrow(orderId, memberId);
+    const result = await this.db.execute(sql`
+      SELECT ol.name, ol.pack, ol.qty,
+             ol.unit_price AS "unitPrice", ol.mrp,
+             p.image
+      FROM app.order_line ol
+      LEFT JOIN app.product p ON p.id = ol.product_id
+      WHERE ol.order_id = ${orderId} AND ol.stock_status = 'AVAILABLE'
+      ORDER BY ol.id
+    `);
+    return result.rows as { name: string; pack: string; qty: number; unitPrice: string; mrp: string; image: string | null }[];
+  }
+
   // ---- Staff (store-scoped, SUPERADMIN sees every store) -----------------
 
   async listForStaff(role: AdminRole, storeId: number | null) {

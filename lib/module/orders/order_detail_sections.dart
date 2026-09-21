@@ -198,16 +198,75 @@ Widget _linkButton({
 // ---------------------------------------------------------------------------
 
 /// The "prescription uploaded" thumbnail, shown for a prescription order.
-class PrescriptionUploadedCard extends StatelessWidget {
-  const PrescriptionUploadedCard({super.key});
+///
+/// Fetches the real scan the member uploaded (`OrderRepository.
+/// fetchPrescriptions`) rather than the generic document icon this used to
+/// show unconditionally with no data behind it at all: the "View" button
+/// used to just pop a toast saying "Opening your prescription" and open
+/// nothing. Best-effort: while loading, or when the fetch fails, the
+/// icon+placeholder state below is what shows — a plausible "still catching
+/// up" look rather than an error.
+class PrescriptionUploadedCard extends StatefulWidget {
+  final Purchase order;
+
+  const PrescriptionUploadedCard({super.key, required this.order});
+
+  @override
+  State<PrescriptionUploadedCard> createState() =>
+      _PrescriptionUploadedCardState();
+}
+
+class _PrescriptionUploadedCardState extends State<PrescriptionUploadedCard> {
+  List<OrderPrescription>? _prescriptions;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final rows =
+        await OrderRepository.instance.fetchPrescriptions(widget.order.id);
+    if (mounted && rows != null) {
+      setState(() => _prescriptions = rows);
+    }
+  }
+
+  /// The first submitted prescription with an actual scan attached, or null
+  /// while still loading / when none of them have one (a script phoned in).
+  OrderPrescription? get _withImage {
+    final rows = _prescriptions;
+    if (rows == null) return null;
+    for (final rx in rows) {
+      if (rx.image != null) return rx;
+    }
+    return null;
+  }
+
+  /// Reflects what has actually happened to the prescription, rather than
+  /// always claiming a pharmacist is still reading it.
+  String get _statusLine {
+    final order = widget.order;
+    if (order.mrpTotal > 0 || order.paidTotal > 0) {
+      return 'Priced and confirmed by the pharmacist.';
+    }
+    return 'The pharmacist is reading this to price your order.';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final rx = _withImage;
+    final count = _prescriptions?.length ?? 0;
+
     return _PlainCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Prescription uploaded', style: _titleStyle),
+          Text(
+            count > 1 ? 'Prescriptions uploaded' : 'Prescription uploaded',
+            style: _titleStyle,
+          ),
           const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -220,37 +279,56 @@ class PrescriptionUploadedCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: AppColors.border),
                 ),
-                child: const Icon(
-                  Icons.description_rounded,
-                  size: 34,
-                  color: AppColors.brandBlue,
-                ),
+                clipBehavior: Clip.antiAlias,
+                child: rx?.image != null
+                    ? AppImage(
+                        image: rx!.image!,
+                        fit: BoxFit.cover,
+                        fallbackIcon: Icons.description_rounded,
+                        iconSize: 34,
+                      )
+                    : const Icon(
+                        Icons.description_rounded,
+                        size: 34,
+                        color: AppColors.brandBlue,
+                      ),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'The pharmacist is reading this to price your order.',
-                      style: _mutedStyle,
-                    ),
+                    Text(_statusLine, style: _mutedStyle),
+                    if (count > 1) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '$count prescriptions on this order.',
+                        style: _mutedStyle,
+                      ),
+                    ],
                     const SizedBox(height: 8),
-                    TextButton.icon(
-                      onPressed: () =>
-                          _toast(context, 'Opening your prescription'),
-                      icon: const Icon(Icons.visibility_outlined, size: 18),
-                      label: const Text('View'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.brandBlue,
-                        padding: EdgeInsets.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        textStyle: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
+                    if (rx?.image != null)
+                      TextButton.icon(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => FullScreenImageView(
+                              image: rx!.image!,
+                              title: 'Prescription · ${rx.code}',
+                            ),
+                          ),
+                        ),
+                        icon: const Icon(Icons.visibility_outlined, size: 18),
+                        label: const Text('View'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.brandBlue,
+                          padding: EdgeInsets.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          textStyle: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -258,6 +336,161 @@ class PrescriptionUploadedCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Order items
+// ---------------------------------------------------------------------------
+
+/// "Items in this order" — a standard order's own lines, each with the real
+/// product picture rather than only its name.
+///
+/// Fetches `OrderRepository.fetchItems` the same lazy, per-order way
+/// [PrescriptionUploadedCard] fetches its own scan: nothing here is carried
+/// on the orders list, which stays cheap. Best-effort: while loading, or
+/// when the fetch fails, the card simply does not show — never an error in
+/// its place.
+class OrderItemsCard extends StatefulWidget {
+  final Purchase order;
+
+  const OrderItemsCard({super.key, required this.order});
+
+  @override
+  State<OrderItemsCard> createState() => _OrderItemsCardState();
+}
+
+class _OrderItemsCardState extends State<OrderItemsCard> {
+  List<OrderItem>? _items;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    final rows = await OrderRepository.instance.fetchItems(widget.order.id);
+    if (mounted && rows != null) {
+      setState(() => _items = rows);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _items;
+    if (items == null || items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // The trailing gap rides with the card itself — nothing here yet (still
+    // loading, or a genuine fetch failure) must not leave a bare gap
+    // floating above whatever the caller places next.
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: _PlainCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              items.length > 1 ? 'Items in this order' : 'Item in this order',
+              style: _titleStyle,
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0) ...[
+                const SizedBox(height: 10),
+                _line,
+                const SizedBox(height: 10),
+              ],
+              _OrderItemRow(item: items[i]),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderItemRow extends StatelessWidget {
+  final OrderItem item;
+
+  const _OrderItemRow({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final image = item.image;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: image == null
+              ? null
+              : () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => FullScreenImageView(
+                      image: image,
+                      title: item.name,
+                    ),
+                  ),
+                ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.pageTint,
+                border: Border.all(color: AppColors.border),
+              ),
+              child: AppImage(
+                image: image,
+                fit: BoxFit.cover,
+                fallbackIcon: Icons.medication_outlined,
+                iconSize: 24,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textDark,
+                ),
+              ),
+              if (item.pack.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  item.pack,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _mutedStyle,
+                ),
+              ],
+              const SizedBox(height: 4),
+              Text(
+                'Qty ${item.qty}  ·  ₹${formatRupees(item.unitPrice)} each',
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textBody,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

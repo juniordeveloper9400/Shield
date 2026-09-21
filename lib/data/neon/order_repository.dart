@@ -218,6 +218,60 @@ class LabBookingInput {
   });
 }
 
+/// One line item on a standard order, as [OrderRepository.fetchItems] reads
+/// it back — enough for "Items in this order" to show the real product
+/// picture rather than naming it with no picture at all.
+@immutable
+class OrderItem {
+  final String name;
+  final String pack;
+  final int qty;
+  final int unitPrice;
+  final int mrp;
+
+  /// The product's own catalogue picture (a `data:` URI, the way
+  /// `app.product.image` stores one), or null when the line carries no
+  /// product (a name that matched none at checkout) or the product has
+  /// since lost its picture.
+  final String? image;
+
+  const OrderItem({
+    required this.name,
+    required this.pack,
+    required this.qty,
+    required this.unitPrice,
+    required this.mrp,
+    required this.image,
+  });
+}
+
+/// One prescription submitted into an order, as
+/// [OrderRepository.fetchPrescriptions] reads it back — just enough for
+/// [PrescriptionUploadedCard] to show the member's own uploaded scan rather
+/// than a generic icon standing in for it.
+@immutable
+class OrderPrescription {
+  final String code;
+
+  /// The first page of the member's own uploaded scan (a `data:` URI, from
+  /// `app.prescription_image` where `sort = 0`), or null when this
+  /// prescription was submitted with no photo — a script phoned in, not an
+  /// error case.
+  final String? image;
+  final String doctor;
+
+  /// An `app.prescription_status` value — `AWAITING_REVIEW` / `READ` /
+  /// `ORDERED`.
+  final String status;
+
+  const OrderPrescription({
+    required this.code,
+    required this.image,
+    required this.doctor,
+    required this.status,
+  });
+}
+
 /// Writes placed orders, prescription submissions and lab bookings to the
 /// `app` schema on Neon.
 ///
@@ -391,6 +445,102 @@ class OrderRepository {
       );
     } catch (error) {
       NeonHttp.log('OrderRepository.fetchInvoice failed', error: error);
+      return null;
+    }
+  }
+
+  /// This order's own line items with a picture to show against each one —
+  /// `app.order_line` left-joined to `app.product`, which the line itself
+  /// does not carry. Filtered to `stock_status = 'AVAILABLE'`, the same
+  /// "never shown to the member" rule [_availableOrderLines] already
+  /// follows, with the same fallback for a database that predates that
+  /// column (migration 0044). Empty for a prescription order, which never
+  /// gets `order_line` rows at all. Null when the database is off or
+  /// unreachable; the caller then shows nothing rather than an error, the
+  /// same contract as every other read here.
+  Future<List<OrderItem>?> fetchItems(String orderCode) async {
+    if (!NeonHttp.isConfigured) {
+      return null;
+    }
+    try {
+      List<Map<String, dynamic>> rows;
+      try {
+        rows = await NeonHttp.instance.query(
+          r'''
+            SELECT ol.name, ol.pack, ol.qty, ol.unit_price, ol.mrp, p.image
+            FROM app.order_line ol
+            JOIN app."order" o ON o.id = ol.order_id
+            LEFT JOIN app.product p ON p.id = ol.product_id
+            WHERE o.code = $1 AND ol.stock_status = 'AVAILABLE'
+            ORDER BY ol.id
+          ''',
+          [orderCode],
+        );
+      } catch (_) {
+        rows = await NeonHttp.instance.query(
+          r'''
+            SELECT ol.name, ol.pack, ol.qty, ol.unit_price, ol.mrp, p.image
+            FROM app.order_line ol
+            JOIN app."order" o ON o.id = ol.order_id
+            LEFT JOIN app.product p ON p.id = ol.product_id
+            WHERE o.code = $1
+            ORDER BY ol.id
+          ''',
+          [orderCode],
+        );
+      }
+      return rows.map((row) {
+        final image = (row['image'] as String?)?.trim();
+        return OrderItem(
+          name: (row['name'] ?? '').toString(),
+          pack: (row['pack'] ?? '').toString(),
+          qty: int.tryParse(row['qty']?.toString() ?? '') ?? 1,
+          unitPrice:
+              double.tryParse(row['unit_price']?.toString() ?? '')?.round() ??
+                  0,
+          mrp: double.tryParse(row['mrp']?.toString() ?? '')?.round() ?? 0,
+          image: image == null || image.isEmpty ? null : image,
+        );
+      }).toList(growable: false);
+    } catch (error) {
+      NeonHttp.log('OrderRepository.fetchItems failed', error: error);
+      return null;
+    }
+  }
+
+  /// The prescription(s) submitted into this order, via `app.prescription_order`
+  /// — one row per prescription (a repeat order can carry more than one).
+  /// Empty for a standard order, which never has one. Null when the
+  /// database is off or unreachable.
+  Future<List<OrderPrescription>?> fetchPrescriptions(String orderCode) async {
+    if (!NeonHttp.isConfigured) {
+      return null;
+    }
+    try {
+      final rows = await NeonHttp.instance.query(
+        r'''
+          SELECT p.code, p.doctor, p.status::text AS status,
+                 (SELECT pi.image FROM app.prescription_image pi
+                   WHERE pi.prescription_id = p.id AND pi.sort = 0) AS image
+          FROM app.prescription_order po
+          JOIN app.prescription p ON p.id = po.prescription_id
+          JOIN app."order" o ON o.id = po.order_id
+          WHERE o.code = $1
+          ORDER BY po.id
+        ''',
+        [orderCode],
+      );
+      return rows.map((row) {
+        final image = (row['image'] as String?)?.trim();
+        return OrderPrescription(
+          code: (row['code'] ?? '').toString(),
+          image: image == null || image.isEmpty ? null : image,
+          doctor: (row['doctor'] ?? '').toString(),
+          status: (row['status'] ?? '').toString().toUpperCase(),
+        );
+      }).toList(growable: false);
+    } catch (error) {
+      NeonHttp.log('OrderRepository.fetchPrescriptions failed', error: error);
       return null;
     }
   }

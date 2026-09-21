@@ -12,17 +12,28 @@ import '../rewards/rewards_service.dart';
 /// One line in the wallet ledger.
 @immutable
 class WalletEntry {
+  /// An `app.wallet_entry_kind` token (`SPEND`, `ACTIVATION`, `BONUS`,
+  /// `REFERRAL_EARNINGS`, `AGENT_EARNINGS`, …) when this line came from the
+  /// real ledger; '' for one added locally before the next refresh.
+  final String kind;
   final String label;
   final String date;
 
   /// Positive credits, negative debits, in whole rupees.
   final int amount;
 
-  const WalletEntry({
+  /// When this actually happened. A real, server-sourced entry carries its
+  /// true `wallet_entry.occurred_on`; one added optimistically before the
+  /// next sync defaults to now.
+  final DateTime occurredOn;
+
+  WalletEntry({
+    this.kind = '',
     required this.label,
     required this.date,
     required this.amount,
-  });
+    DateTime? occurredOn,
+  }) : occurredOn = occurredOn ?? DateTime.now();
 
   bool get isCredit => amount >= 0;
 }
@@ -288,11 +299,6 @@ class WalletService extends ChangeNotifier {
   int _redeemed = 0;
   final List<WalletEntry> _entries = List.of(_seed);
 
-  /// The `app.wallet_entry` ids of the referral commission already added to
-  /// [_balance] and the ledger, so a refresh that returns the same credit again
-  /// (every refresh does) adds it once.
-  final Set<String> _referralEarningIds = {};
-
   /// The cards on the account, oldest first, or empty while the wallet is
   /// still closed.
   final List<WalletCard> _cards = [];
@@ -462,52 +468,70 @@ class WalletService extends ChangeNotifier {
     }
   }
 
-  /// Adds the referral commission the database has credited to this member's
-  /// wallet — 2% of a friend's plan, paid when the plan is approved — to the
-  /// balance and the ledger, once each.
+  /// Replaces the balance and the whole transaction history with what the
+  /// database actually holds — the real `app.wallet_entry` ledger, in place
+  /// of whatever local activity ([spendBalance], [creditEarnings], a card
+  /// just approved by [applyRemoteCards]) has accumulated in this app
+  /// instance since the last refresh.
   ///
-  /// The commission is paid on the server, into `app.wallet`, whoever the
-  /// referrer is and whether or not they were looking at the app; this is how
-  /// it reaches the balance they see here. Recognised by ledger id, so it is
-  /// safe to call with the full list on every refresh.
-  void applyReferralEarnings(List<RemoteReferralEarning> earnings) {
-    var changed = false;
-    for (final earning in earnings) {
-      if (earning.amount <= 0 || !_referralEarningIds.add(earning.id)) {
-        continue;
-      }
-      _balance += earning.amount;
-      _entries.insert(
-        0,
-        WalletEntry(
-          label: earning.label,
-          date: formatDate(earning.occurredOn),
-          amount: earning.amount,
-        ),
-      );
-      changed = true;
+  /// This is what makes "Transaction history" trustworthy for an order: a
+  /// `SPEND` row for it only exists in the database once money has actually
+  /// moved — at checkout for a standard order paid by wallet, or, for a
+  /// prescription order, only once the store has billed it and staff have
+  /// collected it with the member's OTP. Reading the ledger back is what
+  /// shows it "only after bill received and OTP validation" — nothing here
+  /// decides that; the database already only wrote the row once it was true.
+  /// The same reasoning [MemberEarnings] already reads fresh off the order
+  /// list rather than a locally kept total.
+  ///
+  /// Both or neither: a balance with no ledger behind it (or the reverse)
+  /// would show a total the entries list under it cannot explain, so this
+  /// only replaces anything when both reads succeeded.
+  void applyRemoteWallet(RemoteWallet? remoteWallet, List<RemoteWalletEntry>? remoteEntries) {
+    if (remoteWallet == null || remoteEntries == null) {
+      return;
     }
-    if (changed) {
-      notifyListeners();
-    }
+    _balance = remoteWallet.balance;
+    _entries
+      ..clear()
+      ..addAll([
+        for (final entry in remoteEntries)
+          WalletEntry(
+            kind: entry.kind,
+            label: entry.label,
+            date: formatDate(entry.occurredOn),
+            amount: entry.amount,
+            occurredOn: entry.occurredOn,
+          ),
+      ]);
+    notifyListeners();
   }
 
-  /// Pulls the member's privilege cards from Neon and applies any approvals or
-  /// rejections, and adds any referral commission credited since. Best-effort:
-  /// a no-op without a database or on a failed read.
+  /// Pulls the member's privilege cards, real balance and ledger from Neon and
+  /// applies all three. Best-effort: a no-op on any piece the database is
+  /// unconfigured or unreachable for.
+  ///
+  /// This is what keeps [balance] and [entries] honest — without it they are
+  /// only ever the local, in-memory total of whatever [spendBalance] /
+  /// [creditEarnings] / [redeemPoints] happened to run in this exact app
+  /// instance, which a restart wipes back to zero, and which never learns
+  /// about a bill an admin collected with the member's OTP at the counter.
+  /// Call on sign-in, session restore, app resume, and right after any
+  /// checkout that might have touched the wallet.
   Future<void> refreshFromDatabase(String memberPhone) async {
     final results = await Future.wait([
       WalletRepository.instance.fetchCards(memberPhone: memberPhone),
-      WalletRepository.instance.fetchReferralEarnings(memberPhone: memberPhone),
+      WalletRepository.instance.fetchWallet(memberPhone: memberPhone),
+      WalletRepository.instance.fetchEntries(memberPhone: memberPhone),
     ]);
     final remote = results[0] as List<RemoteWalletCard>?;
     if (remote != null) {
       applyRemoteCards(remote);
     }
-    final earnings = results[1] as List<RemoteReferralEarning>?;
-    if (earnings != null) {
-      applyReferralEarnings(earnings);
-    }
+    applyRemoteWallet(
+      results[1] as RemoteWallet?,
+      results[2] as List<RemoteWalletEntry>?,
+    );
   }
 
   /// Drops a rejected card once the member has read the reason.
@@ -811,7 +835,6 @@ class WalletService extends ChangeNotifier {
   void reset() {
     _cards.clear();
     _pending.clear();
-    _referralEarningIds.clear();
     _balance = openingBalance;
     _redeemed = 0;
     _entries

@@ -12,12 +12,16 @@ The current console includes login, dashboard, stores, products, orders, prescri
 
 ### Orders → Bills
 
+**Orders** (`OrdersPage`) lists standard orders only (`app."order".kind = 'STANDARD'`) — a prescription becomes its own order row too the moment it's ordered, but it's reviewed and billed entirely from **Prescriptions** (`PrescriptionReviewModal`), so it never appears here as well.
+
 A member order is reviewed on **Orders** first and only reaches **Bills** when an admin converts it. `OrderReviewModal` (`src/components/orders/OrderReviewModal.tsx`) follows the same two steps as the prescription review:
 
 1. **Items** — set each line's stock status (Stock available, Out of stock, Not possible, Customer not needed); "Process ✓" groups the lines by status. These statuses are counter-only and never shown in the member's app. "Next: Details →" moves on.
 2. **Details** — edit the member's name and phone (with call and WhatsApp buttons beside the phone, same as prescriptions), the branch, and, for a pending cash order, the delivery boy. **Submit** saves the statuses and details (`saveOrderReview`), then the button becomes **Convert to bill →**, which stamps the order (`markOrderConvertedToBill`) and opens that order's bill on the Bills page.
 
 `BillsPage` lists only orders where `app."order".converted_to_bill_at` is set, so a freshly received order never shows there. Pricing, sending the invoice and the OTP-gated payment collection happen from Bills (see [Bill collection OTP](#bill-collection-otp)). A new bill starts with the "Stock available" lines only; other lines can be added by hand. The prescription review modal's "Convert to bill →" stamps its linked order the same way. Orders no longer have their own "Manage bill" or "Remove bill" actions; those live on Bills.
+
+Nothing here is prescription-only — a standard order converts and collects through the identical `BillEditorModal`/OTP flow, and for a standard order the bill's lines are pre-filled from its own cart lines (already priced at checkout) rather than needing pricing. The Details step points a still-unpaid cash order at "Convert to bill →" for exactly this reason. The one no-OTP shortcut in the whole console is `markCashCollected` on **Deliveries**, and it stays that way on purpose — a delivery boy (or store staff at pickup) taking cash into their own hand in person has nothing for an OTP to verify. Assigning a delivery boy is only for that physical hand-off; collecting the money yourself still means "Convert to bill →".
 
 The **Call** and **WhatsApp** buttons beside the phone on the Details step (on Orders, and on a prescription's Details step for its linked order) also record the first time staff contacted the member (`markOrderStoreContacted` → `app."order".store_contacted_at`, migration `0045_order_store_contacted_at.sql`). That is what moves the order to **Store contact** in the member's app (see [Order tracking](architecture.md#order-tracking)); clicking again never changes the date, and a cancelled order is not stamped.
 

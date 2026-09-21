@@ -1,19 +1,38 @@
 import '../../module/privilege/privilege_tier.dart';
 import 'neon_http.dart';
 
-/// One referral commission credited to the member's wallet — a
-/// `REFERRAL_EARNINGS` line in `app.wallet_entry`, written by the database when
-/// a friend they referred has a plan approved.
-class RemoteReferralEarning {
-  /// `app.wallet_entry.id` — what makes a credit recognisable across refreshes,
-  /// so the same one is never added to the balance twice.
-  final String id;
+/// The wallet's own row — `app.wallet.balance`. The one authoritative figure
+/// for [WalletService.balance]: the column every debit and credit in
+/// `wallet_entry` is written against in the same statement, never derived
+/// client-side.
+class RemoteWallet {
+  final int balance;
+
+  const RemoteWallet({required this.balance});
+}
+
+/// One line of the real ledger — `app.wallet_entry` — as
+/// [WalletRepository.fetchEntries] reads it back.
+///
+/// Covers every kind the table holds: `ACTIVATION`/`BONUS` (a plan approved),
+/// `REFERRAL_EARNINGS` (a friend's plan paying out), `AGENT_EARNINGS` (agent
+/// commission moved in), and `SPEND` (an order paid from the wallet). A
+/// `SPEND` row for an order only exists once the database has actually
+/// debited the balance for it — for a standard order, at checkout; for a
+/// prescription order, only once the store has billed it and staff have
+/// collected it with the member's OTP (`collectBillWithWallet`,
+/// `shieldweb/src/api/billPayments.ts`) — so reading this ledger back is what
+/// keeps the wallet's transaction history showing only money that has really
+/// moved, the same way [MemberEarnings] is always read fresh off the real
+/// order list rather than kept as a running local total.
+class RemoteWalletEntry {
+  final String kind;
   final String label;
   final int amount;
   final DateTime occurredOn;
 
-  const RemoteReferralEarning({
-    required this.id,
+  const RemoteWalletEntry({
+    this.kind = '',
     required this.label,
     required this.amount,
     required this.occurredOn,
@@ -174,28 +193,51 @@ class WalletRepository {
     });
   }
 
-  /// The referral commission credited to the member's wallet, oldest first.
-  /// Null when nothing could be read (so a blip is not mistaken for "none").
-  Future<List<RemoteReferralEarning>?> fetchReferralEarnings({
-    required String memberPhone,
-  }) {
-    return _run('fetchReferralEarnings', () async {
+  /// The wallet's real, server-held balance — what
+  /// [WalletService.refreshFromDatabase] hydrates against, in place of the
+  /// figure it would otherwise only ever compute from local activity. Null
+  /// when the database is unreachable, or the member has no `app.wallet` row
+  /// yet (nobody has ever credited them).
+  Future<RemoteWallet?> fetchWallet({required String memberPhone}) {
+    return _run('fetchWallet', () async {
       final rows = await NeonHttp.instance.query(
         '''
-          SELECT e.id, e.label, e.amount, e.occurred_on
+          SELECT w.balance
+          FROM app.wallet w
+          JOIN app.users u ON u.id = w.member_id
+          WHERE u.phone = \$1
+          LIMIT 1
+        ''',
+        [memberPhone],
+      );
+      if (rows.isEmpty) {
+        return null;
+      }
+      return RemoteWallet(balance: _int(rows.first['balance']));
+    });
+  }
+
+  /// The full ledger behind [fetchWallet]'s balance, newest first — every
+  /// top-up, bonus, referral credit and order spend the database has ever
+  /// posted for this member. Null when nothing could be read.
+  Future<List<RemoteWalletEntry>?> fetchEntries({required String memberPhone}) {
+    return _run('fetchEntries', () async {
+      final rows = await NeonHttp.instance.query(
+        '''
+          SELECT e.kind::text AS kind, e.label, e.amount, e.occurred_on
           FROM app.wallet_entry e
           JOIN app.wallet w ON w.id = e.wallet_id
           JOIN app.users u  ON u.id = w.member_id
-          WHERE u.phone = \$1 AND e.kind = 'REFERRAL_EARNINGS'
-          ORDER BY e.id
+          WHERE u.phone = \$1
+          ORDER BY e.created_at DESC, e.id DESC
         ''',
         [memberPhone],
       );
       return [
         for (final r in rows)
-          RemoteReferralEarning(
-            id: r['id'].toString(),
-            label: (r['label'] ?? 'Referral commission').toString(),
+          RemoteWalletEntry(
+            kind: (r['kind'] ?? '').toString(),
+            label: (r['label'] ?? '').toString(),
             amount: _int(r['amount']),
             occurredOn: _date(r['occurred_on']) ?? DateTime.now(),
           ),

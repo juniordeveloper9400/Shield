@@ -11,7 +11,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, dietitian, labBookingReport, labPackage, patient, users } from '../../src/db/schema';
+import { adminUser, dietitian, labBookingReport, labCategory, labPackage, patient, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -24,6 +24,7 @@ describe('Care Services (e2e)', () => {
   let otherMemberAccessToken: string;
   let staffAccessToken: string;
   let labPackageId: number;
+  let labCategoryId: number;
   let dietitianId: number;
   let ownedPatientId: number;
 
@@ -43,11 +44,22 @@ describe('Care Services (e2e)', () => {
     app = moduleRef.createNestApplication();
     await app.init();
 
+    const [category] = await db
+      .insert(labCategory)
+      .values({ name: 'Diabetes', image: 'data:image/png;base64,abc' })
+      .returning();
+    labCategoryId = category.id;
+
     const [pkg] = await db
       .insert(labPackage)
-      .values({ slug: 'full-body', name: 'Full Body Checkup', price: '999.00', mrp: '1499.00' })
+      .values({ slug: 'full-body', name: 'Full Body Checkup', categoryId: labCategoryId, price: '999.00', mrp: '1499.00' })
       .returning();
     labPackageId = pkg.id;
+
+    // Inactive: proves listLabCategories' testCount only tallies active packages.
+    await db
+      .insert(labPackage)
+      .values({ slug: 'hidden-package', name: 'Hidden Package', categoryId: labCategoryId, isActive: false });
 
     const [diet] = await db.insert(dietitian).values({ name: 'Dr. Nutrition', fee: '500.00' }).returning();
     dietitianId = diet.id;
@@ -96,10 +108,18 @@ describe('Care Services (e2e)', () => {
 
   it('lists lab packages, clinics, and dietitians publicly', async () => {
     const packages = await request(app.getHttpServer()).get('/v1/public/care/lab-packages').expect(200);
-    expect(packages.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: labPackageId })]));
+    expect(packages.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: labPackageId, categoryId: labCategoryId })]));
 
     const dietitians = await request(app.getHttpServer()).get('/v1/public/care/dietitians').expect(200);
     expect(dietitians.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: dietitianId })]));
+  });
+
+  it('lists lab categories publicly, each counting only its own active packages', async () => {
+    const categories = await request(app.getHttpServer()).get('/v1/public/care/lab-categories').expect(200);
+    const diabetes = categories.body.find((c: { id: number }) => c.id === labCategoryId);
+    expect(diabetes).toEqual(
+      expect.objectContaining({ name: 'Diabetes', image: 'data:image/png;base64,abc', testCount: 1 }),
+    );
   });
 
   it('creates, updates, and soft-deletes a patient — the caller\'s own resource end to end', async () => {

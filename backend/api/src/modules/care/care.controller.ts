@@ -12,6 +12,11 @@ export class CareController {
     return this.care.listLabPackages();
   }
 
+  @Get('lab-categories')
+  labCategories() {
+    return this.care.listLabCategories();
+  }
+
   @Get('lab-packages/:id')
   labPackage(@Param('id', ParseIntPipe) id: number) {
     return this.care.getLabPackage(id);
