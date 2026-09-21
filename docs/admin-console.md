@@ -47,6 +47,41 @@ Chip and tile images are stored as resized WebP data URIs (PNG on a browser whos
 
 Both apps read this data: the member app straight from Neon (`lib/data/neon/category_repository.dart`), and `shield agent_invester/` through the backend API's public catalogue routes (`lib/data/backend/category_repository.dart`). The API caches those lists for 5 minutes and the console writes to Neon directly, so a change reaches the agent / investor app within about 5 minutes; the member app sees it on its next catalogue load.
 
+### Health Pass plan approvals — the verification checklist
+
+Approving an activation credits real money, so approving is gated behind the
+reviewer's own verification checklist, separate from what the member
+submitted (`receipt_reference`, `receipt_file_name`, `receipt_image`):
+
+- **UTR / Transaction ID** — the reference the reviewer reads off their own
+  bank statement, next to what the member wrote.
+- **Received date** — when the reviewer actually saw the transfer land, next
+  to when the member submitted.
+- **Receipt image, ticked** — the reviewer confirms they looked at the
+  uploaded receipt (or, with none on file, verified the transfer another
+  way).
+- **Received amount** — what the reviewer saw credited, next to the load the
+  member claims; a mismatch is flagged but does not block approval on its own
+  (the reviewer still decides, or rejects/holds instead).
+
+These four are stored on `app.wallet_card` (`verified_reference`,
+`received_on`, `receipt_verified`, `received_amount` — migration
+`0054_wallet_card_activation_verification.sql`), saved with **Save
+verification** or automatically right before Approve. They are a plain audit
+record: `app.approve_wallet_card_activation` and the commission split it runs
+never read them. **Approve & credit** only enables once all four are filled
+in; `Reject` and `Hold` are always available on a pending/on-hold card.
+`approveActivation` (`shieldweb/src/api/activations.ts`) checks the same four
+columns again immediately before calling the approval function, so the gate
+holds even if the disabled button were bypassed.
+
+Health Pass plan approvals → a member opens **Member wallet** (balance and
+reward points, with **Open member profile** to their full record) beside the
+card being activated, not a transaction history — the queue's own list
+defaults to the **Pending** filter rather than **All**, and a member's own
+plan list opens the same validation screen from anywhere in its row, not just
+the **Validate** button.
+
 ### Reserved — the company's money from Health Pass activations
 
 **Reserved** (`/commission-reserve`, Super Admin only) is the company's own share of Health Pass plans. It is a ledger (`app.commission_reserve_entry`) that never touches a member's or an agent's wallet, and is not shown anywhere in the apps. Approving an activation (Health Pass plan approvals → Approve, i.e. `app.approve_wallet_card_activation`) writes up to two rows for that card, told apart by `source` (migration `0053_company_reserve_on_activation.sql`):

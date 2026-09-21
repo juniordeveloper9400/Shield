@@ -510,6 +510,10 @@ export function createTestDb() {
       recharged_on date NOT NULL DEFAULT current_date,
       expires_on date NOT NULL,
       sold_by_agent_id bigint,
+      verified_reference text,
+      received_on date,
+      receipt_verified boolean NOT NULL DEFAULT false,
+      received_amount numeric(12,2),
       created_at timestamptz NOT NULL DEFAULT now()
     );
 

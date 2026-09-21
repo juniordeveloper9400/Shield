@@ -1,4 +1,4 @@
-import { bigint, date, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, date, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { appSchema } from './app-identity';
 import { shieldStore } from './app-catalogue';
 import { order } from './app-commerce';
@@ -89,6 +89,13 @@ export const walletCard = appSchema.table('wallet_card', {
   rechargedOn: date('recharged_on').notNull(),
   expiresOn: date('expires_on').notNull(),
   soldByAgentId: bigint('sold_by_agent_id', { mode: 'number' }),
+  // migration 0054: the admin's own verification checklist — separate from
+  // what the member submitted above, and never read by
+  // approve_wallet_card_activation() or any commission logic.
+  verifiedReference: text('verified_reference'),
+  receivedOn: date('received_on'),
+  receiptVerified: boolean('receipt_verified').notNull().default(false),
+  receivedAmount: numeric('received_amount', { precision: 12, scale: 2 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

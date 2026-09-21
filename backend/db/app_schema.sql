@@ -872,12 +872,20 @@ CREATE TABLE app.wallet_card (
     submitted_at   timestamptz NOT NULL DEFAULT now(),
     reviewed_at    timestamptz,
     reviewer_note  text NOT NULL DEFAULT '',
-    receipt_reference text,                               -- the 'PV-…' ref / bank UTR
+    receipt_reference text,                               -- the 'PV-…' ref / bank UTR the member claims
     receipt_file_name text,
+    receipt_image  text,                                  -- migration 0012: base64 transfer-receipt screenshot
     issued_on      date NOT NULL DEFAULT current_date,
     recharged_on   date NOT NULL DEFAULT current_date,
     expires_on     date NOT NULL,
     sold_by_agent_id bigint,                              -- FK added after app.agent
+    -- migration 0054: the admin's own verification checklist, separate from
+    -- what the member submitted above. Never read by
+    -- approve_wallet_card_activation() or any commission logic.
+    verified_reference text,                              -- UTR the admin read off their own bank statement
+    received_on    date,                                  -- when the admin saw the transfer land
+    receipt_verified boolean NOT NULL DEFAULT false,        -- admin has checked the receipt image
+    received_amount numeric(12,2),                          -- what the admin saw credited
     created_at     timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX wallet_card_wallet_idx ON app.wallet_card(wallet_id);
