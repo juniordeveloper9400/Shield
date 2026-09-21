@@ -30,7 +30,7 @@ class AgentCustomerRepository {
   /// is [code] — a no-op (returns `false`, writes nothing) when [code] does
   /// not resolve to an *approved* agent, or the phone has no `app.users` row
   /// yet. Safe to call unconditionally alongside the ordinary member-referral
-  /// attempt: an agent code and a member referral code (`SHIELD-0000`) never
+  /// attempt: an agent code and a member referral code (`SAHAKAR-0000`) never
   /// collide, and `ON CONFLICT DO NOTHING` (migration 0026's unique
   /// constraint) makes a repeat call for an already-linked member harmless.
   Future<bool> linkCustomer({

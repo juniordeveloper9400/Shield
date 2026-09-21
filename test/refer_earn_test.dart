@@ -797,7 +797,7 @@ void main() {
       await pumpScreen(tester, size: const Size(320, 2600));
 
       expect(find.text('Your journey'), findsOneWidget);
-      expect(find.text('SHIELD-RN4821'), findsOneWidget);
+      expect(find.text('SAHAKAR-RN4821'), findsOneWidget);
 
       // The commission card carries the widest lines on the screen — a tier
       // name and a two-ended rupee range on one row — so it is opened here

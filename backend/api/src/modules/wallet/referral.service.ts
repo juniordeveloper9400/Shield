@@ -14,6 +14,11 @@ import {
 } from '../../db/schema';
 import type { ApplyReferralCodeDto, CreateReferralDto } from './dto';
 
+/** The Member ID shown in the apps: `SAHAKAR-####`, this member's own invite code. */
+const MEMBER_CODE_PREFIX = 'SAHAKAR-';
+/** The prefix members were issued before the rename to Sahakar 360. */
+const LEGACY_MEMBER_CODE_PREFIX = /^SHIELD-/;
+
 @Injectable()
 export class ReferralService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
@@ -32,7 +37,7 @@ export class ReferralService {
 
   /**
    * The caller's own invite code, generating and saving one the first time
-   * it's asked for — `SHIELD-####`, retried against the column's `UNIQUE`
+   * it's asked for — `SAHAKAR-####`, retried against the column's `UNIQUE`
    * constraint on a collision (a collision only costs another random draw).
    */
   async getOrCreateCode(memberId: number): Promise<string> {
@@ -42,7 +47,7 @@ export class ReferralService {
     }
 
     for (let attempt = 0; attempt < 8; attempt++) {
-      const candidate = `SHIELD-${1000 + Math.floor(Math.random() * 9000)}`;
+      const candidate = `${MEMBER_CODE_PREFIX}${1000 + Math.floor(Math.random() * 9000)}`;
       try {
         const [updated] = await this.db
           .update(users)
@@ -197,7 +202,7 @@ export class ReferralService {
    *    0033-0040) automatically, with no further wiring needed here: that
    *    function already resolves the seller as
    *    `COALESCE(sold_by_agent_id, agent_customer-linked agent)`.
-   *  - A **fellow member's own referral code** (`SHIELD-1234`, from
+   *  - A **fellow member's own referral code** (`SAHAKAR-1234`, from
    *    [getOrCreateCode]) records the referral edge (`app.referral`,
    *    `REGISTERED`) — real 2% commission and `referral_level` reward
    *    points both actually credit later, off this same edge, once the
@@ -214,7 +219,7 @@ export class ReferralService {
    */
   async applySignupCode(memberId: number, dto: ApplyReferralCodeDto): Promise<{ linked: 'agent' | 'member' | 'none' }> {
     // Both code formats are always issued upper-case (`SHD-WRD-004`,
-    // `SHIELD-1234`) and this lookup is a plain `=`, which Postgres treats
+    // `SAHAKAR-1234`) and this lookup is a plain `=`, which Postgres treats
     // case-sensitively — the same reason `WalletService.submitCard`
     // upper-cases `dto.agentCode` before its own agent lookup. Without this,
     // a member who types (or autocorrect/predictive text lower-cases) their
@@ -255,7 +260,10 @@ export class ReferralService {
       return { linked: 'agent' };
     }
 
-    const [asMember] = await this.db.select({ id: users.id }).from(users).where(eq(users.referralCode, code)).limit(1);
+    // Codes shared before the rename read `SHIELD-1234`; migration 0051 moved
+    // every stored one to `SAHAKAR-1234`, so an old message still resolves.
+    const memberCode = code.replace(LEGACY_MEMBER_CODE_PREFIX, MEMBER_CODE_PREFIX);
+    const [asMember] = await this.db.select({ id: users.id }).from(users).where(eq(users.referralCode, memberCode)).limit(1);
 
     if (asMember && asMember.id !== memberId) {
       const [claimed] = await this.db

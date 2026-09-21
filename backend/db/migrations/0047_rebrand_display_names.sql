@@ -12,7 +12,7 @@
 --    app.payment_method.blurb     'Pay from your SHIELD wallet'
 --
 --  Deliberately NOT touched: identifiers and history — referral codes
---  (`SHIELD-1234`), promo codes (`SHIELD20`), store codes (`SHD-…`), the plan
+--  (`SHIELD-1234`, later moved by 0051), promo codes (`SHIELD20`), store codes (`SHD-…`), the plan
 --  tier names ('Silver Shield', …), past wallet ledger labels, uploaded file
 --  names, and the schema/table names themselves (`app.shield_store`).
 --

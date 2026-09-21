@@ -23,7 +23,7 @@ class ReferralRepository {
   /// no `app.users` row yet (sign-in writes one before this is ever called,
   /// so that should not happen in practice).
   ///
-  /// `SHIELD-` plus four digits, retried against the column's `UNIQUE`
+  /// `SAHAKAR-` plus four digits, retried against the column's `UNIQUE`
   /// constraint — a collision only ever costs another random draw, not a
   /// failed registration.
   Future<String?> ensureCodeFor(String phone) {
@@ -41,7 +41,7 @@ class ReferralRepository {
 
       final random = Random();
       for (var attempt = 0; attempt < 8; attempt++) {
-        final candidate = 'SHIELD-${1000 + random.nextInt(9000)}';
+        final candidate = 'SAHAKAR-${1000 + random.nextInt(9000)}';
         try {
           final saved = await NeonHttp.instance.query(
             '''
@@ -94,7 +94,12 @@ class ReferralRepository {
     required String newMemberPhone,
   }) async {
     final result = await _run<bool>('recordSignup', () async {
-      final trimmedCode = code.trim();
+      // A code shared before the rename reads `SHIELD-1234`; every stored one
+      // is now `SAHAKAR-1234` (migration 0051), so map the old prefix over.
+      final trimmedCode = code.trim().replaceFirst(
+        RegExp(r'^SHIELD-', caseSensitive: false),
+        'SAHAKAR-',
+      );
       if (trimmedCode.isEmpty) {
         return false;
       }

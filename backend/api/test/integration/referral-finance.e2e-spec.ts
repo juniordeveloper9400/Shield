@@ -15,7 +15,7 @@ describe('Referral attribution and activation accounting', () => {
   });
 
   async function members() {
-    const [inviter] = await db.insert(users).values({ name: 'Inviter', phone: '9000010001', referralCode: 'SHIELD-7891' }).returning();
+    const [inviter] = await db.insert(users).values({ name: 'Inviter', phone: '9000010001', referralCode: 'SAHAKAR-7891' }).returning();
     const [invitee] = await db.insert(users).values({ name: 'Invitee', phone: '9000010002' }).returning();
     const [seller] = await db.insert(agent).values({ code: 'SHD-WRD-REF', name: 'Seller', phone: '9000010003', level: 'WARD', approvalStatus: 'APPROVED' }).returning();
     return { inviter, invitee, seller };
@@ -23,16 +23,23 @@ describe('Referral attribution and activation accounting', () => {
 
   it('accepts the displayed Member ID, retries idempotently, and prevents either direction of cross attribution', async () => {
     const { inviter, invitee, seller } = await members();
-    expect(await referrals.applySignupCode(invitee.id, { code: ' shield-7891 ' })).toEqual({ linked: 'member' });
-    expect(await referrals.applySignupCode(invitee.id, { code: 'SHIELD-7891' })).toEqual({ linked: 'member' });
+    expect(await referrals.applySignupCode(invitee.id, { code: ' sahakar-7891 ' })).toEqual({ linked: 'member' });
+    expect(await referrals.applySignupCode(invitee.id, { code: 'SAHAKAR-7891' })).toEqual({ linked: 'member' });
     expect(await referrals.applySignupCode(invitee.id, { code: seller.code })).toEqual({ linked: 'none' });
     expect(await db.select().from(agentCustomer)).toHaveLength(0);
     expect(await db.select().from(referral)).toHaveLength(1);
-    expect(await referrals.applySignupCode(inviter.id, { code: 'SHIELD-7891' })).toEqual({ linked: 'none' });
+    expect(await referrals.applySignupCode(inviter.id, { code: 'SAHAKAR-7891' })).toEqual({ linked: 'none' });
     const [other] = await db.insert(users).values({ name: 'Other', phone: '9000010004' }).returning();
     expect(await referrals.applySignupCode(other.id, { code: seller.code })).toEqual({ linked: 'agent' });
     expect(await referrals.applySignupCode(other.id, { code: seller.code })).toEqual({ linked: 'agent' });
-    expect(await referrals.applySignupCode(other.id, { code: 'SHIELD-7891' })).toEqual({ linked: 'none' });
+    expect(await referrals.applySignupCode(other.id, { code: 'SAHAKAR-7891' })).toEqual({ linked: 'none' });
+  });
+
+  it('still accepts a Member ID shared before the rename (SHIELD-####) as the same code', async () => {
+    const { inviter, invitee } = await members();
+    expect(await referrals.applySignupCode(invitee.id, { code: 'SHIELD-7891' })).toEqual({ linked: 'member' });
+    const [edge] = await db.select().from(referral);
+    expect(edge.inviterMemberId).toBe(inviter.id);
   });
 
   it('pays one 10% pool: 2% member and 8% reserve on every activation, never double approval or duplicate levels', async () => {

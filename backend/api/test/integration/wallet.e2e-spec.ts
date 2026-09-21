@@ -746,7 +746,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .get('/v1/member/referrals/code')
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .expect(200);
-    expect(first.body.code).toMatch(/^SHIELD-\d{4}$/);
+    expect(first.body.code).toMatch(/^SAHAKAR-\d{4}$/);
 
     const second = await request(app.getHttpServer())
       .get('/v1/member/referrals/code')
@@ -864,7 +864,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .get('/v1/member/referrals/code')
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .expect(200);
-    const inviterCode = codeRes.body.code as string; // 'SHIELD-####'
+    const inviterCode = codeRes.body.code as string; // 'SAHAKAR-####'
 
     const [freshInvitee] = await db
       .insert(users)
