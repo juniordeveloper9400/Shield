@@ -56,6 +56,11 @@ describe('Care Services (e2e)', () => {
       .returning();
     labPackageId = pkg.id;
 
+    // A test switched on with "Show in the app" is listed as its own one-profile row.
+    await db
+      .insert(labPackage)
+      .values({ slug: 'hba1c', name: 'HbA1c', categoryId: labCategoryId, sourceTestId: 4242, price: '309.00', mrp: '500.00' });
+
     // Inactive: proves listLabCategories' testCount only tallies active packages.
     await db
       .insert(labPackage)
@@ -109,6 +114,9 @@ describe('Care Services (e2e)', () => {
   it('lists lab packages, clinics, and dietitians publicly', async () => {
     const packages = await request(app.getHttpServer()).get('/v1/public/care/lab-packages').expect(200);
     expect(packages.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: labPackageId, categoryId: labCategoryId })]));
+    // A real package carries no source test; a one-test listing does, which is how the apps tell them apart.
+    expect(packages.body.find((p: { id: number }) => p.id === labPackageId).sourceTestId).toBeNull();
+    expect(packages.body.find((p: { slug: string }) => p.slug === 'hba1c').sourceTestId).toBe(4242);
 
     const dietitians = await request(app.getHttpServer()).get('/v1/public/care/dietitians').expect(200);
     expect(dietitians.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: dietitianId })]));
@@ -118,7 +126,7 @@ describe('Care Services (e2e)', () => {
     const categories = await request(app.getHttpServer()).get('/v1/public/care/lab-categories').expect(200);
     const diabetes = categories.body.find((c: { id: number }) => c.id === labCategoryId);
     expect(diabetes).toEqual(
-      expect.objectContaining({ name: 'Diabetes', image: 'data:image/png;base64,abc', testCount: 1 }),
+      expect.objectContaining({ name: 'Diabetes', image: 'data:image/png;base64,abc', testCount: 2 }),
     );
   });
 

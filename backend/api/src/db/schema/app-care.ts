@@ -44,6 +44,10 @@ export const labPackage = appSchema.table('lab_package', {
   name: text('name').notNull(),
   /** Migration 0055 — which "Explore by health concern" tile this sits under. */
   categoryId: bigint('category_id', { mode: 'number' }),
+  /** Migration 0056 — set on the one-profile listing the console keeps for a
+   *  test / group test switched on with "Show in the app" (what the apps show
+   *  under "Top Profiles and Tests"); null on a real package. */
+  sourceTestId: bigint('source_test_id', { mode: 'number' }),
   testCount: integer('test_count').notNull().default(0),
   profileCount: integer('profile_count').notNull().default(0),
   rating: text('rating'),

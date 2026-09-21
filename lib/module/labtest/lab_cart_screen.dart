@@ -362,9 +362,9 @@ class _CheckoutBar extends StatelessWidget {
           ),
         );
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Choosing a slot')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Choosing a slot')));
     });
   }
 

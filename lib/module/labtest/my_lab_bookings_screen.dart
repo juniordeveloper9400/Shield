@@ -276,11 +276,7 @@ class _StageChip extends StatelessWidget {
       ),
       child: Text(
         stage.label,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg),
       ),
     );
   }

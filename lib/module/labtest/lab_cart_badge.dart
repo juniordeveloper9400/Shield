@@ -18,8 +18,7 @@ class LabCartBadge extends StatelessWidget {
     return BasketBadge(
       basket: LabCartService.instance,
       count: () => LabCartService.instance.bookingCount,
-      tooltip: (count) =>
-          count == 0 ? 'Lab bookings' : 'Lab bookings · $count',
+      tooltip: (count) => count == 0 ? 'Lab bookings' : 'Lab bookings · $count',
       screen: (_) => const LabCartScreen(),
     );
   }

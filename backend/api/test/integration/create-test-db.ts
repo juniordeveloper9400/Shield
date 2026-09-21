@@ -594,6 +594,7 @@ export function createTestDb() {
       slug text NOT NULL UNIQUE,
       name text NOT NULL,
       category_id bigint REFERENCES app.lab_category(id) ON DELETE SET NULL,
+      source_test_id bigint UNIQUE,
       test_count integer NOT NULL DEFAULT 0,
       profile_count integer NOT NULL DEFAULT 0,
       rating text,
