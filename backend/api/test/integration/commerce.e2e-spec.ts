@@ -401,7 +401,7 @@ describe('Commerce (e2e)', () => {
     expect(cart.body.lines).toHaveLength(1);
   });
 
-  it("advances the buyer's own referral status to TRANSACTED on their first paid order", async () => {
+  it("does not count a referral when the referred member merely places an unpaid order", async () => {
     const [inviter] = await db
       .insert(users)
       .values({ phone: '9000000050', name: 'Inviter', firebaseUid: 'member-commerce-inviter' })
@@ -437,9 +437,12 @@ describe('Commerce (e2e)', () => {
       .send({})
       .expect(201);
 
+    // No payment method: the order is placed and still owed (cash / pickup). A
+    // referral counts when the order is *paid*, so it stays REGISTERED here and
+    // advances later, when the counter settles the order.
     const [updatedReferral] = await db.select().from(referral).where(eq(referral.inviteeMemberId, invitee.id));
-    expect(updatedReferral.status).toBe('TRANSACTED');
-    expect(updatedReferral.transactedAt).not.toBeNull();
+    expect(updatedReferral.status).toBe('REGISTERED');
+    expect(updatedReferral.transactedAt).toBeNull();
   });
 
   describe('wallet checkout', () => {
@@ -494,6 +497,63 @@ describe('Commerce (e2e)', () => {
       const entries = await db.select().from(walletEntry).where(eq(walletEntry.walletId, walletId));
       const spend = entries.find((e) => Number(e.amount) === -300);
       expect(spend?.label).toBe(`Order ${res.body.code}`);
+    });
+
+    it("advances the buyer's referral to TRANSACTED, and pays the inviter's level, when the wallet settles the order", async () => {
+      const [inviter] = await db
+        .insert(users)
+        .values({ phone: '9000000070', name: 'Wallet Inviter', firebaseUid: 'member-commerce-wallet-inviter' })
+        .returning();
+      const [buyer] = await db
+        .insert(users)
+        .values({ phone: '9000000071', name: 'Wallet Invitee', firebaseUid: 'member-commerce-wallet-invitee', registrationCompletedAt: new Date() })
+        .returning();
+      await db.insert(wallet).values({ memberId: buyer.id, balance: '1000' });
+      await db.insert(referral).values({
+        inviterMemberId: inviter.id,
+        inviteeMemberId: buyer.id,
+        inviteePhone: buyer.phone,
+        status: 'REGISTERED',
+        registeredAt: new Date(),
+      });
+      firebase.register('wallet-invitee-token', { uid: 'member-commerce-wallet-invitee' });
+      const token = (
+        await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'wallet-invitee-token' }).expect(200)
+      ).body.accessToken as string;
+
+      await request(app.getHttpServer())
+        .post('/v1/member/cart/lines')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ productId, qty: 1 })
+        .expect(201);
+
+      // Pays part by wallet: still owed, so the referral must not move yet.
+      const partial = await request(app.getHttpServer())
+        .post('/v1/member/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', 'checkout-key-wallet-invitee-partial')
+        .send({ paymentMethodId: walletMethodId, walletAmount: 40 })
+        .expect(201);
+      expect(partial.body.paymentStatus).toBe('PENDING');
+      let [edge] = await db.select().from(referral).where(eq(referral.inviteeMemberId, buyer.id));
+      expect(edge.status).toBe('REGISTERED');
+
+      await request(app.getHttpServer())
+        .post('/v1/member/cart/lines')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ productId, qty: 1 })
+        .expect(201);
+      const full = await request(app.getHttpServer())
+        .post('/v1/member/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .set('Idempotency-Key', 'checkout-key-wallet-invitee-full')
+        .send({ paymentMethodId: walletMethodId, walletAmount: 100 })
+        .expect(201);
+      expect(full.body.paymentStatus).toBe('PAID');
+
+      [edge] = await db.select().from(referral).where(eq(referral.inviteeMemberId, buyer.id));
+      expect(edge.status).toBe('TRANSACTED');
+      expect(edge.transactedAt).not.toBeNull();
     });
 
     it('caps the debit at the client-supplied walletAmount and leaves the order PENDING when it falls short of the total', async () => {

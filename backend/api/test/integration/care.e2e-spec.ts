@@ -11,7 +11,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, dietitian, labPackage, patient, users } from '../../src/db/schema';
+import { adminUser, dietitian, labBookingReport, labPackage, patient, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -21,6 +21,7 @@ describe('Care Services (e2e)', () => {
   let db: TestDb;
   let firebase: FakeFirebaseVerifier;
   let memberAccessToken: string;
+  let otherMemberAccessToken: string;
   let staffAccessToken: string;
   let labPackageId: number;
   let dietitianId: number;
@@ -70,8 +71,16 @@ describe('Care Services (e2e)', () => {
       role: 'APPOINTMENTS',
     });
 
+    await db
+      .insert(users)
+      .values({ phone: '9000000005', name: 'Other Care Member', firebaseUid: 'member-care-2', registrationCompletedAt: new Date() });
+    firebase.register('other-member-token', { uid: 'member-care-2' });
+
     memberAccessToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
+    ).body.accessToken;
+    otherMemberAccessToken = (
+      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'other-member-token' }).expect(200)
     ).body.accessToken;
     staffAccessToken = (
       await request(app.getHttpServer())
@@ -176,6 +185,58 @@ describe('Care Services (e2e)', () => {
       .set('Authorization', `Bearer ${staffAccessToken}`)
       .send({ status: 'CONFIRMED' })
       .expect(200);
+  });
+
+  it('lists the member bookings with the package name and a report page count of zero', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/v1/member/lab-bookings')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(list.body).toEqual([
+      expect.objectContaining({ id: labBookingId, packageName: 'Full Body Checkup', reportPages: 0 }),
+    ]);
+    // Never the pages themselves — they are fetched on demand.
+    expect(JSON.stringify(list.body)).not.toContain('data:image');
+  });
+
+  it('will not mark a booking Report ready until a report is attached, then shows it to its owner only', async () => {
+    const setStatus = (status: string) =>
+      request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${labBookingId}/status`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ status });
+
+    await setStatus('SAMPLE_COLLECTED').expect(200);
+
+    const refused = await setStatus('REPORT_READY').expect(409);
+    expect(refused.body.error.code).toBe('REPORT_REQUIRED');
+
+    await db.insert(labBookingReport).values([
+      { labBookingId, name: 'page-2.jpg', image: 'data:image/jpeg;base64,BBBB', sort: 1 },
+      { labBookingId, name: 'page-1.jpg', image: 'data:image/jpeg;base64,AAAA', sort: 0 },
+    ]);
+    await setStatus('REPORT_READY').expect(200);
+
+    const report = await request(app.getHttpServer())
+      .get(`/v1/member/lab-bookings/${labBookingId}/report`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(report.body.pages.map((p: { image: string }) => p.image)).toEqual([
+      'data:image/jpeg;base64,AAAA',
+      'data:image/jpeg;base64,BBBB',
+    ]);
+
+    const detail = await request(app.getHttpServer())
+      .get(`/v1/member/lab-bookings/${labBookingId}`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .expect(200);
+    expect(detail.body).toEqual(expect.objectContaining({ packageName: 'Full Body Checkup', reportPages: 2 }));
+
+    // Someone else's booking is simply not found — never leaked.
+    await request(app.getHttpServer())
+      .get(`/v1/member/lab-bookings/${labBookingId}/report`)
+      .set('Authorization', `Bearer ${otherMemberAccessToken}`)
+      .expect(404);
   });
 
   it('auto-populates fee from the dietitian record for a DIETITIAN appointment', async () => {

@@ -27,6 +27,12 @@ export class MemberBookingController {
     return this.bookings.getLabBookingForMember(Number(user.subjectId), id);
   }
 
+  /** The lab report pages for the member's own booking — see BookingService.getLabReportForMember. */
+  @Get('lab-bookings/:id/report')
+  getLabReport(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    return this.bookings.getLabReportForMember(Number(user.subjectId), id);
+  }
+
   @RequireRegistered()
   @Post('appointments')
   bookAppointment(

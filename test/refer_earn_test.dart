@@ -522,24 +522,26 @@ void main() {
       expect(find.text('Where you are on the ladder'), findsNothing);
     });
 
-    testWidgets('the standing card reports four figures, not three', (
+    testWidgets('the standing card reports who joined and who transacted', (
       tester,
     ) async {
       await pumpScreen(tester);
 
-      // Read across: what the invites brought in on the top row, what that
-      // has paid on the bottom.
+      // Read across: who signed up and who went on to pay on the top row, what
+      // that has earned below.
       //
-      // Every rung down the journey map carries a 'Referred' bar of its own,
+      // Every rung down the journey map carries a 'Transacted' bar of its own,
       // so the card's is one more than those rather than the only one.
       expect(
         find.descendant(
           of: find.byType(JourneyMap),
-          matching: find.text('Referred'),
+          matching: find.text('Transacted'),
         ),
         findsNWidgets(levels.length),
       );
-      expect(find.text('Referred'), findsNWidgets(levels.length + 1));
+      expect(find.text('Transacted'), findsNWidgets(levels.length + 1));
+      expect(find.text('Joined'), findsOneWidget);
+      expect(find.text('Referred'), findsNothing);
       expect(find.text('Plans activated'), findsOneWidget);
       expect(find.text('Points'), findsOneWidget);
       expect(find.text('Sahakar money earned'), findsOneWidget);
@@ -733,7 +735,7 @@ void main() {
     ) async {
       await pumpScreen(tester);
 
-      // Scoped to the map: the standing card carries its own "Referred"
+      // Scoped to the map: the standing card carries its own "Transacted"
       // metric, which would otherwise inflate these counts.
       Finder inMap(String text) => find.descendant(
         of: find.byType(JourneyMap),
@@ -742,7 +744,7 @@ void main() {
 
       // One bar per rung and one only: a rung is gated on referrals, so
       // there is no second bar counting privilege cards any more.
-      expect(inMap('Referred'), findsNWidgets(levels.length));
+      expect(inMap('Transacted'), findsNWidgets(levels.length));
       for (final tier in PrivilegeProgramme.tiers) {
         expect(
           inMap(tier.name.split(' ').first),

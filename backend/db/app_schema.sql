@@ -947,6 +947,8 @@ CREATE TABLE app.lab_booking (
     status          app.lab_booking_status NOT NULL DEFAULT 'REQUESTED',
     scheduled_for   timestamptz,
     address_id      bigint REFERENCES app.member_address(id) ON DELETE SET NULL,
+    note            text,                                  -- migration 0052: a line from the lab to the member
+    report_uploaded_at timestamptz,                        -- migration 0052: when the report was last attached
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now()
 );
@@ -959,6 +961,19 @@ CREATE TABLE app.lab_booking_patient (
     name            text,
     age             integer
 );
+
+-- migration 0052: the lab report for a booking, one row per page. Same storage
+-- as app.prescription_image — a resized JPEG data URI — read only by the owning
+-- member and by staff, never by a public URL.
+CREATE TABLE app.lab_booking_report (
+    id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    lab_booking_id  bigint NOT NULL REFERENCES app.lab_booking(id) ON DELETE CASCADE,
+    name            text NOT NULL DEFAULT '',
+    image           text NOT NULL,
+    sort            integer NOT NULL DEFAULT 0,
+    created_at      timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX lab_booking_report_booking_idx ON app.lab_booking_report(lab_booking_id, sort, id);
 
 CREATE TABLE app.appointment (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

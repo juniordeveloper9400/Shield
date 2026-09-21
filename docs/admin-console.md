@@ -43,6 +43,18 @@ Chip and tile images are stored as resized WebP data URIs (PNG on a browser whos
 
 Both apps read this data: the member app straight from Neon (`lib/data/neon/category_repository.dart`), and `shield agent_invester/` through the backend API's public catalogue routes (`lib/data/backend/category_repository.dart`). The API caches those lists for 5 minutes and the console writes to Neon directly, so a change reaches the agent / investor app within about 5 minutes; the member app sees it on its next catalogue load.
 
+### Lab Orders — the Lab Admin's desk
+
+A **Lab Admin** (`lab` role; create one from **Admins → Add**, role *Lab Admin*, or `pnpm seed:staff -- --login-id=lab_admin --name="Lab Admin" --password=… --role=LAB` in `backend/api`) sees the Dashboard, **Lab Orders** and **Lab Tests** — nothing else. `admin` and `superadmin` can open the same pages.
+
+**Manage** on a booking (`LabBookingModal`) shows who it is for and where: the member with **Call** / **WhatsApp** beside the phone (and the address's own contact number when it differs), every patient with age, the collection address, package and prices. From there the lab can:
+
+- **Move it along** — Requested → Confirmed → Sample collected → Report ready, or Cancel before the report is ready.
+- **Reschedule and leave a note** — *Scheduled for* and *Note to the member* save to `app.lab_booking.scheduled_for` / `note` and appear beside the booking in the app. The date locks once the report is ready; a cancelled booking is read-only.
+- **Attach the report** — from *Sample collected* onward, **Add pages** takes a photo or scan of each page (JPG/PNG, up to 12 pages, each resized to 1600 px). Pages are stored in `app.lab_booking_report` (migration `0052_lab_booking_details_report.sql`) like prescription pages — a private data URI, never a public link. **PDFs are refused with a message**; attach a photo or screenshot of each page instead. **Report ready** stays disabled until at least one page is attached, the statement itself refuses it otherwise, and a Report-ready booking keeps its last page.
+
+Members open their booking and report from **Account → My Lab Bookings** in both apps (status bar, schedule, the lab's note and, once ready, **View report** with a swipeable, zoomable page viewer). The list only counts pages; each page is fetched when the report is opened. Rebuild the apps, deploy `backend/api` (agent app: `GET /v1/member/lab-bookings`, `…/:id/report`), and apply migration `0052` first.
+
 ### Lab Tests → Test Master
 
 `LabsPage` (`/lab-tests`, open to the `lab`, `admin` and `superadmin` roles) has two tabs. **Member packages** is the earlier screen over `app.lab_package` (price, MRP, active) — what members can book in the app. **Test Master** (`components/labtests/LabTestMaster.tsx`) is the laboratory's own catalogue, laid out like its LIS "Test" screen: search a test by name, short name or Lis Code, edit it, then **Delete**, **New** or **Save**.

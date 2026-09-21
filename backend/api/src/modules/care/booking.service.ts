@@ -1,7 +1,7 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { and, asc, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { appointment, dietitian, labBooking, labBookingPatient, labPackage, patient } from '../../db/schema';
+import { appointment, dietitian, labBooking, labBookingPatient, labBookingReport, labPackage, patient } from '../../db/schema';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
 import type { BookAppointmentDto, BookLabTestDto, UpdateAppointmentStatusDto, UpdateLabBookingStatusDto } from './dto';
 
@@ -55,14 +55,54 @@ export class BookingService {
     });
   }
 
+  /**
+   * The member's own bookings, newest first — the booking's own columns plus
+   * the package's name and how many report pages the lab has attached. The
+   * pages themselves are never in a list: they are big, and fetched on demand
+   * from [getLabReportForMember].
+   */
   async listLabBookingsForMember(memberId: number) {
-    return this.db.select().from(labBooking).where(eq(labBooking.memberId, memberId)).orderBy(desc(labBooking.createdAt));
+    const rows = await this.db
+      .select({ ...getTableColumns(labBooking), packageName: labPackage.name })
+      .from(labBooking)
+      .leftJoin(labPackage, eq(labPackage.id, labBooking.labPackageId))
+      .where(eq(labBooking.memberId, memberId))
+      .orderBy(desc(labBooking.createdAt));
+    if (rows.length === 0) return [];
+
+    const counts = await this.db
+      .select({ labBookingId: labBookingReport.labBookingId, n: sql<number>`count(*)::int` })
+      .from(labBookingReport)
+      .where(inArray(labBookingReport.labBookingId, rows.map((r) => r.id)))
+      .groupBy(labBookingReport.labBookingId);
+    const pagesById = new Map(counts.map((c) => [c.labBookingId, c.n]));
+    return rows.map((r) => ({ ...r, reportPages: pagesById.get(r.id) ?? 0 }));
   }
 
   async getLabBookingForMember(memberId: number, id: number) {
     const found = await this.getLabBookingOwnedOrThrow(id, memberId);
     const patients = await this.db.select().from(labBookingPatient).where(eq(labBookingPatient.labBookingId, id));
-    return { ...found, patients };
+    const [pkg] = await this.db.select({ name: labPackage.name }).from(labPackage).where(eq(labPackage.id, found.labPackageId)).limit(1);
+    const [pages] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(labBookingReport)
+      .where(eq(labBookingReport.labBookingId, id));
+    return { ...found, patients, packageName: pkg?.name ?? null, reportPages: pages?.n ?? 0 };
+  }
+
+  /**
+   * The report the lab attached to one of the member's own bookings, page by
+   * page in order. A booking with no report yet answers an empty list rather
+   * than an error, so the app can simply show "not ready".
+   */
+  async getLabReportForMember(memberId: number, id: number) {
+    await this.getLabBookingOwnedOrThrow(id, memberId);
+    const pages = await this.db
+      .select({ id: labBookingReport.id, name: labBookingReport.name, image: labBookingReport.image })
+      .from(labBookingReport)
+      .where(eq(labBookingReport.labBookingId, id))
+      .orderBy(asc(labBookingReport.sort), asc(labBookingReport.id));
+    return { pages };
   }
 
   /** No branch scoping — lab_booking has no store_id in the live schema. Any staff role may manage it. */
@@ -74,6 +114,19 @@ export class BookingService {
     const [found] = await this.db.select().from(labBooking).where(eq(labBooking.id, id)).limit(1);
     if (!found) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab booking not found' } });
     assertLegalLabBookingTransition(found.status as LabBookingStatus, dto.status);
+
+    // "Report ready" tells the member their report is waiting — it must be.
+    if (dto.status === 'REPORT_READY' && found.status !== 'REPORT_READY') {
+      const [pages] = await this.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(labBookingReport)
+        .where(eq(labBookingReport.labBookingId, id));
+      if (!pages || pages.n === 0) {
+        throw new ConflictException({
+          error: { code: 'REPORT_REQUIRED', message: 'Attach the lab report before marking the booking Report ready' },
+        });
+      }
+    }
 
     const [updated] = await this.db.update(labBooking).set({ status: dto.status }).where(eq(labBooking.id, id)).returning();
     return updated;

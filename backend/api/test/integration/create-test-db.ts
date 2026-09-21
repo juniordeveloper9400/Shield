@@ -658,6 +658,8 @@ export function createTestDb() {
       status app.lab_booking_status NOT NULL DEFAULT 'REQUESTED',
       scheduled_for timestamptz,
       address_id bigint REFERENCES app.member_address(id) ON DELETE SET NULL,
+      note text,
+      report_uploaded_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );
@@ -668,6 +670,15 @@ export function createTestDb() {
       patient_id bigint REFERENCES app.patient(id) ON DELETE SET NULL,
       name text,
       age integer
+    );
+
+    CREATE TABLE app.lab_booking_report (
+      id bigserial PRIMARY KEY,
+      lab_booking_id bigint NOT NULL REFERENCES app.lab_booking(id) ON DELETE CASCADE,
+      name text NOT NULL DEFAULT '',
+      image text NOT NULL,
+      sort integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
     );
 
     CREATE TABLE app.appointment (

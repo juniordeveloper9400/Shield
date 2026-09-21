@@ -107,6 +107,10 @@ export const labBooking = appSchema.table('lab_booking', {
   status: labBookingStatusEnum('status').notNull().default('REQUESTED'),
   scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
   addressId: bigint('address_id', { mode: 'number' }).references(() => memberAddress.id),
+  /** A line from the lab to the member (migration 0052). */
+  note: text('note'),
+  /** When the report was last attached (migration 0052). */
+  reportUploadedAt: timestamp('report_uploaded_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -117,6 +121,16 @@ export const labBookingPatient = appSchema.table('lab_booking_patient', {
   patientId: bigint('patient_id', { mode: 'number' }).references(() => patient.id),
   name: text('name'),
   age: integer('age'),
+});
+
+/** One page of a booking's lab report — a resized JPEG data URI (migration 0052). */
+export const labBookingReport = appSchema.table('lab_booking_report', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  labBookingId: bigint('lab_booking_id', { mode: 'number' }).notNull(),
+  name: text('name').notNull().default(''),
+  image: text('image').notNull(),
+  sort: integer('sort').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const appointment = appSchema.table('appointment', {

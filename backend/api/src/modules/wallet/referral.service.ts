@@ -16,6 +16,17 @@ import type { ApplyReferralCodeDto, CreateReferralDto } from './dto';
 
 /** The Member ID shown in the apps: `SAHAKAR-####`, this member's own invite code. */
 const MEMBER_CODE_PREFIX = 'SAHAKAR-';
+/**
+ * "Nihal", "Althaf M." — enough for a referrer to recognise who joined, without
+ * putting another member's full name in their response.
+ */
+function shortName(name: string | null): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'A friend';
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+}
+
 /** The prefix members were issued before the rename to Sahakar 360. */
 const LEGACY_MEMBER_CODE_PREFIX = /^SHIELD-/;
 
@@ -109,7 +120,40 @@ export class ReferralService {
       .innerJoin(wallet, eq(wallet.id, walletEntry.walletId))
       .where(and(eq(wallet.memberId, memberId), eq(walletEntry.kind, 'REFERRAL_EARNINGS')));
 
-    return { directReferrals, activatedWalletCards, sahakarMoneyEarned: Number(sahakarMoneyEarned) };
+    // Everyone who has actually joined on this member's code, newest first, so
+    // the Refer & Earn screen can show a registration the moment it happens —
+    // not only once that person has paid for something. `REGISTERED` is joined
+    // and waiting on a first paid order; the rest have already counted.
+    const joined = await this.db
+      .select({
+        inviteeMemberId: referral.inviteeMemberId,
+        name: users.name,
+        status: referral.status,
+        registeredAt: referral.registeredAt,
+        transactedAt: referral.transactedAt,
+        planActivatedAt: referral.planActivatedAt,
+        createdAt: referral.createdAt,
+      })
+      .from(referral)
+      .leftJoin(users, eq(users.id, referral.inviteeMemberId))
+      .where(and(eq(referral.inviterMemberId, memberId), inArray(referral.status, ['REGISTERED', 'TRANSACTED', 'PLAN_ACTIVATED'])))
+      .orderBy(desc(referral.createdAt));
+    const invitees = joined.map((row) => ({
+      name: shortName(row.name),
+      status: row.status,
+      registeredAt: row.registeredAt ?? row.createdAt,
+      transactedAt: row.transactedAt,
+      planActivatedAt: row.planActivatedAt,
+    }));
+    const pendingReferrals = joined.filter((row) => row.status === 'REGISTERED' && row.inviteeMemberId !== null).length;
+
+    return {
+      directReferrals,
+      pendingReferrals,
+      invitees,
+      activatedWalletCards,
+      sahakarMoneyEarned: Number(sahakarMoneyEarned),
+    };
   }
 
   /**

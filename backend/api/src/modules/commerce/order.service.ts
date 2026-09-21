@@ -128,12 +128,16 @@ export class OrderService {
 
       await tx.delete(cartLine).where(eq(cartLine.cartId, theCart.id));
 
-      // A paid order (always true here — every cart line is priced) earns
-      // reward points and advances the buyer's own inbound referral, the
-      // same two things `RewardsService.awardForOrder` and
-      // `ReferralService.markTransacted` used to do as separate client
-      // calls after the fact — now automatic, in the same transaction as
-      // the order itself.
+      // A priced order earns reward points, as `RewardsService.awardForOrder`
+      // used to do as a separate client call — now automatic, in the same
+      // transaction as the order itself.
+      //
+      // Advancing the buyer's own inbound referral is a different matter and
+      // is NOT done here: a referral counts when the order is *paid*, not
+      // when it is merely placed. A cash or pickup order is still owed, and
+      // is settled later at the counter (the console flips it PAID; migration
+      // 0052's trigger advances the referral then). A wallet payment that
+      // covers the order settles it below, so that is where it advances.
       if (paidTotal > 0) {
         const points = Math.floor(paidTotal / RUPEES_PER_POINT);
         if (points > 0) {
@@ -152,17 +156,6 @@ export class OrderService {
             .where(eq(users.id, memberId));
         }
 
-        const [advanced] = await tx
-          .update(referral)
-          .set({ status: 'TRANSACTED', transactedAt: new Date() })
-          .where(and(eq(referral.inviteeMemberId, memberId), eq(referral.status, 'REGISTERED')))
-          .returning({ inviterMemberId: referral.inviterMemberId });
-        // This buyer's first paid order is the other event (besides a plan
-        // activation — WalletService.approveCard) that can move their
-        // inviter's own direct-referral count across a referral_level rung.
-        if (advanced) {
-          await this.referrals.awardLevelPointsIfCrossed(tx, advanced.inviterMemberId);
-        }
       }
 
       // migration 0031: a wallet checkout settles instantly — debit the
@@ -201,12 +194,36 @@ export class OrderService {
             .set({ paymentStatus: 'PAID', paidAt: new Date() })
             .where(eq(order.id, created.id))
             .returning();
+          // This buyer's first paid order is the event (besides a plan
+          // activation — WalletService.approveCard) that moves their inviter's
+          // direct-referral count, and so can carry them across a
+          // referral_level rung.
+          await this.advanceInviterReferral(tx, memberId);
           return paid;
         }
       }
 
       return created;
     });
+  }
+
+  /**
+   * The buyer's own inbound referral, REGISTERED -> TRANSACTED, and the
+   * inviter's level points if that carries them across a rung. Only ever moves
+   * a referral forward, so calling it for a member nobody referred, or for one
+   * whose referral has already advanced, does nothing. The same thing
+   * migration 0052's trigger does when any order becomes PAID (including
+   * ones the console settles), so the two are safe together.
+   */
+  private async advanceInviterReferral(tx: Database, buyerMemberId: number): Promise<void> {
+    const [advanced] = await tx
+      .update(referral)
+      .set({ status: 'TRANSACTED', transactedAt: new Date() })
+      .where(and(eq(referral.inviteeMemberId, buyerMemberId), eq(referral.status, 'REGISTERED')))
+      .returning({ inviterMemberId: referral.inviterMemberId });
+    if (advanced) {
+      await this.referrals.awardLevelPointsIfCrossed(tx, advanced.inviterMemberId);
+    }
   }
 
   /**

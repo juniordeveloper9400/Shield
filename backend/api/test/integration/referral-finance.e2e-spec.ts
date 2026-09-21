@@ -65,6 +65,39 @@ describe('Referral attribution and activation accounting', () => {
     expect(await db.select().from(walletEntry).where(eq(walletEntry.kind, 'REFERRAL_EARNINGS'))).toHaveLength(2);
   });
 
+  it('shows a member who has joined as pending straight away, and moves them across when they transact', async () => {
+    const { inviter, invitee } = await members();
+    await db.update(users).set({ name: 'Nihal Kumar' }).where(eq(users.id, invitee.id));
+    expect(await referrals.applySignupCode(invitee.id, { code: inviter.referralCode! })).toEqual({ linked: 'member' });
+
+    let progress = await referrals.getProgress(inviter.id);
+    // Registered, not yet transacted: it does not count towards a level...
+    expect(progress.directReferrals).toBe(0);
+    // ...but the referrer can see it, by first name and last initial only.
+    expect(progress.pendingReferrals).toBe(1);
+    expect(progress.invitees).toHaveLength(1);
+    expect(progress.invitees[0]).toEqual(
+      expect.objectContaining({ name: 'Nihal K.', status: 'REGISTERED', transactedAt: null }),
+    );
+    expect(progress.invitees[0].registeredAt).not.toBeNull();
+
+    await db.update(referral).set({ status: 'TRANSACTED', transactedAt: new Date() }).where(eq(referral.inviteeMemberId, invitee.id));
+    progress = await referrals.getProgress(inviter.id);
+    expect(progress.directReferrals).toBe(1);
+    expect(progress.pendingReferrals).toBe(0);
+    expect(progress.invitees[0].status).toBe('TRANSACTED');
+    expect(progress.invitees[0].transactedAt).not.toBeNull();
+  });
+
+  it('lists nobody for a member who has referred no one, and skips invites that were only shared', async () => {
+    const { inviter } = await members();
+    await db.insert(referral).values({ inviterMemberId: inviter.id, inviteePhone: '9000019999', status: 'SHARED' });
+    const progress = await referrals.getProgress(inviter.id);
+    expect(progress.directReferrals).toBe(0);
+    expect(progress.pendingReferrals).toBe(0);
+    expect(progress.invitees).toEqual([]);
+  });
+
   it('counts unique qualifying members and only posted referral earnings, not projected commissions', async () => {
     const { inviter, invitee } = await members();
     await db.insert(referral).values([

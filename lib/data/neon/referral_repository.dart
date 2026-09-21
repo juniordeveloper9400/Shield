@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../../module/refer/referral_level.dart';
 import 'neon_http.dart';
 
@@ -208,9 +210,9 @@ class ReferralRepository {
     });
   }
 
-  /// The signed-in member's real standing: how many of their invites have
-  /// transacted, how many of those went on to activate a privilege plan, and
-  /// what that has paid — 2% of each approved load (see
+  /// The signed-in member's real standing: who has joined on their code, how
+  /// many of those have transacted, how many went on to activate a privilege
+  /// plan, and what that has paid — 2% of each approved load (see
   /// [ReferralLadder.planCommissionOn]), worked out the same way the
   /// commission card on the screen works it out, so the two can never
   /// disagree.
@@ -219,18 +221,26 @@ class ReferralRepository {
   /// than treating a blip as "nothing referred yet".
   Future<ReferralProgress?> progressFor(String phone) {
     return _run('progressFor', () async {
-      final referredRows = await NeonHttp.instance.query(
+      // Everyone who has actually joined (an invite that was only shared has
+      // no status past SHARED), newest first, with how far each has got. Names
+      // are cut down to first name + last initial before they leave here.
+      final invitedRows = await NeonHttp.instance.query(
         '''
-          SELECT count(*) AS n
+          SELECT r.status, u.name, r.registered_at, r.transacted_at,
+                 r.plan_activated_at, r.created_at
           FROM app.referral r
-          JOIN app.users u ON u.id = r.inviter_member_id
-          WHERE u.phone = \$1 AND r.status IN ('TRANSACTED', 'PLAN_ACTIVATED')
+          JOIN app.users inviter ON inviter.id = r.inviter_member_id
+          LEFT JOIN app.users u  ON u.id = r.invitee_member_id
+          WHERE inviter.phone = \$1
+            AND r.status IN ('REGISTERED', 'TRANSACTED', 'PLAN_ACTIVATED')
+          ORDER BY r.created_at DESC, r.id DESC
         ''',
         [phone],
       );
-      final directReferrals = _int(
-        referredRows.isEmpty ? null : referredRows.first['n'],
-      );
+      final invitees = inviteesFrom(invitedRows);
+      final directReferrals = invitees
+          .where((p) => p.stage != ReferredStage.joined)
+          .length;
 
       // One row per approved privilege card issued to somebody this member
       // referred — a member can activate more than one card, and each pays
@@ -253,10 +263,44 @@ class ReferralRepository {
 
       return ReferralProgress(
         directReferrals: directReferrals,
+        pendingReferrals: invitees.length - directReferrals,
+        invitees: invitees,
         plansActivated: activatedRows.length,
         sahakarMoney: sahakarMoney,
       );
     });
+  }
+
+  /// Turns the `app.referral` rows for one inviter into the people list,
+  /// keeping their order. A row whose status is not a person who has joined
+  /// (`SHARED`, or anything unknown) is left out.
+  @visibleForTesting
+  static List<ReferredMember> inviteesFrom(
+    Iterable<Map<String, dynamic>> rows,
+  ) {
+    final people = <ReferredMember>[];
+    for (final row in rows) {
+      final stage = ReferredStage.fromStatus(row['status']?.toString());
+      if (stage == null) continue;
+      final registeredAt =
+          _date(row['registered_at']) ?? _date(row['created_at']);
+      people.add(
+        ReferredMember(
+          name: ReferredMember.shortName(row['name']?.toString()),
+          stage: stage,
+          joinedAt: registeredAt,
+          transactedAt: _date(row['transacted_at']),
+          planActivatedAt: _date(row['plan_activated_at']),
+        ),
+      );
+    }
+    return people;
+  }
+
+  static DateTime? _date(Object? value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value.toString());
   }
 
   static int _int(Object? value) {
