@@ -48,7 +48,7 @@ describe('Referral attribution and activation accounting', () => {
     const [tier] = await db.insert(membershipTier).values({ kind: 'SILVER', name: 'Silver', bin: '1234', bonusRate: '0.1', validityMonths: 12 }).returning();
     const [account] = await db.insert(wallet).values({ memberId: invitee.id }).returning();
     for (const status of ['PENDING', 'ON_HOLD'] as const) {
-      const [card] = await db.insert(walletCard).values({ walletId: account.id, tierId: tier.id, amount: '10000', bonus: '1000', soldByAgentId: seller.id, status, issuedOn: '2026-09-20', rechargedOn: '2026-09-20', expiresOn: '2027-09-20' }).returning();
+      const [card] = await db.insert(walletCard).values({ walletId: account.id, tierId: tier.id, amount: '10000', bonus: '1000', soldByAgentId: seller.id, status, issuedOn: '2026-09-20', rechargedOn: '2026-09-20', expiresOn: '2027-09-20', verifiedReference: 'UTR-TEST', receivedOn: '2026-09-20', receiptVerified: true, receivedAmount: '10000' }).returning();
       await wallets.approveCard(card.id);
       await expect(wallets.approveCard(card.id)).rejects.toThrow();
     }
@@ -78,7 +78,7 @@ describe('Referral attribution and activation accounting', () => {
     const [account] = await db.insert(wallet).values({ memberId: buyer.id }).returning();
     const [card] = await db
       .insert(walletCard)
-      .values({ walletId: account.id, tierId: tier.id, amount: '25000', bonus: '2500', status: 'PENDING', issuedOn: '2026-09-20', rechargedOn: '2026-09-20', expiresOn: '2027-09-20' })
+      .values({ walletId: account.id, tierId: tier.id, amount: '25000', bonus: '2500', status: 'PENDING', issuedOn: '2026-09-20', rechargedOn: '2026-09-20', expiresOn: '2027-09-20', verifiedReference: 'UTR-TEST', receivedOn: '2026-09-20', receiptVerified: true, receivedAmount: '25000' })
       .returning();
 
     await wallets.approveCard(card.id);

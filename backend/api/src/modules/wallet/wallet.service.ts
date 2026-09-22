@@ -1,17 +1,20 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
+  agentCustomer,
+  agentCustomerPlan,
   commissionReserveEntry,
   membershipTier,
   membershipTierLoad,
+  shieldStore,
   users,
   wallet,
   walletCard,
   walletEntry,
 } from '../../db/schema';
-import type { SubmitWalletCardDto } from './dto';
+import type { HoldWalletCardDto, SaveWalletCardVerificationDto, SubmitWalletCardDto } from './dto';
 import { ReferralService } from './referral.service';
 
 function isoDate(d: Date): string {
@@ -198,11 +201,15 @@ export class WalletService {
     return this.db.select().from(walletCard).where(eq(walletCard.walletId, theWallet.id)).orderBy(walletCard.submittedAt);
   }
 
-  async listPendingCards() {
-    return this.db.select().from(walletCard).where(eq(walletCard.status, 'PENDING')).orderBy(walletCard.submittedAt);
-  }
-
-  /** SUPERADMIN only — see the live schema's comment on wallet_card. */
+  /**
+   * SUPERADMIN/ADMIN only — see the live schema's comment on wallet_card.
+   * Refuses to run at all until the reviewer's own bank-reconciliation
+   * checklist is saved (see [saveVerification]) — matches shieldweb's
+   * `approveActivation`, which gates its own call to
+   * `app.approve_wallet_card_activation` on the exact same four columns.
+   * Money must never move off a card nobody has actually reconciled against
+   * a real receipt.
+   */
   async approveCard(cardId: number) {
     const [card] = await this.db.select().from(walletCard).where(eq(walletCard.id, cardId)).limit(1);
     if (!card) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Wallet card not found' } });
@@ -211,6 +218,19 @@ export class WalletService {
     if (card.status !== 'PENDING' && card.status !== 'ON_HOLD') {
       throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: `Card already ${card.status.toLowerCase()}` } });
     }
+    if (
+      (card.verifiedReference ?? '').trim() === '' ||
+      card.receivedOn == null ||
+      !card.receiptVerified ||
+      card.receivedAmount == null
+    ) {
+      throw new ForbiddenException({
+        error: { code: 'FORBIDDEN', message: 'Save the verification checklist before approving.' },
+      });
+    }
+
+    const [tier] = await this.db.select().from(membershipTier).where(eq(membershipTier.id, card.tierId)).limit(1);
+    if (!tier) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Membership tier not found' } });
 
     return this.db.transaction(async (tx) => {
       const [updatedCard] = await tx
@@ -223,10 +243,14 @@ export class WalletService {
       const bonus = Number(card.bonus);
       const today = isoDate(new Date());
 
+      // kind/label match app.approve_wallet_card_activation's own literal
+      // text exactly (including the bonus label's hardcoded "10%" —
+      // reproducing what the live function actually writes, not deriving a
+      // figure from tier.bonusRate).
       await tx.insert(walletEntry).values({
         walletId: card.walletId,
-        kind: 'TOPUP',
-        label: 'Wallet card top-up',
+        kind: 'ACTIVATION',
+        label: `${tier.name} activation`,
         amount: amount.toString(),
         occurredOn: today,
         walletCardId: card.id,
@@ -235,7 +259,7 @@ export class WalletService {
         await tx.insert(walletEntry).values({
           walletId: card.walletId,
           kind: 'BONUS',
-          label: 'Wallet card bonus',
+          label: `${tier.name} bonus · 10%`,
           amount: bonus.toString(),
           occurredOn: today,
           walletCardId: card.id,
@@ -251,17 +275,44 @@ export class WalletService {
         })
         .where(eq(wallet.id, card.walletId));
 
+      // Agent-portal bookkeeping — every agent_customer link this member
+      // has, one row each, whether or not it ends up paying commission
+      // below (a member can be an agent_customer's contact without that
+      // agent being the one sold-by/commissioned). Matches
+      // app.approve_wallet_card_activation's own unconditional insert.
+      const customerLinks = await tx
+        .select({ id: agentCustomer.id, agentId: agentCustomer.agentId })
+        .from(agentCustomer)
+        .where(eq(agentCustomer.memberId, currentWallet.memberId));
+      for (const link of customerLinks) {
+        await tx.insert(agentCustomerPlan).values({
+          agentCustomerId: link.id,
+          tierId: card.tierId,
+          amount: amount.toString(),
+          activatedOn: today,
+          walletCardId: card.id,
+        });
+      }
+
       // Direct-sale commission — only now, not at submission, matching this
       // whole method's own reason for being the one place "the ledger lines
       // and the balance move" (see submitCard's doc): a card can still be
       // rejected right up to this point, and a rejected sale must never have
       // paid anyone. [amount] is the same figure the member is being
       // credited above, not a separate agent-side figure to keep in sync.
-      if (card.soldByAgentId != null) {
+      //
+      // The seller is whoever was typed in at submission (sold_by_agent_id),
+      // falling back to whichever agent this member is linked to as a
+      // customer — a member can be worth commission to an agent who signed
+      // them up at registration even if no agent code was typed at
+      // checkout. Matches app.approve_wallet_card_activation's own
+      // COALESCE(sold_by_agent_id, agent_customer-linked agent).
+      const sellerId = card.soldByAgentId ?? customerLinks.find((l) => l.agentId != null)?.agentId ?? null;
+      if (sellerId != null) {
         const [seller] = await tx
           .select()
           .from(agent)
-          .where(and(eq(agent.id, card.soldByAgentId), eq(agent.approvalStatus, 'APPROVED')))
+          .where(and(eq(agent.id, sellerId), eq(agent.approvalStatus, 'APPROVED')))
           .limit(1);
         // The agent could in principle have been deleted, or not yet
         // approved, between submission and approval; best-effort like every
@@ -341,10 +392,12 @@ export class WalletService {
     });
   }
 
+  /** A card on hold can be rejected too, same as approved — see approveCard's
+   *  own comment; only an already-decided card refuses this. */
   async rejectCard(cardId: number, note: string) {
     const [card] = await this.db.select().from(walletCard).where(eq(walletCard.id, cardId)).limit(1);
     if (!card) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Wallet card not found' } });
-    if (card.status !== 'PENDING') {
+    if (card.status !== 'PENDING' && card.status !== 'ON_HOLD') {
       throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: `Card already ${card.status.toLowerCase()}` } });
     }
 
@@ -354,6 +407,120 @@ export class WalletService {
       .where(eq(walletCard.id, cardId))
       .returning();
     return updated;
+  }
+
+  /** PENDING-only, unlike reject — a card already on hold has nowhere further
+   *  to go but approve/reject, matching shieldweb's `holdActivation`. */
+  async holdCard(cardId: number, dto: HoldWalletCardDto) {
+    const [updated] = await this.db
+      .update(walletCard)
+      .set({ status: 'ON_HOLD', reviewerNote: dto.note, reviewedAt: new Date() })
+      .where(and(eq(walletCard.id, cardId), eq(walletCard.status, 'PENDING')))
+      .returning();
+    if (!updated) {
+      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Only a pending card can be put on hold.' } });
+    }
+    return updated;
+  }
+
+  /**
+   * The reviewer's own bank-reconciliation checklist — purely an audit
+   * write, never touches status/wallet/ledger. Gated to a still-open card
+   * (a no-op on an already-decided one), matching
+   * shieldweb's `saveActivationVerification`.
+   */
+  async saveVerification(cardId: number, dto: SaveWalletCardVerificationDto) {
+    const [updated] = await this.db
+      .update(walletCard)
+      .set({
+        verifiedReference: dto.verifiedReference.trim() || null,
+        receivedOn: dto.receivedOn || null,
+        receiptVerified: dto.receiptVerified,
+        receivedAmount: dto.receivedAmount == null ? null : dto.receivedAmount.toString(),
+      })
+      .where(and(eq(walletCard.id, cardId), sql`${walletCard.status} IN ('PENDING', 'ON_HOLD')`))
+      .returning({ id: walletCard.id });
+    return updated != null;
+  }
+
+  /** The joined shape the review queue/detail screen actually renders —
+   *  member name/phone, tier name/kind, branch — so the console needs no
+   *  extra round trips per card. Shared by every read below. */
+  private activationSelection() {
+    return {
+      id: walletCard.id,
+      uuid: walletCard.uuid,
+      memberId: wallet.memberId,
+      memberName: users.name,
+      memberPhone: users.phone,
+      tierName: membershipTier.name,
+      tierKind: membershipTier.kind,
+      amount: walletCard.amount,
+      bonus: walletCard.bonus,
+      rechargedExtra: walletCard.rechargedExtra,
+      status: walletCard.status,
+      cardNumber: walletCard.cardNumber,
+      receiptReference: walletCard.receiptReference,
+      receiptFileName: walletCard.receiptFileName,
+      receiptImage: walletCard.receiptImage,
+      reviewerNote: walletCard.reviewerNote,
+      submittedAt: walletCard.submittedAt,
+      reviewedAt: walletCard.reviewedAt,
+      issuedOn: walletCard.issuedOn,
+      expiresOn: walletCard.expiresOn,
+      verifiedReference: walletCard.verifiedReference,
+      receivedOn: walletCard.receivedOn,
+      receiptVerified: walletCard.receiptVerified,
+      receivedAmount: walletCard.receivedAmount,
+      storeCode: shieldStore.code,
+      storeName: shieldStore.name,
+    };
+  }
+
+  private activationsBaseQuery() {
+    return this.db
+      .select(this.activationSelection())
+      .from(walletCard)
+      .innerJoin(wallet, eq(wallet.id, walletCard.walletId))
+      .innerJoin(users, eq(users.id, wallet.memberId))
+      .innerJoin(membershipTier, eq(membershipTier.id, walletCard.tierId))
+      .leftJoin(shieldStore, eq(shieldStore.id, walletCard.storeId));
+  }
+
+  /** Every card, queue order — pending and on-hold first (oldest first
+   *  within each), everything else after, matching shieldweb's
+   *  `listActivations` ordering exactly. */
+  async listCards() {
+    return this.activationsBaseQuery().orderBy(
+      sql`CASE ${walletCard.status} WHEN 'PENDING' THEN 0 WHEN 'ON_HOLD' THEN 1 ELSE 2 END`,
+      desc(walletCard.submittedAt),
+    );
+  }
+
+  async getCard(cardId: number) {
+    const [row] = await this.activationsBaseQuery().where(eq(walletCard.id, cardId)).limit(1);
+    return row ?? null;
+  }
+
+  async listCardsForMemberStaffView(memberId: number) {
+    return this.activationsBaseQuery()
+      .where(eq(wallet.memberId, memberId))
+      .orderBy(sql`CASE ${walletCard.status} WHEN 'PENDING' THEN 0 WHEN 'ON_HOLD' THEN 1 ELSE 2 END`, desc(walletCard.submittedAt));
+  }
+
+  /** Balance + reward points beside a card under review. `users.rewardPoints`,
+   *  not `wallet.rewardPoints` — the wallet column is stale; the members
+   *  table tracks the real ledger. Matches shieldweb's `getWalletActivity`. */
+  async getWalletActivityForCard(cardId: number) {
+    const [row] = await this.db
+      .select({ balance: wallet.balance, rewardPoints: users.rewardPoints })
+      .from(walletCard)
+      .innerJoin(wallet, eq(wallet.id, walletCard.walletId))
+      .innerJoin(users, eq(users.id, wallet.memberId))
+      .where(eq(walletCard.id, cardId))
+      .limit(1);
+    if (!row) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Wallet card not found' } });
+    return row;
   }
 
   /**

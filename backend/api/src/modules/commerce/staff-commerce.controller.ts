@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Put } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { RequireStaff } from '../../common/decorators/require-role.decorator';
+import { RequireRole, RequireStaff } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { sendBillSchema, updateOrderStatusSchema, type SendBillDto, type UpdateOrderStatusDto } from './dto';
 import type { RequestSubject } from '../auth/session.types';
@@ -33,5 +33,17 @@ export class StaffCommerceController {
     @Body(new ZodValidationPipe(sendBillSchema)) dto: SendBillDto,
   ) {
     return this.orders.sendBill(user.role!, user.storeId ?? null, id, dto);
+  }
+
+  /**
+   * Narrower than the rest of this controller — matches exactly who has the
+   * 'bills'/'orders' module in shieldweb/src/config/permissions.ts
+   * (superadmin/admin get every module, pharmacy is explicitly listed too;
+   * lab/appointments/delivery are not), not the class-wide @RequireStaff().
+   */
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Patch('orders/:id/collect-wallet')
+  collectWithWallet(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    return this.orders.collectBillWithWallet(user.role!, user.storeId ?? null, id);
   }
 }

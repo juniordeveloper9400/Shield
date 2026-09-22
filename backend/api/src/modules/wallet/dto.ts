@@ -21,6 +21,25 @@ export const rejectWalletCardSchema = z.object({
   note: z.string().min(1),
 });
 
+/** Same shape as reject — a reason is required either way, matching
+ *  shieldweb's `holdActivation`/`rejectActivation` client-side validation. */
+export const holdWalletCardSchema = z.object({
+  note: z.string().min(1),
+});
+
+/**
+ * The reviewer's own bank-reconciliation checklist against a submitted
+ * wallet-card receipt — matches shieldweb's `saveActivationVerification`
+ * input exactly. An empty `verifiedReference`/`receivedOn` string means
+ * "clear it" (stored as SQL NULL), not a validation error.
+ */
+export const saveWalletCardVerificationSchema = z.object({
+  verifiedReference: z.string(),
+  receivedOn: z.string(),
+  receiptVerified: z.boolean(),
+  receivedAmount: z.number().nullable(),
+});
+
 export const redeemPointsSchema = z.object({
   points: z.number().int().positive(),
 });
@@ -37,6 +56,8 @@ export const applyReferralCodeSchema = z.object({
 
 export type SubmitWalletCardDto = z.infer<typeof submitWalletCardSchema>;
 export type RejectWalletCardDto = z.infer<typeof rejectWalletCardSchema>;
+export type HoldWalletCardDto = z.infer<typeof holdWalletCardSchema>;
+export type SaveWalletCardVerificationDto = z.infer<typeof saveWalletCardVerificationSchema>;
 export type RedeemPointsDto = z.infer<typeof redeemPointsSchema>;
 export type CreateReferralDto = z.infer<typeof createReferralSchema>;
 export type ApplyReferralCodeDto = z.infer<typeof applyReferralCodeSchema>;

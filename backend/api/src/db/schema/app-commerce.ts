@@ -131,6 +131,10 @@ export const bill = appSchema.table('bill', {
   status: orderPaymentStatusEnum('status').notNull().default('PENDING'),
   paidAt: timestamp('paid_at', { withTimezone: true }),
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Migration 0041 — how a paid bill split between the member's wallet and
+   *  cash handed over at collection. Both `0` until collected. */
+  walletCollected: numeric('wallet_collected', { precision: 12, scale: 2 }).notNull().default('0'),
+  cashCollected: numeric('cash_collected', { precision: 12, scale: 2 }).notNull().default('0'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

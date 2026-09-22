@@ -7,6 +7,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { hash } from 'bcryptjs';
+import { randomUUID } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
@@ -347,6 +348,154 @@ describe('Commerce (e2e)', () => {
     expect(lines.map((l) => l.name)).toEqual(['Paracetamol 500mg', 'Cetirizine 10mg']);
     expect(lines[0].pack).toBe('Strip of 15');
     expect(Number(lines[0].unitPrice)).toBe(30.5);
+  });
+
+  describe('collecting a bill off the member\'s wallet', () => {
+    let walletOrderId: number;
+    let walletMemberToken: string;
+    let labStaffToken: string;
+
+    async function freshBilledOrder(billAmount: number) {
+      const [member] = await db
+        .insert(users)
+        .values({
+          phone: `90000009${Math.floor(Math.random() * 90 + 10)}`,
+          name: 'Wallet Collect Member',
+          firebaseUid: `member-wallet-collect-${randomUUID()}`,
+          registrationCompletedAt: new Date(),
+        })
+        .returning();
+      const [theOrder] = await db
+        .insert(order)
+        .values({
+          memberId: member.id,
+          code: `WCOL-${randomUUID().slice(0, 8)}`,
+          storeId: (await db.select({ id: shieldStore.id }).from(shieldStore).where(eq(shieldStore.code, 'SHD-A')))[0].id,
+          itemCount: 1,
+          placedOn: new Date().toISOString().slice(0, 10),
+        })
+        .returning();
+      await db.insert(bill).values({ orderId: theOrder.id, image: 'data:image/png;base64,AAAA', amount: billAmount.toString() });
+      return { orderId: theOrder.id, memberId: member.id };
+    }
+
+    beforeAll(async () => {
+      const { orderId: freshOrderId, memberId } = await freshBilledOrder(1000);
+      walletOrderId = freshOrderId;
+      const [memberRow] = await db.select().from(users).where(eq(users.id, memberId));
+      firebase.register('wallet-collect-token', { uid: memberRow.firebaseUid! });
+      walletMemberToken = (
+        await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'wallet-collect-token' }).expect(200)
+      ).body.accessToken;
+
+      const testPasswordHash = await hash('correct-horse-battery-staple', 4); // low cost factor — this is a test, not production
+      await db.insert(adminUser).values({ loginId: 'lab@example.com', name: 'Lab Staff', passwordHash: testPasswordHash, role: 'LAB' });
+      labStaffToken = (
+        await request(app.getHttpServer())
+          .post('/v1/staff/auth/session')
+          .send({ loginId: 'lab@example.com', password: 'correct-horse-battery-staple' })
+          .expect(200)
+      ).body.accessToken;
+    });
+
+    it('rejects a role with no bills/orders module access (LAB) from collecting a bill', async () => {
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${walletOrderId}/collect-wallet`)
+        .set('Authorization', `Bearer ${labStaffToken}`)
+        .expect(403);
+    });
+
+    it('refuses to collect a bill that has not been priced yet', async () => {
+      const { orderId: unpriced } = await freshBilledOrder(0);
+      const res = await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${unpriced}/collect-wallet`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(res.body).toEqual({ ok: false, reason: 'This bill has not been priced yet.' });
+    });
+
+    it('refuses to collect for an order with no bill at all', async () => {
+      const [member] = await db
+        .insert(users)
+        .values({ phone: '9000000970', name: 'No Bill Member', firebaseUid: 'member-no-bill', registrationCompletedAt: new Date() })
+        .returning();
+      const [storeA] = await db.select({ id: shieldStore.id }).from(shieldStore).where(eq(shieldStore.code, 'SHD-A'));
+      const [noBillOrder] = await db
+        .insert(order)
+        .values({ memberId: member.id, code: 'NO-BILL-1', storeId: storeA.id, itemCount: 1, placedOn: new Date().toISOString().slice(0, 10) })
+        .returning();
+
+      const res = await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${noBillOrder.id}/collect-wallet`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(res.body).toEqual({ ok: false, reason: 'No bill has been sent for this order yet.' });
+    });
+
+    it('collects entirely in cash when the wallet has no balance', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${walletOrderId}/collect-wallet`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(res.body).toEqual({ ok: true, walletAmount: 0, cashAmount: 1000 });
+
+      const [theOrder] = await db.select().from(order).where(eq(order.id, walletOrderId));
+      expect(theOrder.paymentStatus).toBe('PAID');
+      const [theBill] = await db.select().from(bill).where(eq(bill.orderId, walletOrderId));
+      expect(theBill.status).toBe('PAID');
+      expect(Number(theBill.walletCollected)).toBe(0);
+      expect(Number(theBill.cashCollected)).toBe(1000);
+    });
+
+    it('refuses to collect an already-paid bill a second time', async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${walletOrderId}/collect-wallet`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(res.body).toEqual({ ok: false, reason: 'This bill is already paid.' });
+    });
+
+    it('splits between wallet and cash when the balance only partly covers the bill', async () => {
+      const { orderId: partialOrderId, memberId } = await freshBilledOrder(1000);
+      const [memberWallet] = await db.insert(wallet).values({ memberId, balance: '400.00' }).returning();
+
+      const res = await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${partialOrderId}/collect-wallet`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(res.body).toEqual({ ok: true, walletAmount: 400, cashAmount: 600 });
+
+      const [walletAfter] = await db.select().from(wallet).where(eq(wallet.id, memberWallet.id));
+      expect(Number(walletAfter.balance)).toBe(0);
+
+      const [entry] = await db.select().from(walletEntry).where(eq(walletEntry.orderId, partialOrderId));
+      expect(entry.kind).toBe('SPEND');
+      expect(Number(entry.amount)).toBe(-400);
+    });
+
+    it('draws the whole bill from the wallet and leaves nothing in cash when the balance covers it', async () => {
+      const { orderId: fullOrderId, memberId } = await freshBilledOrder(500);
+      await db.insert(wallet).values({ memberId, balance: '2000.00' });
+
+      const res = await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${fullOrderId}/collect-wallet`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(res.body).toEqual({ ok: true, walletAmount: 500, cashAmount: 0 });
+
+      const [walletAfter] = await db.select().from(wallet).where(eq(wallet.memberId, memberId));
+      expect(Number(walletAfter.balance)).toBe(1500); // 2000 - 500
+    });
+
+    it("scopes bill collection to the order's own store, same as every other staff order action", async () => {
+      const { orderId: scopedOrderId } = await freshBilledOrder(100);
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${scopedOrderId}/collect-wallet`)
+        .set('Authorization', `Bearer ${storeBStaffToken}`)
+        .expect(404); // store B genuinely cannot see this order exists
+
+      void walletMemberToken; // reserved for a future member-side "bill paid" check
+    });
   });
 
   it("does not show another member the bill or its invoice", async () => {

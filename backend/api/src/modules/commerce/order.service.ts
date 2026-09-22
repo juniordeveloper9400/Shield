@@ -520,6 +520,75 @@ export class OrderService {
     return created;
   }
 
+  /**
+   * Collects a priced, unpaid bill off the member's wallet — draws up to the
+   * whole bill amount from whatever balance the wallet holds
+   * (`walletAmount = min(balance, bill.amount)`), treats the remainder as
+   * collected in cash at the same moment (`cashAmount`), and marks both the
+   * order and the bill PAID. Mirrors shieldweb's `collectBillWithWallet`
+   * exactly (see backend/docs/migration-plan.md Phase 1) — a wallet with
+   * nothing still marks the bill PAID, entirely in cash.
+   *
+   * Triggered from the admin console only, after staff has read an OTP back
+   * to the member over Firebase Phone Auth (shieldweb's own
+   * `src/lib/deliveryOtp.ts`) — that check is client-side today, same as it
+   * was before this migration; this endpoint's own trust boundary is "a
+   * valid staff session with the right role", not an independent server-side
+   * OTP check. See this slice's plan for why that's a deliberate, separate
+   * follow-up rather than silently attempted here.
+   */
+  async collectBillWithWallet(role: AdminRole, storeId: number | null, orderId: number) {
+    const found = await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+
+    const [theBill] = await this.db.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
+    if (!theBill) {
+      return { ok: false as const, reason: 'No bill has been sent for this order yet.' };
+    }
+    if (theBill.status === 'PAID') {
+      return { ok: false as const, reason: 'This bill is already paid.' };
+    }
+    const billAmount = Number(theBill.amount);
+    if (billAmount <= 0) {
+      return { ok: false as const, reason: 'This bill has not been priced yet.' };
+    }
+
+    return this.db.transaction(async (tx) => {
+      const [theWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
+      const balance = theWallet ? Number(theWallet.balance) : 0;
+      const walletAmount = Math.min(balance, billAmount);
+      const cashAmount = billAmount - walletAmount;
+
+      if (theWallet && walletAmount > 0) {
+        await tx
+          .update(wallet)
+          .set({ balance: (balance - walletAmount).toString(), updatedAt: new Date() })
+          .where(eq(wallet.id, theWallet.id));
+        await tx.insert(walletEntry).values({
+          walletId: theWallet.id,
+          kind: 'SPEND',
+          label: `Order ${found.code}`,
+          amount: (-walletAmount).toString(),
+          occurredOn: new Date().toISOString().slice(0, 10),
+          orderId: found.id,
+        });
+      }
+
+      await tx.update(order).set({ paymentStatus: 'PAID', paidAt: new Date() }).where(eq(order.id, orderId));
+      await tx
+        .update(bill)
+        .set({
+          status: 'PAID',
+          paidAt: new Date(),
+          walletCollected: walletAmount.toString(),
+          cashCollected: cashAmount.toString(),
+          updatedAt: new Date(),
+        })
+        .where(eq(bill.id, theBill.id));
+
+      return { ok: true as const, walletAmount, cashAmount };
+    });
+  }
+
   private async getOwnedByMemberOrThrow(orderId: number, memberId: number) {
     const [found] = await this.db
       .select()

@@ -1,3 +1,14 @@
+// Must be the very first thing this file does, before @nestjs/core or
+// AppModule load — same rule as main.ts's own `import './instrument'`, and
+// for the same reason (Sentry's Nest/HTTP instrumentation has to wrap
+// modules before they load). This file is Vercel's actual production
+// entrypoint (see vercel.json) — main.ts is not — so without this line here
+// too, Sentry.init() never runs in production at all: every
+// Sentry.captureException() call in http-exception.filter.ts silently
+// no-ops against an uninitialized client, and the project stays on its
+// "awaiting its first event" screen no matter how many real 500s happen.
+require('../dist/instrument');
+
 /**
  * Vercel serverless entrypoint. Deliberately plain CommonJS (not compiled
  * by Vercel's function bundler) requiring the already-`tsc`-built app in

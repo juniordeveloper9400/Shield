@@ -355,6 +355,8 @@ export function createTestDb() {
       status app.order_payment_status NOT NULL DEFAULT 'PENDING',
       paid_at timestamptz,
       sent_at timestamptz NOT NULL DEFAULT now(),
+      wallet_collected numeric(12,2) NOT NULL DEFAULT 0,
+      cash_collected numeric(12,2) NOT NULL DEFAULT 0,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 
@@ -794,6 +796,15 @@ export function createTestDb() {
       phone text NOT NULL DEFAULT '',
       created_at timestamptz NOT NULL DEFAULT now(),
       UNIQUE (agent_id, member_id)
+    );
+
+    CREATE TABLE app.agent_customer_plan (
+      id bigserial PRIMARY KEY,
+      agent_customer_id bigint NOT NULL REFERENCES app.agent_customer(id) ON DELETE CASCADE,
+      tier_id bigint NOT NULL REFERENCES app.membership_tier(id) ON DELETE RESTRICT,
+      amount numeric(12,2) NOT NULL,
+      activated_on date NOT NULL,
+      wallet_card_id bigint REFERENCES app.wallet_card(id) ON DELETE SET NULL
     );
 
     CREATE TABLE app.agent_withdrawal (

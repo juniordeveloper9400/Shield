@@ -93,6 +93,19 @@ export const agentCustomer = appSchema.table('agent_customer', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** One Health Pass activation credited to a `agentCustomer` link — written
+ *  on every `WalletService.approveCard`, whether or not it happened to pay
+ *  commission, for the agent portal's own "Direct sale"/"Team sales"
+ *  bookkeeping (a different concern from `agent.earned`). */
+export const agentCustomerPlan = appSchema.table('agent_customer_plan', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  agentCustomerId: bigint('agent_customer_id', { mode: 'number' }).notNull(),
+  tierId: bigint('tier_id', { mode: 'number' }).notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  activatedOn: date('activated_on').notNull(),
+  walletCardId: bigint('wallet_card_id', { mode: 'number' }),
+});
+
 export const agentWithdrawal = appSchema.table('agent_withdrawal', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   uuid: uuid('uuid').notNull().defaultRandom(),

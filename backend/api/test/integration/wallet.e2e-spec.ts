@@ -13,7 +13,19 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, agent, authSession, membershipTier, membershipTierLoad, referral, users, wallet } from '../../src/db/schema';
+import {
+  adminUser,
+  agent,
+  agentCustomer,
+  agentCustomerPlan,
+  authSession,
+  membershipTier,
+  membershipTierLoad,
+  referral,
+  users,
+  wallet,
+  walletEntry,
+} from '../../src/db/schema';
 import { TokenService } from '../../src/modules/auth/token.service';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
@@ -60,6 +72,20 @@ describe('Wallet & Rewards (e2e)', () => {
       subjectId: String(userId),
     });
     return token;
+  }
+
+  /**
+   * Saves a passing verification checklist on [cardId] — approveCard now
+   * refuses to run at all without one (see wallet.service.ts's own doc on
+   * [approveCard]), so every test that approves a card does this first.
+   * The exact values are arbitrary; only "all four fields present" matters.
+   */
+  async function verifyCard(cardId: number, token: string): Promise<void> {
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${cardId}/verification`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ verifiedReference: 'UTR-TEST', receivedOn: '2026-01-01', receiptVerified: true, receivedAmount: 10000 })
+      .expect(200);
   }
 
   beforeAll(async () => {
@@ -207,6 +233,7 @@ describe('Wallet & Rewards (e2e)', () => {
   });
 
   it('lets SUPERADMIN approve the card, crediting the ledger and opening the wallet', async () => {
+    await verifyCard(cardId, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${cardId}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -261,6 +288,7 @@ describe('Wallet & Rewards (e2e)', () => {
     expect(Number(beforeApproval.earned)).toBe(0);
     expect(Number(beforeApproval.personalSales)).toBe(0);
 
+    await verifyCard(submitted.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -269,6 +297,150 @@ describe('Wallet & Rewards (e2e)', () => {
     const [afterApproval] = await db.select().from(agent).where(eq(agent.id, agentId));
     expect(Number(afterApproval.earned)).toBe(600); // 10000 * 10% pool * 60% direct share
     expect(Number(afterApproval.personalSales)).toBe(10000);
+  });
+
+  it('refuses to approve a card until the verification checklist is saved', async () => {
+    // A dedicated member, not memberAccessToken's own — that wallet's
+    // balance is asserted against an exact running figure by later tests in
+    // this file, which an extra approval here would throw off.
+    const [freshMember] = await db
+      .insert(users)
+      .values({ phone: '9000000060', name: 'Checklist Test Member', firebaseUid: 'member-checklist-gate', registrationCompletedAt: new Date() })
+      .returning();
+    const freshToken = await directMemberToken(freshMember.id);
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${freshToken}`)
+      .send({ tierId, amount: 10000 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(403);
+
+    // Saving only some of the four fields still refuses it.
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/verification`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ verifiedReference: 'UTR-1', receivedOn: '', receiptVerified: false, receivedAmount: null })
+      .expect(200);
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(403);
+
+    // All four saved — now it goes through.
+    await verifyCard(submitted.body.id, superAdminToken);
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+  });
+
+  it('puts a card on hold, refuses to hold it a second time, but can still reject it from ON_HOLD', async () => {
+    const [freshMember] = await db
+      .insert(users)
+      .values({ phone: '9000000061', name: 'Hold Test Member', firebaseUid: 'member-hold-reject', registrationCompletedAt: new Date() })
+      .returning();
+    const freshToken = await directMemberToken(freshMember.id);
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${freshToken}`)
+      .send({ tierId, amount: 10000 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/hold`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ note: 'Receipt is blurry, asked the member to resend.' })
+      .expect(200);
+
+    // A card already on hold can't be held again (PENDING-only, stricter than reject).
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/hold`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ note: 'Second hold attempt.' })
+      .expect(403);
+
+    // But an on-hold card can still be rejected (or, in the next test, approved).
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/reject`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ note: 'Never resent a clear photo.' })
+      .expect(200);
+  });
+
+  it('approves a card straight out of ON_HOLD once the checklist is saved', async () => {
+    const [freshMember] = await db
+      .insert(users)
+      .values({ phone: '9000000062', name: 'Hold Approve Test Member', firebaseUid: 'member-hold-approve', registrationCompletedAt: new Date() })
+      .returning();
+    const freshToken = await directMemberToken(freshMember.id);
+
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${freshToken}`)
+      .send({ tierId, amount: 10000 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/hold`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ note: 'Checking the reference number.' })
+      .expect(200);
+
+    await verifyCard(submitted.body.id, superAdminToken);
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [row] = await db.select().from(walletEntry).where(eq(walletEntry.walletCardId, submitted.body.id));
+    expect(row.kind).toBe('ACTIVATION'); // not the old 'TOPUP'
+  });
+
+  it('pays the agent_customer-linked agent even with no agentCode typed at checkout, and always logs the agent-portal bookkeeping row', async () => {
+    const [linkAgent] = await db
+      .insert(agent)
+      .values({ code: 'SHD-CUST-LINK1', name: 'Customer-linked Agent', phone: '9000000076', level: 'NATIONAL' })
+      .returning();
+
+    const [linkedMember] = await db
+      .insert(users)
+      .values({ phone: '9000000075', name: 'Customer-linked Member', firebaseUid: 'member-customer-link', registrationCompletedAt: new Date() })
+      .returning();
+    const linkedToken = await directMemberToken(linkedMember.id);
+
+    const [link] = await db
+      .insert(agentCustomer)
+      .values({ agentId: linkAgent.id, memberId: linkedMember.id, name: 'Customer-linked Member' })
+      .returning();
+
+    // No agentCode at submission — commission can only be paid via the
+    // agent_customer fallback, not sold_by_agent_id.
+    const submitted = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${linkedToken}`)
+      .send({ tierId, amount: 10000 })
+      .expect(201);
+    expect(submitted.body.soldByAgentId ?? null).toBeNull();
+
+    await verifyCard(submitted.body.id, superAdminToken);
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+
+    const [afterApproval] = await db.select().from(agent).where(eq(agent.id, linkAgent.id));
+    expect(Number(afterApproval.earned)).toBe(600); // paid despite no agentCode at checkout
+
+    const [plan] = await db.select().from(agentCustomerPlan).where(eq(agentCustomerPlan.agentCustomerId, link.id));
+    expect(plan).toBeDefined();
+    expect(Number(plan.amount)).toBe(10000);
+    expect(plan.walletCardId).toBe(submitted.body.id);
   });
 
   it('never blocks a submission over an agent code that matches no real agent', async () => {
@@ -306,6 +478,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .send({ tierId, amount: 10000, agentCode: 'SHD-REG-TEST1' })
       .expect(201);
 
+    await verifyCard(submitted.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -364,6 +537,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .send({ tierId, amount: 10000, agentCode: 'SHD-STA-TEST1' })
       .expect(201);
 
+    await verifyCard(submitted.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -427,6 +601,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .send({ tierId, amount: 10000, agentCode: 'SHD-DIS-TEST1' })
       .expect(201);
 
+    await verifyCard(submitted.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -496,6 +671,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .send({ tierId, amount: 10000, agentCode: 'SHD-ASM-TEST1' })
       .expect(201);
 
+    await verifyCard(submitted.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -572,6 +748,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .send({ tierId, amount: 10000, agentCode: 'SHD-LSG-TEST1' })
       .expect(201);
 
+    await verifyCard(submitted.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -655,6 +832,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .send({ tierId, amount: 10000, agentCode: 'SHD-WRD-TEST1' })
       .expect(201);
 
+    await verifyCard(submitted.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${submitted.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -829,6 +1007,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .set('Authorization', `Bearer ${inviteeToken}`)
       .send({ tierId, amount: 10000 })
       .expect(201);
+    await verifyCard(card.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${card.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -1005,6 +1184,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .set('Authorization', `Bearer ${firstInviteeToken}`)
       .send({ tierId, amount: 10000 })
       .expect(201);
+    await verifyCard(firstCard.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${firstCard.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
@@ -1032,6 +1212,7 @@ describe('Wallet & Rewards (e2e)', () => {
       .set('Authorization', `Bearer ${secondInviteeToken}`)
       .send({ tierId, amount: 10000 })
       .expect(201);
+    await verifyCard(secondCard.body.id, superAdminToken);
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${secondCard.body.id}/approve`)
       .set('Authorization', `Bearer ${superAdminToken}`)
