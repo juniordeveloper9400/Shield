@@ -60,4 +60,9 @@ export class MemberAgentController {
   ) {
     return this.agents.requestWithdrawal(Number(user.subjectId), dto);
   }
+
+  @Get('withdrawals')
+  listWithdrawals(@CurrentUser() user: RequestSubject) {
+    return this.agents.listOwnWithdrawals(Number(user.subjectId));
+  }
 }

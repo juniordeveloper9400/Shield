@@ -18,6 +18,14 @@ The current implementation uses the static credential list in `shieldweb/src/con
 
 ## Flutter assets or build output look stale
 
+### Android release fails in Sentry with Kotlin language version 1.6
+
+`sentry_flutter` 8.14.2 pins its Android Kotlin language version to 1.6,
+which the project's Kotlin 2.2.20 compiler rejects. `android/build.gradle.kts`
+overrides only Sentry's Kotlin compile tasks to language version 1.8, leaving
+its JVM target unchanged. Keep this override while using that package version;
+do not patch the shared pub cache. Verify with `flutter build apk --release`.
+
 Run `flutter clean` only when needed, then `flutter pub get` and the focused build/test command. Do not commit generated `build/` or `.dart_tool/` output.
 
 ## Database tool safety

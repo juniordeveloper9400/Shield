@@ -815,7 +815,13 @@ export function createTestDb() {
       status app.withdrawal_status NOT NULL DEFAULT 'PENDING',
       requested_on date NOT NULL DEFAULT current_date,
       processed_on date,
-      created_at timestamptz NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now(),
+      approved_at timestamptz,
+      approved_by text,
+      verified_account text,
+      verification_note text,
+      payment_reference text,
+      processed_by text
     );
 
     CREATE TYPE app.lsgd_type AS ENUM ('corporation','municipality','grama_panchayat');

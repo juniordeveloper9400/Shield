@@ -115,4 +115,16 @@ export const agentWithdrawal = appSchema.table('agent_withdrawal', {
   requestedOn: date('requested_on').notNull(),
   processedOn: date('processed_on'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  // Migration 0059 — the cross-verification review trail. `approvedAt` set
+  // (status still PENDING) means "verified, awaiting payment" — a real
+  // third state app.withdrawal_status has no enum value for, distinguished
+  // by this column rather than a status value. See
+  // app.review_agent_withdrawal's own doc: APPROVE never touches status,
+  // only PAY/REJECT do.
+  approvedAt: timestamp('approved_at', { withTimezone: true }),
+  approvedBy: text('approved_by'),
+  verifiedAccount: text('verified_account'),
+  verificationNote: text('verification_note'),
+  paymentReference: text('payment_reference'),
+  processedBy: text('processed_by'),
 });

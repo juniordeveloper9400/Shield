@@ -303,46 +303,48 @@ export class AgentService {
 
   async requestWithdrawal(memberId: number, dto: RequestWithdrawalDto) {
     const self = await this.getApprovedAgentByMemberIdOrThrow(memberId);
-    const available = Number(self.earned) - Number(self.redeemed);
-    if (dto.amount > available) {
-      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Amount exceeds available earnings' } });
-    }
+    if (dto.amount < 3000) throw new ForbiddenException('Minimum withdrawal is Rs 3000');
+    return this.withdrawalCommand(async () => {
+      const result = await this.db.execute(sql`select app.request_agent_withdrawal(${self.id}, ${dto.amount}) as id`);
+      return result.rows[0];
+    });
+  }
 
-    const [created] = await this.db
-      .insert(agentWithdrawal)
-      .values({ agentId: self.id, amount: dto.amount.toString(), requestedOn: new Date().toISOString().slice(0, 10) })
-      .returning();
-    return created;
+  async listOwnWithdrawals(memberId: number) {
+    const self = await this.getApprovedAgentByMemberIdOrThrow(memberId);
+    const result = await this.db.execute(sql`select id, amount, status, requested_on as "requestedOn", approved_at as "approvedAt",
+      verification_note as "note" from app.agent_withdrawal where agent_id = ${self.id} order by id`);
+    return result.rows;
   }
 
   async listWithdrawalsForStaff() {
-    return this.db.select().from(agentWithdrawal).where(eq(agentWithdrawal.status, 'PENDING')).orderBy(agentWithdrawal.requestedOn);
+    const result = await this.db.execute(sql`select w.*, a.code, a.name, a.phone,
+      a.account_number, a.earned, a.redeemed, a.approval_status,
+      (select coalesce(sum(p.amount),0) from app.agent_withdrawal p
+        where p.agent_id = a.id and p.status = 'PENDING') as pending_total
+      from app.agent_withdrawal w join app.agent a on a.id = w.agent_id
+      order by (w.status = 'PENDING') desc, w.created_at desc`);
+    return result.rows;
   }
 
-  async resolveWithdrawal(withdrawalId: number, dto: ResolveWithdrawalDto) {
-    return this.db.transaction(async (tx) => {
-      const [found] = await tx.select().from(agentWithdrawal).where(eq(agentWithdrawal.id, withdrawalId)).limit(1);
-      if (!found) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Withdrawal not found' } });
-      if (found.status !== 'PENDING') {
-        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: `Already ${found.status.toLowerCase()}` } });
-      }
-
-      const [updated] = await tx
-        .update(agentWithdrawal)
-        .set({ status: dto.status, processedOn: new Date().toISOString().slice(0, 10) })
-        .where(eq(agentWithdrawal.id, withdrawalId))
-        .returning();
-
-      if (dto.status === 'PAID') {
-        const [theAgent] = await tx.select().from(agent).where(eq(agent.id, found.agentId)).limit(1);
-        await tx
-          .update(agent)
-          .set({ redeemed: (Number(theAgent.redeemed) + Number(found.amount)).toString() })
-          .where(eq(agent.id, found.agentId));
-      }
-
-      return updated;
+  async resolveWithdrawal(withdrawalId: number, dto: ResolveWithdrawalDto, reviewer: string) {
+    return this.withdrawalCommand(async () => {
+      const action = dto.status === 'APPROVED' ? 'APPROVE' : dto.status === 'PAID' ? 'PAY' : 'REJECT';
+      await this.db.execute(sql`select app.review_agent_withdrawal(${withdrawalId}, ${action}, ${reviewer},
+        ${dto.accountNumber}, ${dto.identityVerified}, ${dto.earningsVerified}, ${dto.note}, ${dto.paymentReference})`);
+      return { ok: true };
     });
+  }
+
+  private async withdrawalCommand<T>(run: () => Promise<T>): Promise<T> {
+    try { return await run(); }
+    catch (error) {
+      // Only expose our PL/pgSQL validation errors, never a query or connection details.
+      const pg = (error as { cause?: { code?: string; message?: string }; code?: string; message?: string });
+      const detail = pg.cause ?? pg;
+      if (detail.code === 'P0001') throw new ForbiddenException(detail.message);
+      throw error;
+    }
   }
 
   private async getApprovedAgentByMemberIdOrThrow(memberId: number) {

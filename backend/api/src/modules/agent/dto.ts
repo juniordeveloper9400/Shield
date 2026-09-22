@@ -37,11 +37,16 @@ export const linkCustomerSchema = z.object({
 });
 
 export const requestWithdrawalSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.number().finite().min(3000).multipleOf(0.01),
 });
 
 export const resolveWithdrawalSchema = z.object({
-  status: z.enum(['PAID', 'REJECTED']),
+  status: z.enum(['APPROVED', 'PAID', 'REJECTED']),
+  accountNumber: z.string().trim().default(''),
+  identityVerified: z.boolean().default(false),
+  earningsVerified: z.boolean().default(false),
+  note: z.string().trim().max(2000).default(''),
+  paymentReference: z.string().trim().max(200).default(''),
 });
 
 export type SubmitAgentRequestDto = z.infer<typeof submitAgentRequestSchema>;
