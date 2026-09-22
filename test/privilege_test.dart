@@ -1052,10 +1052,10 @@ void main() {
       expect(find.text('₹11,000.00'), findsOneWidget);
 
       // "Monthly" is said once, over the three figures it qualifies.
-      expect(find.text('THIS MONTH'), findsOneWidget);
+      expect(find.text('MONTHLY ALLOWANCE + CARRY-FORWARD'), findsOneWidget);
       expect(find.text('REDEEMABLE'), findsOneWidget);
       expect(find.text('REDEEMED'), findsOneWidget);
-      expect(find.text('REMAINING'), findsOneWidget);
+      expect(find.text('AVAILABLE'), findsOneWidget);
       // A twelfth of 11,000, none of it drawn yet.
       expect(find.text('₹916'), findsNWidgets(2));
       expect(find.text('₹0'), findsOneWidget);

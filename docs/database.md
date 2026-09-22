@@ -75,6 +75,13 @@ dart run backend/db/dump.dart
 
 ## Operational notes
 
+- Wallet allowance carries forward: the apps and admin bill view calculate all
+  instalments released since each approved card's issue date, less lifetime
+  plan-funded ledger debits. Commission credits fund debits first and remain
+  independent of plan allowance. Releases stop after 12 instalments using the
+  existing whole-rupee monthly rounding. Already released, unspent allowance is
+  retained. No monthly balance reset or financial backfill is required.
+
 - The Data API endpoint described in `backend/README.md` exposes `public`; app queries must use the configured app schema path or qualified names.
 - `backend/db/SCHEMA.md` includes generated metadata and should be refreshed when an accurate public-schema snapshot is needed.
 - Database credentials must never ship in a public mobile or web build. The current browser-direct admin design is documented as a risk in [Security](security.md).

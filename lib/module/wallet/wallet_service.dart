@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'wallet_allowance.dart';
 
 import 'package:flutter/foundation.dart';
 
@@ -143,7 +144,10 @@ class WalletCard {
 
   /// What has been released off this card so far: one instalment for every
   /// month that has come due.
-  int releasedBy(DateTime asOf) => monthlyRedeemable * instalmentOn(asOf);
+  int releasedBy(DateTime asOf) {
+    if (asOf.isBefore(issuedOn)) return 0;
+    return monthlyRedeemable * instalmentOn(asOf);
+  }
 
   /// What is still locked up in the card, waiting on later months.
   int remainingAfter(DateTime asOf) {
@@ -296,7 +300,6 @@ class WalletService extends ChangeNotifier {
   static const List<WalletEntry> _seed = [];
 
   int _balance = openingBalance;
-  int _redeemed = 0;
   final List<WalletEntry> _entries = List.of(_seed);
 
   /// The cards on the account, oldest first, or empty while the wallet is
@@ -598,17 +601,30 @@ class WalletService extends ChangeNotifier {
   /// Only what has been spent since a card opened the wallet counts: the
   /// seeded ledger predates the card, and was paid out of the wallet's own
   /// balance rather than against an allowance that did not exist yet.
-  int get redeemedThisMonth => _redeemed;
+  int get redeemedThisMonth {
+    final now = DateTime.now();
+    return planDebitsThrough(
+      _entries.reversed.map((e) => (kind: e.kind, amount: e.amount, occurredOn: e.occurredOn)),
+      now, since: DateTime(now.year, now.month),
+    );
+  }
 
   /// What is left of this month's allowance.
   ///
   /// Floored at zero rather than allowed to go negative: an allowance that
   /// has been used up is used up, and a negative one would read as a debt the
   /// member does not owe.
-  int get monthlyBalance {
-    final left = monthlyRedeemable - _redeemed;
-    return left < 0 ? 0 : left;
+  int availableAllowanceOn(DateTime asOf) {
+    final released = _cards.fold<int>(0, (sum, card) => sum + card.releasedBy(asOf));
+    final spent = planDebitsThrough(
+      _entries.reversed.map((e) => (kind: e.kind, amount: e.amount, occurredOn: e.occurredOn)),
+      asOf,
+    );
+    return math.min(_balance, math.max(0, released - spent));
   }
+
+  /// All released allowance less all plan spending, including unused earlier months.
+  int get monthlyBalance => availableAllowanceOn(DateTime.now());
 
   /// Newest first, which is the order the screen reads them in.
   List<WalletEntry> get entries => List.unmodifiable(_entries);
@@ -688,7 +704,7 @@ class WalletService extends ChangeNotifier {
       return false;
     }
     _balance += amount;
-    _entries.insert(0, WalletEntry(label: label, date: date, amount: amount));
+    _entries.insert(0, WalletEntry(kind: 'AGENT_EARNINGS', label: label, date: date, amount: amount));
     notifyListeners();
     return true;
   }
@@ -708,7 +724,6 @@ class WalletService extends ChangeNotifier {
     }
 
     _balance -= amount;
-    _redeemed += amount;
     _entries.insert(0, WalletEntry(label: label, date: date, amount: -amount));
     notifyListeners();
     return true;
@@ -836,7 +851,6 @@ class WalletService extends ChangeNotifier {
     _cards.clear();
     _pending.clear();
     _balance = openingBalance;
-    _redeemed = 0;
     _entries
       ..clear()
       ..addAll(_seed);
