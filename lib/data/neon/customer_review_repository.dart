@@ -1,8 +1,14 @@
 import '../../module/home/customer_reviews.dart';
+import '../backend/backend_customer_review_repository.dart';
 import 'neon_http.dart';
 
-/// Reads "What our customers have to say" — `app.customer_review_video` — from
-/// Neon over the HTTP SQL endpoint (see [NeonHttp]).
+/// Reads "What our customers have to say" — `app.customer_review_video`.
+///
+/// Tries `backend/api` first (`BackendCustomerReviewRepository`) and falls
+/// back to the direct-Neon read below only when the backend is unavailable
+/// or the call fails — both read the identical table, this is a resilience
+/// fallback during the migration off the compiled-in Neon credential, not
+/// two independently maintained copies.
 ///
 /// Read-only. Clips are added, ordered and hidden from the pharmacy admin
 /// console (`shieldweb`), never from the app; this repository only lists what
@@ -19,15 +25,28 @@ class CustomerReviewRepository {
   static const CustomerReviewRepository instance =
       CustomerReviewRepository._();
 
-  /// Whether a read would actually reach the database.
-  bool get isAvailable => NeonHttp.isConfigured;
+  /// Whether a read would actually reach a database — the backend or Neon.
+  bool get isAvailable =>
+      BackendCustomerReviewRepository.instance.isAvailable || NeonHttp.isConfigured;
 
   /// Every clip the admin has marked active, in display order.
   ///
-  /// Returns `null` (not an empty list) when the database is off or
-  /// unreachable, so a transient failure does not blank the reel — the
+  /// Returns `null` (not an empty list) when neither the backend nor Neon
+  /// could answer, so a transient failure does not blank the reel — the
   /// caller falls back to the bundled clips instead.
   Future<List<CustomerReviewItem>?> listActive() async {
+    final backend = BackendCustomerReviewRepository.instance;
+    if (backend.isAvailable) {
+      try {
+        final items = await backend.listActive();
+        if (items != null) {
+          return items;
+        }
+      } catch (error) {
+        NeonHttp.log('CustomerReviewRepository.listActive: backend failed, falling back to Neon', error: error);
+      }
+    }
+
     if (!NeonHttp.isConfigured) {
       return null;
     }

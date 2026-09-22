@@ -3,7 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { adminUser, memberAddress, patient, rewardPointTransaction, shieldStore, users } from '../../db/schema';
 import { AuthService } from '../auth/auth.service';
-import type { CreateAddressDto, CreatePatientDto, UpdateMemberProfileDto, UpdatePatientDto } from './dto';
+import type { CreateAddressDto, CreatePatientDto, UpdateAddressDto, UpdateMemberProfileDto, UpdatePatientDto } from './dto';
 
 /** Credited once, the first time a member completes registration. Mirrors the client's own display constant (`RewardsService.registrationBonus`). */
 const REGISTRATION_BONUS_POINTS = 500;
@@ -230,6 +230,43 @@ export class IdentityService {
       .values({ ...dto, memberId })
       .returning();
     return created;
+  }
+
+  /**
+   * Mirrors [updatePatient] exactly — same ownership check via `memberId`,
+   * same 404 contract. `patientId`, when named, gets the same
+   * "must belong to this member" check [createAddress] already applies.
+   */
+  async updateAddress(memberId: number, addressId: number, dto: UpdateAddressDto) {
+    if (dto.patientId) {
+      const [owned] = await this.db
+        .select({ id: patient.id })
+        .from(patient)
+        .where(and(eq(patient.id, dto.patientId), eq(patient.memberId, memberId), isNull(patient.deletedAt)))
+        .limit(1);
+      if (!owned) {
+        throw new ForbiddenException({
+          error: { code: 'FORBIDDEN', message: 'patientId does not belong to the authenticated member' },
+        });
+      }
+    }
+
+    const [updated] = await this.db
+      .update(memberAddress)
+      .set(dto)
+      .where(and(eq(memberAddress.id, addressId), eq(memberAddress.memberId, memberId), isNull(memberAddress.deletedAt)))
+      .returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Address not found' } });
+    return updated;
+  }
+
+  async softDeleteAddress(memberId: number, addressId: number) {
+    const [deleted] = await this.db
+      .update(memberAddress)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(memberAddress.id, addressId), eq(memberAddress.memberId, memberId), isNull(memberAddress.deletedAt)))
+      .returning();
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Address not found' } });
   }
 
   async listPatients(memberId: number) {

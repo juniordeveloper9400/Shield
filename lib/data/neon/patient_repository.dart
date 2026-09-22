@@ -1,8 +1,15 @@
 import '../../module/patients/patient_book.dart';
+import '../backend/backend_patient_repository.dart';
 import 'neon_http.dart';
 
-/// Reads and writes the people on an account in the `app.patient` table on Neon,
-/// over the HTTP SQL endpoint (see [NeonHttp]).
+/// Reads and writes the people on an account.
+///
+/// Tries `backend/api` first (`BackendPatientRepository`) and falls back to
+/// the direct-Neon path below only when the backend is unavailable, there
+/// is no session yet, or the call fails — both write the identical table
+/// (`app.patient`), this is a resilience fallback during the migration off
+/// the compiled-in Neon credential, not two independently maintained
+/// copies.
 ///
 /// Every method is best-effort: with no `DATABASE_URL` compiled in (tests) or
 /// the network down, writes no-op and reads return null. Adding a patient must
@@ -10,21 +17,25 @@ import 'neon_http.dart';
 /// source of truth for the running app, and this table is the durable copy that
 /// is read back on the next launch.
 ///
-/// `app.patient.member_id` is `NOT NULL`, so [upsert] resolves the owning
-/// `app.users` row from the signed-in mobile number first, inserting a minimal
-/// user if sign-in has not already written one.
+/// `app.patient.member_id` is `NOT NULL`, so [upsert]'s own direct-Neon path
+/// resolves the owning `app.users` row from the signed-in mobile number
+/// first, inserting a minimal user if sign-in has not already written one.
 class PatientRepository {
   const PatientRepository._();
 
   static const PatientRepository instance = PatientRepository._();
 
-  /// Whether a write or read would actually reach the database.
-  bool get isAvailable => NeonHttp.isConfigured;
+  /// Whether a write or read would actually reach a database — the backend
+  /// or Neon.
+  bool get isAvailable =>
+      BackendPatientRepository.instance.isAvailable || NeonHttp.isConfigured;
 
   /// Inserts a new patient, or updates the existing row when [uuid] is given
-  /// (the value a previous call returned, held on [Patient.remoteId]).
+  /// (the value a previous call returned, held on [Patient.remoteId] — the
+  /// backend's own numeric id once this writes through it, still a Neon row
+  /// uuid on the fallback path; either way opaque to every caller).
   ///
-  /// Returns the row's `uuid` so the caller can pin it onto the in-memory
+  /// Returns the row's id so the caller can pin it onto the in-memory
   /// record with [PatientBook.attachRemoteId]. Null when nothing was written.
   Future<String?> upsert({
     String? uuid,
@@ -38,6 +49,28 @@ class PatientRepository {
     required PatientRelation relation,
     required String abhaId,
   }) async {
+    final backend = BackendPatientRepository.instance;
+    if (backend.isAvailable) {
+      final id = await backend.upsert(
+        id: uuid,
+        name: name,
+        phone: phone,
+        address: address,
+        dob: dob,
+        gender: gender,
+        relation: relation,
+        abhaId: abhaId,
+      );
+      if (id != null) {
+        return id;
+      }
+      // Falls through to Neon: either the backend genuinely couldn't save
+      // it (worth a second, independent attempt rather than losing the
+      // patient), or it just refused for a reason this best-effort method
+      // doesn't distinguish — see every other write in this class's own
+      // contract.
+    }
+
     if (!NeonHttp.isConfigured) {
       return null;
     }
@@ -102,8 +135,16 @@ class PatientRepository {
   }
 
   /// Marks a patient row soft-deleted (`deleted_at = now()`). A no-op when
-  /// [uuid] is unknown.
+  /// [uuid] is unknown to a given path — both the backend and Neon are
+  /// tried, since a delete's id could have come from either store
+  /// (created before or after this migration's bridge), and each simply
+  /// no-ops on an id it does not recognize rather than erroring.
   Future<void> softDelete(String uuid) async {
+    final backend = BackendPatientRepository.instance;
+    if (backend.isAvailable) {
+      await backend.softDelete(uuid);
+    }
+
     if (!NeonHttp.isConfigured) {
       return;
     }
@@ -120,10 +161,19 @@ class PatientRepository {
 
   /// Every non-deleted patient for the member with [memberPhone], oldest first.
   ///
-  /// Returns `null` (not an empty list) when the database is off or unreachable,
-  /// so the caller can tell "this account has no saved patients" from "could not
-  /// load them" and avoid wiping the in-memory list on a transient failure.
+  /// Returns `null` (not an empty list) when neither the backend nor Neon
+  /// could answer, so the caller can tell "this account has no saved
+  /// patients" from "could not load them" and avoid wiping the in-memory
+  /// list on a transient failure.
   Future<List<Patient>?> listForMember(String memberPhone) async {
+    final backend = BackendPatientRepository.instance;
+    if (backend.isAvailable) {
+      final patients = await backend.listForMember();
+      if (patients != null) {
+        return patients;
+      }
+    }
+
     if (!NeonHttp.isConfigured) {
       return null;
     }

@@ -13,7 +13,22 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, agent, agentRequest, assembly, authSession, district, lsgd, region, state, users, ward } from '../../src/db/schema';
+import {
+  adminUser,
+  agent,
+  agentCustomer,
+  agentCustomerPlan,
+  agentRequest,
+  assembly,
+  authSession,
+  district,
+  lsgd,
+  membershipTier,
+  region,
+  state,
+  users,
+  ward,
+} from '../../src/db/schema';
 import { TokenService } from '../../src/modules/auth/token.service';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
@@ -415,6 +430,36 @@ describe('Agent & Geography (e2e)', () => {
       .set('Authorization', `Bearer ${login.body.accessToken}`)
       .send({ memberId: customerMember.id, name: 'Customer One Again' })
       .expect(409);
+
+    // Direct sale: the Agent Portal reads each customer's activated plans off
+    // this same endpoint — a customer linked but not yet activated has an
+    // empty list, and once a plan is credited (WalletService.approveCard's
+    // own agent_customer_plan insert — exercised elsewhere) it shows here.
+    const [linkedCustomer] = await db.select().from(agentCustomer).where(eq(agentCustomer.memberId, customerMember.id));
+    const [tier] = await db.insert(membershipTier).values({ kind: 'SILVER', name: 'Silver', bin: '1234', bonusRate: '0.1', validityMonths: 12 }).returning();
+
+    const before = await request(app.getHttpServer())
+      .get('/v1/agent/customers')
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .expect(200);
+    expect(before.body).toEqual([expect.objectContaining({ id: linkedCustomer.id, plans: [] })]);
+
+    await db.insert(agentCustomerPlan).values({
+      agentCustomerId: linkedCustomer.id,
+      tierId: tier.id,
+      amount: '10000',
+      activatedOn: '2026-09-22',
+    });
+
+    const after = await request(app.getHttpServer())
+      .get('/v1/agent/customers')
+      .set('Authorization', `Bearer ${login.body.accessToken}`)
+      .expect(200);
+    expect(after.body).toHaveLength(1);
+    expect(after.body[0].plans).toEqual([
+      expect.objectContaining({ tierKind: 'SILVER', amount: 10000 }),
+    ]);
+    expect(new Date(after.body[0].plans[0].activatedOn).toISOString().slice(0, 10)).toBe('2026-09-22');
   });
 
   // Migration 0059 moved the actual request/resolve logic into two Postgres

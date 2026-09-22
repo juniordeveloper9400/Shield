@@ -1,8 +1,15 @@
 import '../../module/location/address_book.dart';
+import '../backend/backend_address_repository.dart';
 import 'neon_http.dart';
 
-/// Reads and writes saved delivery addresses in the `app.member_address`
-/// table on Neon, over the HTTP SQL endpoint (see [NeonHttp]).
+/// Reads and writes saved delivery addresses.
+///
+/// Tries `backend/api` first (`BackendAddressRepository`) and falls back to
+/// the direct-Neon path below only when the backend is unavailable, there
+/// is no session yet, or the call fails — both write the identical table
+/// (`app.member_address`), this is a resilience fallback during the
+/// migration off the compiled-in Neon credential, not two independently
+/// maintained copies.
 ///
 /// Every method is best-effort: with no `DATABASE_URL` compiled in (tests) or
 /// the network down, writes no-op and reads return null. Saving an address
@@ -10,20 +17,24 @@ import 'neon_http.dart';
 /// the source of truth for the running app, and this table is the durable
 /// copy that is read back on the next launch.
 ///
-/// `app.member_address.member_id` is `NOT NULL`, so [upsert] resolves the
-/// owning `app.users` row from the signed-in mobile number first, inserting a
-/// minimal user if sign-in has not already written one — the same convention
-/// as [PatientRepository].
+/// `app.member_address.member_id` is `NOT NULL`, so [upsert]'s own
+/// direct-Neon path resolves the owning `app.users` row from the signed-in
+/// mobile number first, inserting a minimal user if sign-in has not already
+/// written one — the same convention as [PatientRepository].
 class AddressRepository {
   const AddressRepository._();
 
   static const AddressRepository instance = AddressRepository._();
 
-  /// Whether a write or read would actually reach the database.
-  bool get isAvailable => NeonHttp.isConfigured;
+  /// Whether a write or read would actually reach a database — the backend
+  /// or Neon.
+  bool get isAvailable =>
+      BackendAddressRepository.instance.isAvailable || NeonHttp.isConfigured;
 
   /// Inserts a new address, or updates the existing row when [uuid] is given
-  /// (the value a previous call returned, held on [Address.remoteId]).
+  /// (the value a previous call returned, held on [Address.remoteId] — the
+  /// backend's own numeric id once this writes through it, still a Neon row
+  /// uuid on the fallback path; either way opaque to every caller).
   ///
   /// [address] carries the fields to write, [Address.patientId] included —
   /// the `'remote-<uuid>'` form [PatientRepository] hands out, unwrapped back
@@ -31,7 +42,7 @@ class AddressRepository {
   /// saved on its own or one that only ever named a patient added on this
   /// device (a local `'p3'`-style id can't resolve to anything on the
   /// backend, so it is treated the same as no patient). Returns the row's
-  /// `uuid` so the caller can pin it onto the in-memory record with
+  /// id so the caller can pin it onto the in-memory record with
   /// [AddressBook.attachRemoteId]. Null when nothing was written.
   Future<String?> upsert({
     String? uuid,
@@ -39,11 +50,32 @@ class AddressRepository {
     required String memberName,
     required Address address,
   }) async {
+    final labelToken = address.label.name.toUpperCase();
+
+    final backend = BackendAddressRepository.instance;
+    if (backend.isAvailable) {
+      final id = await backend.upsert(
+        id: uuid,
+        label: labelToken,
+        house: address.house,
+        area: address.area,
+        landmark: address.landmark,
+        pincode: address.pincode,
+        firstName: address.firstName,
+        lastName: address.lastName,
+        phone: address.phone,
+        patientId: address.patientId,
+      );
+      if (id != null) {
+        return id;
+      }
+      // Falls through to Neon — see PatientRepository.upsert's own doc on
+      // why a second, independent attempt is worth it here.
+    }
+
     if (!NeonHttp.isConfigured) {
       return null;
     }
-
-    final labelToken = address.label.name.toUpperCase();
     final house = address.house;
     final area = address.area;
     final landmark = address.landmark;
@@ -150,11 +182,19 @@ class AddressRepository {
   /// Every non-deleted address for the member with [memberPhone], oldest
   /// first.
   ///
-  /// Returns `null` (not an empty list) when the database is off or
-  /// unreachable, so the caller can tell "this account has no saved
+  /// Returns `null` (not an empty list) when neither the backend nor Neon
+  /// could answer, so the caller can tell "this account has no saved
   /// addresses" from "could not load them" and avoid wiping the in-memory
   /// list on a transient failure.
   Future<List<Address>?> listForMember(String memberPhone) async {
+    final backend = BackendAddressRepository.instance;
+    if (backend.isAvailable) {
+      final addresses = await backend.listForMember();
+      if (addresses != null) {
+        return addresses;
+      }
+    }
+
     if (!NeonHttp.isConfigured) {
       return null;
     }
@@ -180,8 +220,16 @@ class AddressRepository {
   }
 
   /// Marks an address row soft-deleted (`deleted_at = now()`). A no-op when
-  /// [uuid] is unknown.
+  /// [uuid] is unknown to a given path — both the backend and Neon are
+  /// tried, since a delete's id could have come from either store, and
+  /// each simply no-ops on an id it does not recognize rather than
+  /// erroring — see [PatientRepository.softDelete]'s own doc.
   Future<void> softDelete(String uuid) async {
+    final backend = BackendAddressRepository.instance;
+    if (backend.isAvailable) {
+      await backend.softDelete(uuid);
+    }
+
     if (!NeonHttp.isConfigured) {
       return;
     }

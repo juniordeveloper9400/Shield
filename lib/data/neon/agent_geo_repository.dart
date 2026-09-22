@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../module/agent/agent_model.dart' show AgentLevel;
+import '../backend/backend_agent_geo_repository.dart';
 import 'neon_http.dart';
 
 /// One row of `app.agent_geo_node` — a single slot on the agent hierarchy
@@ -60,9 +61,16 @@ class GeoNode {
   }
 }
 
-/// Reads the agent geographic hierarchy over the Neon HTTP SQL endpoint.
+/// Reads the agent geographic hierarchy.
 ///
-/// The shape is one table per tier — `app.region` / `app.state` /
+/// Tries `backend/api` first (`BackendAgentGeoRepository`, `GET
+/// /v1/public/geo/tree`) and falls back to the direct-Neon read below only
+/// when the backend is unavailable or the call fails — both read the
+/// identical tables, this is a resilience fallback during the migration
+/// off the compiled-in Neon credential, not two independently maintained
+/// copies.
+///
+/// The Neon shape is one table per tier — `app.region` / `app.state` /
 /// `app.district` / `app.assembly` / `app.lsgd` / `app.ward` (migration
 /// 0014), linked child → parent by UUID foreign keys. This flattens all six
 /// into the `(id, parent_id, level, name, code, sort)` rows [GeoNode.fromRow]
@@ -78,15 +86,30 @@ class AgentGeoRepository {
 
   static const AgentGeoRepository instance = AgentGeoRepository._();
 
-  bool get isAvailable => NeonHttp.isConfigured;
+  bool get isAvailable =>
+      BackendAgentGeoRepository.instance.isAvailable || NeonHttp.isConfigured;
 
   /// Every geo node, ordered so a parent always precedes deeper tiers, or null
-  /// when the endpoint is not configured or the tables are empty.
+  /// when neither the backend nor Neon could answer, or the tables are empty.
   ///
-  /// A transport / SQL failure is **rethrown**, not swallowed — the caller
-  /// ([AgentGeo._load]) records the reason so "My Team" can show why the tree
-  /// is empty instead of silently rendering nothing.
+  /// A transport / SQL failure from the Neon fallback is **rethrown**, not
+  /// swallowed — matching this method's pre-existing contract — but only
+  /// once the backend attempt has already been tried and itself failed; the
+  /// caller ([AgentGeo._load]) records the reason so "My Team" can show why
+  /// the tree is empty instead of silently rendering nothing.
   Future<List<GeoNode>?> fetchAll() async {
+    final backend = BackendAgentGeoRepository.instance;
+    if (backend.isAvailable) {
+      try {
+        final nodes = await backend.fetchAll();
+        if (nodes != null) {
+          return nodes;
+        }
+      } catch (error) {
+        NeonHttp.log('AgentGeoRepository.fetchAll: backend failed, falling back to Neon', error: error);
+      }
+    }
+
     if (!NeonHttp.isConfigured) {
       return null;
     }

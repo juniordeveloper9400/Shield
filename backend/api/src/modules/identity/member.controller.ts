@@ -6,10 +6,12 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createAddressSchema,
   createPatientSchema,
+  updateAddressSchema,
   updateMemberProfileSchema,
   updatePatientSchema,
   type CreateAddressDto,
   type CreatePatientDto,
+  type UpdateAddressDto,
   type UpdateMemberProfileDto,
   type UpdatePatientDto,
 } from './dto';
@@ -50,6 +52,21 @@ export class MemberController {
     @Body(new ZodValidationPipe(createAddressSchema)) body: CreateAddressDto,
   ) {
     return this.identity.createAddress(Number(user.subjectId), body);
+  }
+
+  @Patch('addresses/:id')
+  async updateAddress(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateAddressSchema)) body: UpdateAddressDto,
+  ) {
+    return this.identity.updateAddress(Number(user.subjectId), id, body);
+  }
+
+  @Delete('addresses/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteAddress(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    await this.identity.softDeleteAddress(Number(user.subjectId), id);
   }
 
   @Get('patients')

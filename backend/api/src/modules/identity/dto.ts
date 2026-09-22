@@ -15,6 +15,8 @@ export const createAddressSchema = z.object({
   isDefault: z.boolean().default(false),
 });
 
+export const updateAddressSchema = createAddressSchema.partial();
+
 export const createPatientSchema = z.object({
   name: z.string().min(1),
   phone: z.string().default(''),
@@ -50,6 +52,7 @@ export const updateMemberProfileSchema = z.object({
 });
 
 export type CreateAddressDto = z.infer<typeof createAddressSchema>;
+export type UpdateAddressDto = z.infer<typeof updateAddressSchema>;
 export type CreatePatientDto = z.infer<typeof createPatientSchema>;
 export type UpdatePatientDto = z.infer<typeof updatePatientSchema>;
 export type UpdateMemberProfileDto = z.infer<typeof updateMemberProfileSchema>;

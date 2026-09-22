@@ -1,14 +1,16 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
   agentCustomer,
+  agentCustomerPlan,
   agentRequest,
   agentWithdrawal,
   assembly,
   district,
   lsgd,
+  membershipTier,
   region,
   state,
   users,
@@ -296,9 +298,49 @@ export class AgentService {
     }
   }
 
+  /**
+   * The calling agent's own "Direct sale" customers, each with every plan
+   * they've activated — what shield agent_invester's Agent Portal actually
+   * shows and pays commission on. A customer with no plan yet (linked at
+   * registration, not activated) still appears, with an empty plans list —
+   * matching `AgentCustomerRepository.fetchAll`'s own doc on the root app's
+   * direct-Neon equivalent, which this mirrors.
+   */
   async listCustomers(memberId: number) {
     const self = await this.getApprovedAgentByMemberIdOrThrow(memberId);
-    return this.db.select().from(agentCustomer).where(eq(agentCustomer.agentId, self.id)).orderBy(desc(agentCustomer.createdAt));
+    const customers = await this.db
+      .select()
+      .from(agentCustomer)
+      .where(eq(agentCustomer.agentId, self.id))
+      .orderBy(desc(agentCustomer.createdAt));
+    if (customers.length === 0) return [];
+
+    const plans = await this.db
+      .select({
+        id: agentCustomerPlan.id,
+        agentCustomerId: agentCustomerPlan.agentCustomerId,
+        tierKind: membershipTier.kind,
+        amount: agentCustomerPlan.amount,
+        activatedOn: agentCustomerPlan.activatedOn,
+      })
+      .from(agentCustomerPlan)
+      .innerJoin(membershipTier, eq(membershipTier.id, agentCustomerPlan.tierId))
+      .where(
+        inArray(
+          agentCustomerPlan.agentCustomerId,
+          customers.map((c) => c.id),
+        ),
+      )
+      .orderBy(asc(agentCustomerPlan.activatedOn));
+
+    const plansByCustomer = new Map<number, typeof plans>();
+    for (const plan of plans) {
+      const list = plansByCustomer.get(plan.agentCustomerId) ?? [];
+      list.push(plan);
+      plansByCustomer.set(plan.agentCustomerId, list);
+    }
+
+    return customers.map((c) => ({ ...c, plans: plansByCustomer.get(c.id) ?? [] }));
   }
 
   async requestWithdrawal(memberId: number, dto: RequestWithdrawalDto) {

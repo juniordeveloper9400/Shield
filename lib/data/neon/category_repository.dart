@@ -2,10 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../../module/categories/category_catalogue.dart';
 import '../../theme/app_colors.dart';
+import '../backend/backend_category_repository.dart';
 import 'neon_http.dart';
 
 /// Reads the storefront category catalogue — `app.product_category` and
-/// `app.product_subcategory` — from Neon over the HTTP SQL endpoint.
+/// `app.product_subcategory`.
+///
+/// Tries `backend/api` first (`BackendCategoryRepository`) and falls back to
+/// the direct-Neon read below only when the backend is unavailable or the
+/// call fails — both read the identical tables, this is a resilience
+/// fallback during the migration off the compiled-in Neon credential, not
+/// two independently maintained copies.
 ///
 /// Read-only. Categories and their banners are maintained from the admin
 /// console (`shieldweb`'s "Category banners" page), never from the app; this
@@ -21,12 +28,25 @@ class CategoryRepository {
 
   static const CategoryRepository instance = CategoryRepository._();
 
-  bool get isAvailable => NeonHttp.isConfigured;
+  bool get isAvailable =>
+      BackendCategoryRepository.instance.isAvailable || NeonHttp.isConfigured;
 
   /// Every active category, with its sub-categories attached, in the admin's
-  /// sort order. `null` when the database is off, unreachable, or the query
-  /// failed; an empty result also maps to `null` so the caller keeps the seed.
+  /// sort order. `null` when neither the backend nor Neon could answer; an
+  /// empty result either way also maps to `null` so the caller keeps the seed.
   Future<List<CategoryGroup>?> fetchAll() async {
+    final backend = BackendCategoryRepository.instance;
+    if (backend.isAvailable) {
+      try {
+        final groups = await backend.fetchAll();
+        if (groups != null) {
+          return groups;
+        }
+      } catch (error) {
+        NeonHttp.log('CategoryRepository.fetchAll: backend failed, falling back to Neon', error: error);
+      }
+    }
+
     if (!NeonHttp.isConfigured) {
       return null;
     }

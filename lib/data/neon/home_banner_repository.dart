@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../backend/backend_home_banner_repository.dart';
 import 'neon_http.dart';
 
 /// One row of `app.home_banner` — a slide of the home hero carousel, exactly
@@ -39,7 +40,13 @@ class HomeBannerModel {
 }
 
 /// Reads the home-screen hero banner — `app.home_banner`, maintained from the
-/// admin console (`shieldweb`) — from Neon over the HTTP SQL endpoint.
+/// admin console (`shieldweb`).
+///
+/// Tries `backend/api` first (`BackendHomeBannerRepository`) and falls back
+/// to the direct-Neon read below only when the backend is unavailable or
+/// returns nothing — both read the identical table, this is a resilience
+/// fallback during the migration off the compiled-in Neon credential, not
+/// two independently maintained copies.
 ///
 /// Read-only and best-effort like the other Neon repositories: a missing
 /// `DATABASE_URL` or a network failure returns an empty list rather than
@@ -50,12 +57,29 @@ class HomeBannerRepository {
 
   static const HomeBannerRepository instance = HomeBannerRepository._();
 
-  bool get isAvailable => NeonHttp.isConfigured;
+  bool get isAvailable =>
+      BackendHomeBannerRepository.instance.isAvailable || NeonHttp.isConfigured;
 
   /// Every banner the admin has switched on, in display order. Rows with no
   /// image (should not happen — the console requires one) are dropped rather
   /// than shown as a blank slide.
   Future<List<HomeBannerModel>> listActive() async {
+    final backend = BackendHomeBannerRepository.instance;
+    if (backend.isAvailable) {
+      final banners = await backend.listActive();
+      if (banners.isNotEmpty) {
+        return banners;
+      }
+      // Empty could mean "the admin published nothing" (a real answer,
+      // trust it) or "the request itself failed" — BackendHomeBannerRepository
+      // swallows both into the same empty list (matching this class's own
+      // no-throw contract), so unlike every other repository in this
+      // migration there is no way to tell them apart here and fall back
+      // only on the second. Falling through to Neon either way is safe:
+      // if the admin really published nothing, Neon answers the same empty
+      // list right back.
+    }
+
     if (!NeonHttp.isConfigured) {
       return const [];
     }
