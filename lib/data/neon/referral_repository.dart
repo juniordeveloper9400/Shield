@@ -88,9 +88,15 @@ class ReferralRepository {
   /// inviter to invitee the whole ladder is climbed on.
   ///
   /// Returns `false` (and writes nothing) when the code does not resolve to a
-  /// member, resolves to the phone signing up itself, or this phone already
-  /// carries a referral row — a member is referred once, and the earliest
-  /// attribution is the one that stands.
+  /// member, resolves to the phone signing up itself, this phone already
+  /// carries a referral row (a member is referred once, and the earliest
+  /// attribution is the one that stands), **or the code's owner is currently
+  /// an approved agent** — sharing a permanent Member ID still works once its
+  /// owner becomes an agent, but from then on it is a direct sale, not a
+  /// plain member referral, and [AgentCustomerRepository.linkCustomer] (tried
+  /// alongside this on every registration save) is what records that
+  /// instead. Without this check the same code-owner would wrongly earn both
+  /// the plain 2% member rate here and the agent commission there.
   Future<bool> recordSignup({
     required String code,
     required String newMemberPhone,
@@ -107,7 +113,15 @@ class ReferralRepository {
       }
 
       final inviterRows = await NeonHttp.instance.query(
-        'SELECT id, phone FROM app.users WHERE referral_code = \$1',
+        '''
+          SELECT id, phone,
+                 EXISTS (
+                   SELECT 1 FROM app.agent a
+                   WHERE a.member_id = u.id AND a.approval_status = 'APPROVED'
+                 ) AS is_agent
+          FROM app.users u
+          WHERE referral_code = \$1
+        ''',
         [trimmedCode],
       );
       if (inviterRows.isEmpty) {
@@ -117,6 +131,9 @@ class ReferralRepository {
       final inviterPhone = inviterRows.first['phone']?.toString();
       if (inviterPhone == newMemberPhone) {
         return false; // a code cannot refer its own owner
+      }
+      if (inviterRows.first['is_agent'] == true) {
+        return false; // a current agent's own code is a direct sale, not this
       }
 
       final inserted = await NeonHttp.instance.query(

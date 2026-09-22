@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -88,6 +90,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   PaymentMethod _method = PaymentMethods.bankTransfer;
   late ShieldStore _store;
   late StoreBankAccount _account;
+
+  /// Guards [_refreshLiveBankAccount] against a slow response landing after
+  /// the member has already switched to a different branch — only the
+  /// request started most recently is allowed to apply its result.
+  int _bankAccountRequestId = 0;
 
   /// How a delivering order reaches the member. Only ever read on the
   /// [CheckoutOrder.requiresDelivery] path — the Health Pass purchase has
@@ -212,6 +219,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _store = _selectedPlan!.store!;
       _storeSource = _StoreSource.planSelection;
       _account = ShieldPayees.forStore(_store).first;
+      unawaited(_refreshLiveBankAccount(_store));
       return;
     }
 
@@ -249,6 +257,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
 
     _account = ShieldPayees.forStore(_store).first;
+    unawaited(_refreshLiveBankAccount(_store));
+  }
+
+  /// Best-effort: refines [_account] with [store]'s live bank details once
+  /// they load, without blocking or changing what [_syncDefaultStore] /
+  /// [_chooseStore] / [_choosePlan] already showed instantly — see
+  /// [ShieldPayees.liveAccountFor]'s own doc for why this exists at all.
+  /// A no-op if the member has since moved to a different branch, or if
+  /// nothing better than the instant default came back.
+  Future<void> _refreshLiveBankAccount(ShieldStore store) async {
+    final requestId = ++_bankAccountRequestId;
+    final live = await ShieldPayees.liveAccountFor(store);
+    if (!mounted || requestId != _bankAccountRequestId || store.id != _store.id) {
+      return; // stale — a newer request has started, or the branch changed
+    }
+    if (live == null) {
+      return;
+    }
+    setState(() => _account = live);
   }
 
   /// The line under the store field explaining where the fixed value came from,
@@ -378,6 +405,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _storePickedByHand = true;
       _account = ShieldPayees.forStore(store).first;
     });
+    unawaited(_refreshLiveBankAccount(store));
   }
 
   /// Bills this order against [plan] and moves the serving branch — and the
@@ -394,6 +422,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _storeSource = _StoreSource.planSelection;
       _account = ShieldPayees.forStore(_store).first;
     });
+    unawaited(_refreshLiveBankAccount(_store));
   }
 
   void _chooseMethod(PaymentMethod method) {

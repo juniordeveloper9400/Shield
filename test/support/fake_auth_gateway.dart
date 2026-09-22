@@ -54,6 +54,14 @@ class FakeAuthGateway implements AuthGateway {
   @override
   void discard() => _sent = false;
 
+  /// The token [AuthService]'s backend bridge fetches after a sign-in or
+  /// restore — set from a test to exercise it, or leave null (the default)
+  /// to exercise the "nobody signed in on this gateway" no-op path.
+  String? idToken;
+
+  @override
+  Future<String?> currentIdToken() async => idToken;
+
   /// Set by [signOut] — lets a test tell "deleted outright" apart from
   /// "[AuthService.deleteAccount] fell back to a plain sign-out", since both
   /// leave [persistedUser] null the same way.

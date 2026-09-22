@@ -8,9 +8,11 @@ import { AuthThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   idTokenSchema,
+  phoneLookupSchema,
   refreshTokenSchema,
   registerMemberSchema,
   type IdTokenDto,
+  type PhoneLookupDto,
   type RefreshTokenDto,
   type RegisterMemberDto,
 } from './dto';
@@ -19,6 +21,14 @@ import type { RequestSubject } from './session.types';
 @Controller('v1/member/auth')
 export class MemberAuthController {
   constructor(private readonly auth: AuthService) {}
+
+  @Public()
+  @AuthThrottle()
+  @Post('phone-lookup')
+  @HttpCode(HttpStatus.OK)
+  async phoneLookup(@Body(new ZodValidationPipe(phoneLookupSchema)) body: PhoneLookupDto) {
+    return { exists: await this.auth.phoneExists(body.phone) };
+  }
 
   @Public()
   @AuthThrottle()

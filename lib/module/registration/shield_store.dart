@@ -113,6 +113,45 @@ class ShieldStore {
     );
   }
 
+  /// Builds a store from `backend/api`'s `GET /v1/public/catalogue/stores`
+  /// JSON (camelCase, unlike [fromRow]'s Neon SQL row). Bank fields are
+  /// deliberately left at their blank defaults — that public list never
+  /// carries them (see `catalogue.service.ts`'s own doc on `listStores`,
+  /// which used to leak every branch's account details this way); a
+  /// specific branch's live bank details come from [ShieldPayees.liveAccountFor]
+  /// instead, fetched only for the one branch an order actually needs.
+  static ShieldStore? fromJson(Map<String, dynamic> json) {
+    String str(Object? v) => (v ?? '').toString().trim();
+    double? coord(Object? v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      final text = v.toString().trim();
+      return text.isEmpty ? null : double.tryParse(text);
+    }
+
+    final code = str(json['code']);
+    final name = str(json['name']);
+    if (code.isEmpty || name.isEmpty) {
+      return null;
+    }
+    return ShieldStore(
+      id: code,
+      name: name,
+      area: str(json['area']),
+      city: str(json['city']),
+      state: str(json['state']),
+      pincode: str(json['pincode']),
+      phone: str(json['phone']),
+      hours: str(json['hours']).isEmpty
+          ? '8:00 AM – 10:00 PM'
+          : str(json['hours']),
+      latitude: coord(json['latitude']),
+      longitude: coord(json['longitude']),
+      mapsUrl: str(json['mapsUrl']),
+      offersLabCollection: json['offersLabCollection'] as bool? ?? true,
+    );
+  }
+
   bool get hasLocation => latitude != null && longitude != null;
 
   /// "Melattur, Malappuram · 679326"

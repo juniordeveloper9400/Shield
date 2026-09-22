@@ -1,21 +1,30 @@
+import '../../data/backend/backend_registration_repository.dart';
 import '../../data/neon/neon_http.dart';
 import 'registration_service.dart';
 
-/// Persists the user profile behind a completed registration to Neon
-/// (`app.users`), over the HTTP SQL endpoint.
+/// Persists the user profile behind a completed registration.
+///
+/// Tries `backend/api` first (`BackendRegistrationRepository`, `PATCH`/`GET
+/// /v1/member/me`) and falls back to the direct-Neon path below only when
+/// there is no backend session yet or the backend call itself fails — both
+/// write the identical `app.users` row, this is a resilience fallback
+/// during the migration off the compiled-in Neon credential, not two
+/// separate copies of the data. See the migration plan's own doc for why
+/// the Neon path stays in place rather than being deleted outright.
 ///
 /// [RegistrationService] stays the in-memory source of truth the UI listens to;
-/// this is the write-through. It is a no-op when the app was built without a
-/// `DATABASE_URL` (tests, or a build that left `--dart-define-from-file=.env`
-/// off — see [NeonHttp.isConfigured]), so the registration flow keeps working
-/// with or without a backend.
+/// this is the write-through. The Neon leg is a no-op when the app was built
+/// without a `DATABASE_URL` (tests, or a build that left
+/// `--dart-define-from-file=.env` off — see [NeonHttp.isConfigured]), so the
+/// registration flow keeps working with or without either backend.
 class MemberRepository {
   MemberRepository._();
 
   static final MemberRepository instance = MemberRepository._();
 
-  /// Whether a write would actually reach a database.
-  bool get isAvailable => NeonHttp.isConfigured;
+  /// Whether a write would actually reach a database — the backend or Neon.
+  bool get isAvailable =>
+      BackendRegistrationRepository.instance.isAvailable || NeonHttp.isConfigured;
 
   /// Inserts the member, or updates the existing row with the same [phone].
   ///
@@ -28,9 +37,25 @@ class MemberRepository {
   /// (`app.reward_point_transaction`, via `RewardsRepository`) owns that column
   /// and moves it on the registration bonus.
   ///
-  /// Throws if the write fails; callers decide whether that is fatal.
+  /// Throws if neither the backend nor Neon could save it; callers decide
+  /// whether that is fatal (see [RegistrationService]'s own doc — it is not).
   Future<void> upsertRegistration(Registration registration) async {
-    if (!isAvailable) {
+    final backend = BackendRegistrationRepository.instance;
+    if (backend.isAvailable) {
+      try {
+        await backend.upsertRegistration(registration);
+        NeonHttp.log('upsertRegistration: saved via backend ${registration.phone}');
+        return;
+      } catch (error) {
+        NeonHttp.log(
+          'upsertRegistration: backend failed, falling back to Neon',
+          error: error,
+        );
+        // Falls through to the direct-Neon write below.
+      }
+    }
+
+    if (!NeonHttp.isConfigured) {
       return;
     }
 
@@ -94,7 +119,19 @@ class MemberRepository {
   /// already treats a null profile as "not registered yet", so this fails
   /// safe rather than throwing.
   Future<Registration?> fetchByPhone(String phone) async {
-    if (!isAvailable) {
+    final backend = BackendRegistrationRepository.instance;
+    if (backend.isAvailable) {
+      try {
+        // A clean answer — registered or not — is trusted as-is; only a
+        // thrown failure (network, session not ready yet) falls through to
+        // the Neon read below.
+        return await backend.fetchByPhone(phone);
+      } catch (error) {
+        NeonHttp.log('fetchByPhone: backend failed, falling back to Neon', error: error);
+      }
+    }
+
+    if (!NeonHttp.isConfigured) {
       return null;
     }
     try {

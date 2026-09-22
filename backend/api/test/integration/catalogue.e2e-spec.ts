@@ -211,6 +211,96 @@ describe('Catalogue (e2e)', () => {
     );
   });
 
+  describe('public stores list', () => {
+    let memberAccessToken: string;
+
+    beforeAll(async () => {
+      firebase.register('catalogue-member-token', { uid: 'catalogue-member-uid', phoneNumber: '+919700000055' });
+      const register = await request(app.getHttpServer())
+        .post('/v1/member/auth/register')
+        .send({ idToken: 'catalogue-member-token', name: 'Catalogue Member' })
+        .expect(200);
+      memberAccessToken = register.body.accessToken;
+    });
+
+    it('never includes bank account fields, even though the row has them', async () => {
+      await db.insert(shieldStore).values({
+        code: 'SHD-PUB',
+        name: 'Public Branch',
+        area: 'A',
+        city: 'A',
+        state: 'Kerala',
+        pincode: '676001',
+        isActive: true,
+        bankAccountName: 'Sahakar 360',
+        bankAccountNumber: '1234567890',
+        bankIfsc: 'SBIN0001234',
+        bankName: 'State Bank of India',
+      });
+
+      const res = await request(app.getHttpServer()).get('/v1/public/catalogue/stores').expect(200);
+      const listed = res.body.find((s: { code: string }) => s.code === 'SHD-PUB');
+      expect(listed).toBeDefined();
+      expect(listed).not.toHaveProperty('bankAccountName');
+      expect(listed).not.toHaveProperty('bankAccountNumber');
+      expect(listed).not.toHaveProperty('bankIfsc');
+      expect(listed).not.toHaveProperty('bankName');
+    });
+
+    it("gives a single active branch's bank details by its code, to a signed-in member", async () => {
+      await db.insert(shieldStore).values({
+        code: 'SHD-BANK',
+        name: 'Bank Details Branch',
+        area: 'A',
+        city: 'A',
+        state: 'Kerala',
+        pincode: '676001',
+        isActive: true,
+        bankAccountName: 'Sahakar 360',
+        bankAccountNumber: '1234567890',
+        bankIfsc: 'SBIN0001234',
+        bankName: 'State Bank of India',
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/v1/public/catalogue/stores/SHD-BANK/bank-details')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .expect(200);
+      expect(res.body).toEqual({
+        bankAccountName: 'Sahakar 360',
+        bankAccountNumber: '1234567890',
+        bankIfsc: 'SBIN0001234',
+        bankName: 'State Bank of India',
+      });
+    });
+
+    it('rejects an unauthenticated request — code alone must not be enough to loop every branch’s bank details', async () => {
+      await request(app.getHttpServer()).get('/v1/public/catalogue/stores/SHD-BANK/bank-details').expect(401);
+    });
+
+    it('404s for an unknown code, and for an inactive branch', async () => {
+      await db.insert(shieldStore).values({
+        code: 'SHD-OFF',
+        name: 'Inactive Branch',
+        area: 'A',
+        city: 'A',
+        state: 'Kerala',
+        pincode: '676001',
+        isActive: false,
+        bankAccountNumber: '9999999999',
+      });
+
+      await request(app.getHttpServer())
+        .get('/v1/public/catalogue/stores/SHD-NOPE/bank-details')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .expect(404);
+      await request(app.getHttpServer())
+        .get('/v1/public/catalogue/stores/SHD-OFF/bank-details')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .expect(404);
+    });
+  });
+
   describe('staff store management', () => {
     let labAccessToken: string;
 

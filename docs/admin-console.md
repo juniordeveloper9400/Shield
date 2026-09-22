@@ -84,16 +84,17 @@ the **Validate** button.
 
 ### Reserved — the company's money from Health Pass activations
 
-**Reserved** (`/commission-reserve`, Super Admin only) is the company's own share of Health Pass plans. It is a ledger (`app.commission_reserve_entry`) that never touches a member's or an agent's wallet, and is not shown anywhere in the apps. Approving an activation (Health Pass plan approvals → Approve, i.e. `app.approve_wallet_card_activation`) writes up to two rows for that card, told apart by `source` (migration `0053_company_reserve_on_activation.sql`):
+**Reserved** (`/commission-reserve`, Super Admin only) is the company's own share of Health Pass plans. It is a ledger (`app.commission_reserve_entry`) that never touches a member's or an agent's wallet, and is not shown anywhere in the apps. Approving an activation (Health Pass plan approvals → Approve, i.e. `app.approve_wallet_card_activation`) writes at most one row for that card, told apart by `source` — the two are two **separate, mutually exclusive commission structures**, never both on the same card (migration `0060_separate_member_and_agent_commission.sql`, rewriting migration `0053`'s original "8% on every activation" rule):
 
 | Source | Amount | When |
 | --- | --- | --- |
-| `COMPANY_SHARE` | **8% of the loaded amount** | Every approved activation — sold by an agent or not, referred or not. |
-| `POOL_LEFTOVER` | What the agent commission pool did not pay out | Only when an approved agent sold the plan. |
+| `POOL_LEFTOVER` | What the agent's own 10% commission pool did not pay out (60% direct + 10/6/5/4/3/2% up-line overrides) | The activation was **sold by an agent** — `wallet_card.sold_by_agent_id`, or the buyer is linked in `app.agent_customer` (an agent's printed `SHD-…` code, or, since migration 0060, that same agent's own permanent Member ID). |
+| `COMPANY_SHARE` | **8% of the loaded amount** | The activation was **not** agent-sold, and the buyer has a member referrer (`users.referred_by_member_id`, or an `app.referral` edge) — the 10% pool splits 2% to the referrer's wallet and 8% here. |
+| *(nothing)* | — | Neither an agent nor a referrer — a plain walk-in. There is no commission relationship on the activation for a share to be a share of. |
 
-Nothing else about an approval changed: the member is still credited the load plus bonus, the seller and up-line still earn from the 10% pool (60% direct + 10/6/5/4/3/2% overrides), and a referring member still earns 2%. A card that is rejected, or already decided, reserves nothing, and approving twice cannot reserve twice. On a 10,000 load: 800 to Reserved for a walk-in; for an agent sale, 800 plus the pool's leftover (for example 400 for a ward agent with no up-line).
+A member's own permanent Member ID keeps working as their invite code for life, whatever role they hold when someone signs up with it: while they are a plain member it pays the 2% referrer rate above; once they are a current, approved agent, the exact same code instead counts as their direct sale and pays the agent structure — `ReferralRepository.recordSignup` (root app) and `ReferralService.applySignupCode` (`backend/api`, `shield agent_invester/`) both check whether the code's owner is currently an approved agent before deciding which one to create, so a signup is only ever routed to one of the two, never both.
 
-Migration `0053` also **backfilled** an 8% row for every activation approved before it, dated when it was reviewed, so the total covers every approved activation to date. The page shows the total, the company-share total and the pool-leftover total, and each row's source. `WalletService.approveCard` in `backend/api` mirrors the same rule. Deploy the console and backend after applying the migration — the page reads the new `source` column.
+Nothing else about an approval changed: the member is still credited the load plus bonus, and the agent-commission math itself (60% direct + up-line overrides) is untouched. A card that is rejected, or already decided, reserves nothing, and approving twice cannot reserve twice. `WalletService.approveCard` in `backend/api` mirrors the same rule. Deploy the console and backend, and apply migration `0060`, for this to take effect — until then approvals still use the flat-8%-on-everything rule migration `0053` first added.
 
 ### Lab Orders — the Lab Admin's desk
 

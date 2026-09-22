@@ -30,6 +30,14 @@ flutter build web --dart-define=SENTRY_DSN=<your DSN>
 
 or `--dart-define-from-file=.env` with `SENTRY_DSN=` set there. Leaving it out just ships with Sentry disabled. See [Sentry](sentry.md).
 
+Pass `BACKEND_API_BASE_URL` (the deployed `shield_backend` URL — public, not a secret) so the app can mint a backend-issued session alongside its existing Neon sign-in:
+
+```powershell
+flutter build web --dart-define=BACKEND_API_BASE_URL=https://shieldbackend.vercel.app --dart-define=SENTRY_DSN=<your DSN>
+```
+
+Leaving it out just leaves `BackendHttp.isConfigured` false at runtime — currently a no-op either way, since no screen reads from `backend/api` yet (foundation-only slice; see the root-app off-direct-Neon migration notes).
+
 ## Admin console hosting
 
 From `shieldweb/`:

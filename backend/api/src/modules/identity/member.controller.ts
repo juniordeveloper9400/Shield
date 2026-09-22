@@ -33,6 +33,12 @@ export class MemberController {
     return this.identity.updateProfile(Number(user.subjectId), body);
   }
 
+  @Delete('me')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async deleteMe(@CurrentUser() user: RequestSubject) {
+    await this.identity.deleteAccount(Number(user.subjectId));
+  }
+
   @Get('addresses')
   async addresses(@CurrentUser() user: RequestSubject) {
     return this.identity.listAddresses(Number(user.subjectId));

@@ -35,6 +35,28 @@ export class AuthService {
   ) {}
 
   /**
+   * Whether [phone] already has a live `app.users` row — a pre-Firebase-
+   * verification check so the client can decide "sign in" vs. "create
+   * account" UI before it ever sends an OTP (the login screen's own doc on
+   * `AuthService.hasAccount`). Deliberately not gated behind Firebase
+   * verification — that's the whole point, it runs *before* an OTP is
+   * even requested — so this is the one auth route that hands back a yes/no
+   * about phone numbers to an unauthenticated caller. `AuthThrottle` on the
+   * controller route (10/min/IP) keeps that from being a practical
+   * enumeration tool; it was already answerable, unthrottled, via the raw
+   * Neon SQL every pre-migration client ships — this route is strictly
+   * tighter than the status quo it replaces, not a new exposure.
+   */
+  async phoneExists(phone: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
+      .limit(1);
+    return !!row;
+  }
+
+  /**
    * Member login: the client already completed Firebase phone auth. We only
    * verify the resulting token and issue our own session — we do NOT create
    * app.users rows here. A token with no matching member row means the
@@ -82,14 +104,30 @@ export class AuthService {
     if (byUid) {
       memberId = byUid.id;
     } else if (phone) {
-      const [byPhone] = await this.db
-        .select()
-        .from(users)
-        .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
-        .limit(1);
+      // Deliberately not filtered to isNull(deletedAt): phone carries a
+      // UNIQUE constraint (member_phone_key), so a deleted account's row is
+      // still the one occupying that phone — an unfiltered lookup finding
+      // it and reactivating is what lets a member who deleted their account
+      // sign up again on the same number, the same reactivation
+      // upsertOnSignIn's ON CONFLICT (phone) DO UPDATE already does on the
+      // Neon-direct path. Filtering here would instead fall through to the
+      // insert below and hit that constraint as a raw, unhandled 500.
+      const [byPhone] = await this.db.select().from(users).where(eq(users.phone, phone)).limit(1);
 
       if (byPhone) {
-        await this.db.update(users).set({ firebaseUid: decoded.uid }).where(eq(users.id, byPhone.id));
+        const wasDeleted = byPhone.deletedAt !== null;
+        // A live account keeps the name it already has — signing in again
+        // must never silently rename the member. Only a reactivated deleted
+        // account, or a row with no usable name, takes the incoming one.
+        const hasUsableName = !wasDeleted && byPhone.name.trim() !== '';
+        await this.db
+          .update(users)
+          .set({
+            firebaseUid: decoded.uid,
+            deletedAt: null,
+            name: hasUsableName ? byPhone.name : name,
+          })
+          .where(eq(users.id, byPhone.id));
         memberId = byPhone.id;
       } else {
         const [created] = await this.db

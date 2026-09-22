@@ -78,10 +78,67 @@ export class CatalogueService {
   // NOTE: app.shield_store has no lat/lng columns in the live schema, so
   // "nearest to me" sorting is not implemented — see db/schema/app-catalogue.ts.
 
+  /**
+   * Deliberately not `select()` (every column): `shieldStore` also carries
+   * each branch's settlement bank account (`bankAccountName`/
+   * `bankAccountNumber`/`bankIfsc`/`bankName`) — real banking details that
+   * have no reason to be handed to an unauthenticated caller for every
+   * branch at once just to render a public store list. A member who needs
+   * to see *their own order's* branch's bank details for a manual transfer
+   * gets them from [getStoreBankDetails] instead, scoped to that one store.
+   */
   async listStores() {
     return this.cache.getOrSet('catalogue:stores', TTL.LONG, () =>
-      this.db.select().from(shieldStore).where(eq(shieldStore.isActive, true)).orderBy(asc(shieldStore.sort)),
+      this.db
+        .select({
+          id: shieldStore.id,
+          uuid: shieldStore.uuid,
+          code: shieldStore.code,
+          name: shieldStore.name,
+          area: shieldStore.area,
+          city: shieldStore.city,
+          state: shieldStore.state,
+          pincode: shieldStore.pincode,
+          phone: shieldStore.phone,
+          hours: shieldStore.hours,
+          isActive: shieldStore.isActive,
+          offersLabCollection: shieldStore.offersLabCollection,
+          latitude: shieldStore.latitude,
+          longitude: shieldStore.longitude,
+          mapsUrl: shieldStore.mapsUrl,
+          sort: shieldStore.sort,
+        })
+        .from(shieldStore)
+        .where(eq(shieldStore.isActive, true))
+        .orderBy(asc(shieldStore.sort)),
     );
+  }
+
+  /**
+   * One active branch's settlement bank account, by its stable `code` — the
+   * manual-bank-transfer details checkout shows for the specific branch an
+   * order is with. Scoped to exactly one store rather than [listStores]'s
+   * bulk read, which deliberately excludes these fields — see that
+   * method's own doc. 404s for an unknown or inactive code rather than a
+   * silent empty object, so the caller can tell "no such branch" apart
+   * from "this branch just hasn't filled its bank details in yet" (blank
+   * strings, same as the console leaves them until filled in).
+   */
+  async getStoreBankDetails(code: string) {
+    const [store] = await this.db
+      .select({
+        bankAccountName: shieldStore.bankAccountName,
+        bankAccountNumber: shieldStore.bankAccountNumber,
+        bankIfsc: shieldStore.bankIfsc,
+        bankName: shieldStore.bankName,
+      })
+      .from(shieldStore)
+      .where(and(eq(shieldStore.code, code), eq(shieldStore.isActive, true)))
+      .limit(1);
+    if (!store) {
+      throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'No active branch with that code' } });
+    }
+    return store;
   }
 
   /**

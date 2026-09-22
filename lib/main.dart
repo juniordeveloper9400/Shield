@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
+import 'data/backend/backend_http.dart';
 import 'data/neon/neon_http.dart';
 import 'firebase_options.dart';
 import 'module/auth/auth_service.dart';
@@ -59,12 +60,21 @@ Future<void> main() async {
 
   // Bring back a member who has signed in before, so they land in the app
   // rather than on the login screen. Best-effort — a failure here must not
-  // hold up launch.
+  // hold up launch. As of the backend/api foundation slice this also tries
+  // to restore (or freshly bridge) a backend-issued session alongside the
+  // existing Neon one — see AuthService.restoreSession/_afterSignIn's own
+  // docs. No screen reads from backend/api yet, so this is currently inert
+  // beyond holding a token in memory.
   try {
     await AuthService.instance.restoreSession();
   } catch (error) {
     debugPrint('restoreSession failed — starting signed out: $error');
   }
+
+  // Keep backend/api's Vercel functions and Neon database from suspending
+  // while this app is open — see BackendHttp.keepWarm's own doc for why.
+  // No-op today when BACKEND_API_BASE_URL isn't compiled in.
+  BackendHttp.instance.keepWarm();
 
   // If that restored a member, find out straight away whether the admin
   // console has since made them an agent or investor — those personas are sent

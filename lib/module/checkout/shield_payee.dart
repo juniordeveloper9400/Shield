@@ -1,3 +1,5 @@
+import '../../data/backend/backend_store_repository.dart';
+import '../../data/neon/store_repository.dart';
 import '../registration/shield_store.dart';
 
 /// The bank account a store admin has published for manual transfers.
@@ -132,7 +134,10 @@ abstract final class ShieldPayees {
   static List<StoreBankAccount> forStore(ShieldStore store) {
     // A branch loaded from the database carries its own published account —
     // prefer that over the bundled map so an admin-added branch is payable
-    // straight away.
+    // straight away. Only ever true for a Neon-sourced [ShieldStore]: a
+    // backend-sourced one never carries bank fields (see
+    // [BackendStoreRepository]'s own doc) — [liveAccountFor] is what
+    // refines this case instead.
     if (store.bankAccountNumber.isNotEmpty) {
       return [
         StoreBankAccount(
@@ -148,5 +153,47 @@ abstract final class ShieldPayees {
       ];
     }
     return _byStore[store.id] ?? [melatturPrimary];
+  }
+
+  /// [forStore]'s live refinement: fetches [store]'s actual bank details —
+  /// backend first, then direct-Neon — and returns the account to show once
+  /// one of them answers, or null when neither could (so the caller keeps
+  /// showing whatever [forStore] already returned instantly).
+  ///
+  /// Exists because `StoreCatalog`'s branch list stopped carrying bank
+  /// fields once it started preferring `backend/api` (a public bulk
+  /// bank-details dump was a real leak — see `catalogue.service.ts`'s own
+  /// doc on `listStores`) — without this, any branch not already in
+  /// [_byStore] (every branch added through the console after this map was
+  /// written) would silently show [melatturPrimary]'s account instead of
+  /// its own. Checkout calls this as a best-effort refinement alongside
+  /// [forStore], never in place of it — see `checkout_screen.dart`'s own
+  /// `_refreshLiveBankAccount`.
+  static Future<StoreBankAccount?> liveAccountFor(ShieldStore store) async {
+    Map<String, String>? details;
+    final backend = BackendStoreRepository.instance;
+    if (backend.canFetchBankDetails) {
+      details = await backend.fetchBankDetails(store.id);
+    }
+    details ??= await StoreRepository.instance.fetchBankDetails(store.id);
+    if (details == null) {
+      return null;
+    }
+    final number = details['bankAccountNumber'] ?? '';
+    if (number.isEmpty) {
+      // A genuine "no bank details on file yet" — not something to prefer
+      // over whatever forStore already found (its own bundled fallback is
+      // more useful than a known-blank live answer).
+      return null;
+    }
+    final accountName = details['bankAccountName'] ?? '';
+    return StoreBankAccount(
+      id: '${store.id.toLowerCase()}-live',
+      accountName: accountName.isEmpty ? store.name : accountName,
+      accountNumber: number,
+      ifsc: details['bankIfsc'] ?? '',
+      bank: details['bankName'] ?? '',
+      branch: store.area,
+    );
   }
 }

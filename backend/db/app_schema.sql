@@ -1149,41 +1149,175 @@ CREATE TABLE app.commission_reserve_entry (
 );
 CREATE INDEX commission_reserve_entry_card_idx ON app.commission_reserve_entry(wallet_card_id);
 
+-- migration 0043: pays whoever's direct-referral count just crossed a
+-- app.referral_level rung its points, guarded by users.referral_level_awarded
+-- so the same rung is never paid twice.
+CREATE OR REPLACE FUNCTION app.award_referral_level_points(p_inviter_id bigint)
+RETURNS void AS $$
+DECLARE
+    v_direct_referrals integer;
+    v_already_awarded  integer;
+    v_new_points       integer;
+    v_new_level        integer;
+BEGIN
+    SELECT COUNT(*) INTO v_direct_referrals
+    FROM app.referral
+    WHERE inviter_member_id = p_inviter_id
+      AND status IN ('TRANSACTED', 'PLAN_ACTIVATED');
+
+    SELECT COALESCE(referral_level_awarded, 0) INTO v_already_awarded
+    FROM app.users WHERE id = p_inviter_id;
+
+    SELECT COALESCE(SUM(points), 0), COALESCE(MAX(level), v_already_awarded)
+      INTO v_new_points, v_new_level
+    FROM app.referral_level
+    WHERE level > v_already_awarded AND referrals_required <= v_direct_referrals;
+
+    IF v_new_points > 0 THEN
+        INSERT INTO app.reward_point_transaction (member_id, points, reason, note)
+        VALUES (p_inviter_id, v_new_points, 'REFERRAL_LEVEL', 'Referral ladder — level ' || v_new_level);
+
+        UPDATE app.users
+           SET reward_points = reward_points + v_new_points,
+               referral_level_awarded = v_new_level
+         WHERE id = p_inviter_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+-- migration 0054: pays the member-to-member referral commission (2% of the
+-- load) into the referrer's wallet, exactly once per card — idempotent via
+-- the REFERRAL_EARNINGS ledger line itself plus an advisory lock, so every
+-- approval path (this function below, a trigger, or a later catch-up once a
+-- code is applied after the fact) can call it safely.
+CREATE OR REPLACE FUNCTION app.pay_referral_commission(p_card_id bigint, p_referrer_id bigint)
+RETURNS numeric AS $$
+DECLARE
+    v_wallet_id          bigint;
+    v_amount             numeric(12,2);
+    v_status             app.approval_status;
+    v_member_id          bigint;
+    v_commission         numeric(12,2);
+    v_referrer_wallet_id bigint;
+    v_referral_id        bigint;
+BEGIN
+    SELECT c.wallet_id, c.amount, c.status, w.member_id
+      INTO v_wallet_id, v_amount, v_status, v_member_id
+    FROM app.wallet_card c
+    JOIN app.wallet w ON w.id = c.wallet_id
+    WHERE c.id = p_card_id;
+
+    IF NOT FOUND OR v_status <> 'APPROVED' OR p_referrer_id IS NULL OR p_referrer_id = v_member_id THEN
+        RETURN 0;
+    END IF;
+
+    PERFORM pg_advisory_xact_lock(hashtextextended('referral_commission:' || p_card_id::text, 0));
+
+    IF EXISTS (
+        SELECT 1
+        FROM app.wallet_entry e
+        JOIN app.wallet rw ON rw.id = e.wallet_id
+        WHERE e.kind = 'REFERRAL_EARNINGS'
+          AND e.wallet_card_id = p_card_id
+          AND rw.member_id = p_referrer_id
+    ) THEN
+        RETURN 0; -- already paid
+    END IF;
+
+    v_commission := ROUND(v_amount * 0.02, 2);
+    IF v_commission <= 0 THEN
+        RETURN 0;
+    END IF;
+
+    SELECT id INTO v_referrer_wallet_id FROM app.wallet WHERE member_id = p_referrer_id;
+    IF v_referrer_wallet_id IS NULL THEN
+        INSERT INTO app.wallet (member_id) VALUES (p_referrer_id) RETURNING id INTO v_referrer_wallet_id;
+    END IF;
+
+    INSERT INTO app.wallet_entry (wallet_id, kind, label, amount, occurred_on, wallet_card_id)
+    VALUES (v_referrer_wallet_id, 'REFERRAL_EARNINGS', 'Referral commission', v_commission, current_date, p_card_id);
+
+    UPDATE app.wallet
+       SET balance = balance + v_commission, updated_at = now()
+     WHERE id = v_referrer_wallet_id;
+
+    SELECT id INTO v_referral_id
+    FROM app.referral
+    WHERE inviter_member_id = p_referrer_id AND invitee_member_id = v_member_id
+    ORDER BY id DESC
+    LIMIT 1;
+
+    IF v_referral_id IS NOT NULL THEN
+        UPDATE app.referral
+           SET status = 'PLAN_ACTIVATED',
+               plan_amount = v_amount,
+               commission_amount = commission_amount + v_commission,
+               transacted_at = COALESCE(transacted_at, now()),
+               plan_activated_at = now()
+         WHERE id = v_referral_id;
+    ELSE
+        INSERT INTO app.referral (inviter_member_id, invitee_member_id, status, plan_amount, commission_amount, transacted_at, plan_activated_at)
+        VALUES (p_referrer_id, v_member_id, 'PLAN_ACTIVATED', v_amount, v_commission, now(), now());
+    END IF;
+
+    PERFORM app.award_referral_level_points(p_referrer_id);
+
+    RETURN v_commission;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Approves a pending/on-hold Health Pass activation and, in the one atomic
 -- call, credits the ledger, the wallet balance, the pre-existing
--- agent_customer_plan bookkeeping, AND the commission split below — see
--- migration 0033's own doc for why this had to be a function rather than
--- shieldweb's usual plain-CTE style (its Neon driver is one HTTP call per
--- statement, with no cross-statement transaction), and migration 0036-0039's
--- own doc for the decaying-chain-walk split logic itself:
+-- agent_customer_plan bookkeeping, AND one of two separate commission
+-- structures below — see migration 0033's own doc for why this had to be a
+-- function rather than shieldweb's usual plain-CTE style (its Neon driver is
+-- one HTTP call per statement, with no cross-statement transaction), and
+-- migration 0036-0039's own doc for the decaying-chain-walk split logic:
 --   60% of the pool to the seller; then walking the seller's own real
 --   parent_id chain, 10% to whoever is 1 hop up, 6% to whoever is 2 hops
 --   up, 5% to whoever is 3 hops up, 4% to whoever is 4 hops up, 3% to
 --   whoever is 5 hops up, 2% to whoever is 6 hops up (each only if that
 --   specific ancestor is a real APPROVED agent); whatever is left over is
---   reserved. This covers every level down to WARD, the deepest in
---   app.agent_level — nothing left to extend unless a new level is added.
+--   reserved (source POOL_LEFTOVER). This covers every level down to WARD,
+--   the deepest in app.agent_level — nothing left to extend unless a new
+--   level is added.
+--
+-- migration 0060: this is one of two separate, mutually exclusive commission
+-- structures, never both on the same activation:
+--   agent-sold      (v_seller_level set)  -> the split above; no flat share.
+--   member-referred  (v_referrer_id set)   -> 2% of the load to the referrer
+--                                             (app.pay_referral_commission)
+--                                             and 8% reserved (COMPANY_SHARE).
+--   neither                                -> nothing reserved.
+-- A signup through an agent's own code — their printed SHD-… code, or, since
+-- this migration, their own permanent Member ID once they are a current
+-- approved agent — only ever creates the agent_customer link, never a
+-- referred_by_member_id/app.referral edge (see ReferralRepository.recordSignup
+-- and ReferralService.applySignupCode), so the two conditions below are
+-- already exclusive by construction, not by a check here.
 CREATE OR REPLACE FUNCTION app.approve_wallet_card_activation(p_card_id bigint)
 RETURNS TABLE(approved_id bigint) AS $$
 DECLARE
-    v_wallet_id        bigint;
-    v_member_id        bigint;
-    v_tier_id          bigint;
-    v_amount           numeric(12,2);
-    v_bonus            numeric(12,2);
-    v_tier_name        text;
-    v_sold_by_agent_id bigint;
-    v_seller_id        bigint;
-    v_seller_level     app.agent_level;
-    v_pool             numeric(12,2);
-    v_direct_share     numeric(12,2);
-    v_distributed      numeric(12,2) := 0;
-    v_ancestor_id      bigint;
-    v_credit_id        bigint;
-    v_hop_share        numeric(12,2);
-    v_hop_rates        numeric[] := ARRAY[0.10, 0.06, 0.05, 0.04, 0.03, 0.02];
-    v_hop              int;
-    v_reserve          numeric(12,2);
+    v_wallet_id          bigint;
+    v_member_id          bigint;
+    v_tier_id            bigint;
+    v_amount             numeric(12,2);
+    v_bonus              numeric(12,2);
+    v_tier_name          text;
+    v_sold_by_agent_id   bigint;
+    v_seller_id          bigint;
+    v_seller_level       app.agent_level;
+    v_pool               numeric(12,2);
+    v_direct_share       numeric(12,2);
+    v_distributed        numeric(12,2) := 0;
+    v_ancestor_id        bigint;
+    v_credit_id          bigint;
+    v_hop_share          numeric(12,2);
+    v_hop_rates          numeric[] := ARRAY[0.10, 0.06, 0.05, 0.04, 0.03, 0.02];
+    v_hop                int;
+    v_reserve            numeric(12,2);
+    v_referrer_id        bigint;
+    v_company_share      numeric(12,2);
 BEGIN
     UPDATE app.wallet_card
        SET status = 'APPROVED', reviewed_at = now()
@@ -1228,6 +1362,14 @@ BEGIN
         WHERE id = v_seller_id AND approval_status = 'APPROVED';
     END IF;
 
+    SELECT referred_by_member_id INTO v_referrer_id FROM app.users WHERE id = v_member_id;
+    IF v_referrer_id IS NULL THEN
+        SELECT inviter_member_id INTO v_referrer_id
+        FROM app.referral
+        WHERE invitee_member_id = v_member_id
+        ORDER BY id DESC LIMIT 1;
+    END IF;
+
     IF v_seller_level IS NOT NULL THEN
         v_pool := v_amount * 0.10;
         v_direct_share := ROUND(v_pool * 0.60, 2);
@@ -1260,12 +1402,18 @@ BEGIN
             INSERT INTO app.commission_reserve_entry (wallet_card_id, amount, source)
             VALUES (p_card_id, v_reserve, 'POOL_LEFTOVER');
         END IF;
+
+    ELSIF v_referrer_id IS NOT NULL THEN
+        v_company_share := ROUND(v_amount * 0.08, 2);
+        IF v_company_share > 0 THEN
+            INSERT INTO app.commission_reserve_entry (wallet_card_id, amount, source)
+            VALUES (p_card_id, v_company_share, 'COMPANY_SHARE');
+        END IF;
     END IF;
 
-    -- migration 0053: the company's own 8% of the load, on every activation.
-    INSERT INTO app.commission_reserve_entry (wallet_card_id, amount, source)
-    SELECT p_card_id, ROUND(v_amount * 0.08, 2), 'COMPANY_SHARE'
-     WHERE ROUND(v_amount * 0.08, 2) > 0;
+    IF v_referrer_id IS NOT NULL THEN
+        PERFORM app.pay_referral_commission(p_card_id, v_referrer_id);
+    END IF;
 
     RETURN QUERY SELECT p_card_id;
 END;

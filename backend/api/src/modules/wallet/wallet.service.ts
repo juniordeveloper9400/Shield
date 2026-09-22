@@ -8,6 +8,7 @@ import {
   commissionReserveEntry,
   membershipTier,
   membershipTierLoad,
+  referral,
   shieldStore,
   users,
   wallet,
@@ -92,13 +93,19 @@ const HOP_OVERRIDE_RATES = [0.1, 0.06, 0.05, 0.04, 0.03, 0.02];
 // The rate itself lives in referral.service.ts (REFERRAL_COMMISSION_RATE), where the payment is made.
 
 /**
- * The company's own share of every approved Health Pass activation: this
- * fraction of the loaded amount goes into the Reserved ledger
- * ([commissionReserveEntry], `source = 'COMPANY_SHARE'`) whoever sold the plan
- * and whether or not the member was referred. Company money — never credited
- * to a member or an agent. Separate from (and in addition to) the leftover of
- * the agent pool, which exists only for agent sales. Mirrors the 8% step of
- * `app.approve_wallet_card_activation` (migration 0053).
+ * The company's own share of a plain member-to-member referral's Health Pass
+ * activation only: this fraction of the loaded amount goes into the Reserved
+ * ledger ([commissionReserveEntry], `source = 'COMPANY_SHARE'`) alongside the
+ * 2% the referrer's own wallet is paid ([ReferralService.REFERRAL_COMMISSION_RATE])
+ * — the two together account for the whole 10% pool. Company money — never
+ * credited to a member or an agent.
+ *
+ * Never applied to an agent-sold activation, which reserves only the unspent
+ * part of the agent's own 10% pool instead (`POOL_LEFTOVER`, computed above),
+ * nor to one with neither an agent nor a referrer, which reserves nothing —
+ * see `approveCard`'s own doc on why these two structures are kept separate.
+ * Mirrors `app.approve_wallet_card_activation`'s own ELSIF branch (migration
+ * 0060, rewriting the unconditional version migration 0053 first added).
  */
 const COMPANY_RESERVE_RATE = 0.08;
 
@@ -362,28 +369,52 @@ export class WalletService {
         }
       }
 
-      // The company's own 8% of the load — on every activation, sold by an
-      // agent or not, referred or not (see COMPANY_RESERVE_RATE).
-      const companyShare = round2(amount * COMPANY_RESERVE_RATE);
-      if (companyShare > 0) {
-        await tx
-          .insert(commissionReserveEntry)
-          .values({ walletCardId: card.id, amount: companyShare.toString(), source: 'COMPANY_SHARE' });
+      // Two separate, mutually exclusive commission structures — never both
+      // on the same activation (see COMPANY_RESERVE_RATE's own doc). A
+      // signup through an agent's own code — their printed SHD-… code, or
+      // their own permanent Member ID once they are a current approved
+      // agent — only ever creates the agentCustomer link above, never a
+      // referredByMemberId/referral edge (ReferralService.applySignupCode),
+      // so `sellerId == null` and "referred" are already exclusive by
+      // construction, not by a check here.
+      //
+      // Resolved the same way app.approve_wallet_card_activation resolves
+      // v_referrer_id: the direct column first, falling back to the most
+      // recent app.referral edge (a code applied after this member already
+      // had one recorded some other way).
+      const [member] = await tx.select().from(users).where(eq(users.id, currentWallet.memberId)).limit(1);
+      let referrerId = member?.referredByMemberId ?? null;
+      if (referrerId == null) {
+        const [edge] = await tx
+          .select({ inviterMemberId: referral.inviterMemberId })
+          .from(referral)
+          .where(eq(referral.inviteeMemberId, currentWallet.memberId))
+          .orderBy(desc(referral.id))
+          .limit(1);
+        referrerId = edge?.inviterMemberId ?? null;
       }
 
-      // Member-to-member referral commission — every plan this member
-      // activates, not just their first, pays whoever referred them (if
-      // anyone did) this share of the load. Independent of the agent
-      // commission above: a referral and a direct sale are different
-      // relationships to the same card, and both are owed together.
-      const [member] = await tx.select().from(users).where(eq(users.id, currentWallet.memberId)).limit(1);
-      if (member?.referredByMemberId != null) {
+      if (sellerId == null && referrerId != null) {
+        // Member-to-member referral: 8% reserved — the load's 10% pool minus
+        // the 2% app.pay_referral_commission pays the referrer with, below.
+        const companyShare = round2(amount * COMPANY_RESERVE_RATE);
+        if (companyShare > 0) {
+          await tx
+            .insert(commissionReserveEntry)
+            .values({ walletCardId: card.id, amount: companyShare.toString(), source: 'COMPANY_SHARE' });
+        }
+      }
+      // An agent-sold activation already reserved its own leftover above, and
+      // one with neither an agent nor a referrer reserves nothing — there is
+      // no commission relationship on it for a share to be a share of.
+
+      if (referrerId != null) {
         // Idempotent: the database trigger normally pays this at the moment the
         // card flips to APPROVED; then this finds the ledger line and does nothing.
         await this.referrals.payPlanCommission(tx, {
           cardId: card.id,
           planAmount: amount,
-          referrerId: member.referredByMemberId,
+          referrerId,
           inviteeId: currentWallet.memberId,
         });
       }

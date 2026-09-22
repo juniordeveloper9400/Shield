@@ -35,6 +35,25 @@ describe('Referral attribution and activation accounting', () => {
     expect(await referrals.applySignupCode(other.id, { code: 'SAHAKAR-7891' })).toEqual({ linked: 'none' });
   });
 
+  it('links a direct sale through an agent\'s own permanent Member ID, not just their printed SHD-… code', async () => {
+    const [agentMember] = await db.insert(users).values({ name: 'Ravi', phone: '9000010005', referralCode: 'SAHAKAR-6001' }).returning();
+    const [ravi] = await db
+      .insert(agent)
+      .values({ memberId: agentMember.id, code: 'SHD-WRD-RAVI', name: 'Ravi', phone: '9000010005', level: 'WARD', approvalStatus: 'APPROVED' })
+      .returning();
+    const [buyer] = await db.insert(users).values({ name: 'Buyer', phone: '9000010006' }).returning();
+
+    // Ravi shares his own permanent Member ID, not his separate agent code.
+    expect(await referrals.applySignupCode(buyer.id, { code: agentMember.referralCode! })).toEqual({ linked: 'agent' });
+
+    const [link] = await db.select().from(agentCustomer).where(eq(agentCustomer.memberId, buyer.id));
+    expect(link.agentId).toBe(ravi.id);
+    // Never also a plain member-referral edge for the same signup.
+    expect(await db.select().from(referral)).toHaveLength(0);
+    const [buyerAfter] = await db.select().from(users).where(eq(users.id, buyer.id));
+    expect(buyerAfter.referredByMemberId).toBeNull();
+  });
+
   it('still accepts a Member ID shared before the rename (SHIELD-####) as the same code', async () => {
     const { inviter, invitee } = await members();
     expect(await referrals.applySignupCode(invitee.id, { code: 'SHIELD-7891' })).toEqual({ linked: 'member' });
@@ -42,8 +61,13 @@ describe('Referral attribution and activation accounting', () => {
     expect(edge.inviterMemberId).toBe(inviter.id);
   });
 
-  it('pays the agent pool, 2% to the referrer and the company 8% on every activation, never double approval or duplicate levels', async () => {
+  it('pays the agent pool and 2% to the referrer as two separate relationships, with no company share on an agent sale, never double approval or duplicate levels', async () => {
     const { inviter, invitee, seller } = await members();
+    // This member is both referred by `inviter` (a plain member) AND sold to
+    // directly by `seller` (an agent) — two independent relationships that
+    // can genuinely coexist (a referral applied at signup, a different
+    // agent's code typed at checkout). Both are honoured; only the 8%
+    // company-share step is agent-vs-referral exclusive — see migration 0060.
     await referrals.applySignupCode(invitee.id, { code: inviter.referralCode! });
     const [tier] = await db.insert(membershipTier).values({ kind: 'SILVER', name: 'Silver', bin: '1234', bonusRate: '0.1', validityMonths: 12 }).returning();
     const [account] = await db.insert(wallet).values({ memberId: invitee.id }).returning();
@@ -55,12 +79,12 @@ describe('Referral attribution and activation accounting', () => {
     const [earned] = await db.select().from(wallet).where(eq(wallet.memberId, inviter.id));
     expect(Number(earned.balance)).toBe(400);
     const reserves = await db.select().from(commissionReserveEntry);
-    // Each approval leaves the unspent 400 of the agent pool, then the company's own 8% (800).
+    // Each approval leaves only the unspent 400 of the agent pool — no flat
+    // 8% company share on top: this activation was agent-sold, not a plain
+    // member referral, so it uses the agent's own structure exclusively.
     expect(reserves.map((r) => [r.source, Number(r.amount)])).toEqual([
       ['POOL_LEFTOVER', 400],
-      ['COMPANY_SHARE', 800],
       ['POOL_LEFTOVER', 400],
-      ['COMPANY_SHARE', 800],
     ]);
     // The seller (a WARD agent with no upline) keeps 60% of the 10% pool: 600 a plan.
     const [agentAfter] = await db.select().from(agent).where(eq(agent.id, seller.id));
@@ -72,7 +96,7 @@ describe('Referral attribution and activation accounting', () => {
     expect(await db.select().from(walletEntry).where(eq(walletEntry.kind, 'REFERRAL_EARNINGS'))).toHaveLength(2);
   });
 
-  it('puts 8% of every activation into the company reserve even when no agent sold it and nobody referred the member', async () => {
+  it('reserves nothing for a walk-in activation with no agent and no referrer', async () => {
     const [buyer] = await db.insert(users).values({ name: 'Walk-in', phone: '9000010009' }).returning();
     const [tier] = await db.insert(membershipTier).values({ kind: 'GOLD', name: 'Gold', bin: '5678', bonusRate: '0.1', validityMonths: 12 }).returning();
     const [account] = await db.insert(wallet).values({ memberId: buyer.id }).returning();
@@ -83,12 +107,46 @@ describe('Referral attribution and activation accounting', () => {
 
     await wallets.approveCard(card.id);
 
+    // No agent sold it and nobody referred this buyer — there is no
+    // commission relationship on the activation for a reserve share to be a
+    // share of (migration 0060; before it, this used to reserve a flat 8%).
     const reserves = await db.select().from(commissionReserveEntry);
-    expect(reserves.map((r) => [r.source, Number(r.amount), r.walletCardId])).toEqual([['COMPANY_SHARE', 2000, card.id]]);
-    // Company money only: the member is credited the load and bonus, nothing else moves.
+    expect(reserves).toEqual([]);
     const [after] = await db.select().from(wallet).where(eq(wallet.id, account.id));
     expect(Number(after.balance)).toBe(27500);
     expect(await db.select().from(walletEntry).where(eq(walletEntry.kind, 'REFERRAL_EARNINGS'))).toHaveLength(0);
+  });
+
+  it('reserves the company 8% for a plain member referral, alongside the referrer\'s own 2%', async () => {
+    const { inviter, invitee } = await members();
+    await referrals.applySignupCode(invitee.id, { code: inviter.referralCode! });
+    const [tier] = await db.insert(membershipTier).values({ kind: 'SILVER', name: 'Silver', bin: '1234', bonusRate: '0.1', validityMonths: 12 }).returning();
+    const [account] = await db.insert(wallet).values({ memberId: invitee.id }).returning();
+    const [card] = await db
+      .insert(walletCard)
+      .values({
+        walletId: account.id,
+        tierId: tier.id,
+        amount: '10000',
+        bonus: '1000',
+        status: 'PENDING',
+        issuedOn: '2026-09-20',
+        rechargedOn: '2026-09-20',
+        expiresOn: '2027-09-20',
+        verifiedReference: 'UTR-TEST',
+        receivedOn: '2026-09-20',
+        receiptVerified: true,
+        receivedAmount: '10000',
+      })
+      .returning();
+
+    await wallets.approveCard(card.id);
+
+    // 10% pool splits 2% to the referrer + 8% reserved — no agent involved.
+    const reserves = await db.select().from(commissionReserveEntry);
+    expect(reserves.map((r) => [r.source, Number(r.amount)])).toEqual([['COMPANY_SHARE', 800]]);
+    const [referrerWallet] = await db.select().from(wallet).where(eq(wallet.memberId, inviter.id));
+    expect(Number(referrerWallet.balance)).toBe(200);
   });
 
   it('a card that is refused or already decided reserves nothing', async () => {

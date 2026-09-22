@@ -27,11 +27,19 @@ class AgentCustomerRepository {
   bool get isAvailable => NeonHttp.isConfigured;
 
   /// Links [memberPhone] to the agent whose printed code (`SHD-WRD-004`, …)
-  /// is [code] — a no-op (returns `false`, writes nothing) when [code] does
-  /// not resolve to an *approved* agent, or the phone has no `app.users` row
-  /// yet. Safe to call unconditionally alongside the ordinary member-referral
-  /// attempt: an agent code and a member referral code (`SAHAKAR-0000`) never
-  /// collide, and `ON CONFLICT DO NOTHING` (migration 0026's unique
+  /// — or whose own *permanent* Member ID (`SAHAKAR-0000`), once they are a
+  /// current, approved agent — is [code]. A no-op (returns `false`, writes
+  /// nothing) when [code] does not resolve to an *approved* agent either way,
+  /// or the phone has no `app.users` row yet.
+  ///
+  /// The permanent-ID match is what lets a member who becomes an agent keep
+  /// sharing the one ID they always had — nobody has to learn or switch to a
+  /// separate agent code for a referral through it to count as a direct sale
+  /// from then on. Safe to call unconditionally alongside the ordinary
+  /// member-referral attempt: [ReferralRepository.recordSignup] checks the
+  /// same "is this code's owner currently an approved agent" question and
+  /// skips creating a referral edge when it is, so the two never both apply
+  /// to the same signup. `ON CONFLICT DO NOTHING` (migration 0026's unique
   /// constraint) makes a repeat call for an already-linked member harmless.
   Future<bool> linkCustomer({
     required String code,
@@ -46,8 +54,11 @@ class AgentCustomerRepository {
       final inserted = await NeonHttp.instance.query(
         r'''
           WITH agent_row AS (
-            SELECT id FROM app.agent
-            WHERE code = $1 AND approval_status = 'APPROVED'
+            SELECT a.id
+            FROM app.agent a
+            LEFT JOIN app.users u ON u.id = a.member_id
+            WHERE a.approval_status = 'APPROVED'
+              AND ($1 = a.code OR (u.referral_code IS NOT NULL AND $1 = u.referral_code))
             LIMIT 1
           ),
           member_row AS (

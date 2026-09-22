@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, desc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
@@ -397,10 +397,22 @@ export class ReferralService {
       return { linked: 'none' };
     }
 
+    // Codes shared before the rename read `SHIELD-1234`; migration 0051 moved
+    // every stored one to `SAHAKAR-1234`, so an old message still resolves.
+    const memberCode = code.replace(LEGACY_MEMBER_CODE_PREFIX, MEMBER_CODE_PREFIX);
+
+    // A person's own permanent Member ID (`SAHAKAR-####`) works for a direct
+    // sale too, once they are a current, approved agent — so sharing it still
+    // counts once they become one, with no separate SHD-… code to learn or
+    // switch to. Matches whichever is true: the typed code IS an agent's own
+    // code, or it is a member's permanent code and that member currently
+    // holds an approved agent row. Either way this resolves to the *same*
+    // agent row the rest of this branch already expects.
     const [asAgent] = await this.db
       .select({ id: agent.id, memberId: agent.memberId })
       .from(agent)
-      .where(and(eq(agent.code, code), eq(agent.approvalStatus, 'APPROVED')))
+      .leftJoin(users, eq(users.id, agent.memberId))
+      .where(and(eq(agent.approvalStatus, 'APPROVED'), or(eq(agent.code, code), eq(users.referralCode, memberCode))))
       .limit(1);
 
     // An agent typing their own code (their own account, not a prospect's)
@@ -425,9 +437,9 @@ export class ReferralService {
       return { linked: 'agent' };
     }
 
-    // Codes shared before the rename read `SHIELD-1234`; migration 0051 moved
-    // every stored one to `SAHAKAR-1234`, so an old message still resolves.
-    const memberCode = code.replace(LEGACY_MEMBER_CODE_PREFIX, MEMBER_CODE_PREFIX);
+    // Falls through here only when the code matched no agent (current or by
+    // permanent ID) above — so this member's own referral_code, if it's
+    // *this* code, only ever pays the plain 2% member rate, never both.
     const [asMember] = await this.db.select({ id: users.id }).from(users).where(eq(users.referralCode, memberCode)).limit(1);
 
     if (asMember && asMember.id !== memberId) {

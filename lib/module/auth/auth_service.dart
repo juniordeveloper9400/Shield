@@ -3,9 +3,25 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 
+import '../../data/backend/backend_member_repository.dart';
+import '../../data/backend/backend_session.dart';
 import '../../data/neon/member_repository.dart';
 import '../registration/registration_service.dart';
 import 'otp_send_throttle.dart';
+
+/// The production default for [AuthService._phoneExists]: the backend's
+/// throttled phone-lookup first (see [BackendMemberRepository.phoneExists]'s
+/// own doc), falling back to the direct Neon read only when the backend
+/// itself could not answer — never when it cleanly answered `false`. A
+/// top-level function, not a method, so it can be torn off as a field
+/// default before [AuthService]'s constructor body runs.
+Future<bool?> _phoneExistsBackendFirst(String phone) async {
+  final fromBackend = await BackendMemberRepository.instance.phoneExists(phone);
+  if (fromBackend != null) {
+    return fromBackend;
+  }
+  return MemberRepository.instance.phoneExists(phone);
+}
 
 /// A signed-in member.
 ///
@@ -207,8 +223,10 @@ class AuthService {
   }
 
   /// Persists the freshly signed-in user: writes the name onto the Firebase
-  /// profile so the next launch has it, and records the account in the
-  /// `app.users` table. Both are best-effort and never block the sign-in.
+  /// profile so the next launch has it, records the account in the
+  /// `app.users` table, and bridges into a backend-issued session for
+  /// whatever backend/api-backed screens exist. All three are best-effort
+  /// and never block the sign-in.
   void _afterSignIn(AuthUser user) {
     _freshSignIn = user;
     // Signed in — clear the hourly send cap so a later sign-in starts fresh.
@@ -221,6 +239,31 @@ class AuthService {
         phone: user.phone,
       ),
     );
+    unawaited(_bridgeToBackend(user));
+  }
+
+  /// Exchanges the Firebase ID token for a backend session — see
+  /// `BackendSession.signInWithFirebaseToken`. A missing/expired token or an
+  /// unreachable backend just leaves the backend session unset; it never
+  /// affects the Firebase+Neon sign-in this app already completed. This is
+  /// foundation only — see the root-app migration plan — no screen reads
+  /// `BackendSession`/`BackendHttp` yet, so there is nothing else to re-run
+  /// on success here (contrast the agent app's own `_bridgeToBackend`,
+  /// which re-triggers persona/registration/wallet reloads that don't have
+  /// an equivalent in this app yet).
+  Future<void> _bridgeToBackend(AuthUser user) async {
+    try {
+      final idToken = await _activeGateway.currentIdToken();
+      if (idToken == null) {
+        return;
+      }
+      await BackendSession.instance.signInWithFirebaseToken(
+        idToken,
+        name: user.name,
+      );
+    } catch (error) {
+      debugPrint('_bridgeToBackend failed: $error');
+    }
   }
 
   /// Restores a persisted sign-in at launch, so a member who has signed in
@@ -263,11 +306,26 @@ class AuthService {
           '';
     }
 
-    currentUser.value = AuthUser(
+    final user = AuthUser(
       name: name.isEmpty ? 'Member' : name,
       phone: restored.phone,
     );
+    currentUser.value = user;
     unawaited(MemberRepository.instance.touchLogin(restored.phone));
+    unawaited(_restoreOrBridgeBackend(user));
+  }
+
+  /// Restores a persisted backend session, or — when there is none to
+  /// restore (this device has never successfully bridged to backend/api
+  /// before, e.g. it was unreachable at the time this member last signed
+  /// in) — re-exchanges a fresh Firebase ID token instead. Without this
+  /// fallback, a member whose backend session never got established would
+  /// stay backend-signed-out until they explicitly signed out and back in.
+  Future<void> _restoreOrBridgeBackend(AuthUser user) async {
+    final restored = await BackendSession.instance.restore();
+    if (!restored) {
+      await _bridgeToBackend(user);
+    }
   }
 
   /// Null when [value] is usable as a name, otherwise the reason it is not.
@@ -309,8 +367,7 @@ class AuthService {
   /// instead of firing an OTP at a number with no account.
   Future<bool?> hasAccount(String phone) => _phoneExists(phone.trim());
 
-  Future<bool?> Function(String phone) _phoneExists =
-      MemberRepository.instance.phoneExists;
+  Future<bool?> Function(String phone) _phoneExists = _phoneExistsBackendFirst;
   Future<String?> Function(String phone) _nameByPhone =
       MemberRepository.instance.nameByPhone;
 
@@ -423,6 +480,12 @@ class AuthService {
     if (user == null) {
       return;
     }
+    // Both run: the backend-issued session (if any) is what actually needs
+    // revoking so a token minted elsewhere can't keep acting as this member,
+    // and Neon's own deleted_at is still what phoneExists/restoreSession
+    // enforce today — see MemberRepository.deleteAccount's own doc. Neither
+    // failing should stop the other; both are best-effort by contract.
+    await BackendMemberRepository.instance.deleteAccount();
     await MemberRepository.instance.deleteAccount(user.phone);
     // Same defensive shape as requestOtp/verifyOtp: no Firebase app on this
     // platform, or the plugin throwing outright, must not stop the account
@@ -461,7 +524,7 @@ class AuthService {
     _pending = null;
     _freshSignIn = null;
     _gateway = null;
-    _phoneExists = MemberRepository.instance.phoneExists;
+    _phoneExists = _phoneExistsBackendFirst;
     _nameByPhone = MemberRepository.instance.nameByPhone;
     currentUser.value = null;
   }
@@ -509,6 +572,11 @@ abstract class AuthGateway {
   void discard();
 
   Future<void> signOut();
+
+  /// The signed-in Firebase user's current ID token, or null when nobody is
+  /// signed in on this gateway — the credential [BackendSession] exchanges
+  /// for a backend-issued session. Never throws.
+  Future<String?> currentIdToken();
 
   /// Deletes the signed-in Firebase identity outright — the account is gone,
   /// not just signed out of this device. Returns false, changing nothing,
@@ -697,6 +765,19 @@ class FirebaseAuthGateway implements AuthGateway {
         ? e164.substring(3)
         : e164.replaceAll(RegExp(r'[^0-9]'), '');
     return AuthUser(name: user.displayName ?? '', phone: phone);
+  }
+
+  @override
+  Future<String?> currentIdToken() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return null;
+    }
+    try {
+      return await user.getIdToken();
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
