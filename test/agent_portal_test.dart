@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/dates.dart';
 import 'package:shield/money.dart';
+import 'package:shield/module/account/account_screen.dart';
 import 'package:shield/module/agent/agent_all_users_section.dart';
 import 'package:shield/module/agent/agent_customer_detail_screen.dart';
 import 'package:shield/module/agent/agent_detail_screen.dart';
@@ -797,6 +798,41 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(AgentPortalScreen), findsOneWidget);
+    });
+  });
+
+  group('the account screen', () {
+    Future<void> pumpAccount(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(400, 1600);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const MaterialApp(home: AccountScreen()));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('an agent number swaps Refer & Earn for the Agent Portal', (
+      tester,
+    ) async {
+      AuthService.instance.signInAs(phone: '9539810000');
+      addTearDown(AuthService.instance.reset);
+      await pumpAccount(tester);
+
+      expect(find.text('Agent Portal'), findsOneWidget);
+      expect(find.text('Refer & Earn'), findsNothing);
+
+      await tester.tap(find.text('Agent Portal'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AgentPortalScreen), findsOneWidget);
+    });
+
+    testWidgets('a member number keeps Refer & Earn', (tester) async {
+      AuthService.instance.signInAs(phone: '9000000002');
+      addTearDown(AuthService.instance.reset);
+      await pumpAccount(tester);
+
+      expect(find.text('Refer & Earn'), findsOneWidget);
+      expect(find.text('Agent Portal'), findsNothing);
     });
   });
 

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../theme/app_colors.dart';
 import '../../money.dart';
+import '../agent/agent_portal_screen.dart';
 import '../agent/agent_service.dart';
 import '../auth/auth_service.dart';
 import '../cart/cart_screen.dart';
@@ -27,9 +28,12 @@ class AccountScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final investor = InvestorService.instance.investorForPhone(
-      AuthService.instance.currentUser.value?.phone,
-    );
+    final phone = AuthService.instance.currentUser.value?.phone;
+    final investor = InvestorService.instance.investorForPhone(phone);
+    // Same admin-conversion check the home feed uses to swap Refer & Earn
+    // for the Agent Portal card — kept in sync here so the two screens never
+    // disagree about whether this number is a converted agent.
+    final agent = AgentService.instance.agentForPhone(phone);
 
     return Scaffold(
       backgroundColor: AppColors.pageTint,
@@ -68,6 +72,27 @@ class AccountScreen extends StatelessWidget {
           // list below does not have to know whether it is there.
           const _RegisterBanner(),
           const SizedBox(height: 18),
+          // Only for a signed-in, admin-approved agent number — everyone
+          // else never sees this group at all. Takes Refer & Earn's place
+          // in the menu group below the same way AgentPortalCard takes
+          // ReferEarnCard's place on the home feed.
+          if (agent != null) ...[
+            _MenuGroup(
+              items: [
+                _MenuItem(
+                  icon: Icons.workspace_premium_rounded,
+                  label: 'Agent Portal',
+                  trailing: agent.agentCode,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => AgentPortalScreen(agent: agent),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+          ],
           // Only for a signed-in investor number — everyone else never sees
           // this group at all.
           if (investor != null) ...[
@@ -152,11 +177,16 @@ class AccountScreen extends StatelessWidget {
           const SizedBox(height: 14),
           _MenuGroup(
             items: [
-              _MenuItem(
-                icon: Icons.card_giftcard_rounded,
-                label: 'Refer & Earn',
-                onTap: () => ReferEarnScreen.open(context),
-              ),
+              // Member-only — an admin-converted agent or investor has
+              // their own portal (added above) in its place, the same
+              // swap the home feed makes between ReferEarnCard and
+              // AgentPortalCard.
+              if (agent == null && investor == null)
+                _MenuItem(
+                  icon: Icons.card_giftcard_rounded,
+                  label: 'Refer & Earn',
+                  onTap: () => ReferEarnScreen.open(context),
+                ),
               _MenuItem(
                 icon: Icons.headset_mic_outlined,
                 label: 'Help & Support',

@@ -14,10 +14,17 @@ The script also compiles in Sentry's DSN from `.env`'s `SENTRY_DSN` line, if one
 
 ## Flutter web
 
-Build with:
+**Generate the Neon secret before building, the same as the APK does.** `NeonHttp` (`lib/data/neon/neon_http.dart`) reads its connection string from the compiled-in `kNeonDatabaseUrl` const in `lib/data/neon/neon_secret.dart` — never from `--dart-define` (that path is deliberately unused; see `tool/gen_neon_secret.dart`'s own doc comment on why). That file is git-ignored, so a clean checkout — including a hosting provider's build server — has none, and `flutter build web` still succeeds: it falls back to the empty-string stub, `NeonHttp.isConfigured` is `false`, and every Neon-backed read or write (sign-in/registration check, a member's own referral code shown as their Member ID, agent/investor detection for the Account screen and home feed) fails silently. The build looks identical to a working one; nothing errors, the UI just never gets data. Generate the real file first:
 
 ```powershell
+dart run tool/gen_neon_secret.dart   # needs DATABASE_URL in a .env at the repo root
 flutter build web
+```
+
+On a CI/hosting provider (Vercel or otherwise) that starts from a clean checkout, the build command must write that `.env` from a provider-set secret (never commit `DATABASE_URL` or `neon_secret.dart` itself) before running the generator, e.g.:
+
+```bash
+echo "DATABASE_URL=$DATABASE_URL" > .env && dart run tool/gen_neon_secret.dart && flutter build web
 ```
 
 The web output is generated under `build/web`. Verify Firebase options and platform support before treating web auth or database behavior as production-ready.
