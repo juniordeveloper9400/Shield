@@ -16,13 +16,35 @@ class StorePickerSheet extends StatefulWidget {
   /// The branch currently in effect, marked as selected when the sheet opens.
   final String selectedId;
 
-  const StorePickerSheet({super.key, required this.selectedId});
+  /// Narrows the list to branches this call cares about — the lab checkout
+  /// passes `(s) => s.offersLabCollection` so a branch that has been switched
+  /// off never shows up there, while registration and standard checkout leave
+  /// this null and see every branch as before.
+  final bool Function(ShieldStore)? filter;
+
+  /// Overrides the sheet's title, for callers other than "choose your store"
+  /// at registration (the default).
+  final String title;
+
+  /// Overrides the line under the title.
+  final String subtitle;
+
+  const StorePickerSheet({
+    super.key,
+    required this.selectedId,
+    this.filter,
+    this.title = 'Choose your store',
+    this.subtitle = 'The branch that packs and dispatches this order.',
+  });
 
   /// Opens the sheet and resolves to the branch the member picked, or null when
   /// they dismissed it without choosing.
   static Future<ShieldStore?> show(
     BuildContext context, {
     required String selectedId,
+    bool Function(ShieldStore)? filter,
+    String title = 'Choose your store',
+    String subtitle = 'The branch that packs and dispatches this order.',
   }) {
     return showModalBottomSheet<ShieldStore>(
       context: context,
@@ -31,7 +53,12 @@ class StorePickerSheet extends StatefulWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
-      builder: (_) => StorePickerSheet(selectedId: selectedId),
+      builder: (_) => StorePickerSheet(
+        selectedId: selectedId,
+        filter: filter,
+        title: title,
+        subtitle: subtitle,
+      ),
     );
   }
 
@@ -48,7 +75,11 @@ class _StorePickerSheetState extends State<StorePickerSheet> {
   /// [StoreCatalog] loads.
   List<ShieldStore> get _stores {
     final ranked = _location?.ranked;
-    return (ranked != null && ranked.isNotEmpty) ? ranked : StoreDirectory.all;
+    final base = (ranked != null && ranked.isNotEmpty)
+        ? ranked
+        : StoreDirectory.all;
+    final filter = widget.filter;
+    return filter == null ? base : base.where(filter).toList(growable: false);
   }
 
   @override
@@ -127,13 +158,13 @@ class _StorePickerSheetState extends State<StorePickerSheet> {
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(18, 14, 18, 2),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 2),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Choose your store',
-                  style: TextStyle(
+                  widget.title,
+                  style: const TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
                     color: AppColors.textDark,
@@ -141,13 +172,16 @@ class _StorePickerSheetState extends State<StorePickerSheet> {
                 ),
               ),
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(18, 0, 18, 10),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 10),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'The branch that packs and dispatches this order.',
-                  style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
+                  widget.subtitle,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ),
             ),

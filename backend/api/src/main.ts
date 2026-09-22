@@ -1,3 +1,6 @@
+// Must load before reflect-metadata and every other import — see its own doc.
+import './instrument';
+
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';

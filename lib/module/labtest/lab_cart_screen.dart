@@ -7,6 +7,7 @@ import '../../theme/app_colors.dart';
 import '../auth/auth_flow.dart';
 import '../auth/auth_service.dart';
 import '../location/address_book.dart';
+import '../registration/store_picker_sheet.dart';
 import 'lab_cart_service.dart';
 import 'lab_package.dart';
 import 'patient_count_sheet.dart';
@@ -54,8 +55,15 @@ class LabCartScreen extends StatelessWidget {
                 _BookingCard(index: index, booking: cart.bookings[index]),
                 const SizedBox(height: 12),
               ],
-              const SizedBox(height: 4),
-              const _BillCard(),
+              _BranchRow(),
+              const SizedBox(height: 12),
+              // Not const: this must rebuild on every LabCartService
+              // notification, including a same-length edit (patient count
+              // changed on the cart's only booking) — a canonicalized const
+              // instance here would be skipped by Flutter's identical-widget
+              // fast path and show a stale bill (see _BranchRow's own note
+              // in the commit that added it).
+              _BillCard(),
             ],
           );
         },
@@ -222,6 +230,87 @@ class _BookingCard extends StatelessWidget {
   }
 }
 
+/// The branch this basket collects from — the member's home branch by
+/// default (see [LabCartService.store]), tappable to open a picker filtered
+/// to the branches that still take lab bookings (migration 0057).
+class _BranchRow extends StatelessWidget {
+  const _BranchRow();
+
+  Future<void> _choose(BuildContext context) async {
+    final store = LabCartService.instance.store;
+    final chosen = await StorePickerSheet.show(
+      context,
+      selectedId: store?.id ?? '',
+      filter: (s) => s.offersLabCollection,
+      title: 'Choose a branch',
+      subtitle: 'Who collects your samples for this booking.',
+    );
+    if (chosen != null) {
+      LabCartService.instance.chooseStore(chosen);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = LabCartService.instance.store;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Material(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: () => _choose(context),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.storefront_outlined,
+                  size: 20,
+                  color: AppColors.brandBlue,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Branch',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                      Text(
+                        store?.name ?? 'Choose a branch',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textMuted,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BillCard extends StatelessWidget {
   const _BillCard();
 
@@ -340,6 +429,7 @@ class _CheckoutBar extends StatelessWidget {
             phone: user.phone,
             name: user.name,
             address: AddressBook.instance.deliverTo?.toDeliveryInput(),
+            storeCode: cart.store?.id,
             bookings: [
               for (final booking in cart.bookings)
                 LabBookingInput(

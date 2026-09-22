@@ -15,6 +15,9 @@ export const bookLabTestSchema = z.object({
   patients: z.array(bookingPatientSchema).min(1),
   addressId: z.number().int().positive().optional(),
   scheduledFor: z.string().datetime().optional(),
+  /** The branch to route this booking to. Falls back to the member's own
+   *  home branch when omitted — see BookingService.bookLabTest's own doc. */
+  storeId: z.number().int().positive().optional(),
 });
 
 export const updateLabBookingStatusSchema = z.object({

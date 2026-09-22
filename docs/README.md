@@ -34,6 +34,7 @@ Each application folder contains its own PRD, FRD, TRD, ERD, tech-stack, and UI/
 ## Operations
 
 - [Deployment](deployment.md): Android APK, Flutter web, and admin-console hosting.
+- [Sentry](sentry.md): crash/error reporting account setup and per-app DSN wiring.
 - [Security](security.md): secrets, current risks, and release blockers.
 - [Release checklist](release-checklist.md): pre-release quality, data, security, and artifact gates.
 - [Decision log](decision-log.md): significant decisions and unresolved architecture choices.

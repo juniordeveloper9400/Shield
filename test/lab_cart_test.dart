@@ -10,6 +10,7 @@ import 'package:shield/module/labtest/lab_package.dart';
 import 'package:shield/module/labtest/lab_package_screen.dart';
 import 'package:shield/module/labtest/patient_count_sheet.dart';
 import 'package:shield/module/labtest/top_packages_screen.dart';
+import 'package:shield/module/registration/store_picker_sheet.dart';
 
 const _activeLife = LabPackage(
   id: '2',
@@ -375,6 +376,12 @@ void main() {
 
       expect(LabCartService.instance.bookings.single.patients, 4);
       expect(find.text('₹5,196'), findsWidgets);
+      // The bill card itself — not just the booking's own line — reflects
+      // the new count: a regression check for a canonicalized `const
+      // _BillCard()` silently going stale on this exact kind of edit (the
+      // booking count does not change, only its patient count).
+      expect(find.text('- ₹7,796'), findsOneWidget);
+      expect(find.text('For 4 patients'), findsOneWidget);
     });
 
     testWidgets('a booking can be removed', (tester) async {
@@ -387,6 +394,41 @@ void main() {
       expect(LabCartService.instance.isEmpty, isTrue);
       expect(find.text('No tests booked yet'), findsOneWidget);
     });
+  });
+
+  group('the branch row', () {
+    testWidgets('asks for a branch when nothing is registered or chosen', (
+      tester,
+    ) async {
+      LabCartService.instance.book(_activeLife, patients: 2);
+      await pump(tester, const LabCartScreen());
+
+      expect(find.text('Choose a branch'), findsOneWidget);
+    });
+
+    testWidgets(
+      'opens a picker excluding branches switched off for lab, and the '
+      'choice reaches the basket',
+      (tester) async {
+        LabCartService.instance.book(_activeLife, patients: 2);
+        await pump(tester, const LabCartScreen());
+
+        await tester.tap(find.text('Choose a branch'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(StorePickerSheet), findsOneWidget);
+        // A branch that has been switched off for lab collection never
+        // shows up in this picker, even though it is a real branch.
+        expect(find.text('Sahakar 360 Pharmacy Karinkallathani'), findsNothing);
+        expect(find.text('Sahakar 360 Pharmacy Melattur'), findsOneWidget);
+
+        await tester.tap(find.text('Sahakar 360 Pharmacy Melattur'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Sahakar 360 Pharmacy Melattur'), findsOneWidget);
+        expect(LabCartService.instance.store?.id, 'SHD-MEL');
+      },
+    );
   });
 
   group('from the package list', () {

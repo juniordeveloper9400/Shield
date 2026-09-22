@@ -39,6 +39,10 @@ const envSchema = z
     // free plan caps every file at 50 MB; raise this (and the bucket's own
     // limit in Supabase) on a paid plan. The hard ceiling is 200 MB.
     REVIEW_VIDEO_MAX_MB: z.coerce.number().positive().max(200).default(50),
+    // Error tracking (see instrument.ts). Optional everywhere, same as every
+    // other integration here that degrades gracefully unset: leaving it
+    // blank just means Sentry stays disabled, not a boot failure.
+    SENTRY_DSN: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.NODE_ENV === 'production') {

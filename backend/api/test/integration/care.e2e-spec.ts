@@ -11,7 +11,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, dietitian, labBookingReport, labCategory, labPackage, patient, users } from '../../src/db/schema';
+import { adminUser, dietitian, labBookingReport, labCategory, labPackage, patient, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -25,6 +25,8 @@ describe('Care Services (e2e)', () => {
   let staffAccessToken: string;
   let labPackageId: number;
   let labCategoryId: number;
+  let labStoreId: number;
+  let nonLabStoreId: number;
   let dietitianId: number;
   let ownedPatientId: number;
 
@@ -56,6 +58,17 @@ describe('Care Services (e2e)', () => {
       .returning();
     labPackageId = pkg.id;
 
+    const [labStore] = await db
+      .insert(shieldStore)
+      .values({ code: 'SHD-TIR', name: 'Tirur', area: 'Tirur', city: 'Malappuram', state: 'Kerala', pincode: '676101', isActive: true, offersLabCollection: true })
+      .returning();
+    labStoreId = labStore.id;
+    const [notLabStore] = await db
+      .insert(shieldStore)
+      .values({ code: 'SHD-KKT', name: 'Karinkallathani', area: 'Karinkallathani', city: 'Malappuram', state: 'Kerala', pincode: '676123', isActive: true, offersLabCollection: false })
+      .returning();
+    nonLabStoreId = notLabStore.id;
+
     // A test switched on with "Show in the app" is listed as its own one-profile row.
     await db
       .insert(labPackage)
@@ -71,7 +84,7 @@ describe('Care Services (e2e)', () => {
 
     const [member] = await db
       .insert(users)
-      .values({ phone: '9000000004', name: 'Care Member', firebaseUid: 'member-care-1', registrationCompletedAt: new Date() })
+      .values({ phone: '9000000004', name: 'Care Member', firebaseUid: 'member-care-1', registrationCompletedAt: new Date(), homeStoreId: labStoreId })
       .returning();
     firebase.register('member-token', { uid: 'member-care-1' });
 
@@ -180,6 +193,12 @@ describe('Care Services (e2e)', () => {
       .expect(403);
   });
 
+  it('lists lab-eligible branches publicly, and only the eligible one', async () => {
+    const res = await request(app.getHttpServer()).get('/v1/public/care/lab-stores').expect(200);
+    expect(res.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: labStoreId, code: 'SHD-TIR' })]));
+    expect(res.body.map((s: { id: number }) => s.id)).not.toContain(nonLabStoreId);
+  });
+
   let labBookingId: number;
 
   it('books a lab test for an owned patient plus a free-text patient, pricing server-side', async () => {
@@ -193,6 +212,8 @@ describe('Care Services (e2e)', () => {
     expect(res.body.patientsCount).toBe(2);
     expect(Number(res.body.unitPrice)).toBe(999);
     expect(Number(res.body.totalPrice)).toBe(1998);
+    // No storeId sent: it fell back to the member's own home branch.
+    expect(res.body.storeId).toBe(labStoreId);
 
     const detail = await request(app.getHttpServer())
       .get(`/v1/member/lab-bookings/${labBookingId}`)
@@ -225,6 +246,26 @@ describe('Care Services (e2e)', () => {
     ]);
     // Never the pages themselves — they are fetched on demand.
     expect(JSON.stringify(list.body)).not.toContain('data:image');
+  });
+
+  it('books into a branch the member chose, refusing one not open for lab', async () => {
+    const refused = await request(app.getHttpServer())
+      .post('/v1/member/lab-bookings')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ labPackageId, patients: [{ name: 'Someone' }], storeId: nonLabStoreId })
+      .expect(403);
+    expect(refused.body.error.message).toContain('not open for lab');
+
+    const [anotherStore] = await db
+      .insert(shieldStore)
+      .values({ code: 'SHD-MEL', name: 'Melattur', area: 'Melattur', city: 'Malappuram', state: 'Kerala', pincode: '676102', isActive: true, offersLabCollection: true })
+      .returning();
+    const chosen = await request(app.getHttpServer())
+      .post('/v1/member/lab-bookings')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ labPackageId, patients: [{ name: 'Someone' }], storeId: anotherStore.id })
+      .expect(201);
+    expect(chosen.body.storeId).toBe(anotherStore.id);
   });
 
   it('will not mark a booking Report ready until a report is attached, then shows it to its owner only', async () => {

@@ -937,11 +937,17 @@ class OrderRepository {
   /// upsert of the `app.lab_package` it points at (matched on a slug derived
   /// from the package name) so a package the backend has never seen is created
   /// rather than failing the not-null reference.
+  ///
+  /// [storeCode] is the branch [LabCartScreen]'s "Branch" row resolved —
+  /// [LabCartService.store]'s own default already falls back to the member's
+  /// home branch, so this is usually that; null threads through as a null
+  /// `store_id`, same as an order whose branch could not be resolved.
   Future<void> saveLabBookings({
     required String phone,
     String? name,
     required List<LabBookingInput> bookings,
     DeliveryAddressInput? address,
+    String? storeCode,
   }) async {
     await _guard('saveLabBookings', () async {
       if (bookings.isEmpty) {
@@ -953,6 +959,7 @@ class OrderRepository {
       }
       final addressId =
           address == null ? null : await _upsertAddress(memberId, address);
+      final storeId = await _storeId(storeCode);
 
       for (final b in bookings) {
         final pkg = await NeonHttp.instance.query(
@@ -1000,9 +1007,9 @@ class OrderRepository {
           '''
             INSERT INTO app.lab_booking (
               member_id, lab_package_id, patients_count,
-              unit_price, total_price, status, address_id
+              unit_price, total_price, status, address_id, store_id
             )
-            VALUES (\$1, \$2, \$3, \$4, \$5, 'REQUESTED', \$6)
+            VALUES (\$1, \$2, \$3, \$4, \$5, 'REQUESTED', \$6, \$7)
           ''',
           [
             memberId,
@@ -1011,6 +1018,7 @@ class OrderRepository {
             b.unitPrice,
             b.unitPrice * b.patients,
             addressId,
+            storeId,
           ],
         );
       }

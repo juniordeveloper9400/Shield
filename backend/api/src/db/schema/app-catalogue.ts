@@ -22,6 +22,9 @@ export const shieldStore = appSchema.table('shield_store', {
   phone: text('phone').notNull().default(''),
   hours: text('hours').notNull().default('8:00 AM – 10:00 PM'),
   isActive: boolean('is_active').notNull().default(true),
+  /** Migration 0057 — whether this branch takes lab bookings at all. On by
+   *  default; a branch with no phlebotomist can be switched off. */
+  offersLabCollection: boolean('offers_lab_collection').notNull().default(true),
   sort: integer('sort').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

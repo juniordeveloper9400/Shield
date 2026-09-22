@@ -39,6 +39,7 @@ class StoreRepository {
                pincode,
                phone,
                hours,
+               offers_lab_collection,
                latitude::text  AS latitude,
                longitude::text AS longitude,
                maps_url,

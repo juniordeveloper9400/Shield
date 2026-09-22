@@ -44,6 +44,13 @@ class ShieldStore {
   final String bankIfsc;
   final String bankName;
 
+  /// Whether this branch takes lab bookings at all (migration 0057). On by
+  /// default; [StorePickerSheet]'s lab filter and the lab checkout's own
+  /// branch picker both read this — a branch switched off here simply never
+  /// appears there, the same as [LabCartScreen]'s own "Branch" row falls back
+  /// to another branch once the member's own home branch is excluded.
+  final bool offersLabCollection;
+
   const ShieldStore({
     required this.id,
     required this.name,
@@ -60,6 +67,7 @@ class ShieldStore {
     this.bankAccountNumber = '',
     this.bankIfsc = '',
     this.bankName = '',
+    this.offersLabCollection = true,
   });
 
   /// Builds a store from an `app.shield_store` row (the Neon `/sql` endpoint
@@ -95,6 +103,13 @@ class ShieldStore {
       bankAccountNumber: str(row['bank_account_number']),
       bankIfsc: str(row['bank_ifsc']),
       bankName: str(row['bank_name']),
+      offersLabCollection: row['offers_lab_collection'] == null
+          ? true
+          : const {
+              'true',
+              't',
+              '1',
+            }.contains(str(row['offers_lab_collection']).toLowerCase()),
     );
   }
 
@@ -164,6 +179,7 @@ class StoreDirectory {
       pincode: '676507',
       latitude: 10.944,
       longitude: 76.101,
+      offersLabCollection: false,
     ),
     ShieldStore(
       id: 'SHD-TIR',
@@ -184,6 +200,7 @@ class StoreDirectory {
       pincode: '679321',
       latitude: 10.9539365,
       longitude: 76.3202802,
+      offersLabCollection: false,
     ),
     ShieldStore(
       id: 'SHD-MJR',
@@ -246,6 +263,11 @@ class StoreDirectory {
       longitude: 76.008,
     ),
   ];
+
+  /// Branches open for lab collection right now — [StorePickerSheet]'s own
+  /// filter for the lab checkout's "Branch" row.
+  static List<ShieldStore> get labEligible =>
+      all.where((s) => s.offersLabCollection).toList(growable: false);
 
   static ShieldStore? byId(String? id) {
     if (id == null) {

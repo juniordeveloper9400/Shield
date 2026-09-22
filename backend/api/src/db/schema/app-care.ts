@@ -127,6 +127,11 @@ export const labBooking = appSchema.table('lab_booking', {
   status: labBookingStatusEnum('status').notNull().default('REQUESTED'),
   scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
   addressId: bigint('address_id', { mode: 'number' }).references(() => memberAddress.id),
+  /** Which branch this booking is routed to (migration 0057) — defaults to
+   *  the member's own home branch, changeable at checkout to any branch with
+   *  `offersLabCollection`. Null for a booking made before this existed, or
+   *  whose branch has since been removed. */
+  storeId: bigint('store_id', { mode: 'number' }),
   /** A line from the lab to the member (migration 0052). */
   note: text('note'),
   /** When the report was last attached (migration 0052). */

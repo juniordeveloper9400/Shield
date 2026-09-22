@@ -136,6 +136,7 @@ export function createTestDb() {
       phone text NOT NULL DEFAULT '',
       hours text NOT NULL DEFAULT '8:00 AM – 10:00 PM',
       is_active boolean NOT NULL DEFAULT true,
+      offers_lab_collection boolean NOT NULL DEFAULT true,
       sort integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
@@ -674,6 +675,7 @@ export function createTestDb() {
       status app.lab_booking_status NOT NULL DEFAULT 'REQUESTED',
       scheduled_for timestamptz,
       address_id bigint REFERENCES app.member_address(id) ON DELETE SET NULL,
+      store_id bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
       note text,
       report_uploaded_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),

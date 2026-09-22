@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../registration/registration_service.dart';
+import '../registration/shield_store.dart';
 import 'lab_package.dart';
 
 /// One package booked for a number of patients.
@@ -36,6 +38,32 @@ class LabCartService extends ChangeNotifier {
   static const int maxPatients = 5;
 
   final List<LabBooking> _bookings = [];
+
+  /// The member's own branch pick for this basket, from [chooseStore] — set
+  /// only once they open the checkout's "Branch" row and pick one that is not
+  /// their registered branch. Kept as an id, not a [ShieldStore], so a stale
+  /// reference can never survive an admin edit; [store] re-resolves it fresh
+  /// every read.
+  String? _chosenStoreId;
+
+  /// The branch this basket collects from: [_chosenStoreId] when the member
+  /// picked one and it still takes lab bookings, otherwise their registered
+  /// home branch when that is lab-eligible, otherwise null — the checkout
+  /// screen then asks the member to pick one before booking.
+  ShieldStore? get store {
+    final chosen = StoreDirectory.byId(_chosenStoreId);
+    if (chosen != null && chosen.offersLabCollection) {
+      return chosen;
+    }
+    final home = RegistrationService.instance.profile?.store;
+    return (home != null && home.offersLabCollection) ? home : null;
+  }
+
+  /// Records the member's own branch pick from the checkout's "Branch" row.
+  void chooseStore(ShieldStore store) {
+    _chosenStoreId = store.id;
+    notifyListeners();
+  }
 
   List<LabBooking> get bookings => List.unmodifiable(_bookings);
 
@@ -111,6 +139,7 @@ class LabCartService extends ChangeNotifier {
   @visibleForTesting
   void reset() {
     _bookings.clear();
+    _chosenStoreId = null;
     notifyListeners();
   }
 }

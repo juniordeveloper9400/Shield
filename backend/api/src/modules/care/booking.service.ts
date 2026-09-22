@@ -1,9 +1,27 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { appointment, dietitian, labBooking, labBookingPatient, labBookingReport, labPackage, patient } from '../../db/schema';
+import { appointment, dietitian, labBooking, labBookingPatient, labBookingReport, labPackage, patient, shieldStore, users } from '../../db/schema';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
 import type { BookAppointmentDto, BookLabTestDto, UpdateAppointmentStatusDto, UpdateLabBookingStatusDto } from './dto';
+
+/** Every branch open for lab collection right now — the picker at checkout
+ *  offers exactly this list, and it is also what {@link BookingService
+ *  .bookLabTest} checks a client-supplied [dto.storeId] against. */
+async function listLabStores(db: Database) {
+  return db
+    .select({
+      id: shieldStore.id,
+      code: shieldStore.code,
+      name: shieldStore.name,
+      area: shieldStore.area,
+      city: shieldStore.city,
+      pincode: shieldStore.pincode,
+    })
+    .from(shieldStore)
+    .where(and(eq(shieldStore.isActive, true), eq(shieldStore.offersLabCollection, true)))
+    .orderBy(asc(shieldStore.sort), asc(shieldStore.name));
+}
 
 @Injectable()
 export class BookingService {
@@ -33,6 +51,28 @@ export class BookingService {
     const unitPrice = Number(pkg.price);
     const totalPrice = unitPrice * dto.patients.length;
 
+    // Which branch this books into: whatever the client sent, checked against
+    // the branches actually open for lab right now (the same list the picker
+    // itself was built from — a stale or tampered id is never trusted blind);
+    // falling back to the member's own home branch when none was sent, the
+    // same default a standard order's checkout uses.
+    const labStores = await listLabStores(this.db);
+    const labStoreIds = new Set(labStores.map((s) => s.id));
+    let storeId: number | null = null;
+    if (dto.storeId !== undefined) {
+      if (!labStoreIds.has(dto.storeId)) {
+        throw new ForbiddenException({
+          error: { code: 'FORBIDDEN', message: 'That branch is not open for lab bookings.' },
+        });
+      }
+      storeId = dto.storeId;
+    } else {
+      const [member] = await this.db.select({ homeStoreId: users.homeStoreId }).from(users).where(eq(users.id, memberId)).limit(1);
+      if (member?.homeStoreId != null && labStoreIds.has(member.homeStoreId)) {
+        storeId = member.homeStoreId;
+      }
+    }
+
     return this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(labBooking)
@@ -43,6 +83,7 @@ export class BookingService {
           unitPrice: unitPrice.toString(),
           totalPrice: totalPrice.toString(),
           addressId: dto.addressId,
+          storeId: storeId ?? undefined,
           scheduledFor: dto.scheduledFor ? new Date(dto.scheduledFor) : undefined,
         })
         .returning();
@@ -105,9 +146,21 @@ export class BookingService {
     return { pages };
   }
 
-  /** No branch scoping — lab_booking has no store_id in the live schema. Any staff role may manage it. */
+  /** Every branch, newest booking first — the "Branch" column and filter on
+   *  the console's Lab Orders screen. No role-based scoping: unlike Pharmacy
+   *  (one branch each), there is one Lab Admin account working every branch's
+   *  bookings, the same as before this had a branch at all. */
   async listLabBookingsForStaff() {
-    return this.db.select().from(labBooking).orderBy(desc(labBooking.createdAt));
+    return this.db
+      .select({ ...getTableColumns(labBooking), storeCode: shieldStore.code, storeName: shieldStore.name })
+      .from(labBooking)
+      .leftJoin(shieldStore, eq(shieldStore.id, labBooking.storeId))
+      .orderBy(desc(labBooking.createdAt));
+  }
+
+  /** Public — the branch picker a member sees before confirming a lab booking. */
+  async listLabStoresPublic() {
+    return listLabStores(this.db);
   }
 
   async updateLabBookingStatus(id: number, dto: UpdateLabBookingStatusDto) {

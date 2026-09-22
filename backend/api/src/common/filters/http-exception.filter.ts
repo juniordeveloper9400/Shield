@@ -1,4 +1,5 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import type { Response } from 'express';
 
 const CODE_BY_STATUS: Record<number, string> = {
@@ -41,6 +42,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     this.logger.error('Unhandled exception', exception instanceof Error ? exception.stack : String(exception));
+    // Only truly unexpected failures reach here — every expected 4xx (bad
+    // input, auth, not-found) is an HttpException and returns above without
+    // ever reaching Sentry, so a wrong password or a 404 never counts
+    // against the project's event quota or gets paged on.
+    Sentry.captureException(exception);
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       error: { code: 'INTERNAL', message: 'Something went wrong' },
     });
