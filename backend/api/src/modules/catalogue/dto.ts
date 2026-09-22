@@ -41,6 +41,35 @@ export const createProductSchema = z.object({
 
 export const updateProductSchema = createProductSchema.partial();
 
+/** Shared by createStoreSchema/updateStoreSchema — matches shieldweb's
+ *  `Store`/`NewStore` shape (shieldweb/src/types/index.ts) field for field,
+ *  so the console needs no payload reshaping when it switches from raw SQL
+ *  to this endpoint. */
+const storeFields = {
+  code: z.string().trim().min(1).toUpperCase(),
+  name: z.string().trim().min(1),
+  area: z.string().trim().min(1),
+  city: z.string().trim().min(1),
+  state: z.string().trim().min(1),
+  pincode: z.string().trim().min(1),
+  phone: z.string().trim().default(''),
+  hours: z.string().trim().default('8:00 AM – 10:00 PM'),
+  isActive: z.boolean().default(true),
+  offersLabCollection: z.boolean().default(true),
+  latitude: z.number().min(-90).max(90).nullable().default(null),
+  longitude: z.number().min(-180).max(180).nullable().default(null),
+  mapsUrl: z.string().trim().default(''),
+  bankAccountName: z.string().trim().default(''),
+  bankAccountNumber: z.string().trim().default(''),
+  bankIfsc: z.string().trim().toUpperCase().default(''),
+  bankName: z.string().trim().default(''),
+};
+
+export const createStoreSchema = z.object(storeFields);
+export const updateStoreSchema = z.object(storeFields).partial();
+export const setStoreActiveSchema = z.object({ isActive: z.boolean() });
+export const setStoreOffersLabSchema = z.object({ offersLabCollection: z.boolean() });
+
 export const createReviewVideoSchema = z.object({
   name: z.string().min(1),
   subtitle: z.string().default(''),
@@ -64,6 +93,10 @@ export const createReviewVideoUploadSchema = z.object({
 
 export const deleteReviewVideoMediaSchema = z.object({ url: z.string().min(1) });
 
+export type CreateStoreDto = z.infer<typeof createStoreSchema>;
+export type UpdateStoreDto = z.infer<typeof updateStoreSchema>;
+export type SetStoreActiveDto = z.infer<typeof setStoreActiveSchema>;
+export type SetStoreOffersLabDto = z.infer<typeof setStoreOffersLabSchema>;
 export type ListProductsQuery = z.infer<typeof listProductsQuerySchema>;
 export type CreateCategoryDto = z.infer<typeof createCategorySchema>;
 export type UpdateCategoryDto = z.infer<typeof updateCategorySchema>;

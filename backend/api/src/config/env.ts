@@ -32,7 +32,11 @@ const envSchema = z
     // console (see storage/supabase-public-media-storage.service.ts). The key is
     // the project's service-role (or secret) key — server-side only, it bypasses
     // row-level security. The bucket must be public and used for nothing else.
-    SUPABASE_URL: z.string().url().optional(),
+    // Blank (the checked-in .env.example's default before Supabase is set
+    // up) must validate the same as unset — plain `.optional()` already
+    // accepts '' for every other field here; `.url()` doesn't, so it needs
+    // an explicit pass-through instead of rejecting local/test boot outright.
+    SUPABASE_URL: z.preprocess((v) => (v === '' ? undefined : v), z.string().url().optional()),
     SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
     SUPABASE_PUBLIC_BUCKET: z.string().default('customer-reviews'),
     // Largest review video the API will hand out an upload link for. Supabase's

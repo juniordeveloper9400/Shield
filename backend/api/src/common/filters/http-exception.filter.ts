@@ -20,7 +20,7 @@ const CODE_BY_STATUS: Record<number, string> = {
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
 
-  catch(exception: unknown, host: ArgumentsHost) {
+  async catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
 
@@ -47,6 +47,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // ever reaching Sentry, so a wrong password or a 404 never counts
     // against the project's event quota or gets paged on.
     Sentry.captureException(exception);
+    // This service runs as a single Vercel serverless function (vercel.json):
+    // the runtime is free to freeze the process the instant the response is
+    // sent, which can happen before the SDK's own async HTTP call to
+    // Sentry's ingest endpoint has actually gone out — silently dropping the
+    // event with no error of its own. Awaiting flush() blocks the response
+    // by at most 2s, only on this already-exceptional path, until the event
+    // is confirmed sent (or the timeout gives up) — see docs/sentry.md.
+    await Sentry.flush(2000);
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       error: { code: 'INTERNAL', message: 'Something went wrong' },
     });

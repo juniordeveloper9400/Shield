@@ -9,12 +9,13 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { and, asc, desc, eq, gt } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   customerReviewVideo,
   homeBanner,
   membershipTier,
+  order,
   paymentMethod,
   product,
   productCategory,
@@ -23,6 +24,7 @@ import {
   productSubcategory,
   promo,
   shieldStore,
+  users,
 } from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
 import type { Env } from '../../config/env';
@@ -32,10 +34,12 @@ import type {
   CreateProductDto,
   CreateReviewVideoDto,
   CreateReviewVideoUploadDto,
+  CreateStoreDto,
   ListProductsQuery,
   UpdateCategoryDto,
   UpdateProductDto,
   UpdateReviewVideoDto,
+  UpdateStoreDto,
 } from './dto';
 
 /** Where uploaded customer review clips live in the public bucket. */
@@ -78,6 +82,125 @@ export class CatalogueService {
     return this.cache.getOrSet('catalogue:stores', TTL.LONG, () =>
       this.db.select().from(shieldStore).where(eq(shieldStore.isActive, true)).orderBy(asc(shieldStore.sort)),
     );
+  }
+
+  /**
+   * Every branch, active or not, with live member/order counts — the
+   * console's Stores page (`shieldweb/src/api/stores.ts`'s `listStores`,
+   * migrated off direct Neon here). Not cached: an admin toggling a branch
+   * needs to see the change immediately, and this list is read far less
+   * often than the public storefront's.
+   */
+  async listStoresForStaff() {
+    // Two plain queries merged in JS rather than a correlated subquery in
+    // the select list — the same pg-mem incompatibility as
+    // CareService.listLabCategories (a subquery-per-row select returns
+    // garbage under the test DB), worked around the same way there.
+    const stores = await this.db.select().from(shieldStore).orderBy(asc(shieldStore.sort), asc(shieldStore.name));
+    if (stores.length === 0) return [];
+
+    const memberCounts = await this.db
+      .select({ storeId: users.homeStoreId, n: sql<number>`count(*)::int` })
+      .from(users)
+      .where(sql`${users.homeStoreId} IS NOT NULL AND ${users.deletedAt} IS NULL`)
+      .groupBy(users.homeStoreId);
+    const memberCountByStore = new Map(memberCounts.map((c) => [c.storeId, c.n]));
+
+    const orderCounts = await this.db
+      .select({ storeId: order.storeId, n: sql<number>`count(*)::int` })
+      .from(order)
+      .where(sql`${order.storeId} IS NOT NULL`)
+      .groupBy(order.storeId);
+    const orderCountByStore = new Map(orderCounts.map((c) => [c.storeId, c.n]));
+
+    return stores.map((store) => ({
+      ...store,
+      memberCount: memberCountByStore.get(store.id) ?? 0,
+      orderCount: orderCountByStore.get(store.id) ?? 0,
+    }));
+  }
+
+  /** Returns `{ store: null }`, not a thrown error, when `dto.code` is
+   *  already taken — mirrors the old direct-Neon `ON CONFLICT DO NOTHING
+   *  RETURNING id` contract shieldweb's createStore already treats as "that
+   *  code is taken" (see StoresPage.tsx's `if (!id) …`). Wrapped in an
+   *  object rather than a bare null/row so the response shape doesn't
+   *  change between the two outcomes. */
+  async createStore(dto: CreateStoreDto) {
+    // A pre-check rather than relying solely on ON CONFLICT DO NOTHING
+    // RETURNING — pg-mem's test DB doesn't return an empty result on that
+    // conflict the way real Postgres does, and this is easier to reason
+    // about regardless. The insert is still guarded by the real unique
+    // constraint (caught below) against a genuine race on production.
+    const [existing] = await this.db.select({ id: shieldStore.id }).from(shieldStore).where(eq(shieldStore.code, dto.code)).limit(1);
+    if (existing) return { store: null };
+
+    const [last] = await this.db
+      .select({ sort: shieldStore.sort })
+      .from(shieldStore)
+      .orderBy(desc(shieldStore.sort))
+      .limit(1);
+    const sort = last ? last.sort + 1 : 0;
+
+    try {
+      const [created] = await this.db
+        .insert(shieldStore)
+        .values({
+          ...dto,
+          latitude: dto.latitude?.toString() ?? null,
+          longitude: dto.longitude?.toString() ?? null,
+          sort,
+        })
+        .returning();
+      await this.cache.invalidate('catalogue:stores');
+      return { store: created };
+    } catch {
+      // Lost a race with a concurrent create of the same code — same "that
+      // code is taken" outcome as the pre-check above (see StoresPage.tsx's
+      // `if (!id) …`).
+      return { store: null };
+    }
+  }
+
+  async updateStore(id: number, dto: UpdateStoreDto) {
+    const { latitude, longitude, ...rest } = dto;
+    const [updated] = await this.db
+      .update(shieldStore)
+      .set({
+        ...rest,
+        ...(latitude !== undefined ? { latitude: latitude?.toString() ?? null } : {}),
+        ...(longitude !== undefined ? { longitude: longitude?.toString() ?? null } : {}),
+      })
+      .where(eq(shieldStore.id, id))
+      .returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Branch not found' } });
+    await this.cache.invalidate('catalogue:stores');
+    return updated;
+  }
+
+  async setStoreActive(id: number, isActive: boolean) {
+    const [updated] = await this.db
+      .update(shieldStore)
+      .set({ isActive })
+      .where(eq(shieldStore.id, id))
+      .returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Branch not found' } });
+    await this.cache.invalidate('catalogue:stores');
+    return updated;
+  }
+
+  /** Migration 0057 — off drops the branch from the lab checkout's own
+   *  branch picker in both apps (`BookingService.listLabStores`); does not
+   *  touch `isActive` at all. */
+  async setStoreOffersLab(id: number, offersLabCollection: boolean) {
+    const [updated] = await this.db
+      .update(shieldStore)
+      .set({ offersLabCollection })
+      .where(eq(shieldStore.id, id))
+      .returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Branch not found' } });
+    await this.cache.invalidate('catalogue:stores');
+    return updated;
   }
 
   // ---- Membership tiers -----------------------------------------------------

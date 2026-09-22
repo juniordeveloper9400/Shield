@@ -26,4 +26,16 @@ export class HealthController {
       res.status(HttpStatus.SERVICE_UNAVAILABLE).json({ status: 'unavailable', db: 'down', error: (err as Error).message });
     }
   }
+
+  // TEMPORARY — second manual check that Sentry receives events, this time
+  // with HttpExceptionFilter awaiting Sentry.flush() before responding (see
+  // its own doc) — the first attempt returned a 500 correctly but nothing
+  // ever reached the shield-backend project, most likely the serverless
+  // function freezing before the SDK's async send completed. Remove once
+  // confirmed in the Issues tab.
+  @Public()
+  @Get('_sentry-test')
+  sentryTest(): never {
+    throw new Error('Sentry test event #2 (with flush) — safe to ignore, this route is being removed');
+  }
 }

@@ -137,6 +137,13 @@ export function createTestDb() {
       hours text NOT NULL DEFAULT '8:00 AM – 10:00 PM',
       is_active boolean NOT NULL DEFAULT true,
       offers_lab_collection boolean NOT NULL DEFAULT true,
+      latitude numeric(9,6),
+      longitude numeric(9,6),
+      maps_url text NOT NULL DEFAULT '',
+      bank_account_name text NOT NULL DEFAULT '',
+      bank_account_number text NOT NULL DEFAULT '',
+      bank_ifsc text NOT NULL DEFAULT '',
+      bank_name text NOT NULL DEFAULT '',
       sort integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()

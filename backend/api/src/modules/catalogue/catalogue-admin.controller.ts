@@ -7,18 +7,26 @@ import {
   createProductSchema,
   createReviewVideoSchema,
   createReviewVideoUploadSchema,
+  createStoreSchema,
   deleteReviewVideoMediaSchema,
+  setStoreActiveSchema,
+  setStoreOffersLabSchema,
   updateCategorySchema,
   updateProductSchema,
   updateReviewVideoSchema,
+  updateStoreSchema,
   type CreateCategoryDto,
   type CreateProductDto,
   type CreateReviewVideoDto,
   type CreateReviewVideoUploadDto,
+  type CreateStoreDto,
   type DeleteReviewVideoMediaDto,
+  type SetStoreActiveDto,
+  type SetStoreOffersLabDto,
   type UpdateCategoryDto,
   type UpdateProductDto,
   type UpdateReviewVideoDto,
+  type UpdateStoreDto,
 } from './dto';
 
 /**
@@ -30,6 +38,51 @@ import {
 @RequireStaff()
 export class CatalogueAdminController {
   constructor(private readonly catalogue: CatalogueService) {}
+
+  // ---- Stores -------------------------------------------------------------
+  // Read is open to any staff role (branch pickers on Bills/Deliveries/order
+  // and prescription review need it too); writes are narrowed to whoever
+  // actually has the Stores module in shieldweb/src/config/permissions.ts
+  // (superadmin/admin/lab) — the server enforcing the same boundary the UI
+  // already implies, not just trusting the frontend route guard.
+
+  @Get('stores')
+  listStores() {
+    return this.catalogue.listStoresForStaff();
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB')
+  @Post('stores')
+  createStore(@Body(new ZodValidationPipe(createStoreSchema)) dto: CreateStoreDto) {
+    return this.catalogue.createStore(dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB')
+  @Patch('stores/:id')
+  updateStore(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateStoreSchema)) dto: UpdateStoreDto,
+  ) {
+    return this.catalogue.updateStore(id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB')
+  @Patch('stores/:id/active')
+  setStoreActive(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(setStoreActiveSchema)) dto: SetStoreActiveDto,
+  ) {
+    return this.catalogue.setStoreActive(id, dto.isActive);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB')
+  @Patch('stores/:id/offers-lab')
+  setStoreOffersLab(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(setStoreOffersLabSchema)) dto: SetStoreOffersLabDto,
+  ) {
+    return this.catalogue.setStoreOffersLab(id, dto.offersLabCollection);
+  }
 
   @Post('categories')
   createCategory(@Body(new ZodValidationPipe(createCategorySchema)) dto: CreateCategoryDto) {

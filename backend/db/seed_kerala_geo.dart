@@ -192,14 +192,21 @@ void main(List<String> args) async {
       if (type == null) {
         throw StateError('Unknown LSG Type "${v.type}" for LSG code ${entry.key}');
       }
+      // The source LSG code carries its own position, e.g. 'C01001' ->
+      // sequence 1001. Using that trailing run as `sort` keeps LSGs listed in
+      // the same order the Suvida source lists them, instead of every row
+      // falling back to the schema's `sort DEFAULT 0` (previously unset
+      // here, so every LSG in a district sorted identically).
+      final sortMatch = RegExp(r'\d+$').firstMatch(entry.key);
+      final sort = sortMatch == null ? 0 : int.parse(sortMatch.group(0)!);
       final result = await tx.execute(
         Sql.named(
-          'INSERT INTO app.lsgd (assembly_id, type, name, code) '
-          'VALUES (@a::uuid, @t::app.lsgd_type, @n, @c) '
-          'ON CONFLICT (assembly_id, name) DO UPDATE SET name = EXCLUDED.name '
+          'INSERT INTO app.lsgd (assembly_id, type, name, code, sort) '
+          'VALUES (@a::uuid, @t::app.lsgd_type, @n, @c, @s) '
+          'ON CONFLICT (assembly_id, name) DO UPDATE SET name = EXCLUDED.name, sort = EXCLUDED.sort '
           'RETURNING id',
         ),
-        parameters: {'a': assemblyId, 't': type, 'n': v.name, 'c': entry.key},
+        parameters: {'a': assemblyId, 't': type, 'n': v.name, 'c': entry.key, 's': sort},
       );
       lsgdIdByCode[entry.key] = result.first[0] as String;
     }

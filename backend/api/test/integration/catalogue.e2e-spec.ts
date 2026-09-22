@@ -12,7 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, membershipTier, paymentMethod, product, productCategory } from '../../src/db/schema';
+import { adminUser, membershipTier, paymentMethod, product, productCategory, shieldStore } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -209,5 +209,144 @@ describe('Catalogue (e2e)', () => {
     expect(staffFeed.body.map((v: { name: string }) => v.name)).toEqual(
       expect.arrayContaining(['Active Clip', 'Inactive Clip']), // console sees both
     );
+  });
+
+  describe('staff store management', () => {
+    let labAccessToken: string;
+
+    beforeAll(async () => {
+      await db.insert(adminUser).values({
+        loginId: 'lab-role@example.com',
+        name: 'Lab Staff',
+        passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
+        role: 'LAB',
+      });
+      const login = await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ loginId: 'lab-role@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200);
+      labAccessToken = login.body.accessToken;
+    });
+
+    it('lets any staff role read the branch list, including inactive branches', async () => {
+      await db.insert(shieldStore).values({
+        code: 'SHD-TST',
+        name: 'Test Branch',
+        area: 'Testville',
+        city: 'Testcity',
+        state: 'Kerala',
+        pincode: '676999',
+        isActive: false,
+      });
+
+      // staffAccessToken (from the top-level beforeAll) is a PHARMACY login —
+      // read is open to every staff role, not just the ones with the Stores
+      // module in shieldweb/src/config/permissions.ts.
+      const res = await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/stores')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(res.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ code: 'SHD-TST', isActive: false, memberCount: 0, orderCount: 0 }),
+        ]),
+      );
+    });
+
+    it('rejects a PHARMACY role from writing to stores — not in its module list', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/stores')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ code: 'SHD-XXX', name: 'X', area: 'X', city: 'X', state: 'Kerala', pincode: '676100' })
+        .expect(403);
+    });
+
+    it('lets a LAB role create a branch, then toggle it active and lab-eligible', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/stores')
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({
+          code: 'shd-new',
+          name: 'New Branch',
+          area: 'Newtown',
+          city: 'Newcity',
+          state: 'Kerala',
+          pincode: '676100',
+        })
+        .expect(201);
+      expect(created.body.store.code).toBe('SHD-NEW'); // upper-cased server-side
+      expect(created.body.store.isActive).toBe(true); // default
+      expect(created.body.store.offersLabCollection).toBe(true); // default
+      const id = created.body.store.id;
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/stores/${id}/active`)
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({ isActive: false })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/stores/${id}/offers-lab`)
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({ offersLabCollection: false })
+        .expect(200);
+
+      const after = await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/stores')
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .expect(200);
+      const row = after.body.find((s: { code: string }) => s.code === 'SHD-NEW');
+      expect(row).toEqual(expect.objectContaining({ isActive: false, offersLabCollection: false }));
+    });
+
+    it('returns { store: null } (not an error) creating a branch whose code is already taken', async () => {
+      await db.insert(shieldStore).values({
+        code: 'SHD-DUP',
+        name: 'Original',
+        area: 'A',
+        city: 'B',
+        state: 'Kerala',
+        pincode: '676100',
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/stores')
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({ code: 'SHD-DUP', name: 'Duplicate', area: 'A', city: 'B', state: 'Kerala', pincode: '676100' })
+        .expect(201);
+      expect(res.body).toEqual({ store: null });
+    });
+
+    it('edits a branch’s full details, including its bank account', async () => {
+      const [store] = await db
+        .insert(shieldStore)
+        .values({ code: 'SHD-EDT', name: 'Before', area: 'A', city: 'B', state: 'Kerala', pincode: '676100' })
+        .returning();
+
+      const res = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/stores/${store.id}`)
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({
+          name: 'After',
+          bankAccountName: 'Sahakar 360',
+          bankAccountNumber: '1234567890',
+          bankIfsc: 'sbin0001234',
+          bankName: 'State Bank of India',
+          latitude: 11.05,
+          longitude: 76.1,
+        })
+        .expect(200);
+      expect(res.body.name).toBe('After');
+      expect(res.body.bankIfsc).toBe('SBIN0001234'); // upper-cased server-side
+      expect(Number(res.body.latitude)).toBeCloseTo(11.05);
+    });
+
+    it('404s updating a branch that does not exist', async () => {
+      await request(app.getHttpServer())
+        .patch('/v1/staff/catalogue/stores/999999')
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({ name: 'Nobody' })
+        .expect(404);
+    });
   });
 });

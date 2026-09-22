@@ -3,12 +3,7 @@ import { appSchema } from './app-identity';
 
 /**
  * Typed READ/WRITE MIRROR of catalogue tables owned by
- * backend/db/app_schema.sql — see backend/docs/erd.md §2. Note:
- * app.shield_store has NO latitude/longitude columns in the live schema,
- * so "nearest to me" store sorting (mentioned as aspirational in
- * backend/docs/frd.md §2) is NOT implemented here — only what the schema
- * actually supports. Flagging the drift instead of quietly building
- * against wishful requirements.
+ * backend/db/app_schema.sql — see backend/docs/erd.md §2.
  */
 export const shieldStore = appSchema.table('shield_store', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
@@ -25,6 +20,20 @@ export const shieldStore = appSchema.table('shield_store', {
   /** Migration 0057 — whether this branch takes lab bookings at all. On by
    *  default; a branch with no phlebotomist can be switched off. */
   offersLabCollection: boolean('offers_lab_collection').notNull().default(true),
+  /** Town-centre coordinates (migration 0007). Null until an admin pins the
+   *  branch; `StoreDirectory.nearest` in the Flutter apps then falls back to
+   *  pincode-prefix ranking for that branch rather than sorting it last. */
+  latitude: numeric('latitude', { precision: 9, scale: 6 }),
+  longitude: numeric('longitude', { precision: 9, scale: 6 }),
+  /** A pasted Google Maps share link, and the branch's own settlement bank
+   *  account (migrations 0009/0010) — where a member's plan-activation bank
+   *  transfer actually lands. All blank (`''`) until the console fills them
+   *  in, never null. */
+  mapsUrl: text('maps_url').notNull().default(''),
+  bankAccountName: text('bank_account_name').notNull().default(''),
+  bankAccountNumber: text('bank_account_number').notNull().default(''),
+  bankIfsc: text('bank_ifsc').notNull().default(''),
+  bankName: text('bank_name').notNull().default(''),
   sort: integer('sort').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
