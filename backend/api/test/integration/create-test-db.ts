@@ -13,6 +13,12 @@ import * as schema from '../../src/db/schema';
 export function createTestDb() {
   const mem = newDb({ autoCreateForeignKeyIndices: true });
   mem.public.registerFunction({ name: 'gen_random_uuid', returns: DataType.uuid, implementation: randomUUID });
+  mem.public.registerFunction({
+    name: 'octet_length',
+    args: [DataType.bytea],
+    returns: DataType.integer,
+    implementation: (value: Buffer) => value.length,
+  });
 
   mem.public.none(`
     CREATE SCHEMA app;

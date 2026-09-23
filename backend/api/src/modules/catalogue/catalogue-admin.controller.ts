@@ -1,14 +1,17 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
 import { CatalogueService } from './catalogue.service';
+import { ReviewVideoMediaService } from './review-video-media.service';
 import { RequireRole, RequireStaff } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createCategorySchema,
   createProductSchema,
   createReviewVideoSchema,
+  createReviewVideoMediaSchema,
   createReviewVideoUploadSchema,
   createStoreSchema,
   deleteReviewVideoMediaSchema,
+  reviewVideoChunkSchema,
   setStoreActiveSchema,
   setStoreOffersLabSchema,
   updateCategorySchema,
@@ -18,9 +21,11 @@ import {
   type CreateCategoryDto,
   type CreateProductDto,
   type CreateReviewVideoDto,
+  type CreateReviewVideoMediaDto,
   type CreateReviewVideoUploadDto,
   type CreateStoreDto,
   type DeleteReviewVideoMediaDto,
+  type ReviewVideoChunkDto,
   type SetStoreActiveDto,
   type SetStoreOffersLabDto,
   type UpdateCategoryDto,
@@ -37,7 +42,10 @@ import {
 @Controller('v1/staff/catalogue')
 @RequireStaff()
 export class CatalogueAdminController {
-  constructor(private readonly catalogue: CatalogueService) {}
+  constructor(
+    private readonly catalogue: CatalogueService,
+    private readonly reviewVideoMedia: ReviewVideoMediaService,
+  ) {}
 
   // ---- Stores -------------------------------------------------------------
   // Read is open to any staff role (branch pickers on Bills/Deliveries/order
@@ -142,6 +150,49 @@ export class CatalogueAdminController {
     @Body(new ZodValidationPipe(deleteReviewVideoMediaSchema)) dto: DeleteReviewVideoMediaDto,
   ) {
     return this.catalogue.deleteReviewVideoMedia(dto.url);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Post('review-video-media')
+  createReviewVideoMedia(
+    @Body(new ZodValidationPipe(createReviewVideoMediaSchema)) dto: CreateReviewVideoMediaDto,
+  ) {
+    return this.reviewVideoMedia.createUpload(dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Post('review-video-media/cleanup')
+  cleanupReviewVideoMedia() {
+    return this.reviewVideoMedia.cleanupIncomplete().then((removed) => ({ removed }));
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Get('review-video-media/:id')
+  reviewVideoMediaStatus(@Param('id', ParseUUIDPipe) id: string) {
+    return this.reviewVideoMedia.status(id);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Put('review-video-media/:id/chunks/:index')
+  appendReviewVideoChunk(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('index', ParseIntPipe) index: number,
+    @Body(new ZodValidationPipe(reviewVideoChunkSchema)) dto: ReviewVideoChunkDto,
+  ) {
+    if (index < 0) throw new BadRequestException('Chunk index must be zero or greater.');
+    return this.reviewVideoMedia.appendChunk(id, index, dto.data);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Post('review-video-media/:id/complete')
+  completeReviewVideoMedia(@Param('id', ParseUUIDPipe) id: string) {
+    return this.reviewVideoMedia.completeUpload(id);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Delete('review-video-media/:id')
+  deleteNeonReviewVideoMedia(@Param('id', ParseUUIDPipe) id: string) {
+    return this.reviewVideoMedia.deleteUnreferenced(id);
   }
 
   @RequireRole('SUPERADMIN', 'ADMIN')

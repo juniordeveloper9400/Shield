@@ -93,6 +93,14 @@ export const createReviewVideoUploadSchema = z.object({
 
 export const deleteReviewVideoMediaSchema = z.object({ url: z.string().min(1) });
 
+export const createReviewVideoMediaSchema = z.object({
+  contentType: z.enum(REVIEW_VIDEO_CONTENT_TYPES),
+  byteLength: z.number().int().positive().max(MAX_REVIEW_VIDEO_BYTES),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+});
+
+export const reviewVideoChunkSchema = z.object({ data: z.string().min(1) });
+
 export type CreateStoreDto = z.infer<typeof createStoreSchema>;
 export type UpdateStoreDto = z.infer<typeof updateStoreSchema>;
 export type SetStoreActiveDto = z.infer<typeof setStoreActiveSchema>;
@@ -106,3 +114,5 @@ export type CreateReviewVideoDto = z.infer<typeof createReviewVideoSchema>;
 export type UpdateReviewVideoDto = z.infer<typeof updateReviewVideoSchema>;
 export type CreateReviewVideoUploadDto = z.infer<typeof createReviewVideoUploadSchema>;
 export type DeleteReviewVideoMediaDto = z.infer<typeof deleteReviewVideoMediaSchema>;
+export type CreateReviewVideoMediaDto = z.infer<typeof createReviewVideoMediaSchema>;
+export type ReviewVideoChunkDto = z.infer<typeof reviewVideoChunkSchema>;
