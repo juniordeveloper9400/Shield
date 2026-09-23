@@ -1,5 +1,10 @@
-import { bigint, boolean, date, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { bigint, boolean, check, customType, date, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { appSchema } from './app-identity';
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
 
 /**
  * Typed READ/WRITE MIRROR of catalogue tables owned by
@@ -198,3 +203,23 @@ export const customerReviewVideo = appSchema.table('customer_review_video', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const customerReviewVideoMedia = appSchema.table(
+  'customer_review_video_media',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    contentType: text('content_type').notNull(),
+    byteLength: bigint('byte_length', { mode: 'number' }).notNull(),
+    sha256: text('sha256').notNull(),
+    data: bytea('data').notNull().default(sql`''::bytea`),
+    nextChunk: integer('next_chunk').notNull().default(0),
+    uploadComplete: boolean('upload_complete').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    contentTypeCheck: check('customer_review_video_media_content_type_check', sql`${table.contentType} IN ('video/mp4', 'video/webm', 'video/quicktime')`),
+    byteLengthCheck: check('customer_review_video_media_byte_length_check', sql`${table.byteLength} > 0`),
+    nextChunkCheck: check('customer_review_video_media_next_chunk_check', sql`${table.nextChunk} >= 0`),
+  }),
+);

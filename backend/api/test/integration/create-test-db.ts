@@ -257,6 +257,18 @@ export function createTestDb() {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE app.customer_review_video_media (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      content_type text NOT NULL CHECK (content_type IN ('video/mp4', 'video/webm', 'video/quicktime')),
+      byte_length bigint NOT NULL CHECK (byte_length > 0),
+      sha256 text NOT NULL,
+      data bytea NOT NULL DEFAULT ''::bytea,
+      next_chunk integer NOT NULL DEFAULT 0 CHECK (next_chunk >= 0),
+      upload_complete boolean NOT NULL DEFAULT false,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      completed_at timestamptz
+    );
+
     CREATE TABLE app.promo (
       id bigserial PRIMARY KEY,
       title_top text,

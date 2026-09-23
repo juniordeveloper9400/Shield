@@ -33,7 +33,7 @@ is a single safe statement (`DROP SCHEMA app CASCADE`) that cannot reach
 | `location` | `member_address` |
 | `patients` | `patient` |
 | `registration/shield_store` | `shield_store` |
-| `home`, `health`, `product`, `categories`, `search` | `home_banner`, `promo`, `health_article` (+ `_section`), `customer_review` (+ `_video`), `product_category` (+ `_subcategory`), `product` (+ `product_detail`, `product_faq`) |
+| `home`, `health`, `product`, `categories`, `search` | `home_banner`, `promo`, `health_article` (+ `_section`), `customer_review` (+ `_video`), `customer_review_video_media` (uploaded video bytes in Neon), `product_category` (+ `_subcategory`), `product` (+ `product_detail`, `product_faq`) |
 | `cart` | `cart`, `cart_line` |
 | `checkout`, `orders` | `order`, `order_line`, `order_track_step`, `order_receipt`, `payment_method`, `bill`, `bill_line` (a priced invoice against an order — `bill.wallet_collected`/`cash_collected`, migration 0041, record how a PAID bill's amount actually split between the two when the admin console collects it) |
 | `prescription` | `prescription`, `prescription_medicine`, `prescription_order`, `prescription_image` (migration 0040 — up to a handful of photos per script, superseding the single `prescription.image` column) |
