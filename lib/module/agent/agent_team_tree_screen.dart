@@ -180,7 +180,9 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
     // glides back up to its parent, so the chevron pulls the view in the
     // direction it points.
     final focus = opening ? id : (_parentId(id) ?? id);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _flowTo(focus));
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _flowTo(focus, zoomIn: opening),
+    );
   }
 
   /// Every id on the path from [id] up to the root, not including [id] itself.
@@ -215,7 +217,7 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
 
   /// Glides the view so [id]'s card sits high and centred, its tier fanned
   /// out in the frame below it.
-  void _flowTo(String id) {
+  void _flowTo(String id, {bool zoomIn = false}) {
     final pillBox =
         _pillKeys[id]?.currentContext?.findRenderObject() as RenderBox?;
     final chartBox = _chartKey.currentContext?.findRenderObject() as RenderBox?;
@@ -228,7 +230,8 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
 
     // The card's position inside the (untransformed) map content.
     final topLeft = pillBox.localToGlobal(Offset.zero, ancestor: chartBox);
-    final scale = _transform.value.getMaxScaleOnAxis();
+    final currentScale = _transform.value.getMaxScaleOnAxis();
+    final scale = zoomIn ? math.max(1.0, currentScale) : currentScale;
 
     final targetX =
         _viewportSize.width / 2 - (topLeft.dx + pillBox.size.width / 2) * scale;
@@ -607,7 +610,7 @@ class _MindNode extends StatelessWidget {
     final capacity = slots.isNotEmpty
         ? slots.length
         : agent.level.childCapacity;
-    final canExpand = capacity > 0;
+    final canExpand = (childLevel != null) && (capacity > 0);
     final isExpanded = canExpand && expanded.contains(agent.id);
 
     return _MindBranch(
@@ -757,9 +760,6 @@ class _MindPlusNode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final canExpand = level.childCapacity > 0;
-    final isExpanded = canExpand && expanded.contains(slotId);
-
     // If this open slot itself names a place, its own preview positions are
     // that place's named children rather than the plain doubling shape.
     final previewSlots = AgentGeo.current.slotsUnder(level, slot?.id);
@@ -773,6 +773,9 @@ class _MindPlusNode extends StatelessWidget {
             ? null
             : AgentGeo.current.childLevelOfId(slot!.id)) ??
         level.child;
+
+    final canExpand = (childLevel != null) && (previewCapacity > 0);
+    final isExpanded = canExpand && expanded.contains(slotId);
 
     return _MindBranch(
       connectorColor: _connectorColor,
@@ -791,7 +794,7 @@ class _MindPlusNode extends StatelessWidget {
           ? [
               for (var i = 0; i < previewCapacity; i++)
                 _MindPlusNode(
-                  level: childLevel!,
+                  level: childLevel,
                   depth: depth + 1,
                   slotId: '$slotId/${childLevel.name}/$i',
                   realParent: realParent,
