@@ -5,8 +5,7 @@
 // Safe to import unconditionally: the SDK itself treats a missing/empty
 // `dsn` as "stay disabled" (its own documented no-op behavior), the same
 // contract every other optional integration in this service already
-// follows (Redis, Supabase Storage) — nothing here needs its own
-// `if (SENTRY_DSN)` guard.
+// follows (Redis) — nothing here needs its own `if (SENTRY_DSN)` guard.
 import * as Sentry from '@sentry/nestjs';
 
 Sentry.init({

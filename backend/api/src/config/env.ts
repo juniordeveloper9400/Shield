@@ -28,10 +28,14 @@ const envSchema = z
     OBJECT_STORAGE_BUCKET: z.string().optional(),
     OBJECT_STORAGE_ACCESS_KEY: z.string().optional(),
     OBJECT_STORAGE_SECRET_KEY: z.string().optional(),
-    // Supabase Storage, for customer review videos uploaded from the admin
-    // console (see storage/supabase-public-media-storage.service.ts). The key is
-    // the project's service-role (or secret) key — server-side only, it bypasses
-    // row-level security. The bucket must be public and used for nothing else.
+    // Supabase Storage — no longer used. Customer review video bytes now live
+    // in Neon Postgres (`app.customer_review_video_media`, see
+    // modules/catalogue/review-video-media.service.ts); these three are kept,
+    // still optional and unread by anything, only until the Neon storage
+    // migration is verified in production (see docs/superpowers/specs/
+    // 2026-09-23-neon-customer-video-storage-design.md's rollout notes) —
+    // remove them once that is confirmed rather than now, so a rollback has
+    // nothing extra to restore.
     // Blank (the checked-in .env.example's default before Supabase is set
     // up) must validate the same as unset — plain `.optional()` already
     // accepts '' for every other field here; `.url()` doesn't, so it needs

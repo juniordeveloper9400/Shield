@@ -1,14 +1,9 @@
-import { randomUUID } from 'node:crypto';
 import {
-  BadGatewayException,
-  BadRequestException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
@@ -27,13 +22,10 @@ import {
   users,
 } from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
-import type { Env } from '../../config/env';
-import { PUBLIC_MEDIA_STORAGE, type PublicMediaStorage } from '../../storage/public-media-storage';
 import type {
   CreateCategoryDto,
   CreateProductDto,
   CreateReviewVideoDto,
-  CreateReviewVideoUploadDto,
   CreateStoreDto,
   ListProductsQuery,
   UpdateCategoryDto,
@@ -41,17 +33,9 @@ import type {
   UpdateReviewVideoDto,
   UpdateStoreDto,
 } from './dto';
+import { ReviewVideoMediaService, reviewVideoMediaIdFromUrl } from './review-video-media.service';
 
 /** Where uploaded customer review clips live in the public bucket. */
-const REVIEW_VIDEO_PREFIX = 'review-videos/';
-const REVIEW_VIDEO_EXTENSIONS: Record<string, string> = {
-  'video/mp4': 'mp4',
-  'video/webm': 'webm',
-  'video/quicktime': 'mov',
-};
-
-const formatMegabytes = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
-
 const TTL = {
   SHORT: 60, // frequently-touched lists
   LONG: 300, // near-static reference data
@@ -70,8 +54,7 @@ export class CatalogueService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly cache: CacheService,
-    @Inject(PUBLIC_MEDIA_STORAGE) private readonly media: PublicMediaStorage,
-    private readonly config: ConfigService<Env, true>,
+    private readonly reviewVideoMedia: ReviewVideoMediaService,
   ) {}
 
   // ---- Stores -------------------------------------------------------------
@@ -420,6 +403,7 @@ export class CatalogueService {
 
   /** Inserts after the current last clip unless an explicit sort is given — matches the console's existing behavior. */
   async createReviewVideo(dto: CreateReviewVideoDto) {
+    await this.assertReadyReviewVideo(dto.videoUrl);
     let sort = dto.sort;
     if (sort === undefined) {
       const [last] = await this.db
@@ -440,66 +424,25 @@ export class CatalogueService {
    * bucket under a random key, and `publicUrl` is what gets saved as the
    * clip's `videoUrl` once the upload succeeds.
    */
-  async createReviewVideoUpload(dto: CreateReviewVideoUploadDto) {
-    if (!this.media.isConfigured()) {
-      throw new ServiceUnavailableException({
-        error: {
-          code: 'STORAGE_NOT_CONFIGURED',
-          message:
-            'Video storage is not set up yet. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (and the bucket) on the API first.',
-        },
-      });
-    }
-    // Checked here, before any upload, so an oversized file fails in a second
-    // instead of after minutes of uploading to be refused by Supabase.
-    const maxBytes = Math.round(this.config.get('REVIEW_VIDEO_MAX_MB', { infer: true }) * 1024 * 1024);
-    if (dto.size > maxBytes) {
-      throw new BadRequestException({
-        error: {
-          code: 'VIDEO_TOO_LARGE',
-          message: `That video is ${formatMegabytes(dto.size)}; the limit is ${formatMegabytes(maxBytes)}. Compress it, or raise the limit (REVIEW_VIDEO_MAX_MB and the Supabase bucket's own limit).`,
-        },
-      });
-    }
-    const key = `${REVIEW_VIDEO_PREFIX}${randomUUID()}.${REVIEW_VIDEO_EXTENSIONS[dto.contentType]}`;
-    try {
-      return await this.media.createUpload({ key });
-    } catch (error) {
-      this.logger.error(`Could not create a review video upload link: ${String(error)}`);
-      throw new BadGatewayException({
-        error: {
-          code: 'STORAGE_UNAVAILABLE',
-          message: error instanceof Error ? error.message : 'The storage service is unavailable.',
-        },
-      });
-    }
-  }
-
   /**
    * Removes an uploaded clip from the bucket — when a clip is deleted or its
    * video replaced, or an upload is abandoned. Only ever deletes objects under
    * this feature's own prefix in our own public bucket; any other URL (a
    * legacy YouTube link, a bundled asset path) is ignored, not an error.
    */
-  async deleteReviewVideoMedia(url: string): Promise<{ deleted: boolean }> {
-    if (!this.media.isConfigured()) return { deleted: false };
-    const key = this.media.keyFromPublicUrl(url);
-    if (!key || !key.startsWith(REVIEW_VIDEO_PREFIX)) return { deleted: false };
-    await this.media.delete(key);
-    return { deleted: true };
-  }
-
   /** Best-effort clean-up: a failed delete of an orphaned file must never fail the write that made it orphaned. */
   private async discardMedia(url: string | null | undefined) {
-    if (!url) return;
+    const id = reviewVideoMediaIdFromUrl(url);
+    if (!id) return;
     try {
-      await this.deleteReviewVideoMedia(url);
+      await this.reviewVideoMedia.deleteUnreferenced(id);
     } catch (error) {
       this.logger.warn(`Could not delete replaced review video ${url}: ${String(error)}`);
     }
   }
 
   async updateReviewVideo(id: number, dto: UpdateReviewVideoDto) {
+    if (dto.videoUrl) await this.assertReadyReviewVideo(dto.videoUrl);
     const [before] = dto.videoUrl
       ? await this.db
           .select({ videoUrl: customerReviewVideo.videoUrl })
@@ -523,5 +466,10 @@ export class CatalogueService {
     if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Review video not found' } });
     await this.cache.invalidate('catalogue:review-videos:active');
     await this.discardMedia(deleted.videoUrl);
+  }
+
+  private async assertReadyReviewVideo(url: string) {
+    const id = reviewVideoMediaIdFromUrl(url);
+    if (id) await this.reviewVideoMedia.playbackInfo(id);
   }
 }

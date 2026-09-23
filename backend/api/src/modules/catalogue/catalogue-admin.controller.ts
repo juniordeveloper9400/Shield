@@ -8,9 +8,7 @@ import {
   createProductSchema,
   createReviewVideoSchema,
   createReviewVideoMediaSchema,
-  createReviewVideoUploadSchema,
   createStoreSchema,
-  deleteReviewVideoMediaSchema,
   reviewVideoChunkSchema,
   setStoreActiveSchema,
   setStoreOffersLabSchema,
@@ -22,9 +20,7 @@ import {
   type CreateProductDto,
   type CreateReviewVideoDto,
   type CreateReviewVideoMediaDto,
-  type CreateReviewVideoUploadDto,
   type CreateStoreDto,
-  type DeleteReviewVideoMediaDto,
   type ReviewVideoChunkDto,
   type SetStoreActiveDto,
   type SetStoreOffersLabDto,
@@ -136,21 +132,9 @@ export class CatalogueAdminController {
 
   /** Signed upload link for sending a clip straight to the public bucket — see CatalogueService.createReviewVideoUpload. */
   @RequireRole('SUPERADMIN', 'ADMIN')
-  @Post('review-videos/upload-url')
-  createReviewVideoUpload(
-    @Body(new ZodValidationPipe(createReviewVideoUploadSchema)) dto: CreateReviewVideoUploadDto,
-  ) {
-    return this.catalogue.createReviewVideoUpload(dto);
-  }
 
   /** Removes a stored clip that is no longer used (replaced, or an abandoned upload). */
   @RequireRole('SUPERADMIN', 'ADMIN')
-  @Post('review-videos/media/delete')
-  deleteReviewVideoMedia(
-    @Body(new ZodValidationPipe(deleteReviewVideoMediaSchema)) dto: DeleteReviewVideoMediaDto,
-  ) {
-    return this.catalogue.deleteReviewVideoMedia(dto.url);
-  }
 
   @RequireRole('SUPERADMIN', 'ADMIN')
   @Post('review-video-media')

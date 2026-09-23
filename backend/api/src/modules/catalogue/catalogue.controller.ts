@@ -1,5 +1,9 @@
-import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { Controller, Get, Head, Param, ParseIntPipe, ParseUUIDPipe, Query, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
+import { once } from 'node:events';
 import { CatalogueService } from './catalogue.service';
+import { ReviewVideoMediaService } from './review-video-media.service';
+import { parseVideoRange } from './review-video-range';
 import { Public } from '../../common/decorators/public.decorator';
 import { RequireMember } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -16,7 +20,10 @@ import { listProductsQuerySchema, type ListProductsQuery } from './dto';
 // by catalogue.e2e-spec.ts, not by inspection.
 @Controller('v1/public/catalogue')
 export class CatalogueController {
-  constructor(private readonly catalogue: CatalogueService) {}
+  constructor(
+    private readonly catalogue: CatalogueService,
+    private readonly reviewVideoMedia: ReviewVideoMediaService,
+  ) {}
 
   @Public()
   @Get('stores')
@@ -78,8 +85,62 @@ export class CatalogueController {
 
   @Public()
   @Get('review-videos')
-  reviewVideos() {
-    return this.catalogue.listActiveReviewVideos();
+  async reviewVideos(@Req() request: Request) {
+    const rows = await this.catalogue.listActiveReviewVideos();
+    const proto = String(request.headers['x-forwarded-proto'] ?? request.protocol).split(',')[0].trim();
+    const host = String(request.headers['x-forwarded-host'] ?? request.headers.host ?? '').split(',')[0].trim();
+    const origin = host ? `${proto}://${host}` : '';
+    return rows.map((row) => ({
+      ...row,
+      videoUrl: row.videoUrl.startsWith('/v1/public/') && origin ? `${origin}${row.videoUrl}` : row.videoUrl,
+    }));
+  }
+
+  @Public()
+  @Head('review-video-media/:id')
+  async reviewVideoMediaHead(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() response: Response,
+  ) {
+    const info = await this.reviewVideoMedia.playbackInfo(id);
+    setVideoHeaders(response, info.contentType, info.byteLength);
+    response.status(200).end();
+  }
+
+  @Public()
+  @Get('review-video-media/:id')
+  async reviewVideoMediaGet(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: Request,
+    @Res() response: Response,
+  ) {
+    const info = await this.reviewVideoMedia.playbackInfo(id);
+    const range = parseVideoRange(request.headers.range, info.byteLength, 2 * 1024 * 1024);
+    setVideoHeaders(response, info.contentType, info.byteLength);
+    if (range.kind === 'unsatisfiable') {
+      response.setHeader('Content-Range', `bytes */${info.byteLength}`);
+      response.setHeader('Content-Length', '0');
+      response.status(416).end();
+      return;
+    }
+    if (range.kind === 'partial') {
+      const length = range.end - range.start + 1;
+      const bytes = await this.reviewVideoMedia.readSlice(id, range.start, length);
+      response.status(206);
+      response.setHeader('Content-Range', `bytes ${range.start}-${range.end}/${info.byteLength}`);
+      response.setHeader('Content-Length', length);
+      response.end(bytes);
+      return;
+    }
+
+    response.status(200);
+    response.setHeader('Content-Length', info.byteLength);
+    const sliceSize = 2 * 1024 * 1024;
+    for (let start = 0; start < info.byteLength; start += sliceSize) {
+      const bytes = await this.reviewVideoMedia.readSlice(id, start, Math.min(sliceSize, info.byteLength - start));
+      if (!response.write(bytes)) await once(response, 'drain');
+    }
+    response.end();
   }
 
   @Public()
@@ -93,4 +154,12 @@ export class CatalogueController {
   paymentMethods() {
     return this.catalogue.listPaymentMethods();
   }
+}
+
+function setVideoHeaders(response: Response, contentType: string, byteLength: number) {
+  response.setHeader('Content-Type', contentType);
+  response.setHeader('Accept-Ranges', 'bytes');
+  response.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('Content-Length', byteLength);
 }

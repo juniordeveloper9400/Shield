@@ -14,6 +14,11 @@ import type { Env } from '../../config/env';
 export const REVIEW_VIDEO_CHUNK_BYTES = 768 * 1024;
 const HASH_SLICE_BYTES = 2 * 1024 * 1024;
 const MEDIA_PATH = '/v1/public/catalogue/review-video-media/';
+const MEDIA_URL_PATTERN = /^\/v1\/public\/catalogue\/review-video-media\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+
+export function reviewVideoMediaIdFromUrl(url: string | null | undefined): string | null {
+  return url?.match(MEDIA_URL_PATTERN)?.[1] ?? null;
+}
 
 export interface CreateReviewVideoMediaInput {
   contentType: 'video/mp4' | 'video/webm' | 'video/quicktime';
@@ -142,6 +147,27 @@ export class ReviewVideoMediaService {
        RETURNING id
     `);
     return result.rows.length;
+  }
+
+  async playbackInfo(id: string) {
+    const [row] = await this.db.select({
+      id: customerReviewVideoMedia.id,
+      contentType: customerReviewVideoMedia.contentType,
+      byteLength: customerReviewVideoMedia.byteLength,
+    }).from(customerReviewVideoMedia).where(sql`${customerReviewVideoMedia.id} = ${id}::uuid AND ${customerReviewVideoMedia.uploadComplete} = true`).limit(1);
+    if (!row) throw new NotFoundException('Customer video not found.');
+    return row;
+  }
+
+  async readSlice(id: string, start: number, length: number): Promise<Buffer> {
+    const result = await this.db.execute(sql`
+      SELECT substring(data FROM ${start + 1} FOR ${length}) AS bytes
+        FROM app.customer_review_video_media
+       WHERE id = ${id}::uuid AND upload_complete = true
+    `);
+    const row = result.rows[0] as { bytes: Buffer } | undefined;
+    if (!row) throw new NotFoundException('Customer video not found.');
+    return row.bytes;
   }
 
   private formatMb(bytes: number) {
