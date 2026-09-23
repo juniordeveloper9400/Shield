@@ -73,6 +73,14 @@ describe('Agent & Geography (e2e)', () => {
     const [session] = await db
       .insert(authSession)
       .values({
+        // Explicit, not the column's own DEFAULT gen_random_uuid() —
+        // pg-mem appears to cache a prepared insert's default expression
+        // across separate calls that share the same statement shape, so a
+        // second directMemberToken call in the same suite reused the first
+        // one's id and hit the primary key. A real Postgres re-evaluates
+        // the default every execution; explicit values() sidesteps whatever
+        // pg-mem is doing here regardless.
+        id: randomUUID(),
         subjectType: 'MEMBER',
         subjectId: String(userId),
         expiresAt: new Date(Date.now() + 60_000),
@@ -406,6 +414,51 @@ describe('Agent & Geography (e2e)', () => {
     expect(own.body).toHaveLength(1);
     expect(own.body[0].requestedLevel).toBe('NATIONAL');
     expect(own.body[0].status).toBe('APPROVED');
+  });
+
+  it("the bug fix: an agent filling in someone else's KYC form files the request under that recruit's own name and phone, not the recruiter's", async () => {
+    // The recruiter is signed in on their own device/session throughout —
+    // there is no "log in as the recruit" step here, deliberately: that is
+    // exactly the shape of the real bug (the request used to be filed as
+    // whoever's session made the call, the recruiter, even though the form
+    // being filled in was for someone else entirely). directMemberToken, not
+    // a real sign-in — this file's shared auth-route throttle bucket is
+    // already at capacity (see that helper's own doc), and this test only
+    // needs *a* valid session for the national agent's own member row.
+    const [nationalMember] = await db.select({ id: users.id }).from(users).where(eq(users.phone, '9100000001')).limit(1);
+    const recruiterToken = await directMemberToken(nationalMember.id);
+
+    const submit = await request(app.getHttpServer())
+      .post('/v1/agent/requests')
+      .set('Authorization', `Bearer ${recruiterToken}`)
+      .send({
+        requestedLevel: 'WARD',
+        requestedArea: 'Ward 1',
+        requestedAreaId: wardId,
+        parentAgentId: nationalAgentId,
+        // The recruit's own, already OTP-verified phone — present because
+        // this is someone else's form, not the recruiter's own. Without it,
+        // this whole request would be indistinguishable from a plain self
+        // "become an agent" one and would fall back to the recruiter's own
+        // session identity (see submitRequest).
+        phone: '9100000012',
+        firstName: 'Sinan',
+        lastName: 'K',
+      })
+      .expect(201);
+
+    // Not "National Candidate" (the recruiter's own users.name) and not the
+    // recruiter's own phone — the recruit's.
+    expect(submit.body.name).toBe('Sinan K');
+    expect(submit.body.phone).toBe('9100000012');
+
+    const pending = await request(app.getHttpServer())
+      .get('/v1/agent/team/pending')
+      .set('Authorization', `Bearer ${recruiterToken}`)
+      .expect(200);
+    const recruit = pending.body.find((r: { phone: string }) => r.phone === '9100000012');
+    expect(recruit).toBeDefined();
+    expect(recruit.name).toBe('Sinan K');
   });
 
   it('links a customer to an agent and rejects linking the same member twice', async () => {

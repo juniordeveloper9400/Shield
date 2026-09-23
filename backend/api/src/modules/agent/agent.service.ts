@@ -53,9 +53,30 @@ export class AgentService {
       });
     }
 
+    // Two different callers hit this same route. A plain self "become an
+    // agent" request (optionally naming a *suggested* parentAgentId too) is
+    // filed by the recruit's own session — `member` here already is the
+    // recruit, so `member.name`/`member.phone` are exactly right. But an
+    // existing agent filling in a *new* recruit's KYC form (`parentAgentId`
+    // is the real parent this time) is still filed under the recruiter's own
+    // session — `member` is the recruiter, not the recruit — and that form
+    // sends the recruit's own, already OTP-verified `phone` explicitly for
+    // exactly this reason. Its presence, not `parentAgentId` (present in
+    // both cases), is what tells the two apart: unconditionally using
+    // `member.name`/`member.phone` here used to attribute the recruit's
+    // request to the recruiter instead — the row's `name`/`phone` read back
+    // as the recruiter's own, while `firstName`/`lastName`/`aadhaar` etc.
+    // (passed through untouched via `...dto`) stayed correctly the
+    // recruit's, a mismatch a name-only glance at the roster wouldn't catch.
+    const recruitingSomeoneElse = !!dto.phone;
+    const name = recruitingSomeoneElse
+      ? [dto.firstName, dto.middleName, dto.lastName].filter((part) => part.length > 0).join(' ')
+      : member.name;
+    const phone = recruitingSomeoneElse ? dto.phone! : member.phone;
+
     const [created] = await this.db
       .insert(agentRequest)
-      .values({ ...dto, name: member.name, phone: member.phone })
+      .values({ ...dto, name, phone })
       .returning();
     return created;
   }
