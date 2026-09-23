@@ -85,7 +85,11 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
   }
 
   void _onGeoChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    if (!_fitted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _openOnRoot());
+    }
   }
 
   @override
@@ -96,11 +100,16 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
     super.dispose();
   }
 
+  int _openOnRootAttempts = 0;
+
   /// Where the screen opens: the root's card centred across the top, with the
   /// rest of the map free to fan out below it as branches are opened.
   void _openOnRoot() {
     final chartBox = _chartKey.currentContext?.findRenderObject() as RenderBox?;
     if (chartBox == null || !chartBox.hasSize || _viewportSize.isEmpty) {
+      if (mounted && !_fitted && _openOnRootAttempts++ < 20) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _openOnRoot());
+      }
       return;
     }
     final chartSize = chartBox.size;
@@ -168,7 +177,7 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
         // collapses everything that is not one of its own ancestors — its
         // open siblings and their subtrees, and any other branch left open
         // elsewhere — then opens this card.
-        final keep = _ancestorsOf(id);
+        final keep = _ancestorsOf(id)..addAll(_openGeoSlotsEnclosing(id));
         _expanded.removeWhere((e) => !keep.contains(e));
         _expanded.add(id);
       } else {
@@ -183,6 +192,24 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _flowTo(focus, zoomIn: opening),
     );
+  }
+
+  /// Every currently-open "+" geo seat (a `slot/…` id already in [_expanded])
+  /// [id]'s own real geo position sits under — region, state, district, …
+  /// whatever tiers between them are still vacant.
+  Set<String> _openGeoSlotsEnclosing(String id) {
+    final areaId = AgentService.instance.byId(id)?.areaId;
+    if (areaId == null) {
+      return const {};
+    }
+    return _expanded.where((e) {
+      if (!e.startsWith('slot/')) {
+        return false;
+      }
+      final tail = e.split('/').last;
+      return AgentGeo.current.levelOfId(tail) != null &&
+          AgentGeo.current.isWithin(areaId, tail);
+    }).toSet();
   }
 
   /// Every id on the path from [id] up to the root, not including [id] itself.

@@ -133,6 +133,23 @@ class GeoHierarchy {
   /// unknown id.
   String? parentIdOf(String id) => _parentIdByChildId[id];
 
+  /// Whether [id] is [ancestorId] itself, or sits somewhere under it in the
+  /// real geo hierarchy — walking [parentIdOf] up from [id], regardless of
+  /// how many tiers between them have nobody registered.
+  bool isWithin(String id, String ancestorId) {
+    var current = id;
+    while (true) {
+      if (current == ancestorId) {
+        return true;
+      }
+      final parent = parentIdOf(current);
+      if (parent == null) {
+        return false;
+      }
+      current = parent;
+    }
+  }
+
   /// The tier of [parentId]'s children — normally the enum successor of
   /// the parent's own level, but read straight from the data so an
   /// irregular branch is honoured (a ward sitting directly under an
