@@ -35,6 +35,21 @@ This depends on migration `backend/db/migrations/0044_order_review_and_bill_conv
 
 A user can also be made an agent directly, bypassing the request queue: `UserDetailPage`'s "Convert to agent" (`convertToAgent` in `src/api/users.ts`) creates the `app.agent` row on the spot. Every level below national must pick a real named slot — a cascading region → state → district → assembly → lsgd → ward picker (`src/api/geo.ts`, reading `app.region`/`state`/`district`/`assembly`/`lsgd`/`ward`) sized to however many tiers that level needs — so the new agent gets a real `area_id` and locks into a slot in the team tree instead of floating with no area. A slot already held by an approved agent is refused, same as the request-approval path.
 
+### Agent withdrawal approvals
+
+**Agent Withdrawals** (`/agent-withdrawals`) is a dedicated Admin and Super
+Admin queue. An active approved agent can request at least ₹3,000 from earned
+commission after paid and pending withdrawals are deducted. Approval requires
+the reviewer to cross-check identity, the registered bank account, earnings,
+previous payouts and other pending requests, re-enter the matching bank account
+and leave an audit note. Approval reserves the request but does not mark money
+as paid. After completing the bank transfer, the reviewer records its UTR or
+payment reference; only then does the request become `PAID` and increase the
+agent's redeemed total. Rejection requires a reason. The database functions in
+`0059_agent_withdrawal_review.sql` repeat every financial and eligibility check
+under row locks, so bypassing disabled browser controls cannot approve an
+invalid or duplicate payout.
+
 ### Category images (Banners → Categories)
 
 `CategoryBannerPanel` (`src/components/banners/`, data in `src/api/categoryBanners.ts`) edits `app.product_category` and `app.product_subcategory`. Three separate image slots feed the storefront's "Shop by categories" surfaces:
