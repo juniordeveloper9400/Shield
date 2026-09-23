@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../data/neon/order_repository.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
+import '../auth/auth_service.dart';
 import '../checkout/fulfillment_type.dart';
 import '../refer/referral_service.dart';
 import '../rewards/rewards_service.dart';
@@ -222,13 +224,46 @@ class LinkedOrder {
 ///
 /// In memory only; a backend would replace this class wholesale.
 class PurchaseService extends ChangeNotifier {
-  PurchaseService._();
+  PurchaseService._() {
+    AuthService.instance.currentUser.addListener(_onAuthChanged);
+  }
 
   static final PurchaseService instance = PurchaseService._();
 
   final List<Purchase> _purchases = [];
+  bool _isLoading = false;
+
+  bool get isLoading => _isLoading;
 
   List<Purchase> get purchases => List.unmodifiable(_purchases);
+
+  void _onAuthChanged() {
+    final phone = AuthService.instance.currentUser.value?.phone;
+    if (phone != null) {
+      unawaited(ensureLoaded(force: true));
+    }
+  }
+
+  /// Ensures member orders are loaded from the backend/database.
+  Future<void> ensureLoaded({bool force = false}) async {
+    final phone = AuthService.instance.currentUser.value?.phone;
+    if (phone == null) return;
+    if (!force && _purchases.isNotEmpty) return;
+
+    _isLoading = true;
+    notifyListeners();
+    try {
+      final remote = await OrderRepository.instance.listForMember(phone);
+      if (remote != null) {
+        _purchases
+          ..clear()
+          ..addAll(remote);
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 
   /// The loaded order [link] points at, matched by order code, or null when
   /// the order book has not loaded it (yet).

@@ -10,9 +10,19 @@ import 'order_track_screen.dart';
 import 'purchase_service.dart';
 
 /// Order history, the Orders destination in the bottom bar.
-class OrdersScreen extends StatelessWidget {
+class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
 
+  @override
+  State<OrdersScreen> createState() => _OrdersScreenState();
+}
+
+class _OrdersScreenState extends State<OrdersScreen> {
+  @override
+  void initState() {
+    super.initState();
+    PurchaseService.instance.ensureLoaded();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,47 +52,69 @@ class OrdersScreen extends StatelessWidget {
       body: ListenableBuilder(
         listenable: PurchaseService.instance,
         builder: (context, _) {
-          final orders = PurchaseService.instance.purchases;
-          if (orders.isEmpty) {
+          final service = PurchaseService.instance;
+          final orders = service.purchases;
+          if (orders.isEmpty && service.isLoading) {
             return const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.receipt_long_outlined,
-                      size: 44,
-                      color: AppColors.textMuted,
+              child: CircularProgressIndicator(color: AppColors.brandBlue),
+            );
+          }
+
+          Widget content;
+          if (orders.isEmpty) {
+            content = const SingleChildScrollView(
+              physics: AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                height: 400,
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.receipt_long_outlined,
+                          size: 44,
+                          color: AppColors.textMuted,
+                        ),
+                        SizedBox(height: 10),
+                        Text(
+                          'No orders yet',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.textDark,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Orders you place will show up here.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
                     ),
-                    SizedBox(height: 10),
-                    Text(
-                      'No orders yet',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      'Orders you place will show up here.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 13.5,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             );
+          } else {
+            content = ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              itemCount: orders.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) => _OrderCard(order: orders[index]),
+            );
           }
-          return ListView.separated(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-            itemCount: orders.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, index) => _OrderCard(order: orders[index]),
+
+          return RefreshIndicator(
+            onRefresh: () => service.ensureLoaded(force: true),
+            color: AppColors.brandBlue,
+            child: content,
           );
         },
       ),
