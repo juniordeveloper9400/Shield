@@ -82,7 +82,18 @@ export class ReviewVideoMediaService {
       if (row.upload_complete) throw new ConflictException('This video upload is already complete.');
       if (index < nextChunk) return { id, nextChunk, storedBytes };
       if (index > nextChunk) {
-        throw new ConflictException({ message: 'Video chunks must be uploaded in order.', expectedIndex: nextChunk });
+        // The full envelope, not just {message, expectedIndex}: HttpExceptionFilter
+        // only passes an exception body through unchanged when it already looks
+        // like {error: {...}} (see its own doc) — anything else loses every key
+        // but .message. This is what lets the uploader read error.details.expectedIndex
+        // and resume there instead of restarting the whole upload.
+        throw new ConflictException({
+          error: {
+            code: 'CONFLICT',
+            message: 'Video chunks must be uploaded in order.',
+            details: { expectedIndex: nextChunk },
+          },
+        });
       }
       if (storedBytes + chunk.length > Number(row.byte_length)) {
         throw new BadRequestException('This chunk would exceed the declared video size.');

@@ -36,8 +36,24 @@ describe('ReviewVideoMediaService', () => {
       contentType: 'video/mp4', byteLength: 3, sha256: digest(Buffer.from('abc')),
     });
 
-    await expect(service.appendChunk(upload.id, 1, Buffer.from('a').toString('base64')))
-      .rejects.toBeInstanceOf(ConflictException);
+    // The full envelope, not just the exception type: HttpExceptionFilter only
+    // passes a thrown body through unchanged when it already looks like
+    // {error: {...}} — this is what lets the admin uploader read
+    // error.details.expectedIndex and resume there instead of restarting.
+    let skippedIndex: unknown;
+    try {
+      await service.appendChunk(upload.id, 1, Buffer.from('a').toString('base64'));
+    } catch (error) {
+      skippedIndex = error;
+    }
+    expect(skippedIndex).toBeInstanceOf(ConflictException);
+    expect((skippedIndex as ConflictException).getResponse()).toEqual({
+      error: {
+        code: 'CONFLICT',
+        message: 'Video chunks must be uploaded in order.',
+        details: { expectedIndex: 0 },
+      },
+    });
     await expect(service.appendChunk(upload.id, 0, '%%%')).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.appendChunk(upload.id, 0, Buffer.alloc(786433).toString('base64')))
       .rejects.toBeInstanceOf(BadRequestException);
