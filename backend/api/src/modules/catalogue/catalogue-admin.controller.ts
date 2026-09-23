@@ -130,12 +130,9 @@ export class CatalogueAdminController {
     return this.catalogue.createReviewVideo(dto);
   }
 
-  /** Signed upload link for sending a clip straight to the public bucket — see CatalogueService.createReviewVideoUpload. */
-  @RequireRole('SUPERADMIN', 'ADMIN')
-
-  /** Removes a stored clip that is no longer used (replaced, or an abandoned upload). */
-  @RequireRole('SUPERADMIN', 'ADMIN')
-
+  /** Starts a chunked upload for a customer-review clip's video bytes,
+   *  stored in Neon rather than external object storage — see
+   *  ReviewVideoMediaService.createUpload. */
   @RequireRole('SUPERADMIN', 'ADMIN')
   @Post('review-video-media')
   createReviewVideoMedia(
