@@ -1472,6 +1472,51 @@ void main() {
     });
 
     testWidgets(
+      'a card still expands onto its own tier while pending approval',
+      (tester) async {
+        register(
+          national,
+          level: AgentLevel.region,
+          region: 'South',
+          first: 'Sara',
+          last: 'Roy',
+        );
+        final south = service.childrenOf(national.id).first;
+        register(
+          south,
+          level: AgentLevel.state,
+          state: 'Kerala',
+          first: 'Bea',
+          last: 'Nair',
+        );
+        final kerala = service.childrenOf(south.id).first;
+        // The one thing that changes here versus the sibling test above —
+        // an admin has not signed off on this recruit yet. The whole point
+        // of the tree is to let a recruiter see their downline shape before
+        // approval is what gates their earnings, not what they can see.
+        service.setApproval(kerala, AgentApprovalStatus.pending);
+        await pumpTree(tester);
+
+        await tester.tap(find.byTooltip('Expand ${national.name}'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('Expand Sara Roy'));
+        await tester.pumpAndSettle();
+        expect(find.text('Pending approval'), findsOneWidget);
+
+        expect(find.byTooltip('Expand Bea Nair'), findsOneWidget);
+        await tester.tap(find.byTooltip('Expand Bea Nair'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byTooltip('Add a district agent here'),
+          findsNWidgets(agentStateDistricts['Kerala']!.length),
+        );
+        for (final district in agentStateDistricts['Kerala']!) {
+          expect(find.text(district), findsOneWidget);
+        }
+      },
+    );
+
+    testWidgets(
       'a Thiruvananthapuram district card opens onto its assemblies and corporation',
       (tester) async {
         register(
