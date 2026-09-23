@@ -19,6 +19,7 @@ class GeoNode {
   /// `AC136-L1-W005`. Empty for the tiers with no code (region, state,
   /// district).
   final String code;
+  final String type;
   final int sort;
 
   const GeoNode({
@@ -27,6 +28,7 @@ class GeoNode {
     required this.level,
     required this.name,
     this.code = '',
+    this.type = '',
     this.sort = 0,
   });
 
@@ -56,6 +58,7 @@ class GeoNode {
       level: level,
       name: name,
       code: str(row['code']),
+      type: str(row['type']),
       sort: int.tryParse(str(row['sort'])) ?? 0,
     );
   }
@@ -115,22 +118,22 @@ class AgentGeoRepository {
     }
     final rows = await NeonHttp.instance.query(r'''
         SELECT id::text, NULL::text AS parent_id, 'region' AS level,
-               name, code, sort, 1 AS tier
+               name, code, '' AS type, sort, 1 AS tier
         FROM app.region
         UNION ALL
-        SELECT id::text, region_id::text, 'state', name, code, sort, 2
+        SELECT id::text, region_id::text, 'state', name, code, '' AS type, sort, 2
         FROM app.state
         UNION ALL
-        SELECT id::text, state_id::text, 'district', name, code, sort, 3
+        SELECT id::text, state_id::text, 'district', name, code, '' AS type, sort, 3
         FROM app.district
         UNION ALL
-        SELECT id::text, district_id::text, 'assembly', name, code, sort, 4
+        SELECT id::text, district_id::text, 'assembly', name, code, '' AS type, sort, 4
         FROM app.assembly
         UNION ALL
-        SELECT id::text, assembly_id::text, 'lsgd', name, code, sort, 5
+        SELECT id::text, assembly_id::text, 'lsgd', name, code, COALESCE(type::text, '') AS type, sort, 5
         FROM app.lsgd
         UNION ALL
-        SELECT id::text, lsgd_id::text, 'ward', name, code, sort, 6
+        SELECT id::text, lsgd_id::text, 'ward', name, code, '' AS type, sort, 6
         FROM app.ward
         ORDER BY tier, sort, name
       ''');

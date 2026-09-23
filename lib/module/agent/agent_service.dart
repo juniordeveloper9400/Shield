@@ -253,6 +253,20 @@ class AgentService extends ChangeNotifier {
     return (capacity - childrenOf(parent.id).length).clamp(0, capacity);
   }
 
+  /// Finds the registered agent holding [slotId] by matching on [Agent.areaId].
+  ///
+  /// Used by the team tree to draw a skip-level recruit at their real geo
+  /// depth: an agent registered as Perinthalmanna Assembly under national has
+  /// `parentId == 'nat-001'` (see `AgentRegistrationScreen._submit`), but
+  /// visually sits four rungs down the tree inside South → Kerala → Malappuram.
+  Agent? agentAtSlot(String slotId) => _agents
+      .where(
+        (a) =>
+            a.areaId == slotId &&
+            a.approvalStatus != AgentApprovalStatus.rejected,
+      )
+      .firstOrNull;
+
   // ---- Customers ----
   // What "Direct sale" actually shows: not the agents someone recruited, but
   // the customers their own selling turned into activated plans.

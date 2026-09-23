@@ -54,12 +54,26 @@ class GeoSlot {
   final String code;
   final AgentLevel level;
 
+  /// LSGD tier only — `corporation` / `municipality` / `grama_panchayat`.
+  /// Empty for every other tier. [typeLabel] turns it into display text.
+  final String type;
+
   const GeoSlot({
     required this.id,
     required this.name,
     required this.level,
     this.code = '',
+    this.type = '',
   });
+
+  /// "Corporation" / "Municipality" / "Grama Panchayat", or '' when this slot
+  /// is not an LSGD or its kind is unknown.
+  String get typeLabel => switch (type) {
+    'corporation' => 'Corporation',
+    'municipality' => 'Municipality',
+    'grama_panchayat' => 'Grama Panchayat',
+    _ => '',
+  };
 
   @override
   bool operator ==(Object other) => other is GeoSlot && other.id == id;
@@ -286,7 +300,7 @@ class GeoHierarchy {
     regions.sort(order);
 
     GeoSlot toSlot(GeoNode n) =>
-        GeoSlot(id: n.id, name: n.name, level: n.level, code: n.code);
+        GeoSlot(id: n.id, name: n.name, level: n.level, code: n.code, type: n.type);
 
     final childrenByParentName = <String, List<String>>{};
     final parentNameByChild = <String, String>{};

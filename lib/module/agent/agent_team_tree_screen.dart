@@ -665,16 +665,17 @@ class _MindNode extends StatelessWidget {
     );
   }
 
-  /// "Region · South", "Ward · AC136-L1-W005", or just the bare tier name for
-  /// a slot with no code and no zone.
   static String _slotSubtitle(Agent agent) {
+    if (agent.level == AgentLevel.national) {
+      return agent.level.label;
+    }
     final code = agent.areaId == null
         ? null
         : AgentGeo.current.codeForId(agent.areaId!);
     if (code != null) {
       return '${agent.level.label} · $code';
     }
-    if (agent.level == AgentLevel.region && agent.areaId != null) {
+    if (agent.area.isNotEmpty) {
       return '${agent.level.label} · ${agent.area}';
     }
     return agent.level.label;
@@ -700,12 +701,15 @@ class _MindNode extends StatelessWidget {
         expanded: expanded,
         keyFor: keyFor,
         onToggle: onToggle,
+        onOpen: onOpen,
         onAdd: onAdd,
       );
 
   /// The rows under an expanded agent: its filled reports, then the open
   /// positions. With named slots ([slots] — the zones, or a zone's states)
-  /// each slot is either the agent filling it (matched by [Agent.areaId]) or
+  /// each slot is either whoever actually holds that geo position
+  /// ([AgentService.agentAtSlot] — not just this agent's own direct
+  /// [childrenOf], which a skipped-past empty tier would miss entirely) or
   /// an open "+ North" card; otherwise the plain "+ child" cards fill the
   /// remaining [capacity].
   List<Widget> _buildChildNodes(
@@ -724,20 +728,25 @@ class _MindNode extends StatelessWidget {
           _slot(childLevel, 'slot/${agent.id}/${childLevel.name}/$i'),
       ];
     }
+    final service = AgentService.instance;
     final nodes = <Widget>[
       for (final slot in slots)
-        if (children.where((c) => c.areaId == slot.id).firstOrNull
-            case final Agent filled)
+        if (service.agentAtSlot(slot.id) case final Agent filled)
           _child(filled)
         else
           _slot(
-            childLevel,
-            'slot/${agent.id}/${childLevel.name}/${slot.id}',
+            slot.level,
+            'slot/${agent.id}/${slot.level.name}/${slot.id}',
             slot: slot,
           ),
-      // Anyone whose slot isn't one of the named ones still shows, after.
+      // Anyone whose slot isn't one of the named ones, and isn't nested
+      // somewhere under one of them either (that agent's own slot — matched
+      // above — already draws them there, at their real geo depth), still
+      // shows here as an irregular direct report.
       for (final child in children)
-        if (!slots.any((s) => s.id == child.areaId)) _child(child),
+        if (child.areaId == null ||
+            !slots.any((s) => AgentGeo.current.isWithin(child.areaId!, s.id)))
+          _child(child),
     ];
     return nodes;
   }
@@ -771,6 +780,7 @@ class _MindPlusNode extends StatelessWidget {
   final Set<String> expanded;
   final GlobalKey Function(String id) keyFor;
   final void Function(String id) onToggle;
+  final void Function(Agent agent) onOpen;
   final void Function(Agent parent, AgentLevel level, [GeoSlot? slot]) onAdd;
 
   const _MindPlusNode({
@@ -781,12 +791,15 @@ class _MindPlusNode extends StatelessWidget {
     required this.expanded,
     required this.keyFor,
     required this.onToggle,
+    required this.onOpen,
     required this.onAdd,
     this.slot,
   });
 
   @override
   Widget build(BuildContext context) {
+    final slot = this.slot;
+
     // If this open slot itself names a place, its own preview positions are
     // that place's named children rather than the plain doubling shape.
     final previewSlots = AgentGeo.current.slotsUnder(level, slot?.id);
@@ -798,7 +811,7 @@ class _MindPlusNode extends StatelessWidget {
     final childLevel =
         (previewSlots.isEmpty || slot == null
             ? null
-            : AgentGeo.current.childLevelOfId(slot!.id)) ??
+            : AgentGeo.current.childLevelOfId(slot.id)) ??
         level.child;
 
     final canExpand = (childLevel != null) && (previewCapacity > 0);
@@ -815,24 +828,43 @@ class _MindPlusNode extends StatelessWidget {
         onAdd: () => onAdd(realParent, level, slot),
         onToggle: canExpand ? () => onToggle(slotId) : null,
         slotLabel: slot?.name,
-        slotCode: slot?.code,
+        slotCode: slot == null
+            ? null
+            : (slot.typeLabel.isNotEmpty
+                  ? slot.typeLabel
+                  : (slot.code.isNotEmpty ? slot.code : null)),
       ),
       children: isExpanded
           ? [
               for (var i = 0; i < previewCapacity; i++)
-                _MindPlusNode(
-                  level: childLevel,
-                  depth: depth + 1,
-                  slotId: previewSlots.isNotEmpty
-                      ? '$slotId/${childLevel.name}/${previewSlots[i].id}'
-                      : '$slotId/${childLevel.name}/$i',
-                  realParent: realParent,
-                  slot: previewSlots.isNotEmpty ? previewSlots[i] : null,
-                  expanded: expanded,
-                  keyFor: keyFor,
-                  onToggle: onToggle,
-                  onAdd: onAdd,
-                ),
+                if ((previewSlots.isEmpty
+                        ? null
+                        : AgentService.instance.agentAtSlot(previewSlots[i].id))
+                    case final Agent filled)
+                  _MindNode(
+                    agent: filled,
+                    depth: depth + 1,
+                    expanded: expanded,
+                    keyFor: keyFor,
+                    onToggle: onToggle,
+                    onOpen: onOpen,
+                    onAdd: onAdd,
+                  )
+                else
+                  _MindPlusNode(
+                    level: previewSlots.isNotEmpty ? previewSlots[i].level : childLevel,
+                    depth: depth + 1,
+                    slotId: previewSlots.isNotEmpty
+                        ? '$slotId/${previewSlots[i].level.name}/${previewSlots[i].id}'
+                        : '$slotId/${childLevel.name}/$i',
+                    realParent: realParent,
+                    slot: previewSlots.isNotEmpty ? previewSlots[i] : null,
+                    expanded: expanded,
+                    keyFor: keyFor,
+                    onToggle: onToggle,
+                    onOpen: onOpen,
+                    onAdd: onAdd,
+                  ),
             ]
           : const [],
     );
