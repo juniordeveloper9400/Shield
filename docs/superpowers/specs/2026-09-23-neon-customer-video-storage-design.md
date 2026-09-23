@@ -1,168 +1,224 @@
-# Neon Customer Video Storage Design
+# Neon Postgres Customer Video Storage Design
 
 ## Goal
 
-Store uploaded customer-review videos in Neon Object Storage and keep their
-catalogue metadata in the existing Neon Postgres table. Remove the customer
-video feature's dependency on Supabase Storage. Admins must be able to upload,
-replace, reorder, hide and delete clips, and the member app, member web build
-and agent/investor app must continue to display the same active-video feed.
+Store each uploaded customer-review video inside the existing Neon Postgres
+database. Admins must be able to upload, replace, reorder, hide and delete
+clips, while the member app, member web build and agent/investor app stream the
+same active-video feed without Supabase or external object storage.
 
-## Scope
+## Current behavior and migration boundary
 
-This change covers the customer-video upload and playback path only. It does
-not move prescription images or other files. Existing video metadata rows stay
-valid. Existing HTTP video URLs remain readable until an admin replaces or
-deletes those clips.
+`app.customer_review_video` currently stores metadata and a `video_url`. Older
+rows point to bundled assets, YouTube or external HTTP URLs. No prior version
+stored uploaded video bytes in Postgres.
 
-## Storage architecture
+Existing URLs remain readable until an admin replaces or deletes their rows.
+New uploads are stored in Neon and use a backend media URL in `video_url`. The
+public catalogue response remains unchanged, so current clients continue to
+consume `videoUrl` without learning how the bytes are stored.
 
-The Neon project will have a `customer-reviews` Object Storage bucket with
-`public_read` access. The bucket is declared in a root `neon.ts` configuration
-and provisioned against the linked Neon project with `neon deploy`.
+## Data model
 
-Neon Object Storage exposes an S3-compatible endpoint and credentials. The
-backend receives those values through server-only environment variables. The
-admin browser never receives a storage access key or secret. The backend uses
-the AWS S3 client already installed in `backend/api` to mint a short-lived
-presigned `PUT` URL for one random object key under `review-videos/`.
+Add `app.customer_review_video_media`:
 
-The browser uploads directly to Object Storage. This avoids Vercel function
-request-body limits and avoids routing large video bodies through Postgres or
-the API. Once the upload succeeds, the admin saves the stable public object URL
-in `app.customer_review_video.video_url`, alongside the existing name, caption,
-thumbnail, active flag and sort order.
+```sql
+CREATE TABLE app.customer_review_video_media (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  content_type text NOT NULL,
+  byte_length bigint NOT NULL,
+  sha256 text NOT NULL,
+  data bytea NOT NULL DEFAULT ''::bytea,
+  next_chunk integer NOT NULL DEFAULT 0,
+  upload_complete boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  completed_at timestamptz,
+  CHECK (content_type IN ('video/mp4', 'video/webm', 'video/quicktime')),
+  CHECK (byte_length > 0),
+  CHECK (next_chunk >= 0)
+);
+```
 
-The public bucket is dedicated to customer-review videos. No private member or
-medical files may be written to it.
+`data` contains the actual video bytes. `byte_length` and `sha256` describe the
+complete client file. `next_chunk` makes ordered chunk writes idempotent.
+`upload_complete` prevents partial media from being played or attached to a
+published clip.
 
-## Configuration
+`app.customer_review_video.video_url` remains text. A completed Neon upload is
+stored as `/v1/public/catalogue/review-video-media/<uuid>`. No foreign key is
+added to legacy URL text. Ownership is derived only when the URL exactly
+matches that backend path.
 
-The backend will use storage-neutral variables:
+## Upload protocol
 
-- `PUBLIC_MEDIA_ENDPOINT`: Neon Object Storage's S3-compatible endpoint.
-- `PUBLIC_MEDIA_REGION`: endpoint region, defaulting to `auto` when Neon does
-  not require a specific AWS region value.
-- `PUBLIC_MEDIA_BUCKET`: defaults to `customer-reviews`.
-- `PUBLIC_MEDIA_ACCESS_KEY`: server-only Neon storage access key.
-- `PUBLIC_MEDIA_SECRET_KEY`: server-only Neon storage secret.
-- `PUBLIC_MEDIA_PUBLIC_BASE_URL`: the public-read base URL for the bucket.
-- `REVIEW_VIDEO_MAX_MB`: application-side upload limit, default 50 and hard
-  ceiling 200.
+Large files must not pass through one serverless request. The admin splits a
+file into 768 KiB binary chunks and sends each as base64 JSON. Base64 expands a
+chunk to about 1 MiB, leaving room under common serverless request limits.
 
-The deployment setup will map Neon CLI-injected S3-compatible credentials to
-these variables in the backend environment. Secrets remain in local ignored
-environment files and the deployment provider. Supabase variables will no
-longer control this feature.
+Only Admin and Super Admin may use these endpoints:
 
-The storage service is considered configured only when endpoint, bucket,
-access key, secret key and public base URL are all non-empty. An incomplete
-configuration returns a clear `STORAGE_NOT_CONFIGURED` response without
-exposing which secret is missing.
+1. `POST /v1/staff/catalogue/review-video-media`
+   - Input: `contentType`, `byteLength`, `sha256`.
+   - Validates MIME type and `REVIEW_VIDEO_MAX_MB`.
+   - Creates an incomplete media row and returns `id`, `nextChunk` and
+     `chunkSizeBytes: 786432`.
+2. `PUT /v1/staff/catalogue/review-video-media/:id/chunks/:index`
+   - Input: `{ data: "<base64>" }`.
+   - Locks the media row.
+   - If `index === next_chunk`, decodes and appends the bytes, then increments
+     `next_chunk`.
+   - If `index < next_chunk`, treats the retry as successful without appending
+     a duplicate.
+   - If `index > next_chunk`, returns a conflict containing the expected index.
+   - Refuses writes after completion or beyond declared `byte_length`.
+3. `POST /v1/staff/catalogue/review-video-media/:id/complete`
+   - Locks the row and verifies actual length and SHA-256 against the declared
+     values.
+   - Marks it complete and returns the permanent backend media URL.
+   - A checksum mismatch leaves the media incomplete and returns an error.
+4. `DELETE /v1/staff/catalogue/review-video-media/:id`
+   - Deletes incomplete abandoned uploads, or complete media that is no longer
+     referenced by a customer-video row.
+   - Refuses deletion while a metadata row still references it.
 
-## Upload flow
+Each chunk update uses one transaction with a row lock. A retry cannot
+duplicate bytes, two concurrent chunks cannot reorder data, and a completed
+upload cannot be mutated.
 
-1. An Admin or Super Admin chooses an MP4, WebM or MOV file on Customer Videos.
-2. The console checks the extension/MIME type and the configured maximum size.
-3. It requests an upload ticket from
-   `POST /v1/staff/catalogue/review-videos/upload-url` using its staff token.
-4. The backend repeats validation and creates a random key such as
-   `review-videos/<uuid>.mp4`.
-5. The backend returns a short-lived presigned `PUT` URL, the permanent public
-   URL, required request headers and expiry.
-6. The console uploads the bytes directly to Neon Object Storage and displays
-   progress.
-7. The console creates or updates the Postgres metadata row with the public
-   URL and generated or selected thumbnail.
-8. If metadata saving fails after upload, the console asks the backend to
-   delete the orphaned object on a best-effort basis.
+The admin computes SHA-256 with the browser Web Crypto API before starting.
+Upload progress is based on accepted chunks. Within one open form, the media ID
+and next index remain in memory so a network failure resumes instead of
+restarting.
 
-Uploads use a new random key rather than overwriting. This keeps CDN caching
-safe and makes replacement atomic from the viewer's perspective.
+## Metadata save and replacement
 
-## Playback and public feed
+The admin completes the media upload before creating or updating
+`app.customer_review_video`. It then saves the returned backend media URL using
+the existing metadata API.
 
-The existing public catalogue response remains unchanged: it returns the
-stored `videoUrl` and thumbnail. Both Flutter trees continue accepting normal
-HTTPS non-YouTube URLs, so no client contract or database migration is needed.
+For replacement, the metadata row switches to the new completed media URL in
+one successful update. Only afterward does the backend delete the old Neon
+media, and only if no other metadata row references it. A failed metadata save
+leaves the old clip unchanged and triggers best-effort deletion of the new
+unreferenced media.
 
-The bucket's `public_read` setting permits direct playback and byte-range
-requests from mobile and web video players. The permanent URL must therefore
-point directly at the public Neon object, not at the Vercel API.
+Deleting a customer-video row deletes its referenced Neon media after the row
+is removed. Legacy bundled, YouTube, Supabase or other HTTP URLs never produce a
+Neon media ID and therefore never trigger byte deletion.
 
-The existing active-feed cache is invalidated after create, update, reorder,
-visibility change or delete, preserving the current refresh behavior.
+## Playback endpoint
 
-## Replacement and deletion
+`GET /v1/public/catalogue/review-video-media/:id` is public because customer
+review clips are public marketing content. It serves only completed rows.
 
-When a clip is replaced, the new upload and metadata update complete before
-the old object is removed. If deleting the old object fails, the saved clip
-still points to the new working object and the backend logs the cleanup error.
+The endpoint supports:
 
-Deleting a metadata row first verifies that its URL belongs to the configured
-public base URL and resolves to a key under `review-videos/`. The backend never
-deletes an arbitrary URL or an object outside that prefix. Legacy Supabase,
-YouTube and bundled-asset URLs are ignored by object cleanup.
+- `HEAD`, returning content type, total length, cache headers and
+  `Accept-Ranges: bytes` without reading `data`.
+- Full `GET`, returning 200 and the video body when no range is requested.
+- A single `Range: bytes=start-end`, returning 206 with `Content-Range`,
+  `Content-Length`, `Content-Type` and `Accept-Ranges`.
+- Open-ended and suffix ranges.
+- 416 with `Content-Range: bytes */<length>` for invalid or unsatisfiable
+  ranges.
+
+Range bodies are selected in Postgres with `substring(data from <one-based>
+for <length>)`. A single response is capped at 2 MiB. A full GET for a larger
+file is streamed as sequential database slices with backpressure, so neither
+the API nor Postgres driver must duplicate the full video in memory.
+
+Responses use `Cache-Control: public, max-age=31536000, immutable`. Uploaded
+media IDs never change; replacement creates a new ID, making immutable caching
+safe.
+
+## Public catalogue and clients
+
+The active customer-video feed keeps returning `videoUrl`, name, caption and
+thumbnail. For Neon media, `videoUrl` is resolved against the configured
+backend public base URL before it reaches clients, ensuring Flutter receives an
+absolute HTTPS URL.
+
+Both Flutter clients already accept non-YouTube HTTP(S) video URLs and use
+`video_player`, which issues range requests where supported. The member web
+build uses the same Flutter implementation. Client code changes are required
+only if compatibility tests expose an assumption that URLs are always external
+or absolute.
+
+## Limits and cleanup
+
+`REVIEW_VIDEO_MAX_MB` defaults to 50 and has a hard ceiling of 200. The API
+checks declared size at creation and accumulated size on every chunk. The
+completion checksum protects against truncation, corruption and false declared
+lengths.
+
+An authenticated staff cleanup endpoint removes incomplete media older than 24
+hours. It returns the number removed and is safe to call repeatedly. The admin
+also deletes its incomplete media when the form is cancelled after an upload
+has started. Database operations never delete completed referenced media.
+
+Postgres storage and restore history grow with every upload and replacement.
+Operations documentation must explain how to monitor Neon logical size, remove
+unused clips and lower the video limit if needed.
 
 ## Error handling
 
-- Missing Neon storage configuration: return HTTP 503 with an actionable
-  storage-setup message.
-- Invalid type or excessive size: return HTTP 400 before issuing an upload URL.
-- Neon credential, bucket or connectivity failure: return HTTP 502 with a safe
-  operational message and log the detailed server error.
-- Direct browser upload failure: retain the form and selected file so the admin
-  can retry.
-- Metadata-save failure after upload: attempt object cleanup and retain a clear
-  form error.
+- Invalid type, size, chunk encoding or checksum: HTTP 400 with a clear form
+  message.
+- Missing or unauthorized staff session: HTTP 401/403.
+- Out-of-order chunk: HTTP 409 with the expected chunk index so the client can
+  resume.
+- Missing or incomplete media during playback: HTTP 404.
+- Invalid range: HTTP 416.
+- Database connectivity failure: safe HTTP 503/500 response without database
+  URLs, SQL text, binary data or secrets.
 
-No response or log may contain an access key, secret key, signed query string,
-database URL or other credential.
+The form retains its selected file, metadata, generated thumbnail and progress
+state after a recoverable failure. Retrying continues from the server-confirmed
+next chunk.
 
-## Migration and rollout
+## Security
 
-No Postgres schema migration is required because `video_url` already stores an
-HTTPS URL. Existing rows remain untouched.
+Only authenticated Admin and Super Admin staff can create, append, complete or
+delete media. Public users can only read completed media by unguessable UUID.
+Every mutation validates UUID, numeric indices, MIME type, declared size,
+decoded chunk size and final checksum.
 
-Rollout order:
+Logs contain media ID, chunk index, status and byte counts only. They never
+contain base64 bodies, raw video bytes, database URLs, staff tokens or member
+data.
 
-1. Link the repository to the intended Neon project.
-2. Provision the `customer-reviews` public-read bucket with `neon deploy`.
-3. Put the generated storage credentials and public base URL into the backend
-   deployment environment.
-4. Deploy the backend containing the Neon storage provider.
-5. Deploy the admin console if its error copy or upload contract changed.
-6. Upload a short real clip, play it in the admin preview and verify it in both
-   Flutter clients.
-7. Remove obsolete Supabase environment values after successful verification.
+## Rollout and rollback
 
-The backend change remains deployable before the bucket is configured: video
-listing continues working, while new uploads fail closed with the setup error.
+1. Apply the new database migration.
+2. Deploy the backend with chunk upload and range playback endpoints.
+3. Deploy the admin console using those endpoints.
+4. Upload a short non-sensitive MP4 and verify seeking in admin, member web,
+   member APK and agent/investor app.
+5. Replace and delete the test clip, confirming unreferenced media removal.
+6. Remove unused Supabase customer-video environment values after verification.
+
+Rollback keeps the migration and stored media table intact. Restore the prior
+backend/admin deployment; existing Neon media URLs will not play on the old
+backend, so rollback must occur before production clips are switched, or the
+new playback route must remain deployed. No migration down script deletes video
+bytes automatically.
 
 ## Testing
 
-Backend unit tests will cover configuration detection, presigned upload output,
-public URL/key conversion, path encoding, deletion prefix protection and safe
-mapping of S3 failures. Integration tests will cover staff authorization, MIME
-and size validation, configured and unconfigured upload routes, and deletion.
+Database and backend tests cover ordered append, duplicate retry, skipped
+index, oversize prevention, final length/checksum validation, incomplete-media
+404, full playback, HEAD, normal/open/suffix ranges, invalid ranges, reference
+protected deletion and stale incomplete cleanup.
 
-Admin tests will cover the upload-ticket contract and actionable error text.
-The admin type check and production build must pass. Existing customer-video
-tests in the root member app and `shield agent_invester/` must pass to prove
-that the unchanged public feed remains compatible.
+Admin tests cover chunk splitting, SHA-256 encoding, progress, retry from
+`nextChunk`, completion, cancel cleanup, replacement ordering and preservation
+of form state after failure.
 
-After provisioning, one real upload and playback check is required because
-mocked S3 tests cannot verify the live Neon endpoint, bucket access mode, CORS
-or public URL shape.
+Existing customer-video tests in both Flutter trees must pass. Add an HTTP
+video compatibility test only if an existing repository or player abstraction
+can exercise absolute backend media URLs meaningfully without mirroring the
+implementation.
 
-## Security and operational limits
-
-Only Admin and Super Admin staff can mint upload URLs or delete media. Signed
-upload URLs expire quickly and target one random key. The backend validates
-file type and size before signing, and the bucket must enforce matching limits
-where Neon exposes those controls.
-
-Public review videos are intentionally public. Names, captions and thumbnails
-must not contain confidential medical information. Storage use and egress
-should be monitored in Neon; the current Neon Free plan includes 5 GB of Object
-Storage per project, subject to Neon's current plan terms.
+Required release verification includes backend tests/typecheck/build, admin
+tests/typecheck/build, both focused Flutter customer-video suites, one real
+upload, seeking in all clients, replacement and deletion.
