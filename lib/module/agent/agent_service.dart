@@ -318,6 +318,15 @@ class AgentService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Drops a fully-formed [agent] straight onto the roster — for building a
+  /// synthetic parent chain in a test without going through the
+  /// registration flow.
+  @visibleForTesting
+  void addAgent(Agent agent) {
+    _agents.add(agent);
+    notifyListeners();
+  }
+
   // ---- Registration field checks ----
   // Static so the registration screen can hang them straight off its fields,
   // and [registerAgent] re-runs the lot as the backstop.
