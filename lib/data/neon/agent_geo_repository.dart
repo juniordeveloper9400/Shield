@@ -59,7 +59,8 @@ class GeoNode {
     if (level == null || id.isEmpty || name.isEmpty) {
       return null;
     }
-    final parent = str(row['parent_id'].toString().isNotEmpty ? row['parent_id'] : row['parentId']);
+    final rawParent = row['parent_id'] ?? row['parentId'];
+    final parent = rawParent != null ? str(rawParent) : '';
     return GeoNode(
       id: id,
       parentId: parent.isEmpty ? null : parent,
