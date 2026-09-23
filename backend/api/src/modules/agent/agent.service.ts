@@ -227,7 +227,40 @@ export class AgentService {
     const self = await this.getApprovedAgentByMemberIdOrThrow(memberId);
     const descendants =
       self.level === 'NATIONAL' ? await this.getEveryoneBelowNational(self.id) : await this.getDescendants(self.id);
-    return { ...self, descendants };
+    const counted = await this.withPlansSold([self, ...descendants]);
+    return { ...counted[0], descendants: counted.slice(1) };
+  }
+
+  /**
+   * [rows] (self plus every descendant `getTeamForMember` found) with
+   * `plansSold` attached — how many Health Pass plans each agent has
+   * personally sold, straight from `app.agent_customer_plan` rather than
+   * `app.agent_customer` alone (a linked-but-not-yet-activated customer
+   * carries no plan and must not count). `personalSales`/`earned` already
+   * ride along on the plain agent row (real columns, kept current by
+   * `approve_wallet_card_activation`); this is the one figure "My Team"'s
+   * roster needs that isn't a column anywhere, and every agent in that
+   * table needs their own count, not just the caller's own — unlike
+   * `listCustomers`, which is deliberately scoped to the caller alone and
+   * must stay that way (another agent's own customer list is not the
+   * caller's to see; a bare count of it is fine to roll into their team
+   * total, same as `personalSales` already is).
+   */
+  private async withPlansSold<T extends { id: number }>(rows: T[]): Promise<(T & { plansSold: number })[]> {
+    if (rows.length === 0) return [];
+    const counts = await this.db
+      .select({ agentId: agentCustomer.agentId, count: sql<number>`count(*)::int` })
+      .from(agentCustomerPlan)
+      .innerJoin(agentCustomer, eq(agentCustomer.id, agentCustomerPlan.agentCustomerId))
+      .where(
+        inArray(
+          agentCustomer.agentId,
+          rows.map((r) => r.id),
+        ),
+      )
+      .groupBy(agentCustomer.agentId);
+    const byAgentId = new Map(counts.map((c) => [c.agentId, c.count]));
+    return rows.map((r) => ({ ...r, plansSold: byAgentId.get(r.id) ?? 0 }));
   }
 
   /**

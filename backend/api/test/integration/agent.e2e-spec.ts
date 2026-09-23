@@ -30,6 +30,7 @@ import {
   ward,
 } from '../../src/db/schema';
 import { TokenService } from '../../src/modules/auth/token.service';
+import { AgentService } from '../../src/modules/agent/agent.service';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -460,6 +461,23 @@ describe('Agent & Geography (e2e)', () => {
       expect.objectContaining({ tierKind: 'SILVER', amount: 10000 }),
     ]);
     expect(new Date(after.body[0].plans[0].activatedOn).toISOString().slice(0, 10)).toBe('2026-09-22');
+
+    // "My Team"'s roster needs a plan count for every agent in the tree, not
+    // just the caller's own — getTeamForMember attaches it the same way for
+    // self and for every descendant, without exposing who the customer was.
+    // Checked from the national agent's own view (getEveryoneBelowNational)
+    // rather than the ward agent's own (getDescendants' WITH RECURSIVE) —
+    // pg-mem's parser rejects that CTE outright, a pre-existing gap in this
+    // suite unrelated to plansSold itself; both read the exact same
+    // withPlansSold merge, so this still covers it. Straight through the
+    // service, not another HTTP sign-in — this file's auth throttle bucket
+    // has no room left, and pg-mem's gen_random_uuid() mock collides
+    // deterministically past a certain number of auth_session inserts.
+    const [nationalMember] = await db.select().from(users).where(eq(users.phone, '9100000001'));
+    const nationalTeam = await app.get(AgentService).getTeamForMember(nationalMember.id);
+    expect(nationalTeam.descendants).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: wardAgentId, plansSold: 1 })]),
+    );
   });
 
   // Migration 0059 moved the actual request/resolve logic into two Postgres
