@@ -103,7 +103,7 @@ export class GeoService {
           id: w.id,
           parentId: w.lsgdId,
           level: 'ward',
-          name: w.name,
+          name: w.name || (w.wardNumber ? `Ward ${w.wardNumber}` : '') || w.code || 'Ward',
           code: w.code,
           type: '',
           sort: w.sort,

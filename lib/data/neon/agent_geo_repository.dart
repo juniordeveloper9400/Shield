@@ -47,17 +47,25 @@ class GeoNode {
     String str(Object? v) => (v ?? '').toString().trim();
     final level = _levels[str(row['level']).toLowerCase()];
     final id = str(row['id']);
-    final name = str(row['name']);
+    var name = str(row['name']);
+    final code = str(row['code']);
+    if (name.isEmpty) {
+      if (code.isNotEmpty) {
+        name = code;
+      } else if (level == AgentLevel.ward) {
+        name = 'Ward';
+      }
+    }
     if (level == null || id.isEmpty || name.isEmpty) {
       return null;
     }
-    final parent = str(row['parent_id']);
+    final parent = str(row['parent_id'].toString().isNotEmpty ? row['parent_id'] : row['parentId']);
     return GeoNode(
       id: id,
       parentId: parent.isEmpty ? null : parent,
       level: level,
       name: name,
-      code: str(row['code']),
+      code: code,
       type: str(row['type']),
       sort: int.tryParse(str(row['sort'])) ?? 0,
     );
