@@ -19,7 +19,10 @@
 --  Scheme (confirmed with the product owner over the sample codes given):
 --    Region     REG-<3-letter zone abbr>-01      e.g. REG-SOU-01
 --    State      STA-<3-letter state abbr>-01     e.g. STA-KER-01
---    District   <3-letter district abbr>-<sort>  e.g. TVM-01 .. KSR-14
+--    District   DIS-<3-letter district abbr>-<sort>  e.g. DIS-TVM-01 ..
+--               DIS-KSR-14 — corrected from a bare '<abbr>-<sort>' with no
+--               level tag by migration 0063; the VALUES list below is left
+--               as originally written for history, not fixed in place.
 --    Assembly   ASS-<district abbr>-<official AC number, 3 digits>
 --               e.g. ASS-TVM-134 — the real statewide AC number (1-140,
 --               already stored as assembly.sort/assembly.code); the "141"
