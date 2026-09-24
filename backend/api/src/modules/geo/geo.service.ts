@@ -70,14 +70,15 @@ export class GeoService {
       ]);
 
       return [
-        ...regions.map((r) => ({ id: r.id, parentId: null, level: 'region', name: r.name, code: r.code, type: '', sort: r.sort })),
-        ...states.map((s) => ({ id: s.id, parentId: s.regionId, level: 'state', name: s.name, code: s.code, type: '', sort: s.sort })),
+        ...regions.map((r) => ({ id: r.id, parentId: null, level: 'region', name: r.name, code: r.code, prefixCode: r.prefixCode, type: '', sort: r.sort })),
+        ...states.map((s) => ({ id: s.id, parentId: s.regionId, level: 'state', name: s.name, code: s.code, prefixCode: s.prefixCode, type: '', sort: s.sort })),
         ...districts.map((d) => ({
           id: d.id,
           parentId: d.stateId,
           level: 'district',
           name: d.name,
           code: d.code,
+          prefixCode: d.prefixCode,
           type: '',
           sort: d.sort,
         })),
@@ -87,6 +88,7 @@ export class GeoService {
           level: 'assembly',
           name: a.name,
           code: a.code,
+          prefixCode: a.prefixCode,
           type: '',
           sort: a.sort,
         })),
@@ -96,6 +98,7 @@ export class GeoService {
           level: 'lsgd',
           name: l.name,
           code: l.code,
+          prefixCode: l.prefixCode,
           type: l.type,
           sort: l.sort,
         })),
@@ -105,6 +108,7 @@ export class GeoService {
           level: 'ward',
           name: w.name || (w.wardNumber ? `Ward ${w.wardNumber}` : '') || w.code || 'Ward',
           code: w.code,
+          prefixCode: w.prefixCode,
           type: '',
           sort: w.sort,
         })),
