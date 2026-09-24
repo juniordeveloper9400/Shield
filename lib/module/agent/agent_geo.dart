@@ -153,19 +153,25 @@ class GeoHierarchy {
   /// real geo hierarchy — walking [parentIdOf] up from [id], regardless of
   /// how many tiers between them have nobody registered.
   bool isWithin(String id, String ancestorId) {
-    var current = id;
+    if (id.isEmpty || ancestorId.isEmpty) return false;
+    if (id == ancestorId) return true;
+    final resolvedAncestorId = _idByName[ancestorId] ?? ancestorId;
+    final resolvedAncestorName = _nameById[ancestorId] ?? ancestorId;
+
+    var current = _idByName[id] ?? id;
     var guard = 0;
     while (guard++ < 20) {
-      if (current == ancestorId) {
+      if (current == resolvedAncestorId || current == ancestorId) {
+        return true;
+      }
+      final currentName = _nameById[current];
+      if (currentName != null &&
+          (currentName == resolvedAncestorName || currentName == ancestorId)) {
         return true;
       }
       final parent = parentIdOf(current) ??
           (_idByName[current] != null ? _parentIdByChildId[_idByName[current]!] : null);
       if (parent == null) {
-        final currentName = _nameById[current];
-        if (currentName != null && currentName == ancestorId) {
-          return true;
-        }
         return false;
       }
       current = parent;
@@ -179,6 +185,7 @@ class GeoHierarchy {
   /// assembly, skipping the LSGD tier, say). Null when [parentId] has no
   /// children.
   AgentLevel? childLevelOfId(String parentId) {
+    if (parentId.isEmpty) return null;
     final byId = _childLevelByParentId[parentId];
     if (byId != null) return byId;
     final byName = _childLevelByParentName[parentId];
@@ -196,7 +203,7 @@ class GeoHierarchy {
     if (level == AgentLevel.national) {
       return regions;
     }
-    if (parentId == null) {
+    if (parentId == null || parentId.isEmpty) {
       return const <GeoSlot>[];
     }
     final byId = _childrenByParentId[parentId];
