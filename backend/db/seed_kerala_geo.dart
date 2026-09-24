@@ -199,11 +199,25 @@ void main(List<String> args) async {
       // here, so every LSG in a district sorted identically).
       final sortMatch = RegExp(r'\d+$').firstMatch(entry.key);
       final sort = sortMatch == null ? 0 : int.parse(sortMatch.group(0)!);
+      // Conflict target is `code` (the real, stable, government-assigned
+      // id — migration 0058's partial unique index), not the table's own
+      // (assembly_id, name) constraint. Keying on (assembly_id, name)
+      // would silently INSERT A DUPLICATE instead of updating whenever a
+      // later source run corrects an lsgd's assembly_id — the three
+      // corporations the original source left with assembly_id NULL are
+      // exactly this case, and Postgres never treats two NULLs as
+      // conflicting under a plain UNIQUE constraint, so the old NULL-
+      // assembly row would simply sit there unconflicted while a second,
+      // correctly-linked row got inserted alongside it. `code` never
+      // changes for the same real LSG between source revisions, so it is
+      // the right key, and the UPDATE now also refreshes assembly_id —
+      // the original version here only ever refreshed name and sort.
       final result = await tx.execute(
         Sql.named(
           'INSERT INTO app.lsgd (assembly_id, type, name, code, sort) '
           'VALUES (@a::uuid, @t::app.lsgd_type, @n, @c, @s) '
-          'ON CONFLICT (assembly_id, name) DO UPDATE SET name = EXCLUDED.name, sort = EXCLUDED.sort '
+          'ON CONFLICT (code) WHERE code <> \'\' DO UPDATE '
+          'SET assembly_id = EXCLUDED.assembly_id, name = EXCLUDED.name, sort = EXCLUDED.sort '
           'RETURNING id',
         ),
         parameters: {'a': assemblyId, 't': type, 'n': v.name, 'c': entry.key, 's': sort},
