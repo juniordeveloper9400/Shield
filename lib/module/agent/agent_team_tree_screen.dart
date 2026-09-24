@@ -293,6 +293,9 @@ class _AgentTeamTreeScreenState extends State<AgentTeamTreeScreen>
         p = p.sublist(0, p.length - 2);
         enclosing.add(p.join('/'));
       }
+      if (parts.length > 1) {
+        enclosing.addAll(_openGeoSlotsEnclosing(parts[1]));
+      }
       return enclosing;
     }
 
@@ -791,7 +794,7 @@ class _MindNode extends StatelessWidget {
                 geoKey == null ||
                 slots.isEmpty
             ? null
-            : AgentGeo.current.childLevelOfId(geoKey)) ??
+            : AgentGeo.current.childLevelOfId(geoKey, agent.level)) ??
         agent.level.child;
     final capacity = slots.isNotEmpty
         ? slots.length
@@ -970,7 +973,7 @@ class _MindPlusNode extends StatelessWidget {
     final childLevel =
         (previewSlots.isEmpty || slot == null
             ? null
-            : AgentGeo.current.childLevelOfId(slot.id)) ??
+            : AgentGeo.current.childLevelOfId(slot.id, level)) ??
         level.child;
 
     final canExpand = (childLevel != null) && (previewCapacity > 0);
