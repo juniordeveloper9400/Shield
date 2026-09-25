@@ -44,6 +44,16 @@ class _PrescriptionCheckoutScreenState
   FulfillmentType _fulfillment = FulfillmentType.homeDelivery;
   bool _placing = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // A member who already has an address on the account sees it
+    // pre-selected here rather than being steered toward "+ Add delivery
+    // address" as if none existed — see AddressBook.ensureDeliverToSelected's
+    // own doc. Same fix as the general checkout screen's own initState.
+    AddressBook.instance.ensureDeliverToSelected();
+  }
+
   void _chooseFulfillment(FulfillmentType fulfillment) {
     if (fulfillment == _fulfillment) {
       return;

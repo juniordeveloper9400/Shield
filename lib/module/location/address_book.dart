@@ -222,6 +222,27 @@ class AddressBook extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Falls back to the first saved address when nothing is currently the
+  /// delivery target — called once from a checkout screen's own
+  /// `initState`, the same place that already auto-picks the first saved
+  /// patient (see `CheckoutScreen`). Without this, a member who already
+  /// has an address on the account still saw "+ Add delivery address" on
+  /// checkout — `deliverTo` starts null every session (`replaceRemote`
+  /// only carries an *existing* selection forward, it never invents one)
+  /// — as if they had never saved one at all, instead of it showing up
+  /// pre-selected and ready to use.
+  ///
+  /// Never overrides a real choice already in place — including a
+  /// deliberate "just a pincode, no saved address" from [setPincode] made
+  /// earlier in the same screen visit — only fills the gap where nothing
+  /// has been chosen yet this session.
+  void ensureDeliverToSelected() {
+    if (_deliverTo == null && _addresses.isNotEmpty) {
+      _deliverTo = _addresses.first;
+      notifyListeners();
+    }
+  }
+
   /// Saves the one address that belongs to [patientId]: replaces it in place
   /// if the patient form already put one on file, otherwise adds it as a new
   /// entry. Editing a patient's details again and again is meant to keep

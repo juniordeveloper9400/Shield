@@ -146,6 +146,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       if (PatientBook.instance.patients.isNotEmpty) {
         _patient = PatientBook.instance.patients.first;
       }
+      // Same idea as the patient pick just above — a member who already
+      // has an address on file sees it pre-selected here rather than
+      // being steered toward "add a new one" as if none existed.
+      AddressBook.instance.ensureDeliverToSelected();
     }
     _bankReference.addListener(() {
       _receipt.setBankReference(_bankReference.text);
