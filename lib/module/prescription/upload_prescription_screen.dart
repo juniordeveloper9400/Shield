@@ -163,6 +163,7 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
                 night: m.night,
               ),
               totalUnits: m.totalUnits > 0 ? m.totalUnits : null,
+              routeTime: m.routeTime,
             ),
         ],
       );

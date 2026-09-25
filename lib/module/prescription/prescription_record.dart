@@ -114,11 +114,18 @@ class PrescriptionMedicine {
   /// is worked out from [intake] over the prescription's day count instead.
   final int? totalUnits;
 
+  /// How and when to take it, e.g. "Oral, after food" or "SL — Under the
+  /// tongue" — `app.prescription_medicine.route_time`, set by the
+  /// pharmacist alongside everything else on the intake card. Empty on a
+  /// line that pre-dates this field.
+  final String routeTime;
+
   const PrescriptionMedicine({
     required this.name,
     this.pack = '',
     this.intake = IntakePattern.none,
     this.totalUnits,
+    this.routeTime = '',
   });
 
   /// Enough to dispense against: something to look up, and a dose above zero.

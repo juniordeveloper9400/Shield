@@ -50,6 +50,9 @@ class RemotePrescriptionMedicine {
   /// derived.
   final int totalUnits;
 
+  /// How and when to take it — `app.prescription_medicine.route_time`.
+  final String routeTime;
+
   const RemotePrescriptionMedicine({
     required this.name,
     required this.pack,
@@ -57,6 +60,7 @@ class RemotePrescriptionMedicine {
     required this.afternoon,
     required this.night,
     required this.totalUnits,
+    this.routeTime = '',
   });
 }
 
@@ -326,7 +330,7 @@ class PrescriptionRepository {
                  lo.order_code, lo.order_status,
                  pm.name, pm.pack,
                  pm.dose_morning, pm.dose_afternoon, pm.dose_night,
-                 pm.total_units, pm.sort
+                 pm.total_units, pm.route_time, pm.sort
           FROM app.prescription rx
           JOIN app.users u ON u.id = rx.member_id
           -- The order this script was most recently placed into (a reorder
@@ -379,6 +383,7 @@ class PrescriptionRepository {
             afternoon: _toInt(row['dose_afternoon']),
             night: _toInt(row['dose_night']),
             totalUnits: _toInt(row['total_units']),
+            routeTime: (row['route_time'] ?? '').toString(),
           ),
         );
       }

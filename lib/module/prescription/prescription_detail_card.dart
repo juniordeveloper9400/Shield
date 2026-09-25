@@ -562,6 +562,22 @@ class _MedicineRow extends StatelessWidget {
                     color: AppColors.textMuted,
                   ),
                 ),
+                // How and when to take it, e.g. "SL — Under the tongue" —
+                // set by the pharmacist alongside everything else on the
+                // intake card, so it belongs right here with the rest of
+                // this line's own detail, not squeezed into the subtitle
+                // above. Absent on a line from before this field existed.
+                if (medicine.routeTime.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    medicine.routeTime,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      height: 1.35,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
