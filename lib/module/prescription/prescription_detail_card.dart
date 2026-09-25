@@ -578,6 +578,15 @@ class _MedicineRow extends StatelessWidget {
                     ),
                   ),
                 ],
+                // Whether the counter actually has this on hand — set on
+                // the same "Stock status" field the intake card's own
+                // route/time and everything else comes from, so it's
+                // known upfront rather than a surprise at delivery. Null
+                // (never shown) for a line that pre-dates the field.
+                if (medicine.stockStatus != null) ...[
+                  const SizedBox(height: 4),
+                  _StockStatusChip(status: medicine.stockStatus!),
+                ],
               ],
             ),
           ),
@@ -629,6 +638,42 @@ class _MedicineRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A small coloured pill for [MedicineStockStatus] — the same three tones
+/// (and labels) the console's own intake card uses for this field, so a
+/// medicine reads the same way to the counter and to the member.
+class _StockStatusChip extends StatelessWidget {
+  final MedicineStockStatus status;
+
+  const _StockStatusChip({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color fg, Color bg) = switch (status) {
+      MedicineStockStatus.available => (
+        AppColors.brandGreenDark,
+        AppColors.greenTint,
+      ),
+      MedicineStockStatus.outOfStock => (
+        AppColors.goldAccent,
+        AppColors.goldTint,
+      ),
+      MedicineStockStatus.ordered => (AppColors.brandBlue, AppColors.offerTint),
+      MedicineStockStatus.notPossible => (
+        AppColors.danger,
+        AppColors.dangerTint,
+      ),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
+      child: Text(
+        status.label,
+        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: fg),
       ),
     );
   }

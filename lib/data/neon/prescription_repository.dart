@@ -53,6 +53,12 @@ class RemotePrescriptionMedicine {
   /// How and when to take it — `app.prescription_medicine.route_time`.
   final String routeTime;
 
+  /// The raw `app.prescription_medicine_status` token (`'AVAILABLE'`,
+  /// `'OUT_OF_STOCK'`, …), parsed into [MedicineStockStatus] one layer up —
+  /// this class stays a plain read of the row, same as every other field
+  /// here.
+  final String status;
+
   const RemotePrescriptionMedicine({
     required this.name,
     required this.pack,
@@ -61,6 +67,7 @@ class RemotePrescriptionMedicine {
     required this.night,
     required this.totalUnits,
     this.routeTime = '',
+    this.status = '',
   });
 }
 
@@ -330,7 +337,7 @@ class PrescriptionRepository {
                  lo.order_code, lo.order_status,
                  pm.name, pm.pack,
                  pm.dose_morning, pm.dose_afternoon, pm.dose_night,
-                 pm.total_units, pm.route_time, pm.sort
+                 pm.total_units, pm.route_time, pm.status AS medicine_status, pm.sort
           FROM app.prescription rx
           JOIN app.users u ON u.id = rx.member_id
           -- The order this script was most recently placed into (a reorder
@@ -384,6 +391,7 @@ class PrescriptionRepository {
             night: _toInt(row['dose_night']),
             totalUnits: _toInt(row['total_units']),
             routeTime: (row['route_time'] ?? '').toString(),
+            status: (row['medicine_status'] ?? '').toString(),
           ),
         );
       }

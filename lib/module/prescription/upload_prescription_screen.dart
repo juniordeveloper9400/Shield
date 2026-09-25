@@ -164,6 +164,7 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
               ),
               totalUnits: m.totalUnits > 0 ? m.totalUnits : null,
               routeTime: m.routeTime,
+              stockStatus: MedicineStockStatus.tryParse(m.status),
             ),
         ],
       );

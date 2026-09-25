@@ -93,6 +93,42 @@ class IntakePattern {
   int get hashCode => Object.hash(morning, afternoon, night);
 }
 
+/// `app.prescription_medicine_status` — whether the pharmacist actually has
+/// this line on hand. Set on the intake card's own "Stock status" field,
+/// alongside everything else the counter fills in; shown back to the member
+/// so a line marked out of stock or not possible is not a surprise at
+/// delivery.
+enum MedicineStockStatus {
+  available('Stock available'),
+  outOfStock('Out of stock'),
+  ordered('Ordered'),
+  notPossible('Not possible');
+
+  final String label;
+
+  const MedicineStockStatus(this.label);
+
+  /// Reads the raw DB token (`'AVAILABLE'`, `'OUT_OF_STOCK'`, …) back into
+  /// its case, or null for an empty/unrecognised one — a line that
+  /// pre-dates this field, or one still sitting on a Postgres-enum value
+  /// the console no longer offers (`'ORDERED'` can't be dropped from the
+  /// enum once added, only stopped being offered as a choice there).
+  static MedicineStockStatus? tryParse(String raw) {
+    switch (raw.trim().toUpperCase()) {
+      case 'AVAILABLE':
+        return MedicineStockStatus.available;
+      case 'OUT_OF_STOCK':
+        return MedicineStockStatus.outOfStock;
+      case 'ORDERED':
+        return MedicineStockStatus.ordered;
+      case 'NOT_POSSIBLE':
+        return MedicineStockStatus.notPossible;
+      default:
+        return null;
+    }
+  }
+}
+
 /// One medicine line, as the pharmacy counter read it off the prescription.
 ///
 /// Immutable, and deliberately so: these lines are not the member's to write.
@@ -120,12 +156,17 @@ class PrescriptionMedicine {
   /// line that pre-dates this field.
   final String routeTime;
 
+  /// Whether the counter actually has this on hand — null for a line that
+  /// pre-dates the field or carries an unrecognised value.
+  final MedicineStockStatus? stockStatus;
+
   const PrescriptionMedicine({
     required this.name,
     this.pack = '',
     this.intake = IntakePattern.none,
     this.totalUnits,
     this.routeTime = '',
+    this.stockStatus,
   });
 
   /// Enough to dispense against: something to look up, and a dose above zero.
