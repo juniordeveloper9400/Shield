@@ -727,7 +727,11 @@ CREATE TABLE app.bill (
     -- the wallet is drawn down first (up to what it holds), and anything
     -- still owed is collected in cash at the counter in the same action.
     wallet_collected numeric(12,2) NOT NULL DEFAULT 0,
-    cash_collected   numeric(12,2) NOT NULL DEFAULT 0
+    cash_collected   numeric(12,2) NOT NULL DEFAULT 0,
+    -- migration 0064: how much of the priced lines' subtotal was knocked
+    -- off to get `amount` -- `amount` itself already is the net payable
+    -- total; this is just the audit trail of the discount that got it there.
+    discount_amount  numeric(12,2) NOT NULL DEFAULT 0
 );
 
 -- Itemised breakdown for a priced bill (migration 0031) -- same shape as
