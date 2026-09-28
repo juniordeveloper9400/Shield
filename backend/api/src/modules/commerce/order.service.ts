@@ -271,10 +271,13 @@ export class OrderService {
 
   /**
    * Every order the member has placed, newest first. Left-joined against
-   * `bill` (0-or-1 per order) so a prescription order's priced amount and
-   * paid/pending status — `billAmount`/`billStatus` on the client's
-   * `Purchase` — come back alongside the order's own columns without a
-   * second round trip per row.
+   * `bill` (0-or-1 per order) so a prescription order's priced amount, its
+   * paid/pending status, and how much of it was actually discounted —
+   * `billAmount`/`billStatus`/`billDiscount` on the client's `Purchase`
+   * (`billDiscount` is what "Your earnings" counts as saved, not the
+   * checkout-time mrpTotal/paidTotal gap — see `MemberEarnings`'s own doc)
+   * — come back alongside the order's own columns without a second round
+   * trip per row.
    */
   async listForMember(memberId: number) {
     return this.db
@@ -282,6 +285,7 @@ export class OrderService {
         ...getTableColumns(order),
         billAmount: bill.amount,
         billStatus: bill.status,
+        billDiscount: bill.discountAmount,
       })
       .from(order)
       .leftJoin(bill, eq(bill.orderId, order.id))

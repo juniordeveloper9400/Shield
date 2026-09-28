@@ -135,6 +135,10 @@ export const bill = appSchema.table('bill', {
    *  cash handed over at collection. Both `0` until collected. */
   walletCollected: numeric('wallet_collected', { precision: 12, scale: 2 }).notNull().default('0'),
   cashCollected: numeric('cash_collected', { precision: 12, scale: 2 }).notNull().default('0'),
+  /** Migration 0064 — how much of the priced lines' subtotal the store
+   *  knocked off to reach `amount`, which is already net of this. `0` for a
+   *  bill with no discount. */
+  discountAmount: numeric('discount_amount', { precision: 12, scale: 2 }).notNull().default('0'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
