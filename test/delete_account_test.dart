@@ -16,6 +16,16 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Signs in, opens the account menu, then taps through to Settings —
+  /// where Delete Account actually lives now.
+  Future<void> pumpToSettings(WidgetTester tester) async {
+    AuthService.instance.signInAs();
+    await pump(tester, const AccountScreen());
+
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+  }
+
   setUp(() {
     AuthService.instance.reset();
   });
@@ -23,22 +33,31 @@ void main() {
     AuthService.instance.reset();
   });
 
-  testWidgets('the account menu offers Delete Account, below Log out', (
+  testWidgets(
+    'the account menu offers Settings, not Delete Account directly',
+    (tester) async {
+      AuthService.instance.signInAs();
+      await pump(tester, const AccountScreen());
+
+      expect(find.text('Log out'), findsOneWidget);
+      expect(find.text('Settings'), findsOneWidget);
+      // Delete Account moved under Settings — not on the account menu itself.
+      expect(find.text('Delete Account'), findsNothing);
+    },
+  );
+
+  testWidgets('Settings offers Delete Account, below Log out on the account menu', (
     tester,
   ) async {
-    AuthService.instance.signInAs();
+    await pumpToSettings(tester);
 
-    await pump(tester, const AccountScreen());
-
-    expect(find.text('Log out'), findsOneWidget);
     expect(find.text('Delete Account'), findsOneWidget);
   });
 
   testWidgets('the confirm button stays off until DELETE is typed', (
     tester,
   ) async {
-    AuthService.instance.signInAs();
-    await pump(tester, const AccountScreen());
+    await pumpToSettings(tester);
 
     await tester.tap(find.text('Delete Account'));
     await tester.pumpAndSettle();
@@ -65,8 +84,7 @@ void main() {
   testWidgets('cancel closes the dialog and leaves the account untouched', (
     tester,
   ) async {
-    AuthService.instance.signInAs();
-    await pump(tester, const AccountScreen());
+    await pumpToSettings(tester);
 
     await tester.tap(find.text('Delete Account'));
     await tester.pumpAndSettle();
@@ -81,8 +99,7 @@ void main() {
     tester,
   ) async {
     AuthService.instance.useGateway(FakeAuthGateway());
-    AuthService.instance.signInAs();
-    await pump(tester, const AccountScreen());
+    await pumpToSettings(tester);
 
     await tester.tap(find.text('Delete Account'));
     await tester.pumpAndSettle();

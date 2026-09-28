@@ -22,10 +22,12 @@ void main() {
     AuthService.instance.reset();
   });
 
-  testWidgets('the account menu offers Terms & Conditions', (tester) async {
+  testWidgets('Settings offers Terms & Conditions', (tester) async {
     AuthService.instance.signInAs();
 
     await pump(tester, const AccountScreen());
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
 
     expect(find.text('Terms & Conditions'), findsOneWidget);
   });
@@ -35,6 +37,8 @@ void main() {
   ) async {
     AuthService.instance.signInAs();
     await pump(tester, const AccountScreen());
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Terms & Conditions'));
     await tester.pumpAndSettle();

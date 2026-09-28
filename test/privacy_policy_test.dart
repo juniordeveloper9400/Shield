@@ -22,10 +22,12 @@ void main() {
   tearDown(() => AuthService.instance.reset());
 
   group('Account menu', () {
-    testWidgets('offers a Privacy Policy, beside Terms & Conditions', (tester) async {
+    testWidgets('Settings offers a Privacy Policy, beside Terms & Conditions', (tester) async {
       AuthService.instance.signInAs();
 
       await pump(tester, const AccountScreen());
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
 
       expect(find.text('Privacy Policy'), findsOneWidget);
       expect(find.text('Terms & Conditions'), findsOneWidget);
@@ -34,6 +36,8 @@ void main() {
     testWidgets('tapping it opens the policy inside the app', (tester) async {
       AuthService.instance.signInAs();
       await pump(tester, const AccountScreen());
+      await tester.tap(find.text('Settings'));
+      await tester.pumpAndSettle();
 
       await tester.tap(find.text('Privacy Policy'));
       await tester.pumpAndSettle();
