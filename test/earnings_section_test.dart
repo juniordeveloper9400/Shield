@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/money.dart';
 import 'package:shield/module/earnings/earnings_detail_screen.dart';
+import 'package:shield/module/earnings/member_earnings.dart';
 import 'package:shield/module/home/earnings_section.dart';
 import 'package:shield/module/home/refer_earn_card.dart';
 import 'package:shield/module/orders/orders_screen.dart';
@@ -137,27 +138,62 @@ void main() {
   });
 
   group('your earnings on home', () {
-    testWidgets('shows only total earnings and no order button or sub-tiles', (tester) async {
-      await pumpSection(tester);
+    testWidgets(
+      'with no bill discount on any order yet, shows the zero-state',
+      (tester) async {
+        // seedSampleOrders() carries no bill data at all — none of these
+        // orders has actually been discounted at billing time, so there is
+        // nothing to show yet under the bill-discount model.
+        await pumpSection(tester);
 
-      final orders = PurchaseService.instance;
+        expect(find.text('Your savings'), findsOneWidget);
+        // A plain-language label spells out what the big figure is, so it is
+        // not mistaken for a spendable balance.
+        expect(find.text('Total money you have saved'), findsOneWidget);
+        expect(
+          find.text('Buy at Sahakar 360 prices and the difference is yours.'),
+          findsOneWidget,
+        );
+        expect(find.text('₹0'), findsOneWidget);
 
-      expect(find.text('Your savings'), findsOneWidget);
-      // A plain-language label spells out what the big figure is, so it is not
-      // mistaken for a spendable balance.
-      expect(find.text('Total money you have saved'), findsOneWidget);
-      expect(find.text(orders.savedLabel), findsOneWidget);
-      expect(
-        find.text('Kept out of ${orders.mrpLabel} of total price.'),
-        findsOneWidget,
-      );
+        // Sub-tiles and Your orders button are NOT on the home card.
+        expect(find.text('Total price'), findsNothing);
+        expect(find.text('You paid'), findsNothing);
+        expect(find.text('You saved'), findsNothing);
+        expect(find.text('Your orders'), findsNothing);
+      },
+    );
 
-      // Sub-tiles and Your orders button are NOT on the home card.
-      expect(find.text('Total price'), findsNothing);
-      expect(find.text('You paid'), findsNothing);
-      expect(find.text('You saved'), findsNothing);
-      expect(find.text('Your orders'), findsNothing);
-    });
+    testWidgets(
+      'shows only total earnings and no order button or sub-tiles, once a bill is discounted',
+      (tester) async {
+        // The same order the store actually gave ₹438 off — a real bill
+        // discount, not just a gap between mrpTotal and paidTotal.
+        PurchaseService.instance.updateOne(
+          _billedOrder(id: 'SHD-100482', billAmount: 1248, billDiscount: 438),
+        );
+        await pumpSection(tester);
+
+        expect(find.text('Your savings'), findsOneWidget);
+        expect(find.text('Total money you have saved'), findsOneWidget);
+        expect(
+          find.text('₹${formatRupees(MemberEarnings.saved)}'),
+          findsOneWidget,
+        );
+        expect(
+          find.text(
+            'Kept out of ₹${formatRupees(MemberEarnings.totalPrice)} of total price.',
+          ),
+          findsOneWidget,
+        );
+
+        // Sub-tiles and Your orders button are NOT on the home card.
+        expect(find.text('Total price'), findsNothing);
+        expect(find.text('You paid'), findsNothing);
+        expect(find.text('You saved'), findsNothing);
+        expect(find.text('Your orders'), findsNothing);
+      },
+    );
 
     testWidgets('tapping opens the dedicated earnings detail screen', (tester) async {
       await pumpSection(tester);
@@ -181,6 +217,34 @@ void main() {
       expect(find.text('Your orders'), findsNothing);
     });
 
+    testWidgets(
+      'the breakdown list shows only the order that actually got a bill discount',
+      (tester) async {
+        final discounted = _billedOrder(
+          id: 'SHD-100482',
+          billAmount: 1248,
+          billDiscount: 438,
+        );
+        PurchaseService.instance.updateOne(discounted);
+        final undiscounted = PurchaseService.instance.purchases.firstWhere(
+          (o) => o.id == 'SHD-100461',
+        );
+
+        await pumpSection(tester);
+        await tester.tap(find.byType(EarningsSection));
+        await tester.pumpAndSettle();
+
+        expect(find.text(discounted.id), findsOneWidget);
+        expect(find.text('+${discounted.billDiscountLabel}'), findsOneWidget);
+        expect(find.text('Bill ${discounted.billGrossLabel}'), findsOneWidget);
+        expect(find.text('Paid ${discounted.billPaidLabel}'), findsOneWidget);
+
+        // Never billed with a discount — not in this list at all, even
+        // though seedSampleOrders gave it its own mrpTotal/paidTotal gap.
+        expect(find.text(undiscounted.id), findsNothing);
+      },
+    );
+
     testWidgets('referral figures are not in this total', (tester) async {
       await pumpSection(tester);
 
@@ -191,16 +255,21 @@ void main() {
     });
 
     testWidgets(
-      'activating a privilege plan folds its 10% bonus into the total',
+      'activating a privilege plan folds its 10% bonus into the total, on top of any bill discount',
       (tester) async {
-        final ordersOnly = PurchaseService.instance.savedTotal;
+        // A real bill discount on top of the plan bonus — not instead of it.
+        PurchaseService.instance.updateOne(
+          _billedOrder(id: 'SHD-100482', billAmount: 1248, billDiscount: 438),
+        );
+        final ordersOnly = MemberEarnings.saved;
         final silver = PrivilegeProgramme.silver.entry;
         WalletService.instance.activate(silver);
 
         await pumpSection(tester);
 
-        // ₹1,000 on a ₹10,000 Silver load — on top of what the orders alone
-        // already saved, not instead of it.
+        // ₹1,000 on a ₹10,000 Silver load — on top of what the bill discount
+        // alone already saved, not instead of it.
+        expect(ordersOnly, 438);
         expect(silver.bonus, 1000);
         expect(
           find.text('₹${formatRupees(ordersOnly + silver.bonus)}'),
@@ -216,23 +285,48 @@ void main() {
       },
     );
 
-    testWidgets('the total moves when an order is placed', (tester) async {
-      await pumpSection(tester);
+    testWidgets(
+      'placing a plain order does not move the total — there is no bill yet',
+      (tester) async {
+        await pumpSection(tester);
+        final before = MemberEarnings.saved;
 
-      final before = PurchaseService.instance.savedTotal;
+        PurchaseService.instance.record(
+          id: 'SHD-100500',
+          placedOn: '27 Aug 2026',
+          itemCount: 2,
+          mrpTotal: 500,
+          paidTotal: 450,
+        );
+        await tester.pumpAndSettle();
 
-      PurchaseService.instance.record(
-        id: 'SHD-100500',
-        placedOn: '27 Aug 2026',
-        itemCount: 2,
-        mrpTotal: 500,
-        paidTotal: 450,
-      );
-      await tester.pumpAndSettle();
+        expect(MemberEarnings.saved, before);
+        expect(find.text('₹${_grouped(before)}'), findsOneWidget);
+      },
+    );
 
-      expect(PurchaseService.instance.savedTotal, before + 50);
-      expect(find.text('₹${_grouped(before + 50)}'), findsOneWidget);
-    });
+    testWidgets(
+      'the total moves once that order is actually billed with a discount',
+      (tester) async {
+        final order = PurchaseService.instance.record(
+          id: 'SHD-100501',
+          placedOn: '27 Aug 2026',
+          itemCount: 2,
+          mrpTotal: 500,
+          paidTotal: 450,
+        );
+        await pumpSection(tester);
+        final before = MemberEarnings.saved;
+
+        PurchaseService.instance.updateOne(
+          _billedOrder(id: order.id, billAmount: 450, billDiscount: 50),
+        );
+        await tester.pumpAndSettle();
+
+        expect(MemberEarnings.saved, before + 50);
+        expect(find.text('₹${_grouped(before + 50)}'), findsOneWidget);
+      },
+    );
 
     testWidgets('a member who has bought nothing is told how to start', (
       tester,
@@ -302,6 +396,25 @@ void main() {
     });
   });
 }
+
+/// A delivered order the store actually gave a real bill discount on — the
+/// only shape "Your earnings" counts at all now, per [Purchase.billDiscount]'s
+/// own doc. [id] lets a test either add a fresh one or, via [PurchaseService.
+/// updateOne], swap in a billed version of an order already on file.
+Purchase _billedOrder({
+  required String id,
+  required int billAmount,
+  required int billDiscount,
+}) => Purchase(
+  id: id,
+  placedOn: '20 Aug 2026',
+  itemCount: 1,
+  mrpTotal: 0,
+  paidTotal: 0,
+  status: OrderStatus.delivered,
+  billAmount: billAmount,
+  billDiscount: billDiscount,
+);
 
 /// Indian digit grouping, so the expectations read as the screen prints them.
 String _grouped(int amount) {

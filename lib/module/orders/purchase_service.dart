@@ -94,6 +94,15 @@ class Purchase {
   /// price at all.
   final OrderPaymentStatus? billStatus;
 
+  /// How much of the bill's own priced subtotal the store knocked off —
+  /// `app.bill.discount_amount`. ₹0 for an order with no bill yet, a bill
+  /// with no discount, or a plain picture-only bill (which never carries
+  /// one). This, not [mrpTotal]/[paidTotal] (the checkout-time printed price
+  /// vs. what was paid), is what "Your earnings" counts as saved — a real
+  /// offer the store actually gave at billing time, not a permanent catalog
+  /// discount every member already sees before ever placing the order.
+  final int billDiscount;
+
   const Purchase({
     required this.id,
     required this.placedOn,
@@ -108,6 +117,7 @@ class Purchase {
     this.paymentStatus = OrderPaymentStatus.pending,
     this.billAmount,
     this.billStatus,
+    this.billDiscount = 0,
   });
 
   /// Whether the store has sent a bill for this order: either a picture it
@@ -136,6 +146,7 @@ class Purchase {
     paymentStatus: paymentStatus ?? this.paymentStatus,
     billAmount: billAmount,
     billStatus: billStatus ?? this.billStatus,
+    billDiscount: billDiscount,
   );
 
   /// A prescription order still waiting on money: priced or not, nothing has
@@ -158,6 +169,18 @@ class Purchase {
   String get mrpLabel => '₹${formatRupees(mrpTotal)}';
 
   String get savedLabel => '₹${formatRupees(saved)}';
+
+  /// The bill's own gross subtotal before [billDiscount] came off it — the
+  /// "Bill" figure "Your earnings" shows next to what was actually paid, the
+  /// same "printed vs paid" shape as [mrpTotal]/[paidTotal] but sourced from
+  /// the store's own bill rather than checkout.
+  int get billGross => (billAmount ?? 0) + billDiscount;
+
+  String get billGrossLabel => '₹${formatRupees(billGross)}';
+
+  String get billPaidLabel => '₹${formatRupees(billAmount ?? 0)}';
+
+  String get billDiscountLabel => '₹${formatRupees(billDiscount)}';
 }
 
 /// The order a prescription was placed into — its code and where it has got to
@@ -319,6 +342,26 @@ class PurchaseService extends ChangeNotifier {
 
   /// "26%" — the same fraction as a whole number of percent.
   String get savedPercentLabel => '${(savedFraction * 100).round()}%';
+
+  /// Only the orders the store actually gave a bill discount on — what
+  /// "Your earnings"' order breakdown shows at all, now that it counts a
+  /// real offer at billing time rather than the checkout-time printed price.
+  Iterable<Purchase> get billDiscounted =>
+      _counted.where((purchase) => purchase.billDiscount > 0);
+
+  /// What those bills' own subtotals add up to before the discount.
+  int get billGrossTotal =>
+      billDiscounted.fold(0, (sum, purchase) => sum + purchase.billGross);
+
+  /// What was actually billed for them, net of the discount.
+  int get billPaidTotal =>
+      billDiscounted.fold(0, (sum, purchase) => sum + (purchase.billAmount ?? 0));
+
+  /// The whole of what the store's own bill discounts add up to — added up
+  /// from the orders rather than stored, so it cannot fall behind the list
+  /// it is a sum of.
+  int get billSavedTotal =>
+      billDiscounted.fold(0, (sum, purchase) => sum + purchase.billDiscount);
 
   /// Files a completed order and returns the record that was filed, so a
   /// confirmation screen can carry the member straight to it.

@@ -317,7 +317,8 @@ class OrderRepository {
                  o.fulfillment_type::text AS fulfillment_type,
                  o.payment_status::text AS payment_status,
                  b.image AS bill_image, b.sent_at AS billed_at,
-                 b.amount AS bill_amount, b.status::text AS bill_status
+                 b.amount AS bill_amount, b.status::text AS bill_status,
+                 b.discount_amount AS bill_discount
           FROM app."order" o
           JOIN app.users u ON u.id = o.member_id
           LEFT JOIN app.bill b ON b.order_id = o.id
@@ -623,6 +624,9 @@ class OrderRepository {
           : (row['bill_status'].toString() == 'PAID'
                 ? OrderPaymentStatus.paid
                 : OrderPaymentStatus.pending),
+      billDiscount:
+          double.tryParse(row['bill_discount']?.toString() ?? '')?.round() ??
+              0,
     );
   }
 
