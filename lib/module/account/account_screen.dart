@@ -9,7 +9,6 @@ import '../auth/auth_service.dart';
 import '../cart/cart_screen.dart';
 import '../investor/investor_portal_screen.dart';
 import '../investor/investor_service.dart';
-import '../labtest/my_lab_bookings_screen.dart';
 import '../location/manage_addresses_screen.dart';
 import '../orders/bills_screen.dart';
 import '../patients/manage_patients_screen.dart';
@@ -160,11 +159,9 @@ class AccountScreen extends StatelessWidget {
                 label: 'My Prescriptions',
                 onTap: () {},
               ),
-              AccountMenuItem(
-                icon: Icons.biotech_outlined,
-                label: 'My Lab Bookings',
-                onTap: () => MyLabBookingsScreen.open(context),
-              ),
+              // Lab bookings & reports live in the Lab tab now ("My Lab
+              // Bookings & Reports", lab_test_screen.dart) — not duplicated
+              // here.
               AccountMenuItem(
                 icon: Icons.receipt_long_outlined,
                 label: 'Bills',
