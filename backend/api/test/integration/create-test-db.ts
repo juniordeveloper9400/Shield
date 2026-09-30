@@ -370,6 +370,7 @@ export function createTestDb() {
       order_id bigint NOT NULL UNIQUE REFERENCES app."order"(id) ON DELETE CASCADE,
       image text NOT NULL,
       amount numeric(12,2) NOT NULL DEFAULT 0,
+      discount_amount numeric(12,2) NOT NULL DEFAULT 0,
       status app.order_payment_status NOT NULL DEFAULT 'PENDING',
       paid_at timestamptz,
       sent_at timestamptz NOT NULL DEFAULT now(),
@@ -725,6 +726,35 @@ export function createTestDb() {
       sort integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now()
     );
+
+    -- Migration 0066 — see that file for why this is its own table rather
+    -- than app.bill widened to a polymorphic FK.
+    CREATE TABLE app.lab_bill (
+      id bigserial PRIMARY KEY,
+      uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+      lab_booking_id bigint NOT NULL UNIQUE REFERENCES app.lab_booking(id) ON DELETE CASCADE,
+      image text NOT NULL,
+      amount numeric(12,2) NOT NULL DEFAULT 0,
+      discount_amount numeric(12,2) NOT NULL DEFAULT 0,
+      status app.order_payment_status NOT NULL DEFAULT 'PENDING',
+      paid_at timestamptz,
+      wallet_collected numeric(12,2) NOT NULL DEFAULT 0,
+      cash_collected numeric(12,2) NOT NULL DEFAULT 0,
+      sent_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE app.lab_bill_line (
+      id bigserial PRIMARY KEY,
+      lab_bill_id bigint NOT NULL REFERENCES app.lab_bill(id) ON DELETE CASCADE,
+      name text NOT NULL,
+      pack text NOT NULL DEFAULT '',
+      unit_price numeric(12,2) NOT NULL DEFAULT 0,
+      qty integer NOT NULL DEFAULT 1
+    );
+
+    ALTER TABLE app.wallet_entry
+      ADD COLUMN lab_booking_id bigint REFERENCES app.lab_booking(id);
 
     CREATE TABLE app.appointment (
       id bigserial PRIMARY KEY,

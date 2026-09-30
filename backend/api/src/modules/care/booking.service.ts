@@ -1,10 +1,30 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { appointment, dietitian, labBooking, labBookingPatient, labBookingReport, labPackage, patient, shieldStore, users } from '../../db/schema';
+import {
+  appointment,
+  dietitian,
+  labBill,
+  labBillLine,
+  labBooking,
+  labBookingPatient,
+  labBookingReport,
+  labPackage,
+  patient,
+  shieldStore,
+  users,
+  wallet,
+  walletEntry,
+} from '../../db/schema';
 import type { AdminRole } from '../auth/session.types';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
-import type { BookAppointmentDto, BookLabTestDto, UpdateAppointmentStatusDto, UpdateLabBookingStatusDto } from './dto';
+import type {
+  BookAppointmentDto,
+  BookLabTestDto,
+  SendLabBillDto,
+  UpdateAppointmentStatusDto,
+  UpdateLabBookingStatusDto,
+} from './dto';
 
 /** Every branch open for lab collection right now — the picker at checkout
  *  offers exactly this list, and it is also what {@link BookingService
@@ -195,6 +215,122 @@ export class BookingService {
 
     const [updated] = await this.db.update(labBooking).set({ status: dto.status }).where(eq(labBooking.id, id)).returning();
     return updated;
+  }
+
+  /**
+   * Prices a booking's bill — same "Convert to bill" step a prescription
+   * order gets, but with nothing for staff to pick: a lab booking's price is
+   * already fixed at booking time (lab_package.price × patients), so the one
+   * line item is built here from the booking's own row, not typed in by
+   * hand. `dto.discountAmount` is the only real input; `amount` (what's
+   * actually owed, and what {@link collectLabBillWithWallet} reads) is the
+   * booking's total net of it. Upserts app.lab_bill the same one-row-per-
+   * booking way app.bill is upserted per order (lab_booking_id is UNIQUE),
+   * and replaces its one lab_bill_line row so re-sending after the booking's
+   * own price ever changes doesn't leave a stale line behind.
+   */
+  async sendLabBill(role: AdminRole, storeId: number | null, bookingId: number, dto: SendLabBillDto) {
+    const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    const [pkg] = await this.db.select({ name: labPackage.name }).from(labPackage).where(eq(labPackage.id, found.labPackageId)).limit(1);
+    const amount = Math.max(Number(found.totalPrice) - dto.discountAmount, 0);
+
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx.select({ id: labBill.id }).from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1);
+      let billId: number;
+      if (existing) {
+        await tx
+          .update(labBill)
+          .set({
+            image: dto.image,
+            amount: amount.toString(),
+            discountAmount: dto.discountAmount.toString(),
+            sentAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(labBill.id, existing.id));
+        billId = existing.id;
+        await tx.delete(labBillLine).where(eq(labBillLine.labBillId, billId));
+      } else {
+        const [created] = await tx
+          .insert(labBill)
+          .values({
+            labBookingId: bookingId,
+            image: dto.image,
+            amount: amount.toString(),
+            discountAmount: dto.discountAmount.toString(),
+          })
+          .returning({ id: labBill.id });
+        billId = created.id;
+      }
+      await tx.insert(labBillLine).values({
+        labBillId: billId,
+        name: pkg?.name ?? 'Lab package',
+        unitPrice: found.unitPrice,
+        qty: found.patientsCount,
+      });
+
+      const [result] = await tx.select().from(labBill).where(eq(labBill.id, billId)).limit(1);
+      return result;
+    });
+  }
+
+  /**
+   * Settles a sent-and-priced lab bill — mirrors
+   * order.service.ts's collectBillWithWallet exactly (see that method's own
+   * doc, including its trust-boundary note: OTP verification happens
+   * client-side in shieldweb before this is ever called). Draws on the
+   * member's wallet first, up to what it actually holds, and treats the rest
+   * as collected in cash in the same action.
+   */
+  async collectLabBillWithWallet(role: AdminRole, storeId: number | null, bookingId: number) {
+    const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+
+    const [theBill] = await this.db.select().from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1);
+    if (!theBill) {
+      return { ok: false as const, reason: 'No bill has been sent for this booking yet.' };
+    }
+    if (theBill.status === 'PAID') {
+      return { ok: false as const, reason: 'This bill is already paid.' };
+    }
+    const billAmount = Number(theBill.amount);
+    if (billAmount <= 0) {
+      return { ok: false as const, reason: 'This bill has not been priced yet.' };
+    }
+
+    return this.db.transaction(async (tx) => {
+      const [theWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
+      const balance = theWallet ? Number(theWallet.balance) : 0;
+      const walletAmount = Math.min(balance, billAmount);
+      const cashAmount = billAmount - walletAmount;
+
+      if (theWallet && walletAmount > 0) {
+        await tx
+          .update(wallet)
+          .set({ balance: (balance - walletAmount).toString(), updatedAt: new Date() })
+          .where(eq(wallet.id, theWallet.id));
+        await tx.insert(walletEntry).values({
+          walletId: theWallet.id,
+          kind: 'SPEND',
+          label: `Lab booking LB-${found.id.toString().padStart(4, '0')}`,
+          amount: (-walletAmount).toString(),
+          occurredOn: new Date().toISOString().slice(0, 10),
+          labBookingId: found.id,
+        });
+      }
+
+      await tx
+        .update(labBill)
+        .set({
+          status: 'PAID',
+          paidAt: new Date(),
+          walletCollected: walletAmount.toString(),
+          cashCollected: cashAmount.toString(),
+          updatedAt: new Date(),
+        })
+        .where(eq(labBill.id, theBill.id));
+
+      return { ok: true as const, walletAmount, cashAmount };
+    });
   }
 
   /** Same shape as order.service.ts's getOwnedByStaffOrThrow — SUPERADMIN,

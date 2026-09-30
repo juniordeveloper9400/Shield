@@ -1,6 +1,7 @@
 import { bigint, boolean, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { appSchema } from './app-identity';
 import { memberAddress, patient } from './app-identity';
+import { orderPaymentStatusEnum } from './app-commerce';
 
 /**
  * Typed READ/WRITE MIRROR of care-service tables owned by
@@ -156,6 +157,41 @@ export const labBookingReport = appSchema.table('lab_booking_report', {
   image: text('image').notNull(),
   sort: integer('sort').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * A lab booking's own bill (migration 0066) — same shape as
+ * app.bill/app.bill_line, its own table rather than widening that one's
+ * order_id (NOT NULL UNIQUE, every existing read/write path assumes an
+ * order) into something polymorphic. One row per booking (labBookingId is
+ * UNIQUE); status reuses orderPaymentStatusEnum, which already means
+ * exactly PENDING/PAID here too.
+ */
+export const labBill = appSchema.table('lab_bill', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  uuid: uuid('uuid').notNull().defaultRandom(),
+  labBookingId: bigint('lab_booking_id', { mode: 'number' }).notNull(),
+  image: text('image').notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull().default('0'),
+  discountAmount: numeric('discount_amount', { precision: 12, scale: 2 }).notNull().default('0'),
+  status: orderPaymentStatusEnum('status').notNull().default('PENDING'),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  walletCollected: numeric('wallet_collected', { precision: 12, scale: 2 }).notNull().default('0'),
+  cashCollected: numeric('cash_collected', { precision: 12, scale: 2 }).notNull().default('0'),
+  sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Auto-filled from the booking's own package/unit price at send time — see
+ *  app.lab_bill's own doc on why this isn't a staff-typed line-item table
+ *  the way app.bill_line is. */
+export const labBillLine = appSchema.table('lab_bill_line', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  labBillId: bigint('lab_bill_id', { mode: 'number' }).notNull(),
+  name: text('name').notNull(),
+  pack: text('pack').notNull().default(''),
+  unitPrice: numeric('unit_price', { precision: 12, scale: 2 }).notNull().default('0'),
+  qty: integer('qty').notNull().default(1),
 });
 
 export const appointment = appSchema.table('appointment', {

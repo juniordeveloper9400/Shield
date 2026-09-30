@@ -11,7 +11,20 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, dietitian, labBookingReport, labCategory, labPackage, patient, shieldStore, users } from '../../src/db/schema';
+import { eq } from 'drizzle-orm';
+import {
+  adminUser,
+  dietitian,
+  labBill,
+  labBookingReport,
+  labCategory,
+  labPackage,
+  patient,
+  shieldStore,
+  users,
+  wallet,
+  walletEntry,
+} from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -29,6 +42,7 @@ describe('Care Services (e2e)', () => {
   let nonLabStoreId: number;
   let dietitianId: number;
   let ownedPatientId: number;
+  let memberId: number;
 
   beforeAll(async () => {
     db = createTestDb();
@@ -86,6 +100,7 @@ describe('Care Services (e2e)', () => {
       .insert(users)
       .values({ phone: '9000000004', name: 'Care Member', firebaseUid: 'member-care-1', registrationCompletedAt: new Date(), homeStoreId: labStoreId })
       .returning();
+    memberId = member.id;
     firebase.register('member-token', { uid: 'member-care-1' });
 
     const [seededPatient] = await db
@@ -310,6 +325,58 @@ describe('Care Services (e2e)', () => {
       .get(`/v1/member/lab-bookings/${labBookingId}/report`)
       .set('Authorization', `Bearer ${otherMemberAccessToken}`)
       .expect(404);
+  });
+
+  it('refuses to collect a lab bill that has not been sent yet', async () => {
+    const res = await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/collect-wallet`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+    expect(res.body).toEqual({ ok: false, reason: 'No bill has been sent for this booking yet.' });
+  });
+
+  it('prices a lab booking from its own package/patient count, then splits payment between wallet and cash under one OTP-gated collection', async () => {
+    // The booking is 2 patients × ₹999 = ₹1998 (see the earlier booking
+    // test) — a ₹98 discount prices the bill at ₹1900, entirely server-side:
+    // nothing here ever sends an amount.
+    const sent = await request(app.getHttpServer())
+      .put(`/v1/staff/lab-bookings/${labBookingId}/bill`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ image: '', discountAmount: 98 })
+      .expect(200);
+    expect(Number(sent.body.amount)).toBe(1900);
+    expect(sent.body.status).toBe('PENDING');
+
+    // A wallet with less than the bill owes covers what it can; the rest is
+    // cash — same split rule as order.service.ts's collectBillWithWallet.
+    await db.insert(wallet).values({ memberId, balance: '500.00' });
+
+    const collected = await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/collect-wallet`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+    expect(collected.body).toEqual({ ok: true, walletAmount: 500, cashAmount: 1400 });
+
+    const [theWallet] = await db.select().from(wallet).where(eq(wallet.memberId, memberId));
+    expect(Number(theWallet.balance)).toBe(0);
+
+    const entries = await db.select().from(walletEntry).where(eq(walletEntry.walletId, theWallet.id));
+    expect(entries).toHaveLength(1);
+    expect(entries[0].kind).toBe('SPEND');
+    expect(Number(entries[0].amount)).toBe(-500);
+    expect(entries[0].labBookingId).toBe(labBookingId);
+
+    const [theBill] = await db.select().from(labBill).where(eq(labBill.labBookingId, labBookingId));
+    expect(theBill.status).toBe('PAID');
+    expect(Number(theBill.walletCollected)).toBe(500);
+    expect(Number(theBill.cashCollected)).toBe(1400);
+
+    // Collecting again is refused, the same as an order's already-paid bill.
+    const again = await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/collect-wallet`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+    expect(again.body).toEqual({ ok: false, reason: 'This bill is already paid.' });
   });
 
   it("a store's own LAB_TECHNICIAN sees and manages only that store's bookings, in full detail", async () => {

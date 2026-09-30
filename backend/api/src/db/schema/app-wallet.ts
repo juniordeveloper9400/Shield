@@ -2,6 +2,7 @@ import { bigint, boolean, date, integer, numeric, text, timestamp, uuid } from '
 import { appSchema } from './app-identity';
 import { shieldStore } from './app-catalogue';
 import { order } from './app-commerce';
+import { labBooking } from './app-care';
 import { approvalStatusEnum } from './app-prescription';
 
 /**
@@ -127,6 +128,9 @@ export const walletEntry = appSchema.table('wallet_entry', {
   occurredOn: date('occurred_on').notNull(),
   walletCardId: bigint('wallet_card_id', { mode: 'number' }).references(() => walletCard.id),
   orderId: bigint('order_id', { mode: 'number' }).references(() => order.id),
+  // migration 0066 — same role orderId plays, for a debit collected against
+  // a lab booking's own bill instead of an order's.
+  labBookingId: bigint('lab_booking_id', { mode: 'number' }).references(() => labBooking.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
