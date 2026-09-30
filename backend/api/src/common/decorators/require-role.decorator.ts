@@ -5,7 +5,7 @@ import type { AdminRole, SubjectType } from '../../modules/auth/session.types';
 export const ROLES_KEY = 'requiredRoles';
 export const SUBJECT_TYPE_KEY = 'requiredSubjectType';
 
-const ALL_STAFF_ROLES: AdminRole[] = ['SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS', 'DELIVERY'];
+const ALL_STAFF_ROLES: AdminRole[] = ['SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS', 'DELIVERY', 'LAB_TECHNICIAN'];
 
 /** Restricts a route to one or more app.admin_role values (implies a STAFF subject). */
 export const RequireRole = (...roles: AdminRole[]) => SetMetadata(ROLES_KEY, roles);

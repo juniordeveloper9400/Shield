@@ -94,11 +94,15 @@ describe('Care Services (e2e)', () => {
       .returning();
     ownedPatientId = seededPatient.id;
 
+    // LAB, not APPOINTMENTS: this token manages both lab bookings (now role-
+    // gated, see staff-booking.controller.ts) and appointments (still open
+    // to any staff role) below — LAB can do both; APPOINTMENTS could only
+    // ever do the latter.
     await db.insert(adminUser).values({
       loginId: 'care-staff@example.com',
       name: 'Care Staff',
       passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
-      role: 'APPOINTMENTS',
+      role: 'LAB',
     });
 
     await db
@@ -306,6 +310,61 @@ describe('Care Services (e2e)', () => {
       .get(`/v1/member/lab-bookings/${labBookingId}/report`)
       .set('Authorization', `Bearer ${otherMemberAccessToken}`)
       .expect(404);
+  });
+
+  it("a store's own LAB_TECHNICIAN sees and manages only that store's bookings, in full detail", async () => {
+    const [otherStore] = await db
+      .insert(shieldStore)
+      .values({ code: 'SHD-PON', name: 'Ponnani', area: 'Ponnani', city: 'Malappuram', state: 'Kerala', pincode: '679577', isActive: true, offersLabCollection: true })
+      .returning();
+
+    await db.insert(adminUser).values([
+      { loginId: 'lab-tech-tirur@example.com', name: 'Tirur Lab Tech', passwordHash: await hash('correct-horse-battery-staple', 4), role: 'LAB_TECHNICIAN', storeId: labStoreId },
+      { loginId: 'lab-tech-ponnani@example.com', name: 'Ponnani Lab Tech', passwordHash: await hash('correct-horse-battery-staple', 4), role: 'LAB_TECHNICIAN', storeId: otherStore.id },
+      { loginId: 'pharmacy-tirur@example.com', name: 'Tirur Pharmacy', passwordHash: await hash('correct-horse-battery-staple', 4), role: 'PHARMACY', storeId: labStoreId },
+    ]);
+    const tirurToken = (
+      await request(app.getHttpServer()).post('/v1/staff/auth/session').send({ loginId: 'lab-tech-tirur@example.com', password: 'correct-horse-battery-staple' }).expect(200)
+    ).body.accessToken;
+    const ponnaniToken = (
+      await request(app.getHttpServer()).post('/v1/staff/auth/session').send({ loginId: 'lab-tech-ponnani@example.com', password: 'correct-horse-battery-staple' }).expect(200)
+    ).body.accessToken;
+    const pharmacyToken = (
+      await request(app.getHttpServer()).post('/v1/staff/auth/session').send({ loginId: 'pharmacy-tirur@example.com', password: 'correct-horse-battery-staple' }).expect(200)
+    ).body.accessToken;
+
+    // labBookingId was routed to labStoreId (Tirur, the member's home
+    // branch) back when it was first booked.
+    const tirurList = await request(app.getHttpServer())
+      .get('/v1/staff/lab-bookings')
+      .set('Authorization', `Bearer ${tirurToken}`)
+      .expect(200);
+    expect(tirurList.body).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: labBookingId, storeCode: 'SHD-TIR' })]),
+    );
+
+    // Ponnani's own lab technician has no bookings of their own yet — not
+    // Tirur's, which is what an unscoped list would otherwise have leaked.
+    const ponnaniList = await request(app.getHttpServer())
+      .get('/v1/staff/lab-bookings')
+      .set('Authorization', `Bearer ${ponnaniToken}`)
+      .expect(200);
+    expect(ponnaniList.body.map((b: { id: number }) => b.id)).not.toContain(labBookingId);
+
+    // Nor can Ponnani's technician reach into Tirur's booking directly.
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/status`)
+      .set('Authorization', `Bearer ${ponnaniToken}`)
+      .send({ status: 'CANCELLED' })
+      .expect(404);
+
+    // The store's own PHARMACY admin — same branch as the booking — still
+    // has no business on this API surface at all; they see lab orders
+    // through shieldweb's own redacted, read-only view instead.
+    await request(app.getHttpServer())
+      .get('/v1/staff/lab-bookings')
+      .set('Authorization', `Bearer ${pharmacyToken}`)
+      .expect(403);
   });
 
   it('auto-populates fee from the dietitian record for a DIETITIAN appointment', async () => {

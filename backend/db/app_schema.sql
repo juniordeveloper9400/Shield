@@ -1483,8 +1483,12 @@ CREATE TABLE app.investor_plan_change_request (
 -- backend/db/migrations/0027_admin_role_add_admin.sql for the live-DB fix.
 -- 'DELIVERY' added by backend/db/migrations/0031_wallet_cash_delivery.sql — a
 -- delivery boy's own login, store-scoped the same way PHARMACY is.
+-- 'LAB_TECHNICIAN' added by backend/db/migrations/0065_lab_technician_role.sql
+-- — a store's own lab technician login, store-scoped the same way; unlike
+-- LAB (one login working every branch), it sees only its own store's
+-- bookings, in full detail.
 CREATE TYPE app.admin_role AS ENUM
-    ('SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS', 'DELIVERY');
+    ('SUPERADMIN', 'ADMIN', 'PHARMACY', 'LAB', 'APPOINTMENTS', 'DELIVERY', 'LAB_TECHNICIAN');
 
 -- One row per staff login. Identity is a Firebase Email/Password account; this
 -- row says which role it holds and, for a Pharmacy Admin, which branch.

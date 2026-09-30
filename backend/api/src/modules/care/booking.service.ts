@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, asc, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { appointment, dietitian, labBooking, labBookingPatient, labBookingReport, labPackage, patient, shieldStore, users } from '../../db/schema';
+import type { AdminRole } from '../auth/session.types';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
 import type { BookAppointmentDto, BookLabTestDto, UpdateAppointmentStatusDto, UpdateLabBookingStatusDto } from './dto';
 
@@ -146,15 +147,27 @@ export class BookingService {
     return { pages };
   }
 
-  /** Every branch, newest booking first — the "Branch" column and filter on
-   *  the console's Lab Orders screen. No role-based scoping: unlike Pharmacy
-   *  (one branch each), there is one Lab Admin account working every branch's
-   *  bookings, the same as before this had a branch at all. */
-  async listLabBookingsForStaff() {
+  /**
+   * Newest booking first, full detail — the "Branch" column and filter on
+   * the console's Lab Orders screen.
+   *
+   * SUPERADMIN, ADMIN and LAB see every branch's bookings: there is one Lab
+   * Admin account working every branch, by design, not one each — that
+   * doesn't change here. LAB_TECHNICIAN is the new, genuinely store-scoped
+   * shape: a store's own lab technician login sees only their own branch's
+   * bookings, same as PHARMACY/DELIVERY are already scoped for orders (see
+   * order.service.ts's listForStaff, which this mirrors) — empty when their
+   * account has no store assigned rather than erroring, the same as that
+   * method's own `storeId == null` case.
+   */
+  async listLabBookingsForStaff(role: AdminRole, storeId: number | null) {
+    const unscoped = role === 'SUPERADMIN' || role === 'ADMIN' || role === 'LAB';
+    if (!unscoped && storeId == null) return [];
     return this.db
       .select({ ...getTableColumns(labBooking), storeCode: shieldStore.code, storeName: shieldStore.name })
       .from(labBooking)
       .leftJoin(shieldStore, eq(shieldStore.id, labBooking.storeId))
+      .where(unscoped ? undefined : eq(labBooking.storeId, storeId!))
       .orderBy(desc(labBooking.createdAt));
   }
 
@@ -163,9 +176,8 @@ export class BookingService {
     return listLabStores(this.db);
   }
 
-  async updateLabBookingStatus(id: number, dto: UpdateLabBookingStatusDto) {
-    const [found] = await this.db.select().from(labBooking).where(eq(labBooking.id, id)).limit(1);
-    if (!found) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab booking not found' } });
+  async updateLabBookingStatus(role: AdminRole, storeId: number | null, id: number, dto: UpdateLabBookingStatusDto) {
+    const found = await this.getLabBookingOwnedByStaffOrThrow(id, role, storeId);
     assertLegalLabBookingTransition(found.status as LabBookingStatus, dto.status);
 
     // "Report ready" tells the member their report is waiting — it must be.
@@ -183,6 +195,22 @@ export class BookingService {
 
     const [updated] = await this.db.update(labBooking).set({ status: dto.status }).where(eq(labBooking.id, id)).returning();
     return updated;
+  }
+
+  /** Same shape as order.service.ts's getOwnedByStaffOrThrow — SUPERADMIN,
+   *  ADMIN and LAB (unscoped, see listLabBookingsForStaff's own doc) may
+   *  manage any booking; LAB_TECHNICIAN only one at their own store. */
+  private async getLabBookingOwnedByStaffOrThrow(id: number, role: AdminRole, storeId: number | null) {
+    const conditions = [eq(labBooking.id, id)];
+    if (role !== 'SUPERADMIN' && role !== 'ADMIN' && role !== 'LAB') {
+      if (storeId == null) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Staff account has no store assigned' } });
+      }
+      conditions.push(eq(labBooking.storeId, storeId));
+    }
+    const [found] = await this.db.select().from(labBooking).where(and(...conditions)).limit(1);
+    if (!found) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab booking not found' } });
+    return found;
   }
 
   private async getLabBookingOwnedOrThrow(id: number, memberId: number) {

@@ -11,6 +11,14 @@ import { appSchema } from './app-identity';
  *
  * DELIVERY added by migration 0031_wallet_cash_delivery.sql — a delivery
  * boy's own login, store-scoped the same way PHARMACY is.
+ *
+ * LAB_TECHNICIAN added by migration 0065_lab_technician_role.sql — a
+ * store's own lab technician login, store-scoped the same way PHARMACY and
+ * DELIVERY are. Unlike LAB (one login working every branch's bookings —
+ * see booking.service.ts's own doc), this one sees only their own store's
+ * lab bookings, in full detail; PHARMACY sees those same bookings listed
+ * alongside their regular orders but without the patient/test detail — see
+ * shieldweb's LabOrdersPage.
  */
 export const adminRoleEnum = appSchema.enum('admin_role', [
   'SUPERADMIN',
@@ -19,6 +27,7 @@ export const adminRoleEnum = appSchema.enum('admin_role', [
   'LAB',
   'APPOINTMENTS',
   'DELIVERY',
+  'LAB_TECHNICIAN',
 ]);
 
 export const adminUser = appSchema.table('admin_user', {

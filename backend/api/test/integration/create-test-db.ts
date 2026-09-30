@@ -23,7 +23,7 @@ export function createTestDb() {
   mem.public.none(`
     CREATE SCHEMA app;
     CREATE SCHEMA backend;
-    CREATE TYPE app.admin_role AS ENUM ('SUPERADMIN','ADMIN','PHARMACY','LAB','APPOINTMENTS');
+    CREATE TYPE app.admin_role AS ENUM ('SUPERADMIN','ADMIN','PHARMACY','LAB','APPOINTMENTS','DELIVERY','LAB_TECHNICIAN');
     CREATE TYPE app.gender AS ENUM ('MALE','FEMALE','OTHER');
     CREATE TYPE app.address_label AS ENUM ('HOME','WORK','OTHER');
     CREATE TYPE app.patient_relation AS ENUM ('SELF','SPOUSE','CHILD','PARENT','OTHER');
