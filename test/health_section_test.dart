@@ -6,6 +6,7 @@ import 'package:shield/module/dietitian/dietitian_screen.dart';
 import 'package:shield/module/home/home_hero_banner.dart';
 import 'package:shield/module/health/health_section.dart';
 import 'package:shield/module/labtest/lab_package.dart';
+import 'package:shield/module/labtest/my_lab_bookings_screen.dart';
 import 'package:shield/module/labtest/package_card.dart';
 import 'package:shield/module/labtest/top_packages_screen.dart';
 import 'package:shield/screens/app_shell.dart';
@@ -247,7 +248,7 @@ void main() {
     expect(find.text('Collect sample from'), findsOneWidget);
   });
 
-  testWidgets('the section bar carries Home plus all three sub-tabs', (
+  testWidgets('the section bar carries Home plus all four sub-tabs', (
     tester,
   ) async {
     await pumpShell(tester, size: const Size(320, 900));
@@ -256,6 +257,7 @@ void main() {
     for (final label in const [
       'Home',
       'Labs Tests',
+      'Lab Bookings',
       'Top Packages',
       'Dietitian',
     ]) {
@@ -269,4 +271,52 @@ void main() {
       );
     }
   });
+
+  testWidgets(
+    'Lab Bookings has its own tab now — the landing banner switches to it '
+    'instead of pushing a second screen',
+    (tester) async {
+      await pumpShell(tester);
+      await openHealth(tester);
+
+      // Offstage inside the IndexedStack until its own sub-tab is selected,
+      // same as Top Packages/Dietitian.
+      expect(find.byType(MyLabBookingsScreen), findsNothing);
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(HealthBottomBar),
+          matching: find.text('Lab Bookings'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MyLabBookingsScreen), findsOneWidget);
+      // Reached by switching tabs, not a push — nothing to pop back
+      // through, so AppBar's automatic leading grows no back button on top
+      // of the section's own bar (BackButton is the real widget class it
+      // renders; the Home item's own arrow icon is a plain Icon, a
+      // different widget, and stays regardless).
+      expect(find.byType(BackButton), findsNothing);
+      // Still inside the section, so its bar stays put — same as every
+      // other sub-tab.
+      expect(find.byType(HealthBottomBar), findsOneWidget);
+
+      // And the landing banner is the same door in, not a second one: it
+      // switches tabs too, rather than pushing MyLabBookingsScreen again on
+      // top of the one already showing.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(HealthBottomBar),
+          matching: find.text('Labs Tests'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('My Lab Bookings & Reports'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(MyLabBookingsScreen), findsOneWidget);
+      expect(find.byType(BackButton), findsNothing);
+    },
+  );
 }
