@@ -2,10 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/data/neon/care_repository.dart';
+import 'package:shield/module/auth/auth_service.dart';
+import 'package:shield/module/auth/login_screen.dart';
 import 'package:shield/module/cart/cart_service.dart';
+import 'package:shield/module/labtest/lab_booking_placed_screen.dart';
 import 'package:shield/module/labtest/lab_cart_badge.dart';
 import 'package:shield/module/labtest/lab_cart_screen.dart';
 import 'package:shield/module/labtest/lab_cart_service.dart';
+import 'package:shield/module/labtest/lab_checkout_screen.dart';
 import 'package:shield/module/labtest/lab_package.dart';
 import 'package:shield/module/labtest/lab_package_screen.dart';
 import 'package:shield/module/labtest/patient_count_sheet.dart';
@@ -448,5 +452,71 @@ void main() {
       // Nothing is booked yet: the patient count is still unanswered.
       expect(LabCartService.instance.isEmpty, isTrue);
     });
+  });
+
+  group('proceeding to checkout', () {
+    setUp(() => AuthService.instance.reset());
+    tearDown(() => AuthService.instance.reset());
+
+    Future<void> chooseBranch(WidgetTester tester) async {
+      await tester.tap(find.text('Choose a branch'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sahakar 360 Pharmacy Melattur'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'signed in, with a branch chosen, opens a real checkout screen — not '
+      'a fake "choosing a slot" toast',
+      (tester) async {
+        AuthService.instance.signInAs();
+        LabCartService.instance.book(_activeLife, patients: 2);
+        await pump(tester, const LabCartScreen());
+        await chooseBranch(tester);
+
+        expect(find.text('Proceed to checkout'), findsOneWidget);
+        await tester.tap(find.text('Proceed to checkout'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LabCheckoutScreen), findsOneWidget);
+        expect(find.text('Booking summary'), findsOneWidget);
+        expect(find.text('Active Life'), findsOneWidget);
+        expect(find.text('Place lab test'), findsOneWidget);
+      },
+    );
+
+    testWidgets('signed out, asks to sign in before opening checkout', (
+      tester,
+    ) async {
+      LabCartService.instance.book(_activeLife, patients: 2);
+      await pump(tester, const LabCartScreen());
+      await chooseBranch(tester);
+
+      await tester.tap(find.text('Proceed to checkout'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LabCheckoutScreen), findsNothing);
+      expect(find.byType(LoginScreen), findsOneWidget);
+    });
+
+    testWidgets(
+      'Place lab test files the booking, empties the basket and shows the '
+      'confirmation screen',
+      (tester) async {
+        AuthService.instance.signInAs();
+        LabCartService.instance.book(_activeLife, patients: 2);
+        await pump(tester, const LabCartScreen());
+        await chooseBranch(tester);
+        await tester.tap(find.text('Proceed to checkout'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Place lab test'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(LabBookingPlacedScreen), findsOneWidget);
+        expect(find.text('Lab test booked'), findsOneWidget);
+        expect(LabCartService.instance.isEmpty, isTrue);
+      },
+    );
   });
 }

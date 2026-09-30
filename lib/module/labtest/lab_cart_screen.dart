@@ -1,14 +1,10 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
-import '../../data/neon/order_repository.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_flow.dart';
-import '../auth/auth_service.dart';
-import '../location/address_book.dart';
-import '../registration/store_picker_sheet.dart';
 import 'lab_cart_service.dart';
+import 'lab_checkout_panels.dart';
+import 'lab_checkout_screen.dart';
 import 'lab_package.dart';
 import 'patient_count_sheet.dart';
 
@@ -55,15 +51,15 @@ class LabCartScreen extends StatelessWidget {
                 _BookingCard(index: index, booking: cart.bookings[index]),
                 const SizedBox(height: 12),
               ],
-              _BranchRow(),
+              LabBranchRow(),
               const SizedBox(height: 12),
               // Not const: this must rebuild on every LabCartService
               // notification, including a same-length edit (patient count
               // changed on the cart's only booking) — a canonicalized const
               // instance here would be skipped by Flutter's identical-widget
-              // fast path and show a stale bill (see _BranchRow's own note
+              // fast path and show a stale bill (see LabBranchRow's own note
               // in the commit that added it).
-              _BillCard(),
+              LabBillCard(),
             ],
           );
         },
@@ -230,231 +226,20 @@ class _BookingCard extends StatelessWidget {
   }
 }
 
-/// The branch this basket collects from — the member's home branch by
-/// default (see [LabCartService.store]), tappable to open a picker filtered
-/// to the branches that still take lab bookings (migration 0057).
-class _BranchRow extends StatelessWidget {
-  const _BranchRow();
-
-  Future<void> _choose(BuildContext context) async {
-    final store = LabCartService.instance.store;
-    final chosen = await StorePickerSheet.show(
-      context,
-      selectedId: store?.id ?? '',
-      filter: (s) => s.offersLabCollection,
-      title: 'Choose a branch',
-      subtitle: 'Who collects your samples for this booking.',
-    );
-    if (chosen != null) {
-      LabCartService.instance.chooseStore(chosen);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final store = LabCartService.instance.store;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Material(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: () => _choose(context),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.border),
-            ),
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.storefront_outlined,
-                  size: 20,
-                  color: AppColors.brandBlue,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Branch',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                      Text(
-                        store?.name ?? 'Choose a branch',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.textMuted,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BillCard extends StatelessWidget {
-  const _BillCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final cart = LabCartService.instance;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        children: [
-          const Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'Bill summary',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textDark,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _BillRow(
-            label: 'Tests total',
-            value: '₹${formatRupees(cart.mrpTotal)}',
-          ),
-          _BillRow(
-            label: 'Package discount',
-            value: '- ₹${formatRupees(cart.savings)}',
-            accent: AppColors.brandGreenDark,
-          ),
-          _BillRow(
-            label: 'Home collection',
-            value: cart.collectionFee == 0
-                ? 'FREE'
-                : '₹${formatRupees(cart.collectionFee)}',
-            accent: cart.collectionFee == 0 ? AppColors.brandGreenDark : null,
-          ),
-          const Divider(height: 22, color: AppColors.border),
-          _BillRow(
-            label: 'Payable',
-            value: '₹${formatRupees(cart.payable)}',
-            bold: true,
-          ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              cart.patientCount == 1
-                  ? 'For 1 patient'
-                  : 'For ${cart.patientCount} patients',
-              style: const TextStyle(
-                fontSize: 12.5,
-                color: AppColors.textMuted,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BillRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color? accent;
-  final bool bold;
-
-  const _BillRow({
-    required this.label,
-    required this.value,
-    this.accent,
-    this.bold = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: bold ? 16 : 14,
-      fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
-      color: accent ?? (bold ? AppColors.textDark : AppColors.textBody),
-    );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          Expanded(child: Text(label, style: style)),
-          Text(value, style: style),
-        ],
-      ),
-    );
-  }
-}
-
+/// The total and the one button that leaves this screen — "Proceed to
+/// checkout", the same wording and weight the medicine cart's own bar uses,
+/// opening [LabCheckoutScreen] to review and actually place the booking
+/// rather than filing it straight off this tap.
 class _CheckoutBar extends StatelessWidget {
   const _CheckoutBar();
 
-  /// Files the basket as `app.lab_booking` rows (status `REQUESTED`) on the
-  /// same guarded tap that moves on to slot selection. Best-effort: a missing
-  /// or unreachable database leaves the flow exactly as it was.
-  void _selectSlot(BuildContext context) {
+  void _proceed(BuildContext context) {
+    // Same rule as the medicine cart: browsing and building the basket stay
+    // open, moving on to checkout needs an account.
     AuthFlow.guard(context, () {
-      final cart = LabCartService.instance;
-      final user = AuthService.instance.currentUser.value;
-      if (user != null && !cart.isEmpty) {
-        unawaited(
-          OrderRepository.instance.saveLabBookings(
-            phone: user.phone,
-            name: user.name,
-            address: AddressBook.instance.deliverTo?.toDeliveryInput(),
-            storeCode: cart.store?.id,
-            bookings: [
-              for (final booking in cart.bookings)
-                LabBookingInput(
-                  name: booking.package.name,
-                  testCount: booking.package.testCount,
-                  profileCount: booking.package.profileCount,
-                  rating: booking.package.rating,
-                  booked: booking.package.booked,
-                  reportIn: booking.package.reportIn,
-                  unitPrice: booking.package.priceValue,
-                  mrp: booking.package.mrpValue,
-                  patients: booking.patients,
-                  forWhom: booking.package.forWhom,
-                  ageRange: booking.package.ageRange,
-                  preparation: booking.package.preparation,
-                  sample: booking.package.sample,
-                  about: booking.package.about,
-                ),
-            ],
-          ),
-        );
-      }
-      ScaffoldMessenger.of(
+      Navigator.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Choosing a slot')));
+      ).push(MaterialPageRoute(builder: (_) => const LabCheckoutScreen()));
     });
   }
 
@@ -492,9 +277,7 @@ class _CheckoutBar extends StatelessWidget {
               const SizedBox(width: 16),
               Expanded(
                 child: FilledButton(
-                  // Same rule as the medicine cart: browsing and building the
-                  // basket stay open, booking a visit needs an account.
-                  onPressed: () => _selectSlot(context),
+                  onPressed: () => _proceed(context),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.brandBlue,
                     padding: const EdgeInsets.symmetric(vertical: 16),
@@ -503,7 +286,7 @@ class _CheckoutBar extends StatelessWidget {
                     ),
                   ),
                   child: const Text(
-                    'Select slot',
+                    'Proceed to checkout',
                     style: TextStyle(
                       fontSize: 15.5,
                       fontWeight: FontWeight.w700,
