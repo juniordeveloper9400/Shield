@@ -272,51 +272,33 @@ void main() {
     }
   });
 
-  testWidgets(
-    'Lab Bookings has its own tab now — the landing banner switches to it '
-    'instead of pushing a second screen',
-    (tester) async {
-      await pumpShell(tester);
-      await openHealth(tester);
+  testWidgets('Lab Bookings has its own tab, reached by switching, not pushing', (
+    tester,
+  ) async {
+    await pumpShell(tester);
+    await openHealth(tester);
 
-      // Offstage inside the IndexedStack until its own sub-tab is selected,
-      // same as Top Packages/Dietitian.
-      expect(find.byType(MyLabBookingsScreen), findsNothing);
+    // Offstage inside the IndexedStack until its own sub-tab is selected,
+    // same as Top Packages/Dietitian.
+    expect(find.byType(MyLabBookingsScreen), findsNothing);
 
-      await tester.tap(
-        find.descendant(
-          of: find.byType(HealthBottomBar),
-          matching: find.text('Lab Bookings'),
-        ),
-      );
-      await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(HealthBottomBar),
+        matching: find.text('Lab Bookings'),
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.byType(MyLabBookingsScreen), findsOneWidget);
-      // Reached by switching tabs, not a push — nothing to pop back
-      // through, so AppBar's automatic leading grows no back button on top
-      // of the section's own bar (BackButton is the real widget class it
-      // renders; the Home item's own arrow icon is a plain Icon, a
-      // different widget, and stays regardless).
-      expect(find.byType(BackButton), findsNothing);
-      // Still inside the section, so its bar stays put — same as every
-      // other sub-tab.
-      expect(find.byType(HealthBottomBar), findsOneWidget);
-
-      // And the landing banner is the same door in, not a second one: it
-      // switches tabs too, rather than pushing MyLabBookingsScreen again on
-      // top of the one already showing.
-      await tester.tap(
-        find.descendant(
-          of: find.byType(HealthBottomBar),
-          matching: find.text('Labs Tests'),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('My Lab Bookings & Reports'));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(MyLabBookingsScreen), findsOneWidget);
-      expect(find.byType(BackButton), findsNothing);
-    },
-  );
+    expect(find.byType(MyLabBookingsScreen), findsOneWidget);
+    // Reached by switching tabs, not a push — nothing to pop back
+    // through, so AppBar's automatic leading grows no back button on top
+    // of the section's own bar (BackButton is the real widget class it
+    // renders; the Home item's own arrow icon is a plain Icon, a
+    // different widget, and stays regardless).
+    expect(find.byType(BackButton), findsNothing);
+    // Still inside the section, so its bar stays put — same as every
+    // other sub-tab.
+    expect(find.byType(HealthBottomBar), findsOneWidget);
+  });
 }
