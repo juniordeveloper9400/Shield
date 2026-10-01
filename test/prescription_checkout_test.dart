@@ -83,32 +83,21 @@ void main() {
   }
 
   group('prescription checkout', () {
-    testWidgets('the checkout carries payment options and a place-order bar', (
-      tester,
-    ) async {
-      await pumpCheckout(tester);
-
-      expect(find.byType(PrescriptionCheckoutScreen), findsOneWidget);
-      // Wallet/cash — not bank transfer — since nothing is charged until the
-      // pharmacist prices it; this is only the member's stated preference.
-      expect(find.text('Payment method'), findsOneWidget);
-      expect(find.text('Wallet balance'), findsOneWidget);
-      expect(find.text('Cash'), findsOneWidget);
-      expect(find.text('Place order'), findsOneWidget);
-    });
-
-    testWidgets('cash is selected by default, and wallet can be chosen instead',
+    testWidgets(
+        'the checkout carries a place-order bar and no payment-method choice',
         (tester) async {
       await pumpCheckout(tester);
 
-      // Cash is the safe default — always selectable, unlike wallet, which
-      // may not even be open yet.
-      expect(find.byIcon(Icons.radio_button_checked_rounded), findsOneWidget);
-
-      await tester.tap(find.text('Wallet balance'));
-      await tester.pump();
-
-      expect(find.byIcon(Icons.radio_button_checked_rounded), findsOneWidget);
+      expect(find.byType(PrescriptionCheckoutScreen), findsOneWidget);
+      // Nothing is owed yet — the pharmacist prices it at the counter, and
+      // how that bill gets paid is decided then, not here.
+      expect(find.text('Payment method'), findsNothing);
+      expect(find.text('Wallet balance'), findsNothing);
+      expect(
+        find.textContaining('No payment now — settle the bill'),
+        findsOneWidget,
+      );
+      expect(find.text('Place order'), findsOneWidget);
     });
 
     testWidgets('home delivery and store pickup are both offered', (

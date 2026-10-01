@@ -10,7 +10,6 @@ import '../auth/auth_flow.dart';
 import '../auth/auth_service.dart';
 import '../checkout/checkout_chrome.dart';
 import '../checkout/fulfillment_type.dart';
-import '../checkout/payment_method.dart';
 import '../location/address_book.dart';
 import '../location/address_form_screen.dart';
 import '../orders/purchase_service.dart';
@@ -23,9 +22,12 @@ import 'prescription_order_placed_screen.dart';
 /// Checkout for the prescription basket.
 ///
 /// A prescription is priced at the counter, so there is no bill to settle
-/// here — what this screen collects is the delivery address and how the member
-/// will pay once the pharmacist has confirmed the price. **Place order** files
-/// it into My Orders as a processing order and empties the basket.
+/// here and no payment method to choose — nothing is owed until the
+/// pharmacist has confirmed the price, and how that gets paid (wallet, cash,
+/// or a split of both) is decided then, OTP-verified, the same way a lab
+/// bill is collected. What this screen collects is just the delivery
+/// address. **Place order** files it into My Orders as a processing order
+/// and empties the basket.
 class PrescriptionCheckoutScreen extends StatefulWidget {
   final List<PrescriptionRecord> records;
 
@@ -38,9 +40,6 @@ class PrescriptionCheckoutScreen extends StatefulWidget {
 
 class _PrescriptionCheckoutScreenState
     extends State<PrescriptionCheckoutScreen> {
-  // Cash is the safe default — always selectable, unlike wallet, which may
-  // not even be open yet. Bank transfer is no longer offered here.
-  PaymentMethod _method = PaymentMethods.cash;
   FulfillmentType _fulfillment = FulfillmentType.homeDelivery;
   bool _placing = false;
 
@@ -89,16 +88,6 @@ class _PrescriptionCheckoutScreenState
           'to pin your own store here.';
     }
     return null;
-  }
-
-  void _chooseMethod(PaymentMethod method) {
-    if (!method.isLive) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(method.comingSoonNote)));
-      return;
-    }
-    setState(() => _method = method);
   }
 
   Future<void> _placeOrder() async {
@@ -158,7 +147,6 @@ class _PrescriptionCheckoutScreenState
             name: user.name,
             orderCode: id,
             storeCode: _store.id,
-            paymentMethodCode: _method.id,
             address: AddressBook.instance.deliverTo?.toDeliveryInput(),
             fulfillmentType: _fulfillment,
             prescriptions: [
@@ -301,7 +289,7 @@ class _PrescriptionCheckoutScreenState
           else
             _PickupCard(store: _store),
           const SizedBox(height: 14),
-          _PaymentCard(selected: _method, onSelect: _chooseMethod),
+          const _NoPaymentNote(),
         ],
       ),
       // Rebuilds with the address book so the bar unlocks the moment a
@@ -676,121 +664,36 @@ class _DeliveryCard extends StatelessWidget {
   }
 }
 
-class _PaymentCard extends StatelessWidget {
-  final PaymentMethod selected;
-  final ValueChanged<PaymentMethod> onSelect;
-
-  const _PaymentCard({required this.selected, required this.onSelect});
-
-  @override
-  Widget build(BuildContext context) {
-    return _Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Payment method',
-            style: TextStyle(
-              fontSize: 15.5,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textDark,
-            ),
-          ),
-          const SizedBox(height: 3),
-          const Text(
-            'Charged only after the pharmacy confirms the price.',
-            style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
-          ),
-          const SizedBox(height: 12),
-          for (final method in PaymentMethods.forOrder) ...[
-            _MethodTile(
-              method: method,
-              selected: method.id == selected.id,
-              onTap: () => onSelect(method),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _MethodTile extends StatelessWidget {
-  final PaymentMethod method;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _MethodTile({
-    required this.method,
-    required this.selected,
-    required this.onTap,
-  });
+/// Replaces the old payment-method picker: nothing is owed yet, so there is
+/// nothing to choose here — how the eventual bill gets paid (wallet, cash,
+/// or a split) is decided, OTP-verified, when the pharmacist actually prices
+/// it. Same note the lab checkout carries for the same reason.
+class _NoPaymentNote extends StatelessWidget {
+  const _NoPaymentNote();
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: selected ? method.tint : AppColors.white,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: selected ? method.accent : AppColors.border,
-              width: selected ? 1.4 : 1,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.info_outline_rounded,
+          size: 16,
+          color: AppColors.textMuted,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'No payment now — settle the bill with the pharmacy once your '
+            'prescription is priced.',
+            style: const TextStyle(
+              fontSize: 12.5,
+              height: 1.35,
+              color: AppColors.textMuted,
             ),
-          ),
-          padding: const EdgeInsets.all(11),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: method.tint,
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Icon(method.icon, size: 20, color: method.accent),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      method.name,
-                      style: const TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    Text(
-                      method.blurb,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        color: AppColors.textMuted,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (!method.isLive) const ComingSoonPill(),
-              if (method.isLive)
-                Icon(
-                  selected
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  size: 20,
-                  color: selected ? method.accent : AppColors.textMuted,
-                ),
-            ],
           ),
         ),
-      ),
+      ],
     );
   }
 }
