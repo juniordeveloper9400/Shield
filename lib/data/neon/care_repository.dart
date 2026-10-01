@@ -77,6 +77,24 @@ class CareRepository {
         bucket.putIfAbsent(key, () => []).add(profile);
       }
 
+      // Migration 0067 — any further categories a package also shows under,
+      // on top of its one primary category_id above.
+      final extraCategoryRows = await NeonHttp.instance.query(
+        '''
+          SELECT package_id, category_id
+            FROM app.lab_package_extra_category
+           WHERE package_id = ANY(\$1::bigint[])
+        ''',
+        [ids],
+      );
+      final extraCategoriesByPackage = <String, List<String>>{};
+      for (final row in extraCategoryRows) {
+        final key = row['package_id'].toString();
+        extraCategoriesByPackage
+            .putIfAbsent(key, () => [])
+            .add(row['category_id'].toString());
+      }
+
       return [
         for (final row in rows)
           LabPackage(
@@ -84,6 +102,8 @@ class CareRepository {
             slug: row['slug']?.toString() ?? '',
             name: row['name']?.toString() ?? '',
             categoryId: row['category_id']?.toString() ?? '',
+            extraCategoryIds:
+                extraCategoriesByPackage[row['id'].toString()] ?? const [],
             isProfile: _bool(row['is_profile']),
             testCount: _int(row['test_count']),
             profileCount: _int(row['profile_count']),
@@ -113,7 +133,10 @@ class CareRepository {
 
   /// "Explore by health concern" — every active category, each carrying how
   /// many active packages currently sit under it, worked out here rather
-  /// than trusted as a stored figure.
+  /// than trusted as a stored figure. A package counts toward a category it
+  /// reaches either as its primary `category_id` or via
+  /// `app.lab_package_extra_category` (migration 0067) — the same two
+  /// places [fetchLabPackages] itself reads.
   Future<List<LabCategory>?> fetchLabCategories() {
     final override = labCategoriesOverride;
     if (override != null) {
@@ -122,8 +145,14 @@ class CareRepository {
     return _run('fetchLabCategories', () async {
       final rows = await NeonHttp.instance.query('''
         SELECT c.id, c.name, c.image,
-               (SELECT count(*) FROM app.lab_package p
-                 WHERE p.category_id = c.id AND p.is_active = true) AS test_count
+               (
+                 (SELECT count(*) FROM app.lab_package p
+                   WHERE p.category_id = c.id AND p.is_active = true)
+                 +
+                 (SELECT count(*) FROM app.lab_package_extra_category x
+                    JOIN app.lab_package p ON p.id = x.package_id
+                   WHERE x.category_id = c.id AND p.is_active = true)
+               ) AS test_count
           FROM app.lab_category c
          WHERE c.is_active = true
          ORDER BY c.sort, c.name

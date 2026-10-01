@@ -655,6 +655,12 @@ export function createTestDb() {
       sort integer NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE app.lab_package_extra_category (
+      package_id bigint NOT NULL REFERENCES app.lab_package(id) ON DELETE CASCADE,
+      category_id bigint NOT NULL REFERENCES app.lab_category(id) ON DELETE CASCADE,
+      PRIMARY KEY (package_id, category_id)
+    );
+
     CREATE TABLE app.clinic (
       id bigserial PRIMARY KEY,
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),

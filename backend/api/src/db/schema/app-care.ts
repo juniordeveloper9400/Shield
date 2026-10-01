@@ -70,6 +70,21 @@ export const labPackage = appSchema.table('lab_package', {
   sort: integer('sort').notNull().default(0),
 });
 
+/**
+ * Migration 0067 — any number of ADDITIONAL categories a package also shows
+ * under, on top of its one primary {@link labPackage.categoryId}. A test that
+ * genuinely belongs under more than one "Explore by health concern" tile
+ * (FSH/LH/SHBG under both Men health and women health, say) keeps its
+ * primary category unchanged and gets a row here per extra tile instead.
+ */
+export const labPackageExtraCategory = appSchema.table(
+  'lab_package_extra_category',
+  {
+    packageId: bigint('package_id', { mode: 'number' }).notNull(),
+    categoryId: bigint('category_id', { mode: 'number' }).notNull(),
+  },
+);
+
 export const labProfile = appSchema.table('lab_profile', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   labPackageId: bigint('lab_package_id', { mode: 'number' }).notNull(),

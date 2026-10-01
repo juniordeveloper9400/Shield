@@ -1,7 +1,15 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { clinic, clinicDoctor, dietitian, labCategory, labPackage, labProfile } from '../../db/schema';
+import {
+  clinic,
+  clinicDoctor,
+  dietitian,
+  labCategory,
+  labPackage,
+  labPackageExtraCategory,
+  labProfile,
+} from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
 
 const TTL = 300; // near-static reference data, same tier as catalogue's TTL.LONG
@@ -20,6 +28,11 @@ export class CareService {
    * breakdown straight off each card with nothing else to tap, so the list
    * itself has to carry it, not just {@link getLabPackage}'s single-package
    * detail.
+   *
+   * `extraCategoryIds` (migration 0067) is every category this package also
+   * shows under, on top of its one primary `categoryId` — a test genuinely
+   * relevant to more than one "Explore by health concern" tile (FSH/LH/SHBG
+   * under both Men health and women health, say) without picking a side.
    */
   async listLabPackages() {
     return this.cache.getOrSet('care:lab-packages', TTL, async () => {
@@ -41,7 +54,23 @@ export class CareService {
         if (bucket) bucket.push(profile);
         else byPackage.set(profile.labPackageId, [profile]);
       }
-      return packages.map((pkg) => ({ ...pkg, profiles: byPackage.get(pkg.id) ?? [] }));
+
+      const extras = await this.db
+        .select()
+        .from(labPackageExtraCategory)
+        .where(inArray(labPackageExtraCategory.packageId, packages.map((p) => p.id)));
+      const extraCategoriesByPackage = new Map<number, number[]>();
+      for (const row of extras) {
+        const bucket = extraCategoriesByPackage.get(row.packageId);
+        if (bucket) bucket.push(row.categoryId);
+        else extraCategoriesByPackage.set(row.packageId, [row.categoryId]);
+      }
+
+      return packages.map((pkg) => ({
+        ...pkg,
+        profiles: byPackage.get(pkg.id) ?? [],
+        extraCategoryIds: extraCategoriesByPackage.get(pkg.id) ?? [],
+      }));
     });
   }
 
@@ -49,9 +78,12 @@ export class CareService {
    * "Explore by health concern" — every active category, each carrying how
    * many active packages currently sit under it (counted here, not a stored
    * column, so it can never drift from what {@link listLabPackages} itself
-   * would show for that category).
+   * would show for that category) — a package counts toward a category it
+   * reaches either as its primary `categoryId` or via
+   * `app.lab_package_extra_category` (migration 0067), the same two places
+   * {@link listLabPackages} itself reads.
    *
-   * Two plain queries merged in JS rather than one grouped join — the join
+   * Three plain queries merged in JS rather than one grouped join — the join
    * count needs every selected category column repeated in a GROUP BY, and
    * this reads the same either way while staying easy to follow (the same
    * shape {@link listLabPackages} already merges its profiles in).
@@ -65,12 +97,26 @@ export class CareService {
         .orderBy(asc(labCategory.sort), asc(labCategory.name));
       if (categories.length === 0) return [];
 
-      const counts = await this.db
+      const primaryCounts = await this.db
         .select({ categoryId: labPackage.categoryId, testCount: sql<number>`count(*)::int` })
         .from(labPackage)
         .where(eq(labPackage.isActive, true))
         .groupBy(labPackage.categoryId);
-      const countByCategory = new Map(counts.map((c) => [c.categoryId, c.testCount]));
+
+      const extraCounts = await this.db
+        .select({
+          categoryId: labPackageExtraCategory.categoryId,
+          testCount: sql<number>`count(*)::int`,
+        })
+        .from(labPackageExtraCategory)
+        .innerJoin(labPackage, eq(labPackage.id, labPackageExtraCategory.packageId))
+        .where(eq(labPackage.isActive, true))
+        .groupBy(labPackageExtraCategory.categoryId);
+
+      const countByCategory = new Map<number | null, number>();
+      for (const row of [...primaryCounts, ...extraCounts]) {
+        countByCategory.set(row.categoryId, (countByCategory.get(row.categoryId) ?? 0) + row.testCount);
+      }
 
       return categories.map((category) => ({
         ...category,

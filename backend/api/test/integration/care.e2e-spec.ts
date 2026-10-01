@@ -19,6 +19,7 @@ import {
   labBookingReport,
   labCategory,
   labPackage,
+  labPackageExtraCategory,
   patient,
   shieldStore,
   users,
@@ -38,6 +39,7 @@ describe('Care Services (e2e)', () => {
   let staffAccessToken: string;
   let labPackageId: number;
   let labCategoryId: number;
+  let secondLabCategoryId: number;
   let labStoreId: number;
   let nonLabStoreId: number;
   let dietitianId: number;
@@ -71,6 +73,16 @@ describe('Care Services (e2e)', () => {
       .values({ slug: 'full-body', name: 'Full Body Checkup', categoryId: labCategoryId, price: '999.00', mrp: '1499.00' })
       .returning();
     labPackageId = pkg.id;
+
+    // A second concern the same package also belongs under (migration
+    // 0067) — proves a package can show up from more than one category
+    // without moving off its primary one.
+    const [secondCategory] = await db
+      .insert(labCategory)
+      .values({ name: 'Men health', image: 'data:image/png;base64,abc' })
+      .returning();
+    secondLabCategoryId = secondCategory.id;
+    await db.insert(labPackageExtraCategory).values({ packageId: labPackageId, categoryId: secondLabCategoryId });
 
     const [labStore] = await db
       .insert(shieldStore)
@@ -149,6 +161,12 @@ describe('Care Services (e2e)', () => {
     // A real package carries no source test; a one-test listing does, which is how the apps tell them apart.
     expect(packages.body.find((p: { id: number }) => p.id === labPackageId).sourceTestId).toBeNull();
     expect(packages.body.find((p: { slug: string }) => p.slug === 'hba1c').sourceTestId).toBe(4242);
+    // Extra categories (migration 0067) ride alongside the primary one — the
+    // package set up under both Diabetes and Men health carries both.
+    expect(packages.body.find((p: { id: number }) => p.id === labPackageId).extraCategoryIds).toEqual([
+      secondLabCategoryId,
+    ]);
+    expect(packages.body.find((p: { slug: string }) => p.slug === 'hba1c').extraCategoryIds).toEqual([]);
 
     const dietitians = await request(app.getHttpServer()).get('/v1/public/care/dietitians').expect(200);
     expect(dietitians.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: dietitianId })]));
@@ -160,6 +178,11 @@ describe('Care Services (e2e)', () => {
     expect(diabetes).toEqual(
       expect.objectContaining({ name: 'Diabetes', image: 'data:image/png;base64,abc', testCount: 2 }),
     );
+
+    // The Full Body Checkup package reaches Men health only via its extra
+    // category (migration 0067), not a primary one — still has to count.
+    const menHealth = categories.body.find((c: { id: number }) => c.id === secondLabCategoryId);
+    expect(menHealth).toEqual(expect.objectContaining({ name: 'Men health', testCount: 1 }));
   });
 
   it('creates, updates, and soft-deletes a patient — the caller\'s own resource end to end', async () => {
