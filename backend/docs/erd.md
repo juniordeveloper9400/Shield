@@ -5,24 +5,23 @@ authoritative for the `app` schema's domain entities. This document layers
 on top of it: what the backend service reads/writes in `app`, plus the new
 tables it owns for its own concerns (sessions, audit, idempotency).
 
-## 1. Precondition: resolve existing drift first
+## 1. Precondition: resolve existing drift first — RESOLVED
 
-Before writing the data-access layer, fold the following into a canonical
-schema baseline (do this once, in `backend/db/`, per that folder's own
-tooling — not inside this service):
-
-- Migrations `0014_geo_hierarchy.sql`–`0017_agent_area_id.sql` (the six geo
-  tables and `agent.area_id`) into `backend/db/app_schema.sql`. A fresh
-  `apply_app_schema.dart --yes` today omits them.
-- The `admin` role used in `shieldweb`/`AuthContext.tsx` vs. the schema's
-  `app.admin_role` enum (`SUPERADMIN`, `PHARMACY`, `LAB`, `APPOINTMENTS`) —
-  pick one vocabulary and use it in both the DB and the new auth module.
-- `app.customer_review_video` (from migration `0009`) vs. its absence from
-  the rebuilt DDL snapshot.
-
-Building the identity and geo modules (see [frd.md](frd.md) §1, §8) against
-unresolved drift means the backend inherits ambiguity that's cheaper to fix
-once, up front, in the schema itself.
+This section described pre-build drift between `backend/db/app_schema.sql`
+and the live database. It has since been resolved: `app_schema.sql` is now
+machine-generated straight from the live schema
+(`dart run backend/db/dump_app_schema.dart --write`), so this category of
+drift can no longer accumulate silently. The specific items originally
+listed here are all folded in: the geo hierarchy tables and `agent.area_id`,
+`app.customer_review_video`(+`_media`), and the `admin_role` vocabulary
+(now `SUPERADMIN`, `ADMIN`, `PHARMACY`, `LAB`, `APPOINTMENTS`, `DELIVERY`,
+`LAB_TECHNICIAN` — matching `shieldweb`/this service exactly). See
+[`backend/db/APP_SCHEMA.md`](../db/APP_SCHEMA.md) for current state and
+[`backend/api/SCHEMA.md`](../api/SCHEMA.md) for this service's own module/
+route map, which supersedes §2-§3 below as the current-state reference —
+the entity groups and new-tables list below are kept for historical context
+only and are not re-verified against the live schema the way those two
+documents are.
 
 ## 2. Existing `app` schema — entity groups this service reads/writes
 
@@ -45,6 +44,12 @@ The DDL in `backend/db/app_schema.sql` remains authoritative for column-level
 detail. This service must not fork or duplicate that definition.
 
 ## 3. New tables this service owns
+
+**Status note:** `backend.auth_session`, `refresh_token`, and
+`idempotency_key` were built as specified below and are live. `audit_log`
+was planned here but was **not** built — there is no `backend.audit_log`
+table and no schema file for it. Treat the table and its integrity rule in
+§4 as a future addition, not current state.
 
 ```mermaid
 erDiagram

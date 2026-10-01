@@ -3,9 +3,15 @@
 Everything the Flutter app (`lib/module/*`) needs to persist, as one self-contained
 Postgres schema named **`app`**, separate from the Prisma-managed `public` schema.
 
-- **DDL:** [`app_schema.sql`](app_schema.sql) — 59 tables, 28 enums, an `updated_at` trigger on every table that has the column.
+- **DDL:** [`app_schema.sql`](app_schema.sql) — 74 tables, 30 enums, 8 functions, 32 triggers.
+- **Regenerate:** `app_schema.sql` is machine-generated, not hand-maintained — run `dart run backend/db/dump_app_schema.dart --write` to refresh it from the live database (introspects `pg_catalog`/`information_schema`; read-only against the DB itself). Never hand-edit the file directly, or the next regeneration silently discards the edit. This doc (the prose/rationale) is what you hand-edit instead.
 - **Apply:** `dart run backend/db/apply_app_schema.dart --yes` — runs `DROP SCHEMA IF EXISTS app CASCADE` then the DDL. Touches nothing in `public`.
 - **Seed:** `dart run backend/db/seed_app.dart --yes` — loads the reference/content data the app currently hard-codes (stores, tiers, ladder, payment methods, categories, sample lab packages / clinics / dietitians / articles / promos).
+
+See also [`backend/api/SCHEMA.md`](../api/SCHEMA.md) for how the NestJS
+service (`backend/api`) maps a subset of this schema with Drizzle, plus the
+separate `backend` Postgres schema it owns for its own session/idempotency
+concerns.
 
 ## Why a dedicated schema
 
@@ -40,13 +46,14 @@ is a single safe statement (`DROP SCHEMA app CASCADE`) that cannot reach
 | `approvals` | `approval`, `approval_item` |
 | `wallet`, `privilege` | `wallet`, `wallet_card`, `wallet_entry`, `membership_tier`, `membership_tier_load` |
 | `rewards`, `refer`, `earnings` | `reward_point_transaction`, `referral`, `referral_level`. Both halves of "refer and earn" are real, credited money/points now (migrations 0042-0043), not client-side projections: a `REFERRAL_LEVEL` `reward_point_transaction` fires the moment an inviter's own direct-referral count crosses a `referral_level` rung (`users.referral_level_awarded` guards against double-crediting), and a `REFERRAL_EARNINGS` `wallet_entry` credits 2% of every plan a referred member activates straight to the inviter's `wallet.balance` — see `app.award_referral_level_points` and the referral half of `app.approve_wallet_card_activation`. |
-| `labtest` | `lab_package`, `lab_profile`, `lab_booking`, `lab_booking_patient` |
+| `labtest` | `lab_category`, `lab_test` (+ `lab_test_group_item`, `lab_test_special_rate`), `lab_package` (+ `lab_package_test_item`), `lab_profile`, `lab_booking` (+ `lab_booking_patient`, `lab_booking_report`), `lab_bill` (+ `lab_bill_line` — the priced, OTP-collected invoice against a lab booking, migration 0056; same wallet/cash split pattern as commerce's `bill`) |
 | `appointment`, `dietitian` | `clinic`, `clinic_doctor`, `dietitian`, `appointment` |
 | `investment` | `investment_plan_point` (static pitch content) |
-| `agent` (field-sales MLM) | `agent` (self-referencing tree), `agent_request` (registration approval queue — an app submission lands here PENDING, never straight into `agent`), `agent_customer`, `agent_customer_plan`, `agent_withdrawal`, `agent_wallet_transfer`, `commission_reserve_entry` (the company's own leftover share of a Health Pass activation's commission pool once the seller's upline chain is paid — `app.approve_wallet_card_activation`, migrations 0033-0039/0043). The `region`→`ward` geo hierarchy `agent.area_id` resolves into (replacing the old `agent_geo_node` slot table from migration 0011) lives in `backend/db/migrations/0014_geo_hierarchy.sql` onward and is **not yet folded into this DDL** — see `docs/erd.md`'s known drift. |
+| `agent` (field-sales MLM) | `agent` (self-referencing tree), `agent_request` (registration approval queue — an app submission lands here PENDING, never straight into `agent`), `agent_customer`, `agent_customer_plan`, `agent_withdrawal`, `agent_wallet_transfer`, `commission_reserve_entry` (the company's own leftover share of a Health Pass activation's commission pool once the seller's upline chain is paid — `app.approve_wallet_card_activation`, migrations 0033-0039/0043). `agent.area_id` resolves into the real `region`→`state`→`district`→`assembly`→`lsgd`→`ward` geo hierarchy below (replacing the old `agent_geo_node` slot table from migration 0011) — folded into this DDL since migration `0014_geo_hierarchy.sql`. |
+| geography (no dedicated app module — read by `agent` and `shieldweb`'s store/agent forms) | `region`, `state`, `district`, `assembly`, `lsgd`, `ward` — a strict six-level tree, each level FK'd to its parent; `GET /v1/public/geo/*` (backend/api) walks it one level at a time |
 | `investor` | `investor`, `investor_plan_change_request` |
 | push / notifications | `device_push_token`, `notification` |
-| shieldweb admin console (staff, not the Flutter app) | `admin_user` — staff/pharmacy accounts, kept in this same schema purely for FK convenience (`order.delivery_boy_id`, prescription review, bill collection, agent/wallet-card approval all resolve back to a row here) |
+| shieldweb admin console (staff, not the Flutter app) | `admin_user` — staff/pharmacy accounts, kept in this same schema purely for FK convenience (`order.delivery_boy_id`, prescription review, bill collection, agent/wallet-card approval all resolve back to a row here). `admin_role` now also includes `LAB_TECHNICIAN` — a store-scoped role for lab-counter staff, parallel to `PHARMACY`/`DELIVERY`, distinct from the unscoped `LAB` role which works across every branch. |
 
 ## Notable modelling choices
 
