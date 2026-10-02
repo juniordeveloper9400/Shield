@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/data/neon/prescription_repository.dart';
-import 'package:shield/module/orders/order_track.dart';
 import 'package:shield/module/orders/purchase_service.dart';
 import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/prescription/prescription_record.dart';
@@ -17,8 +16,16 @@ final _patient = Patient(
   relation: PatientRelation.self,
 );
 
-LinkedOrder _link([OrderStatus status = OrderStatus.processing]) =>
-    LinkedOrder(code: 'RX-MU8BWHGBD56A', status: status);
+LinkedOrder _link({
+  OrderStatus status = OrderStatus.processing,
+  DateTime? contacted,
+  bool billed = false,
+}) => LinkedOrder(
+  code: 'RX-MU8BWHGBD56A',
+  status: status,
+  storeContactedAt: contacted,
+  billed: billed,
+);
 
 void main() {
   final book = PrescriptionBook.instance;
@@ -57,14 +64,41 @@ void main() {
       expect(LinkedOrder.fromTokens(code: '  ', status: 'PROCESSING'), isNull);
     });
 
+    test('reads the stage signals too, however NeonHttp\'s text mode spells '
+        'a boolean', () {
+      final notContacted = LinkedOrder.fromTokens(
+        code: 'A',
+        status: 'PROCESSING',
+      )!;
+      expect(notContacted.storeContactedAt, isNull);
+      expect(notContacted.billed, isFalse);
+      expect(notContacted.stage, OrderStage.placed);
+
+      for (final token in [true, 'true', 't', '1']) {
+        final link = LinkedOrder.fromTokens(
+          code: 'A',
+          status: 'PROCESSING',
+          storeContactedAt: '2026-09-20T10:15:00.000Z',
+          billed: token,
+        )!;
+        expect(link.storeContactedAt, isNotNull);
+        expect(link.billed, isTrue, reason: '$token');
+        expect(link.stage, OrderStage.billed, reason: '$token');
+      }
+    });
+
     test('the Neon row columns become the link', () {
       final link = PrescriptionRepository.linkedOrderFromRow({
         'order_code': 'RX-ABC',
         'order_status': 'DELIVERED',
+        'order_store_contacted_at': '2026-09-20T10:15:00.000Z',
+        'order_billed': 'true',
       });
 
       expect(link?.code, 'RX-ABC');
       expect(link?.status, OrderStatus.delivered);
+      expect(link?.storeContactedAt, isNotNull);
+      expect(link?.billed, isTrue);
       expect(
         PrescriptionRepository.linkedOrderFromRow({
           'order_code': null,
@@ -78,14 +112,14 @@ void main() {
       final record = book.add(patient: _patient, fileName: 's.jpg');
 
       book.applyIntakeCard(record.id, medicines: const [], order: _link());
-      expect(record.order?.status, OrderStatus.processing);
+      expect(record.order?.stage, OrderStage.placed);
 
       book.applyIntakeCard(
         record.id,
         medicines: const [],
-        order: _link(OrderStatus.outForDelivery),
+        order: _link(billed: true),
       );
-      expect(record.order?.status, OrderStatus.outForDelivery);
+      expect(record.order?.stage, OrderStage.billed);
     });
 
     test('the loaded order book is matched to the link by order code', () {
@@ -137,58 +171,78 @@ void main() {
     testWidgets('shows nothing for a prescription that is not linked to an order', (
       tester,
     ) async {
-      withOrder();
+      book.add(patient: _patient, fileName: 'script.jpg');
 
       await pump(tester);
 
       expect(find.text('Order status'), findsNothing);
     });
 
-    testWidgets('follows the order through every status', (tester) async {
-      final cases = <(OrderStatus, String, String)>[
-        (OrderStatus.processing, 'Processing', 'We have your order'),
-        (OrderStatus.outForDelivery, 'Out for delivery', 'Your order is on its way'),
-        (OrderStatus.delivered, 'Delivered', 'Your order has been delivered'),
-        (OrderStatus.cancelled, 'Cancelled', 'This order was cancelled'),
+    testWidgets('an order just placed reads Pending even before its link arrives', (
+      tester,
+    ) async {
+      withOrder();
+
+      await pump(tester);
+
+      expect(find.text('Order status'), findsOneWidget);
+      expect(chip(tester), 'Pending');
+    });
+
+    testWidgets('follows the order through every stage', (tester) async {
+      final cases = <(LinkedOrder, String, String)>[
+        (_link(), 'Pending', 'We have your order'),
+        (
+          _link(contacted: DateTime(2026, 9, 20)),
+          'Processed',
+          'The pharmacist has contacted you',
+        ),
+        (_link(billed: true), 'Billing', 'Your bill is ready'),
+        (
+          _link(status: OrderStatus.delivered, billed: true),
+          'Completed',
+          'Your order is complete',
+        ),
+        (_link(status: OrderStatus.cancelled), 'Cancelled', 'This order was cancelled'),
       ];
 
-      for (final (status, label, detail) in cases) {
+      for (final (link, stage, detail) in cases) {
         book.reset();
-        withOrder(_link(status));
+        withOrder(link);
         await pump(tester);
 
-        expect(find.text('Order status'), findsOneWidget, reason: label);
-        expect(chip(tester), label, reason: label);
-        expect(find.textContaining(detail), findsOneWidget, reason: label);
-        expect(find.text('RX-MU8BWHGBD56A'), findsOneWidget, reason: label);
+        expect(find.text('Order status'), findsOneWidget, reason: stage);
+        expect(chip(tester), stage, reason: stage);
+        expect(find.textContaining(detail), findsOneWidget, reason: stage);
+        expect(find.text('RX-MU8BWHGBD56A'), findsOneWidget, reason: stage);
       }
     });
 
     testWidgets('a live order shows the four-step track; a cancelled one drops it', (
       tester,
     ) async {
-      withOrder(_link(OrderStatus.outForDelivery));
+      withOrder(_link(contacted: DateTime(2026, 9, 20)));
       await pump(tester);
 
-      // The chip says "Out for delivery" once; the track repeats it as a step.
-      for (final label in ['Order placed', 'Processing', 'Out for delivery', 'Delivered']) {
+      // The chip says Processed once; the track repeats it as a step label.
+      for (final label in ['Pending', 'Processed', 'Billing', 'Completed']) {
         expect(find.text(label), findsWidgets, reason: label);
       }
-      expect(find.text('Processing'), findsOneWidget);
+      expect(find.text('Billing'), findsOneWidget);
 
       book.reset();
-      withOrder(_link(OrderStatus.cancelled));
+      withOrder(_link(status: OrderStatus.cancelled));
       await pump(tester);
 
-      expect(find.text('Processing'), findsNothing);
-      expect(find.text('Delivered'), findsNothing);
+      expect(find.text('Billing'), findsNothing);
+      expect(find.text('Completed'), findsNothing);
     });
 
     testWidgets('agrees with the Track order screen about the same order', (
       tester,
     ) async {
-      // The prescription row still says "processing", but the order book —
-      // refreshed more often — already has the order out for delivery.
+      // The prescription row still says "placed", but the order book —
+      // refreshed more often — already has the order billed.
       withOrder(_link());
       final purchase = PurchaseService.instance.record(
         id: 'RX-MU8BWHGBD56A',
@@ -196,17 +250,15 @@ void main() {
         itemCount: 1,
         mrpTotal: 0,
         paidTotal: 0,
-        status: OrderStatus.outForDelivery,
         kind: OrderKind.prescription,
+      );
+      PurchaseService.instance.updateOne(
+        purchase.copyWith(billStatus: OrderPaymentStatus.pending),
       );
 
       await pump(tester);
 
-      final current = OrderTrack(purchase).steps.lastWhere(
-        (s) => s.state == TrackState.current,
-      );
-      expect(current.title, 'Out for delivery');
-      expect(chip(tester), current.title);
+      expect(chip(tester), 'Billing');
       expect(find.text('Track order'), findsOneWidget);
     });
 
@@ -223,14 +275,14 @@ void main() {
     testWidgets('reads in Malayalam when the language is switched', (
       tester,
     ) async {
-      withOrder(_link(OrderStatus.delivered));
+      withOrder(_link(billed: true));
       await pump(tester);
 
       await tester.tap(find.text('മ'));
       await tester.pumpAndSettle();
 
       expect(find.text('ഓർഡർ നില'), findsOneWidget);
-      expect(chip(tester), 'എത്തിച്ചു');
+      expect(chip(tester), 'ബിൽ ചെയ്തു');
     });
   });
 }

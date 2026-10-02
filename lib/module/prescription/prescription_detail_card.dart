@@ -87,10 +87,13 @@ class _PrescriptionDetailCardState extends State<PrescriptionDetailCard> {
                 const SizedBox(height: 13),
                 const Divider(height: 1, color: AppColors.border),
                 const SizedBox(height: 11),
-                // Where the order this script was placed into has got to, so a
-                // member need not leave this list to see it. Only once the
-                // script is actually linked to an order.
-                if (record.order != null) ...[
+                // Where the order this script was placed into has got to —
+                // Pending → Processed → Billing → Completed — so a member
+                // need not leave this list to see whether the pharmacist has
+                // called or a bill is ready. Shown from the moment it is
+                // ordered, even a beat before the next refresh has seen the
+                // link (PrescriptionOrderStatus falls back to Pending then).
+                if (record.ordered || record.order != null) ...[
                   PrescriptionOrderStatus(record: record, copy: copy),
                   const SizedBox(height: 10),
                 ],

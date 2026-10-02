@@ -28,6 +28,60 @@ enum OrderStatus {
   bool get counts => this != OrderStatus.cancelled;
 }
 
+/// The four stages a member sees an order move through — and the only status
+/// they see. Derived by [Purchase.stage] from what the store has actually done
+/// (the raw [OrderStatus] keeps driving delivery and cancellation behind the
+/// scenes), so a stage can only advance when the store really did the step.
+/// Labelled Pending / Processed / Billing / Completed — the exact words the
+/// admin console's own order and prescription lifecycle status already use
+/// (see shieldweb's orderLifecycle.ts), so the same order never reads as two
+/// different things depending on who is looking at it:
+///
+///  * [placed] (label "Pending") — the order exists.
+///  * [storeContact] (label "Processed") — staff used Call / WhatsApp on the
+///    member in the admin console (`app."order".store_contacted_at`).
+///  * [billed] (label "Billing") — the store has sent a bill for it.
+///  * [complete] (label "Completed") — the store completed the order.
+enum OrderStage {
+  placed('Pending', Color(0xFFFDF3E0), Color(0xFFB4761A)),
+  storeContact('Processed', AppColors.offerTint, AppColors.brandBlue),
+  billed('Billing', Color(0xFFEDE7F6), Color(0xFF5E35B1)),
+  complete('Completed', AppColors.greenTint, AppColors.brandGreenDark),
+  cancelled('Cancelled', Color(0xFFFBEBEB), Color(0xFFB4322F));
+
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  const OrderStage(this.label, this.background, this.foreground);
+
+  /// The furthest stage an order has reached, from the three things the
+  /// store's actions leave behind: its status, whether a bill row exists, and
+  /// whether staff have contacted the member.
+  ///
+  /// The one rule, shared by [Purchase.stage] on the Track order screen and by
+  /// [LinkedOrder.stage] on a prescription's card, so the two can never say
+  /// different things about the same order. Cancelled and delivered come
+  /// straight from the status. Below that, a bill means [billed], and a
+  /// contact stamp — or an order already out for delivery, which the store
+  /// obviously handled — means [storeContact]. Reading the *furthest* signal
+  /// means an order billed without anyone pressing Call still shows as billed,
+  /// never stuck.
+  static OrderStage derive({
+    required OrderStatus status,
+    required bool billed,
+    required bool contacted,
+  }) {
+    if (status == OrderStatus.cancelled) return OrderStage.cancelled;
+    if (status == OrderStatus.delivered) return OrderStage.complete;
+    if (billed) return OrderStage.billed;
+    if (contacted || status == OrderStatus.outForDelivery) {
+      return OrderStage.storeContact;
+    }
+    return OrderStage.placed;
+  }
+}
+
 /// Where an order came from — which decides the stages it moves through.
 ///
 /// A [standard] order is picked from stock and goes straight to packing. A
@@ -103,6 +157,12 @@ class Purchase {
   /// discount every member already sees before ever placing the order.
   final int billDiscount;
 
+  /// When staff first contacted the member about this order —
+  /// `app."order".store_contacted_at`. Null until the store has (or for an
+  /// order that predates it and skipped straight to a bill; [stage] handles
+  /// both).
+  final DateTime? storeContactedAt;
+
   const Purchase({
     required this.id,
     required this.placedOn,
@@ -118,7 +178,22 @@ class Purchase {
     this.billAmount,
     this.billStatus,
     this.billDiscount = 0,
+    this.storeContactedAt,
   });
+
+  /// The furthest stage the order has reached — see [OrderStage].
+  ///
+  /// Cancelled and delivered come straight from the order's status. Below
+  /// that, a bill row (`billStatus` is only ever non-null once the store has
+  /// sent one) means [OrderStage.billed], and a contact stamp — or an order
+  /// already out for delivery, which the store obviously handled — means
+  /// [OrderStage.storeContact]. Reading the *furthest* signal means an order
+  /// billed without anyone pressing Call still shows as billed, never stuck.
+  OrderStage get stage => OrderStage.derive(
+    status: status,
+    billed: billStatus != null,
+    contacted: storeContactedAt != null,
+  );
 
   /// Whether the store has sent a bill for this order: either a picture it
   /// attached, or a priced bill it typed in line by line (which carries no
@@ -147,6 +222,7 @@ class Purchase {
     billAmount: billAmount,
     billStatus: billStatus ?? this.billStatus,
     billDiscount: billDiscount,
+    storeContactedAt: storeContactedAt,
   );
 
   /// A prescription order still waiting on money: priced or not, nothing has
@@ -169,6 +245,11 @@ class Purchase {
   String get mrpLabel => '₹${formatRupees(mrpTotal)}';
 
   String get savedLabel => '₹${formatRupees(saved)}';
+
+  /// `₹450` — what the store billed, or null before a bill has a price. What
+  /// the Track order screen's Billing-stage callout shows.
+  String? get billLabel =>
+      billAmount == null ? null : '₹${formatRupees(billAmount!)}';
 
   /// The bill's own gross subtotal before [billDiscount] came off it — the
   /// "Bill" figure "Your earnings" shows next to what was actually paid, the
@@ -196,13 +277,26 @@ class LinkedOrder {
   /// `RX-0003`.
   final String code;
   final OrderStatus status;
+  final DateTime? storeContactedAt;
+  final bool billed;
 
-  const LinkedOrder({required this.code, required this.status});
+  const LinkedOrder({
+    required this.code,
+    required this.status,
+    this.storeContactedAt,
+    this.billed = false,
+  });
 
   /// Reads an `app."order".status` token — `PROCESSING` / `OUT_FOR_DELIVERY`
-  /// / `DELIVERED` / `CANCELLED` — into a link; null when there is no order
-  /// code (a prescription that was never ordered).
-  static LinkedOrder? fromTokens({Object? code, Object? status}) {
+  /// / `DELIVERED` / `CANCELLED` — plus the same stage signals
+  /// [Purchase.stage] reads, into a link; null when there is no order code (a
+  /// prescription that was never ordered).
+  static LinkedOrder? fromTokens({
+    Object? code,
+    Object? status,
+    Object? storeContactedAt,
+    Object? billed,
+  }) {
     final orderCode = (code ?? '').toString().trim();
     if (orderCode.isEmpty) {
       return null;
@@ -215,11 +309,30 @@ class LinkedOrder {
         'CANCELLED' => OrderStatus.cancelled,
         _ => OrderStatus.processing,
       },
+      storeContactedAt: DateTime.tryParse((storeContactedAt ?? '').toString()),
+      // NeonHttp's `/sql` endpoint hands every value back as text (see its
+      // own `Neon-Raw-Text-Output` header), so a SQL boolean arrives as
+      // `'t'`/`'true'`, never the real `bool` a plain JSON API would give —
+      // the same defensive read `agent_repository.dart`'s own `active` field
+      // already needs.
+      billed: billed == true ||
+          const ['true', 't', '1'].contains(
+            billed?.toString().trim().toLowerCase(),
+          ),
     );
   }
 
+  /// The furthest stage this order has reached — see [OrderStage]. The same
+  /// rule [Purchase.stage] uses, so a prescription's card and the order it
+  /// was placed into can never disagree.
+  OrderStage get stage => OrderStage.derive(
+    status: status,
+    billed: billed,
+    contacted: storeContactedAt != null,
+  );
+
   /// A bare [Purchase] carrying just what the tracker draws from — its status
-  /// — for a link the order book has not loaded yet.
+  /// and stage signals — for a link the order book has not loaded yet.
   Purchase toPurchase() => Purchase(
     id: code,
     placedOn: '',
@@ -228,14 +341,20 @@ class LinkedOrder {
     paidTotal: 0,
     status: status,
     kind: OrderKind.prescription,
+    billStatus: billed ? OrderPaymentStatus.pending : null,
+    storeContactedAt: storeContactedAt,
   );
 
   @override
   bool operator ==(Object other) =>
-      other is LinkedOrder && other.code == code && other.status == status;
+      other is LinkedOrder &&
+      other.code == code &&
+      other.status == status &&
+      other.storeContactedAt == storeContactedAt &&
+      other.billed == billed;
 
   @override
-  int get hashCode => Object.hash(code, status);
+  int get hashCode => Object.hash(code, status, storeContactedAt, billed);
 }
 
 /// The order book, and the earnings that come out of it.

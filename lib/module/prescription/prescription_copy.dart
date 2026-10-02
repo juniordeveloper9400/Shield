@@ -126,16 +126,22 @@ class PrescriptionCopy {
   final String orderPlacedDetail;
 
   // ---- Order status (the order this prescription was placed into) ----
+  // The four stages a member sees any order move through — Pending →
+  // Processed → Billing → Completed, or Cancelled — the same words and the
+  // same [OrderStage] the Track order screen and "My Orders" list both use
+  // (see purchase_service.dart's own doc), so a prescription's order never
+  // reads as something different on its own card.
   final String orderStatusTitle;
   final String trackOrder;
   final String stagePlaced;
-  final String stageProcessing;
-  final String stageOutForDelivery;
-  final String stageDelivered;
+  final String stageStoreContact;
+  final String stageBilled;
+  final String stageComplete;
   final String stageCancelled;
   final String stagePlacedDetail;
-  final String stageOutForDeliveryDetail;
-  final String stageDeliveredDetail;
+  final String stageStoreContactDetail;
+  final String stageBilledDetail;
+  final String stageCompleteDetail;
   final String stageCancelledDetail;
 
   final String intakeCardReady;
@@ -217,13 +223,14 @@ class PrescriptionCopy {
     required this.orderStatusTitle,
     required this.trackOrder,
     required this.stagePlaced,
-    required this.stageProcessing,
-    required this.stageOutForDelivery,
-    required this.stageDelivered,
+    required this.stageStoreContact,
+    required this.stageBilled,
+    required this.stageComplete,
     required this.stageCancelled,
     required this.stagePlacedDetail,
-    required this.stageOutForDeliveryDetail,
-    required this.stageDeliveredDetail,
+    required this.stageStoreContactDetail,
+    required this.stageBilledDetail,
+    required this.stageCompleteDetail,
     required this.stageCancelledDetail,
     required this.intakeCardReady,
     required this.viewMedicines,
@@ -359,14 +366,15 @@ class PrescriptionCopy {
         'price. This card fills in once they send the details.',
     orderStatusTitle: 'Order status',
     trackOrder: 'Track order',
-    stagePlaced: 'Order placed',
-    stageProcessing: 'Processing',
-    stageOutForDelivery: 'Out for delivery',
-    stageDelivered: 'Delivered',
+    stagePlaced: 'Pending',
+    stageStoreContact: 'Processed',
+    stageBilled: 'Billing',
+    stageComplete: 'Completed',
     stageCancelled: 'Cancelled',
     stagePlacedDetail: 'We have your order. The pharmacist will call you soon.',
-    stageOutForDeliveryDetail: 'Your order is on its way.',
-    stageDeliveredDetail: 'Your order has been delivered.',
+    stageStoreContactDetail: 'The pharmacist has contacted you.',
+    stageBilledDetail: 'Your bill is ready — open Track order to see it.',
+    stageCompleteDetail: 'Your order is complete.',
     stageCancelledDetail: 'This order was cancelled.',
     intakeCardReady: 'Intake card ready',
     viewMedicines: 'View medicines',
@@ -503,13 +511,14 @@ class PrescriptionCopy {
     orderStatusTitle: 'ഓർഡർ നില',
     trackOrder: 'ഓർഡർ ട്രാക്ക് ചെയ്യുക',
     stagePlaced: 'ഓർഡർ നൽകി',
-    stageProcessing: 'തയ്യാറാക്കുന്നു',
-    stageOutForDelivery: 'ഡെലിവറിക്ക് പുറപ്പെട്ടു',
-    stageDelivered: 'എത്തിച്ചു',
+    stageStoreContact: 'സ്റ്റോർ ബന്ധപ്പെട്ടു',
+    stageBilled: 'ബിൽ ചെയ്തു',
+    stageComplete: 'പൂർത്തിയായി',
     stageCancelled: 'റദ്ദാക്കി',
     stagePlacedDetail: 'നിങ്ങളുടെ ഓർഡർ ഞങ്ങൾക്ക് ലഭിച്ചു. ഫാർമസിസ്റ്റ് ഉടൻ വിളിക്കും.',
-    stageOutForDeliveryDetail: 'നിങ്ങളുടെ ഓർഡർ വഴിയിലാണ്.',
-    stageDeliveredDetail: 'നിങ്ങളുടെ ഓർഡർ എത്തിച്ചു.',
+    stageStoreContactDetail: 'ഫാർമസിസ്റ്റ് നിങ്ങളെ ബന്ധപ്പെട്ടു.',
+    stageBilledDetail: 'നിങ്ങളുടെ ബിൽ തയ്യാറായി — കാണാൻ ഓർഡർ ട്രാക്ക് ചെയ്യുക.',
+    stageCompleteDetail: 'നിങ്ങളുടെ ഓർഡർ പൂർത്തിയായി.',
     stageCancelledDetail: 'ഈ ഓർഡർ റദ്ദാക്കി.',
     intakeCardReady: 'അളവ് കാർഡ് തയ്യാറായി',
     viewMedicines: 'മരുന്നുകൾ കാണുക',

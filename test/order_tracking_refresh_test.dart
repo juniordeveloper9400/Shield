@@ -28,11 +28,13 @@ void main() {
       await tester.pumpAndSettle();
       service.replaceRemote([order(OrderStatus.outForDelivery)]);
       await tester.pumpAndSettle();
-      expect(find.text('Out for delivery'), findsWidgets);
-      expect(find.text('Order processing'), findsNothing);
+      // Out for delivery with nobody having pressed Call yet still counts as
+      // "the store obviously handled it" — Processed, not stuck at Pending.
+      expect(find.text('Processed'), findsWidgets);
+      expect(find.text('Pending'), findsNothing);
       service.replaceRemote([order(OrderStatus.cancelled)]);
       await tester.pumpAndSettle();
-      expect(find.text('Order cancelled'), findsOneWidget);
+      expect(find.text('Cancelled'), findsWidgets);
       await tester.pumpWidget(const SizedBox.shrink());
       service.replaceRemote([order(OrderStatus.delivered)]);
       await tester.pump(const Duration(seconds: 31));

@@ -11,6 +11,9 @@ Purchase _order({
   OrderStatus status = OrderStatus.processing,
   int mrp = 900,
   int paid = 720,
+  DateTime? contactedAt,
+  OrderPaymentStatus? billStatus,
+  int? billAmount,
 }) {
   return Purchase(
     id: 'SHD-900001',
@@ -20,6 +23,9 @@ Purchase _order({
     paidTotal: paid,
     status: status,
     kind: kind,
+    storeContactedAt: contactedAt,
+    billStatus: billStatus,
+    billAmount: billAmount,
   );
 }
 
@@ -33,41 +39,41 @@ Future<void> _pumpTrack(WidgetTester tester, Purchase order) async {
 
 void main() {
   group('OrderTrack model', () {
-    test('a standard order runs the four-stage route', () {
+    test('a standard order always shows the same four member stages', () {
       final track = OrderTrack(_order());
       expect(track.steps.map((s) => s.title), [
-        'Order placed',
-        'Processing',
-        'Out for delivery',
-        'Delivered',
+        'Pending',
+        'Processed',
+        'Billing',
+        'Completed',
       ]);
     });
 
-    test('a prescription order runs the same four-stage route', () {
+    test('a prescription order shows the same four stages', () {
       final track = OrderTrack(_order(kind: OrderKind.prescription));
       expect(track.steps.map((s) => s.title), [
-        'Order placed',
-        'Processing',
-        'Out for delivery',
-        'Delivered',
+        'Pending',
+        'Processed',
+        'Billing',
+        'Completed',
       ]);
     });
 
-    test('out for delivery lights the out for delivery node on both routes', () {
-      for (final kind in OrderKind.values) {
-        final track = OrderTrack(
-          _order(kind: kind, status: OrderStatus.outForDelivery),
-        );
-        final current = track.steps.firstWhere(
-          (s) => s.state == TrackState.current,
-        );
-        expect(
-          current.title,
-          'Out for delivery',
-          reason: kind.name,
-        );
-      }
-    });
+    test(
+      'an order out for delivery (or store-contacted) lights the Processed '
+      'node on both routes',
+      () {
+        for (final kind in OrderKind.values) {
+          final track = OrderTrack(
+            _order(kind: kind, status: OrderStatus.outForDelivery),
+          );
+          final current = track.steps.firstWhere(
+            (s) => s.state == TrackState.current,
+          );
+          expect(current.title, 'Processed', reason: kind.name);
+        }
+      },
+    );
 
     test('a delivered order has every node done and no window', () {
       final track = OrderTrack(_order(status: OrderStatus.delivered));
@@ -77,7 +83,7 @@ void main() {
 
     test('a cancelled order stops at two nodes', () {
       final track = OrderTrack(_order(status: OrderStatus.cancelled));
-      expect(track.steps.map((s) => s.title), ['Order placed', 'Cancelled']);
+      expect(track.steps.map((s) => s.title), ['Pending', 'Cancelled']);
       expect(track.deliveryWindow, isNull);
     });
   });
@@ -94,9 +100,9 @@ void main() {
         await tester.tap(find.text('Order tracking'));
         await tester.pumpAndSettle();
 
-        expect(find.text('Order placed'), findsOneWidget);
-        expect(find.text('Processing'), findsOneWidget);
-        expect(find.text('Delivered'), findsOneWidget);
+        expect(find.text('Pending'), findsWidgets);
+        expect(find.text('Processed'), findsOneWidget);
+        expect(find.text('Completed'), findsOneWidget);
         // The old "make payment now" nudge and pay-using footer are gone —
         // the real pay-now action lives on the bill card further down, not
         // pinned to the tracker.
@@ -115,9 +121,9 @@ void main() {
       await tester.tap(find.text('Order tracking'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Order placed'), findsOneWidget);
-      expect(find.text('Processing'), findsOneWidget);
-      expect(find.text('Out for delivery'), findsOneWidget);
+      expect(find.text('Pending'), findsWidgets);
+      expect(find.text('Processed'), findsOneWidget);
+      expect(find.text('Billing'), findsOneWidget);
       expect(find.text('Make payment now'), findsNothing);
       expect(find.text('Pay using'), findsNothing);
     });
@@ -129,28 +135,31 @@ void main() {
       );
 
       expect(find.textContaining('Delivery by:'), findsNothing);
-      expect(find.text('Order delivered'), findsOneWidget);
+      expect(find.text('Completed'), findsWidgets);
     });
 
     testWidgets('the order tracking section collapses and expands from its '
         'own arrow', (tester) async {
       await _pumpTrack(tester, _order());
 
-      // Collapsed by default: a single progress line, no stage names, dates
-      // or the callout — those sit behind the arrow.
-      expect(find.text('Order placed'), findsNothing);
+      // Collapsed by default: a single progress line, no stage dates or the
+      // callout — those sit behind the arrow. The fixed status header above
+      // the card always shows the stage label on its own, though, so
+      // "Pending" is already on screen once before anything is expanded.
+      expect(find.text('Pending'), findsOneWidget);
       expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
 
       await tester.tap(find.text('Order tracking'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Order placed'), findsOneWidget);
+      // Now the graph's own "Pending" node title joins the header's.
+      expect(find.text('Pending'), findsNWidgets(2));
       expect(find.byIcon(Icons.keyboard_arrow_up_rounded), findsOneWidget);
 
       await tester.tap(find.text('Order tracking'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Order placed'), findsNothing);
+      expect(find.text('Pending'), findsOneWidget);
       expect(find.byIcon(Icons.keyboard_arrow_down_rounded), findsOneWidget);
     });
   });

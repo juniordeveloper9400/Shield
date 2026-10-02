@@ -316,6 +316,7 @@ class OrderRepository {
                  o.item_count, o.mrp_total, o.paid_total, o.placed_at,
                  o.fulfillment_type::text AS fulfillment_type,
                  o.payment_status::text AS payment_status,
+                 o.store_contacted_at,
                  b.image AS bill_image, b.sent_at AS billed_at,
                  b.amount AS bill_amount, b.status::text AS bill_status,
                  b.discount_amount AS bill_discount
@@ -627,6 +628,10 @@ class OrderRepository {
       billDiscount:
           double.tryParse(row['bill_discount']?.toString() ?? '')?.round() ??
               0,
+      // Null while the store hasn't contacted the member (or the row
+      // predates migration 0045) — DateTime.tryParse('') is null too.
+      storeContactedAt:
+          DateTime.tryParse((row['store_contacted_at'] ?? '').toString()),
     );
   }
 
@@ -1092,18 +1097,23 @@ class OrderRepository {
 
   // --- shared helpers ------------------------------------------------------
 
+  // Nothing reads `app.order_track_step` back — `OrderTrack` derives the
+  // graph straight off the order's own columns (see its own doc) — but the
+  // row is still seeded at placement, so its titles are kept matching
+  // [OrderStage]'s wording rather than left showing the tracker's old
+  // delivery-logistics stages.
   static const List<String> _standardStages = [
-    'Order placed',
-    'Processing',
-    'Out for delivery',
-    'Delivered',
+    'Pending',
+    'Processed',
+    'Billing',
+    'Completed',
   ];
 
   static const List<String> _prescriptionStages = [
-    'Order placed',
-    'Processing',
-    'Out for delivery',
-    'Delivered',
+    'Pending',
+    'Processed',
+    'Billing',
+    'Completed',
   ];
 
   Future<int?> _memberId(String phone) async {
