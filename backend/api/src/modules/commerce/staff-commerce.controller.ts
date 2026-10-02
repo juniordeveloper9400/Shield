@@ -6,7 +6,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { sendBillSchema, updateOrderStatusSchema, type SendBillDto, type UpdateOrderStatusDto } from './dto';
 import type { RequestSubject } from '../auth/session.types';
 
-/** Store-scoped for every role except SUPERADMIN — see order.service.ts. */
+/** Store-scoped for every role except SUPERADMIN/ADMIN — see order.service.ts. */
 @Controller('v1/staff')
 @RequireStaff()
 export class StaffCommerceController {

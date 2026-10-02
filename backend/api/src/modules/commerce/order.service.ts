@@ -480,10 +480,10 @@ export class OrderService {
     return result.rows as { name: string; pack: string; qty: number; unitPrice: string; mrp: string; image: string | null }[];
   }
 
-  // ---- Staff (store-scoped, SUPERADMIN sees every store) -----------------
+  // ---- Staff (store-scoped; SUPERADMIN and ADMIN see every store) --------
 
   async listForStaff(role: AdminRole, storeId: number | null) {
-    if (role === 'SUPERADMIN') {
+    if (role === 'SUPERADMIN' || role === 'ADMIN') {
       return this.db.select().from(order).orderBy(desc(order.placedAt));
     }
     if (storeId == null) return [];
@@ -605,7 +605,7 @@ export class OrderService {
 
   private async getOwnedByStaffOrThrow(orderId: number, role: AdminRole, storeId: number | null) {
     const conditions = [eq(order.id, orderId)];
-    if (role !== 'SUPERADMIN') {
+    if (role !== 'SUPERADMIN' && role !== 'ADMIN') {
       if (storeId == null) {
         throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Staff account has no store assigned' } });
       }

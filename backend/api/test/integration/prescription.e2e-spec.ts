@@ -28,6 +28,7 @@ describe('Prescription (e2e)', () => {
   let memberAccessToken: string;
   let storeAStaffToken: string;
   let storeBStaffToken: string;
+  let adminAccessToken: string;
   let patientId: number;
 
   beforeAll(async () => {
@@ -85,6 +86,17 @@ describe('Prescription (e2e)', () => {
       storeId: storeB.id,
     });
 
+    // No storeId — an ADMIN account is unscoped like SUPERADMIN, not
+    // store-bound like PHARMACY. Regression coverage for the bug where this
+    // service only special-cased SUPERADMIN, leaving every plain ADMIN
+    // account's prescriptions list (and "My Orders" by extension) empty.
+    await db.insert(adminUser).values({
+      loginId: 'rx-admin@example.com',
+      name: 'Plain Admin',
+      passwordHash: testPasswordHash,
+      role: 'ADMIN',
+    });
+
     memberAccessToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
     ).body.accessToken;
@@ -98,6 +110,12 @@ describe('Prescription (e2e)', () => {
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
         .send({ loginId: 'rx-storeb@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200)
+    ).body.accessToken;
+    adminAccessToken = (
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ loginId: 'rx-admin@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
   });
@@ -186,6 +204,19 @@ describe('Prescription (e2e)', () => {
       .get(`/v1/staff/prescriptions/${prescriptionId}`)
       .set('Authorization', `Bearer ${storeBStaffToken}`)
       .expect(404);
+  });
+
+  it('an ADMIN with no store assigned still sees it, same as SUPERADMIN', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/v1/staff/prescriptions')
+      .set('Authorization', `Bearer ${adminAccessToken}`)
+      .expect(200);
+    expect(list.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: prescriptionId })]));
+
+    await request(app.getHttpServer())
+      .get(`/v1/staff/prescriptions/${prescriptionId}`)
+      .set('Authorization', `Bearer ${adminAccessToken}`)
+      .expect(200);
   });
 
   it('rotates one image on a multi-page prescription without touching the others', async () => {

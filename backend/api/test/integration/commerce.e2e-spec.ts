@@ -39,6 +39,7 @@ describe('Commerce (e2e)', () => {
   let memberAccessToken: string;
   let storeAStaffToken: string;
   let storeBStaffToken: string;
+  let adminAccessToken: string;
   let productId: number;
 
   beforeAll(async () => {
@@ -100,6 +101,18 @@ describe('Commerce (e2e)', () => {
       storeId: storeB.id,
     });
 
+    // No storeId — an ADMIN account is unscoped like SUPERADMIN, not
+    // store-bound like PHARMACY/LAB/DELIVERY/LAB_TECHNICIAN (shieldweb's own
+    // STORE_BOUND_ROLES agrees). Regression coverage for the bug where this
+    // service's commerce/prescription modules only special-cased SUPERADMIN,
+    // leaving every ADMIN account's "Orders" page silently empty.
+    await db.insert(adminUser).values({
+      loginId: 'admin@example.com',
+      name: 'Plain Admin',
+      passwordHash: testPasswordHash,
+      role: 'ADMIN',
+    });
+
     memberAccessToken = (
       await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
     ).body.accessToken;
@@ -113,6 +126,12 @@ describe('Commerce (e2e)', () => {
       await request(app.getHttpServer())
         .post('/v1/staff/auth/session')
         .send({ loginId: 'storeb@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200)
+    ).body.accessToken;
+    adminAccessToken = (
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ loginId: 'admin@example.com', password: 'correct-horse-battery-staple' })
         .expect(200)
     ).body.accessToken;
 
@@ -233,6 +252,14 @@ describe('Commerce (e2e)', () => {
       .set('Authorization', `Bearer ${storeBStaffToken}`)
       .send({ status: 'OUT_FOR_DELIVERY' })
       .expect(404); // store B genuinely cannot see this order exists
+  });
+
+  it('an ADMIN with no store assigned still sees every store\'s orders, same as SUPERADMIN', async () => {
+    const adminView = await request(app.getHttpServer())
+      .get('/v1/staff/orders')
+      .set('Authorization', `Bearer ${adminAccessToken}`)
+      .expect(200);
+    expect(adminView.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: orderId })]));
   });
 
   it('rejects an illegal status transition (skipping straight to DELIVERED)', async () => {

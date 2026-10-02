@@ -12,7 +12,7 @@ export class ApprovalService {
   async raise(role: AdminRole, storeId: number | null, dto: RaiseApprovalDto) {
     const [rx] = await this.db.select().from(prescription).where(eq(prescription.id, dto.prescriptionId)).limit(1);
     if (!rx) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Prescription not found' } });
-    if (role !== 'SUPERADMIN' && rx.storeId !== storeId) {
+    if (role !== 'SUPERADMIN' && role !== 'ADMIN' && rx.storeId !== storeId) {
       throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Prescription does not belong to this store' } });
     }
 
@@ -88,7 +88,7 @@ export class ApprovalService {
   }
 
   async listForStaff(role: AdminRole, storeId: number | null) {
-    if (role === 'SUPERADMIN') {
+    if (role === 'SUPERADMIN' || role === 'ADMIN') {
       return this.db.select().from(approval).orderBy(approval.createdAt);
     }
     if (storeId == null) return [];

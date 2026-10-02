@@ -18,7 +18,7 @@ import {
 } from './dto';
 import type { RequestSubject } from '../auth/session.types';
 
-/** Store-scoped for every role except SUPERADMIN — see prescription.service.ts. */
+/** Store-scoped for every role except SUPERADMIN/ADMIN — see prescription.service.ts. */
 @Controller('v1/staff')
 @RequireStaff()
 export class StaffPrescriptionController {

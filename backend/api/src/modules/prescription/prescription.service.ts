@@ -282,7 +282,7 @@ export class PrescriptionService {
 
   async listForStaff(role: AdminRole, storeId: number | null) {
     const rows =
-      role === 'SUPERADMIN'
+      role === 'SUPERADMIN' || role === 'ADMIN'
         ? await this.db.select().from(prescription).orderBy(desc(prescription.createdAt))
         : storeId == null
           ? []
@@ -380,7 +380,7 @@ export class PrescriptionService {
 
   private async getOwnedByStaffOrThrow(id: number, role: AdminRole, storeId: number | null) {
     const conditions = [eq(prescription.id, id)];
-    if (role !== 'SUPERADMIN') {
+    if (role !== 'SUPERADMIN' && role !== 'ADMIN') {
       if (storeId == null) {
         throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Staff account has no store assigned' } });
       }
