@@ -131,6 +131,11 @@ export const homeBanner = appSchema.table('home_banner', {
   isActive: boolean('is_active').notNull().default(true),
   sort: integer('sort').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Migration 0069 — which swipeable strip this row belongs to: 'home' (the
+   *  original hero carousel) or 'lab' (the Lab section's own, added
+   *  alongside it). One table rather than a parallel `lab_banner`, since the
+   *  two placements share an identical shape. */
+  placement: text('placement').notNull().default('home'),
 });
 
 export const promo = appSchema.table('promo', {

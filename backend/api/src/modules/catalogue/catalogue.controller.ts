@@ -71,10 +71,15 @@ export class CatalogueController {
     return this.catalogue.getProduct(id);
   }
 
+  /**
+   * `?placement=lab` for the Lab section's own strip; defaults to `'home'`
+   * for the hero carousel, so every existing caller (no query at all) keeps
+   * reading exactly what it always has.
+   */
   @Public()
   @Get('banners')
-  banners() {
-    return this.catalogue.listBanners();
+  banners(@Query('placement') placement?: string) {
+    return this.catalogue.listBanners(placement || 'home');
   }
 
   @Public()

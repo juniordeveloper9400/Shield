@@ -39,8 +39,11 @@ class HomeBannerModel {
   }
 }
 
-/// Reads the home-screen hero banner — `app.home_banner`, maintained from the
-/// admin console (`shieldweb`).
+/// Reads a placement's own swipeable banner strip — `app.home_banner`
+/// filtered to `placement` (migration 0069), maintained from the admin
+/// console (`shieldweb`). `'home'` is the original hero carousel; `'lab'` is
+/// the Lab section's own, added alongside it — same table, same shape,
+/// different strip.
 ///
 /// Tries `backend/api` first (`BackendHomeBannerRepository`) and falls back
 /// to the direct-Neon read below only when the backend is unavailable or
@@ -51,6 +54,7 @@ class HomeBannerModel {
 /// Read-only and best-effort like the other Neon repositories: a missing
 /// `DATABASE_URL` or a network failure returns an empty list rather than
 /// throwing, so [HomeHeroBanner] falls back to the bundled default banner
+/// (on the `'home'` placement only — see its own `showBundledDefault`)
 /// instead of showing an error where a promotion belongs.
 class HomeBannerRepository {
   const HomeBannerRepository._();
@@ -60,13 +64,13 @@ class HomeBannerRepository {
   bool get isAvailable =>
       BackendHomeBannerRepository.instance.isAvailable || NeonHttp.isConfigured;
 
-  /// Every banner the admin has switched on, in display order. Rows with no
-  /// image (should not happen — the console requires one) are dropped rather
-  /// than shown as a blank slide.
-  Future<List<HomeBannerModel>> listActive() async {
+  /// Every banner the admin has switched on for [placement], in display
+  /// order. Rows with no image (should not happen — the console requires
+  /// one) are dropped rather than shown as a blank slide.
+  Future<List<HomeBannerModel>> listActive({String placement = 'home'}) async {
     final backend = BackendHomeBannerRepository.instance;
     if (backend.isAvailable) {
-      final banners = await backend.listActive();
+      final banners = await backend.listActive(placement: placement);
       if (banners.isNotEmpty) {
         return banners;
       }
@@ -84,12 +88,15 @@ class HomeBannerRepository {
       return const [];
     }
     try {
-      final rows = await NeonHttp.instance.query(r'''
+      final rows = await NeonHttp.instance.query(
+        r'''
         SELECT id, title, subtitle, image, cta, target, sort
         FROM app.home_banner
-        WHERE is_active
+        WHERE is_active AND placement = $1
         ORDER BY sort, id
-      ''');
+      ''',
+        [placement],
+      );
       return rows
           .map(HomeBannerModel.fromRow)
           .where((banner) => banner.image.isNotEmpty)

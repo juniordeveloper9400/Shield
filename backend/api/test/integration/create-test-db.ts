@@ -247,7 +247,8 @@ export function createTestDb() {
       target text,
       is_active boolean NOT NULL DEFAULT true,
       sort integer NOT NULL DEFAULT 0,
-      created_at timestamptz NOT NULL DEFAULT now()
+      created_at timestamptz NOT NULL DEFAULT now(),
+      placement text NOT NULL DEFAULT 'home'
     );
 
     CREATE TABLE app.customer_review_video (

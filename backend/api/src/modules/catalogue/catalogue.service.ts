@@ -371,9 +371,19 @@ export class CatalogueService {
 
   // ---- Content: banners, promos ------------------------------------------
 
-  async listBanners() {
-    return this.cache.getOrSet('catalogue:banners', TTL.SHORT, () =>
-      this.db.select().from(homeBanner).where(eq(homeBanner.isActive, true)).orderBy(asc(homeBanner.sort)),
+  /**
+   * A placement's own swipeable banner strip (migration 0069) — `'home'`
+   * (the original hero carousel) unless the caller asks for another, e.g.
+   * `'lab'` for the Lab section's strip. One cache key per placement so
+   * publishing a Lab banner never invalidates Home's.
+   */
+  async listBanners(placement: string = 'home') {
+    return this.cache.getOrSet(`catalogue:banners:${placement}`, TTL.SHORT, () =>
+      this.db
+        .select()
+        .from(homeBanner)
+        .where(and(eq(homeBanner.isActive, true), eq(homeBanner.placement, placement)))
+        .orderBy(asc(homeBanner.sort)),
     );
   }
 

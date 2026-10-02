@@ -12,7 +12,15 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, membershipTier, paymentMethod, product, productCategory, shieldStore } from '../../src/db/schema';
+import {
+  adminUser,
+  homeBanner,
+  membershipTier,
+  paymentMethod,
+  product,
+  productCategory,
+  shieldStore,
+} from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -209,6 +217,36 @@ describe('Catalogue (e2e)', () => {
     expect(staffFeed.body.map((v: { name: string }) => v.name)).toEqual(
       expect.arrayContaining(['Active Clip', 'Inactive Clip']), // console sees both
     );
+  });
+
+  describe('banners (migration 0069: one placement per strip)', () => {
+    it('defaults to the home placement, and keeps a lab banner out of it', async () => {
+      await db.insert(homeBanner).values({ title: 'Home sale', image: 'home.jpg', isActive: true, sort: 0 });
+      await db
+        .insert(homeBanner)
+        .values({ title: 'Lab offer', image: 'lab.jpg', isActive: true, sort: 0, placement: 'lab' });
+
+      const home = await request(app.getHttpServer()).get('/v1/public/catalogue/banners').expect(200);
+      expect(home.body.map((b: { title: string }) => b.title)).toEqual(['Home sale']);
+
+      const lab = await request(app.getHttpServer())
+        .get('/v1/public/catalogue/banners')
+        .query({ placement: 'lab' })
+        .expect(200);
+      expect(lab.body.map((b: { title: string }) => b.title)).toEqual(['Lab offer']);
+    });
+
+    it('an inactive banner never shows on either placement', async () => {
+      await db
+        .insert(homeBanner)
+        .values({ title: 'Hidden lab banner', image: 'x.jpg', isActive: false, sort: 1, placement: 'lab' });
+
+      const lab = await request(app.getHttpServer())
+        .get('/v1/public/catalogue/banners')
+        .query({ placement: 'lab' })
+        .expect(200);
+      expect(lab.body.map((b: { title: string }) => b.title)).not.toContain('Hidden lab banner');
+    });
   });
 
   describe('public stores list', () => {

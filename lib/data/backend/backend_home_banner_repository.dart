@@ -3,9 +3,12 @@ import 'package:flutter/foundation.dart';
 import '../neon/home_banner_repository.dart' show HomeBannerModel;
 import 'backend_http.dart';
 
-/// Reads the home-screen hero banner from `backend/api`'s
+/// Reads a placement's own swipeable banner strip from `backend/api`'s
 /// `GET /v1/public/catalogue/banners` (`catalogue.service.ts`'s
-/// `listBanners`), maintained from the admin console (`shieldweb`).
+/// `listBanners`), maintained from the admin console (`shieldweb`). `'home'`
+/// (the default, sent with no query param so an old backend that predates
+/// migration 0069 keeps working) is the original hero carousel; `'lab'` is
+/// the Lab section's own.
 ///
 /// Reuses [HomeBannerModel.fromRow] as-is rather than a separate JSON
 /// mapper: every field on `app.home_banner` this model reads (`id`,
@@ -36,19 +39,18 @@ class BackendHomeBannerRepository {
 
   bool get isAvailable => _http.isEnabled;
 
-  /// Every banner the admin has switched on, in display order. Rows with no
-  /// image (should not happen — the console requires one) are dropped
-  /// rather than shown as a blank slide.
-  Future<List<HomeBannerModel>> listActive() async {
+  /// Every banner the admin has switched on for [placement], in display
+  /// order. Rows with no image (should not happen — the console requires
+  /// one) are dropped rather than shown as a blank slide.
+  Future<List<HomeBannerModel>> listActive({String placement = 'home'}) async {
     if (!isAvailable) {
       return const [];
     }
     try {
-      final rows = await _http.request(
-        'GET',
-        '/v1/public/catalogue/banners',
-        auth: false,
-      ) as List<dynamic>;
+      final path = placement == 'home'
+          ? '/v1/public/catalogue/banners'
+          : '/v1/public/catalogue/banners?placement=$placement';
+      final rows = await _http.request('GET', path, auth: false) as List<dynamic>;
       return rows
           .cast<Map<String, dynamic>>()
           .map(HomeBannerModel.fromRow)
