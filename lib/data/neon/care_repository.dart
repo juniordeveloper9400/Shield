@@ -40,7 +40,7 @@ class CareRepository {
     return _run('fetchLabPackages', () async {
       final rows = await NeonHttp.instance.query('''
         SELECT id, slug, name, category_id, (source_test_id IS NOT NULL) AS is_profile,
-               test_count, profile_count, rating,
+               is_most_common, test_count, profile_count, rating,
                booked, report_in, price, mrp, saved, inherits_from,
                inherits_summary, extras_label, for_whom, age_range,
                preparation, sample, organs, about
@@ -105,6 +105,7 @@ class CareRepository {
             extraCategoryIds:
                 extraCategoriesByPackage[row['id'].toString()] ?? const [],
             isProfile: _bool(row['is_profile']),
+            isMostCommon: _bool(row['is_most_common']),
             testCount: _int(row['test_count']),
             profileCount: _int(row['profile_count']),
             rating: row['rating']?.toString() ?? '',

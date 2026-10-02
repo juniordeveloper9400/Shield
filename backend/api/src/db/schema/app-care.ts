@@ -68,6 +68,11 @@ export const labPackage = appSchema.table('lab_package', {
   about: text('about').notNull().default(''),
   isActive: boolean('is_active').notNull().default(true),
   sort: integer('sort').notNull().default(0),
+  /** Migration 0068 — the Test Master's "Most Common Test" switch, mirrored
+   *  onto this listing by `syncLabTestListing` the same way `sourceTestId`'s
+   *  other copied fields are. Leads the apps' "Most Common Tests" banner;
+   *  staff-curated rather than guessed from [sort]. */
+  isMostCommon: boolean('is_most_common').notNull().default(false),
 });
 
 /**

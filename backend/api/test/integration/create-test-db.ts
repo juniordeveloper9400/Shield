@@ -643,7 +643,8 @@ export function createTestDb() {
       organs text[] NOT NULL DEFAULT '{}',
       about text NOT NULL DEFAULT '',
       is_active boolean NOT NULL DEFAULT true,
-      sort integer NOT NULL DEFAULT 0
+      sort integer NOT NULL DEFAULT 0,
+      is_most_common boolean NOT NULL DEFAULT false
     );
 
     CREATE TABLE app.lab_profile (
