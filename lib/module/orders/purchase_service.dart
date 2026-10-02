@@ -163,6 +163,13 @@ class Purchase {
   /// both).
   final DateTime? storeContactedAt;
 
+  /// When staff saved/submitted the order's review — `app."order".reviewed_at`.
+  /// Null until then. The admin console's own order list counts this alone
+  /// as "Processed" too (`orderLifecycle.ts`'s `orderLifecycleStatus`); [stage]
+  /// reads it alongside [storeContactedAt] so this screen can never show
+  /// "Pending" for an order the console already calls "Processed".
+  final DateTime? reviewedAt;
+
   const Purchase({
     required this.id,
     required this.placedOn,
@@ -179,20 +186,22 @@ class Purchase {
     this.billStatus,
     this.billDiscount = 0,
     this.storeContactedAt,
+    this.reviewedAt,
   });
 
   /// The furthest stage the order has reached — see [OrderStage].
   ///
   /// Cancelled and delivered come straight from the order's status. Below
   /// that, a bill row (`billStatus` is only ever non-null once the store has
-  /// sent one) means [OrderStage.billed], and a contact stamp — or an order
-  /// already out for delivery, which the store obviously handled — means
-  /// [OrderStage.storeContact]. Reading the *furthest* signal means an order
-  /// billed without anyone pressing Call still shows as billed, never stuck.
+  /// sent one) means [OrderStage.billed], and either staff action — a review
+  /// saved, or a contact stamp — or an order already out for delivery, which
+  /// the store obviously handled — means [OrderStage.storeContact]. Reading
+  /// the *furthest* signal means an order billed without anyone pressing
+  /// Call still shows as billed, never stuck.
   OrderStage get stage => OrderStage.derive(
     status: status,
     billed: billStatus != null,
-    contacted: storeContactedAt != null,
+    contacted: storeContactedAt != null || reviewedAt != null,
   );
 
   /// Whether the store has sent a bill for this order: either a picture it
@@ -223,6 +232,7 @@ class Purchase {
     billStatus: billStatus ?? this.billStatus,
     billDiscount: billDiscount,
     storeContactedAt: storeContactedAt,
+    reviewedAt: reviewedAt,
   );
 
   /// A prescription order still waiting on money: priced or not, nothing has
@@ -278,12 +288,16 @@ class LinkedOrder {
   final String code;
   final OrderStatus status;
   final DateTime? storeContactedAt;
+
+  /// When staff saved/submitted the order's review — mirrors [Purchase.reviewedAt].
+  final DateTime? reviewedAt;
   final bool billed;
 
   const LinkedOrder({
     required this.code,
     required this.status,
     this.storeContactedAt,
+    this.reviewedAt,
     this.billed = false,
   });
 
@@ -295,6 +309,7 @@ class LinkedOrder {
     Object? code,
     Object? status,
     Object? storeContactedAt,
+    Object? reviewedAt,
     Object? billed,
   }) {
     final orderCode = (code ?? '').toString().trim();
@@ -310,6 +325,7 @@ class LinkedOrder {
         _ => OrderStatus.processing,
       },
       storeContactedAt: DateTime.tryParse((storeContactedAt ?? '').toString()),
+      reviewedAt: DateTime.tryParse((reviewedAt ?? '').toString()),
       // NeonHttp's `/sql` endpoint hands every value back as text (see its
       // own `Neon-Raw-Text-Output` header), so a SQL boolean arrives as
       // `'t'`/`'true'`, never the real `bool` a plain JSON API would give —
@@ -328,7 +344,7 @@ class LinkedOrder {
   OrderStage get stage => OrderStage.derive(
     status: status,
     billed: billed,
-    contacted: storeContactedAt != null,
+    contacted: storeContactedAt != null || reviewedAt != null,
   );
 
   /// A bare [Purchase] carrying just what the tracker draws from — its status
@@ -343,6 +359,7 @@ class LinkedOrder {
     kind: OrderKind.prescription,
     billStatus: billed ? OrderPaymentStatus.pending : null,
     storeContactedAt: storeContactedAt,
+    reviewedAt: reviewedAt,
   );
 
   @override
@@ -351,10 +368,12 @@ class LinkedOrder {
       other.code == code &&
       other.status == status &&
       other.storeContactedAt == storeContactedAt &&
+      other.reviewedAt == reviewedAt &&
       other.billed == billed;
 
   @override
-  int get hashCode => Object.hash(code, status, storeContactedAt, billed);
+  int get hashCode =>
+      Object.hash(code, status, storeContactedAt, reviewedAt, billed);
 }
 
 /// The order book, and the earnings that come out of it.

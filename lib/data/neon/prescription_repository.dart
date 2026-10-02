@@ -306,14 +306,15 @@ class PrescriptionRepository {
   }
 
   /// The `order_code` / `order_status` / `order_store_contacted_at` /
-  /// `order_billed` columns of a [fetchForMember] row as a [LinkedOrder], or
-  /// null when the script was never ordered.
+  /// `order_reviewed_at` / `order_billed` columns of a [fetchForMember] row
+  /// as a [LinkedOrder], or null when the script was never ordered.
   @visibleForTesting
   static LinkedOrder? linkedOrderFromRow(Map<String, dynamic> row) =>
       LinkedOrder.fromTokens(
         code: row['order_code'],
         status: row['order_status'],
         storeContactedAt: row['order_store_contacted_at'],
+        reviewedAt: row['order_reviewed_at'],
         billed: row['order_billed'],
       );
 
@@ -338,7 +339,7 @@ class PrescriptionRepository {
         r'''
           SELECT rx.code, rx.uuid, rx.status, rx.doctor, rx.image,
                  lo.order_code, lo.order_status, lo.order_store_contacted_at,
-                 lo.order_billed,
+                 lo.order_reviewed_at, lo.order_billed,
                  pm.name, pm.pack,
                  pm.dose_morning, pm.dose_afternoon, pm.dose_night,
                  pm.total_units, pm.route_time, pm.status AS medicine_status, pm.sort
@@ -348,11 +349,13 @@ class PrescriptionRepository {
           -- places a fresh one for the same script), for the card's order
           -- status; no row for a script that was only uploaded. Carries the
           -- same stage signals Purchase.stage reads off the orders list —
-          -- when staff first contacted the member, and whether a bill row
-          -- exists — so the card's stage can never disagree with "My Orders".
+          -- when staff first contacted the member or saved the review, and
+          -- whether a bill row exists — so the card's stage can never
+          -- disagree with "My Orders".
           LEFT JOIN LATERAL (
             SELECT o.code AS order_code, o.status::text AS order_status,
                    o.store_contacted_at AS order_store_contacted_at,
+                   o.reviewed_at AS order_reviewed_at,
                    EXISTS (
                      SELECT 1 FROM app.bill b WHERE b.order_id = o.id
                    ) AS order_billed
