@@ -216,14 +216,22 @@ export class PrescriptionService {
    * never ordered.
    *
    * Carries just what the app needs to work out the tracking stage
-   * (Placed → Store contact → Billed → Complete, or Cancelled): the order's
-   * status, when staff first contacted the member, and whether a bill row
-   * exists — the same three signals `Purchase.stage` reads off the orders list.
+   * (Pending → Processed → Billing → Completed, or Cancelled): the order's
+   * status, when staff first contacted the member or saved its review, and
+   * whether a bill row exists — the same signals `Purchase.stage` reads off
+   * the orders list.
    */
   private async latestOrders(prescriptionIds: number[]) {
     const byRx = new Map<
       number,
-      { id: number; code: string; status: string; storeContactedAt: Date | null; billed: boolean }
+      {
+        id: number;
+        code: string;
+        status: string;
+        storeContactedAt: Date | null;
+        reviewedAt: Date | null;
+        billed: boolean;
+      }
     >();
     if (prescriptionIds.length === 0) return byRx;
 
@@ -234,6 +242,7 @@ export class PrescriptionService {
         code: order.code,
         status: order.status,
         storeContactedAt: order.storeContactedAt,
+        reviewedAt: order.reviewedAt,
         billId: bill.id,
       })
       .from(prescriptionOrder)
@@ -249,6 +258,7 @@ export class PrescriptionService {
         code: row.code,
         status: row.status,
         storeContactedAt: row.storeContactedAt,
+        reviewedAt: row.reviewedAt,
         billed: row.billId !== null,
       });
     }

@@ -82,6 +82,12 @@ export const order = appSchema.table('order', {
   // migration 0045: first time staff used the console's Call / WhatsApp for
   // this order's member — the member's "Store contact" stage. Read-only here.
   storeContactedAt: timestamp('store_contacted_at', { withTimezone: true }),
+  // When staff saved/submitted the order's review in the admin console. The
+  // console counts this OR `storeContactedAt` as reaching "Processed"
+  // (shieldweb's orderLifecycle.ts) — previously unmirrored here, so
+  // `listForMember`'s `getTableColumns(order)` silently dropped it from the
+  // member app's own order list and left it stuck on "Pending". Read-only.
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
   placedOn: date('placed_on').notNull(),
   placedAt: timestamp('placed_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

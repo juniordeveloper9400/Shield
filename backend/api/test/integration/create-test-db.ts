@@ -335,6 +335,7 @@ export function createTestDb() {
       delivery_boy_id bigint,
       paid_at timestamptz,
       store_contacted_at timestamptz,
+      reviewed_at timestamptz,
       placed_on date NOT NULL DEFAULT current_date,
       placed_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
