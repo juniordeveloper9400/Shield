@@ -154,10 +154,6 @@ class _OrderTrackScreenState extends State<OrderTrackScreen>
                   OrderItemsCard(order: order),
                 ],
                 DeliverToCard(order: order),
-                const SizedBox(height: 14),
-                const EmailIdCard(),
-                const SizedBox(height: 14),
-                DeliveryUpdatesCard(order: order),
                 if (order.status == OrderStatus.processing) ...[
                   const SizedBox(height: 14),
                   CancelOrderCard(order: order),

@@ -138,6 +138,21 @@ void main() {
       expect(find.text('Completed'), findsWidgets);
     });
 
+    testWidgets(
+      'carries no Email ID or alternate-number sections — contact stays '
+      'with the registered number',
+      (tester) async {
+        await _pumpTrack(tester, _order());
+
+        expect(find.text('Email ID'), findsNothing);
+        expect(find.text('Add email ID'), findsNothing);
+        expect(find.text('Get delivery updates on'), findsNothing);
+        expect(find.text('Add alternate number'), findsNothing);
+        // Deliver to: stays — only the two member-added-contact cards go.
+        expect(find.text('Deliver to:'), findsOneWidget);
+      },
+    );
+
     testWidgets('the order tracking section collapses and expands from its '
         'own arrow', (tester) async {
       await _pumpTrack(tester, _order());
