@@ -9,7 +9,6 @@ import 'package:shield/dates.dart';
 import 'package:shield/module/cart/cart_service.dart';
 import 'package:shield/module/home/prescription_card.dart';
 import 'package:shield/module/location/address_book.dart';
-import 'package:shield/module/location/address_form_screen.dart';
 import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/phone.dart';
 import 'package:shield/module/prescription/medicine_duration.dart';
@@ -947,51 +946,23 @@ void main() {
       },
     );
 
-    testWidgets('the list asks for delivery details once something is up', (
-      tester,
-    ) async {
-      seedRecord();
-      await pumpUpload(tester);
+    testWidgets(
+      'carries no standalone delivery-details card — the address is asked '
+      'for at checkout instead',
+      (tester) async {
+        seedRecord();
+        await pumpUpload(tester);
 
-      const copy = PrescriptionCopy.english;
-      expect(find.text(copy.deliveryDetails), findsWidgets);
-      expect(find.text(copy.addDeliveryAddress), findsOneWidget);
-      expect(find.text(copy.changeAddress), findsNothing);
-    });
-
-    testWidgets('a saved address fills the delivery card', (tester) async {
-      AddressBook.instance.add(
-        const Address(
-          pincode: '400079',
-          house: '4B, Sea View',
-          area: 'Ghatkopar East',
-          firstName: 'Asha',
-          lastName: 'Menon',
-          phone: '9000012345',
-          label: AddressLabel.home,
-        ),
-      );
-      seedRecord();
-      await pumpUpload(tester);
-
-      const copy = PrescriptionCopy.english;
-      expect(find.text(copy.addDeliveryAddress), findsNothing);
-      expect(find.text(copy.changeAddress), findsOneWidget);
-      expect(find.text('Home'), findsOneWidget);
-      expect(find.textContaining('4B, Sea View'), findsOneWidget);
-    });
-
-    testWidgets('add delivery address opens the address form', (tester) async {
-      seedRecord();
-      await pumpUpload(tester);
-
-      const copy = PrescriptionCopy.english;
-      await tester.ensureVisible(find.text(copy.addDeliveryAddress));
-      await tester.tap(find.text(copy.addDeliveryAddress));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(AddressFormScreen), findsOneWidget);
-    });
+        // copy.deliveryDetails itself is not a safe marker here — the
+        // pre-order info strip (_InfoStrip on PrescriptionDetailCard) uses
+        // the same title for an unrelated note. The intro line and the two
+        // actions were unique to the removed standalone card.
+        const copy = PrescriptionCopy.english;
+        expect(find.text(copy.deliveryDetailsIntro), findsNothing);
+        expect(find.text(copy.addDeliveryAddress), findsNothing);
+        expect(find.text(copy.changeAddress), findsNothing);
+      },
+    );
 
     testWidgets('before the order the card says to place it, with no table', (
       tester,
