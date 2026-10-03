@@ -3,7 +3,6 @@ import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
-  bill,
   memberAddress,
   order,
   orderTrackStep,
@@ -218,8 +217,11 @@ export class PrescriptionService {
    * Carries just what the app needs to work out the tracking stage
    * (Pending → Processed → Billing → Completed, or Cancelled): the order's
    * status, when staff first contacted the member or saved its review, and
-   * whether a bill row exists — the same signals `Purchase.stage` reads off
-   * the orders list.
+   * whether it's been converted to a bill — the same signals `Purchase.stage`
+   * reads off the orders list. `billed` means "converted to bill", the same
+   * milestone shieldweb's `orderLifecycleStatus` counts as reaching
+   * "Billing" — not whether a priced `app.bill` row exists yet, which can
+   * (and usually does) land later, as its own separate step.
    */
   private async latestOrders(prescriptionIds: number[]) {
     const byRx = new Map<
@@ -243,11 +245,10 @@ export class PrescriptionService {
         status: order.status,
         storeContactedAt: order.storeContactedAt,
         reviewedAt: order.reviewedAt,
-        billId: bill.id,
+        convertedToBillAt: order.convertedToBillAt,
       })
       .from(prescriptionOrder)
       .innerJoin(order, eq(order.id, prescriptionOrder.orderId))
-      .leftJoin(bill, eq(bill.orderId, order.id))
       .where(inArray(prescriptionOrder.prescriptionId, prescriptionIds))
       .orderBy(desc(prescriptionOrder.submittedAt), desc(prescriptionOrder.id));
 
@@ -259,7 +260,7 @@ export class PrescriptionService {
         status: row.status,
         storeContactedAt: row.storeContactedAt,
         reviewedAt: row.reviewedAt,
-        billed: row.billId !== null,
+        billed: row.convertedToBillAt !== null,
       });
     }
     return byRx;

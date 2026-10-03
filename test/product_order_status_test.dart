@@ -7,6 +7,7 @@ void main() {
     OrderStatus status, {
     int paid = 0,
     DateTime? contactedAt,
+    DateTime? convertedToBillAt,
     OrderPaymentStatus? billStatus,
     int? billAmount,
     OrderKind kind = OrderKind.standard,
@@ -19,6 +20,7 @@ void main() {
     status: status,
     kind: kind,
     storeContactedAt: contactedAt,
+    convertedToBillAt: convertedToBillAt,
     billStatus: billStatus,
     billAmount: billAmount,
   );
@@ -67,6 +69,9 @@ void main() {
         order(
           OrderStatus.processing,
           contactedAt: contacted,
+          // "Convert to bill →" is what actually reaches Billing — a priced
+          // bill can (and usually does) land later, as its own step.
+          convertedToBillAt: DateTime(2026, 9, 20),
           billStatus: OrderPaymentStatus.pending,
           billAmount: 450,
         ),
@@ -83,6 +88,7 @@ void main() {
     final paid = OrderTrack(
       order(
         OrderStatus.processing,
+        convertedToBillAt: DateTime(2026, 9, 20),
         billStatus: OrderPaymentStatus.paid,
         billAmount: 450,
       ),
@@ -90,10 +96,23 @@ void main() {
     expect(paid.subhead, '₹450 · Paid');
   });
 
+  test('converting to a bill reaches Billing before any bill is actually '
+      'priced or sent', () {
+    final track = OrderTrack(
+      order(OrderStatus.processing, convertedToBillAt: DateTime(2026, 9, 20)),
+    );
+    expect(track.stage, OrderStage.billed);
+    expect(current(track), 'Billing');
+    // No priced bill yet — the subhead falls back to the order id rather
+    // than inventing a figure.
+    expect(track.subhead, 'Order ADMIN-STATUS-1');
+  });
+
   test('completing the order clears every stage', () {
     final track = OrderTrack(
       order(
         OrderStatus.delivered,
+        convertedToBillAt: DateTime(2026, 9, 20),
         billStatus: OrderPaymentStatus.paid,
         billAmount: 450,
       ),
@@ -112,6 +131,7 @@ void main() {
       OrderTrack(
         order(
           OrderStatus.outForDelivery,
+          convertedToBillAt: DateTime(2026, 9, 20),
           billStatus: OrderPaymentStatus.pending,
           billAmount: 100,
         ),
@@ -125,6 +145,7 @@ void main() {
       order(
         OrderStatus.cancelled,
         contactedAt: DateTime(2026, 9, 20),
+        convertedToBillAt: DateTime(2026, 9, 20),
         billStatus: OrderPaymentStatus.pending,
         billAmount: 100,
       ),

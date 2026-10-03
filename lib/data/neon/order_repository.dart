@@ -316,7 +316,7 @@ class OrderRepository {
                  o.item_count, o.mrp_total, o.paid_total, o.placed_at,
                  o.fulfillment_type::text AS fulfillment_type,
                  o.payment_status::text AS payment_status,
-                 o.store_contacted_at, o.reviewed_at,
+                 o.store_contacted_at, o.reviewed_at, o.converted_to_bill_at,
                  b.image AS bill_image, b.sent_at AS billed_at,
                  b.amount AS bill_amount, b.status::text AS bill_status,
                  b.discount_amount AS bill_discount
@@ -633,6 +633,8 @@ class OrderRepository {
       storeContactedAt:
           DateTime.tryParse((row['store_contacted_at'] ?? '').toString()),
       reviewedAt: DateTime.tryParse((row['reviewed_at'] ?? '').toString()),
+      convertedToBillAt:
+          DateTime.tryParse((row['converted_to_bill_at'] ?? '').toString()),
     );
   }
 

@@ -88,6 +88,12 @@ export const order = appSchema.table('order', {
   // `listForMember`'s `getTableColumns(order)` silently dropped it from the
   // member app's own order list and left it stuck on "Pending". Read-only.
   reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  // migration 0044: "Convert to bill →" in the admin console. The console
+  // counts this alone as reaching "Billing" (shieldweb's orderLifecycle.ts) —
+  // before any priced `app.bill` row necessarily exists yet, since pricing
+  // happens as a separate step after the order lands on the Bills page.
+  // Read-only here, same reasoning as `reviewedAt` just above.
+  convertedToBillAt: timestamp('converted_to_bill_at', { withTimezone: true }),
   placedOn: date('placed_on').notNull(),
   placedAt: timestamp('placed_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

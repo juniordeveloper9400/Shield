@@ -337,6 +337,7 @@ export function createTestDb() {
       paid_at timestamptz,
       store_contacted_at timestamptz,
       reviewed_at timestamptz,
+      converted_to_bill_at timestamptz,
       placed_on date NOT NULL DEFAULT current_date,
       placed_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()

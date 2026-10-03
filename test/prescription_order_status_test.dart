@@ -253,7 +253,7 @@ void main() {
         kind: OrderKind.prescription,
       );
       PurchaseService.instance.updateOne(
-        purchase.copyWith(billStatus: OrderPaymentStatus.pending),
+        purchase.copyWith(convertedToBillAt: DateTime(2026, 9, 20)),
       );
 
       await pump(tester);

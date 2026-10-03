@@ -350,15 +350,15 @@ class PrescriptionRepository {
           -- status; no row for a script that was only uploaded. Carries the
           -- same stage signals Purchase.stage reads off the orders list —
           -- when staff first contacted the member or saved the review, and
-          -- whether a bill row exists — so the card's stage can never
-          -- disagree with "My Orders".
+          -- whether it's been converted to a bill (order_billed — the same
+          -- "Billing" milestone orderLifecycle.ts counts, not whether a
+          -- priced app.bill row exists yet, which lands later) — so the
+          -- card's stage can never disagree with "My Orders".
           LEFT JOIN LATERAL (
             SELECT o.code AS order_code, o.status::text AS order_status,
                    o.store_contacted_at AS order_store_contacted_at,
                    o.reviewed_at AS order_reviewed_at,
-                   EXISTS (
-                     SELECT 1 FROM app.bill b WHERE b.order_id = o.id
-                   ) AS order_billed
+                   (o.converted_to_bill_at IS NOT NULL) AS order_billed
             FROM app.prescription_order po
             JOIN app."order" o ON o.id = po.order_id
             WHERE po.prescription_id = rx.id

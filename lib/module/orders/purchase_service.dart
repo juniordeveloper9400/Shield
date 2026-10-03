@@ -170,6 +170,13 @@ class Purchase {
   /// "Pending" for an order the console already calls "Processed".
   final DateTime? reviewedAt;
 
+  /// "Convert to bill →" in the admin console — `app."order"
+  /// .converted_to_bill_at`. Null until then. This, not whether a priced
+  /// [billStatus] row exists yet (pricing is its own later step), is what
+  /// the console counts as reaching "Billing" (`orderLifecycle.ts`), and what
+  /// [stage] reads for the same reason.
+  final DateTime? convertedToBillAt;
+
   const Purchase({
     required this.id,
     required this.placedOn,
@@ -187,20 +194,22 @@ class Purchase {
     this.billDiscount = 0,
     this.storeContactedAt,
     this.reviewedAt,
+    this.convertedToBillAt,
   });
 
   /// The furthest stage the order has reached — see [OrderStage].
   ///
   /// Cancelled and delivered come straight from the order's status. Below
-  /// that, a bill row (`billStatus` is only ever non-null once the store has
-  /// sent one) means [OrderStage.billed], and either staff action — a review
+  /// that, "Convert to bill →" having been clicked means [OrderStage.billed]
+  /// — the same milestone the console itself counts, not whether a priced
+  /// bill has actually been sent yet — and either staff action — a review
   /// saved, or a contact stamp — or an order already out for delivery, which
   /// the store obviously handled — means [OrderStage.storeContact]. Reading
   /// the *furthest* signal means an order billed without anyone pressing
   /// Call still shows as billed, never stuck.
   OrderStage get stage => OrderStage.derive(
     status: status,
-    billed: billStatus != null,
+    billed: convertedToBillAt != null,
     contacted: storeContactedAt != null || reviewedAt != null,
   );
 
@@ -216,6 +225,7 @@ class Purchase {
   Purchase copyWith({
     OrderPaymentStatus? paymentStatus,
     OrderPaymentStatus? billStatus,
+    DateTime? convertedToBillAt,
   }) => Purchase(
     id: id,
     placedOn: placedOn,
@@ -233,6 +243,7 @@ class Purchase {
     billDiscount: billDiscount,
     storeContactedAt: storeContactedAt,
     reviewedAt: reviewedAt,
+    convertedToBillAt: convertedToBillAt ?? this.convertedToBillAt,
   );
 
   /// A prescription order still waiting on money: priced or not, nothing has
@@ -349,6 +360,10 @@ class LinkedOrder {
 
   /// A bare [Purchase] carrying just what the tracker draws from — its status
   /// and stage signals — for a link the order book has not loaded yet.
+  /// [convertedToBillAt] only needs to be non-null when [billed] is true —
+  /// [Purchase.stage] only ever checks its presence, never its actual value,
+  /// since this link never carries the real stamp itself (just whether one
+  /// exists).
   Purchase toPurchase() => Purchase(
     id: code,
     placedOn: '',
@@ -357,9 +372,9 @@ class LinkedOrder {
     paidTotal: 0,
     status: status,
     kind: OrderKind.prescription,
-    billStatus: billed ? OrderPaymentStatus.pending : null,
     storeContactedAt: storeContactedAt,
     reviewedAt: reviewedAt,
+    convertedToBillAt: billed ? DateTime.now() : null,
   );
 
   @override

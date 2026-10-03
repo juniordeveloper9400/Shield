@@ -12,7 +12,7 @@ import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { eq } from 'drizzle-orm';
-import { adminUser, bill, order, patient, shieldStore, users } from '../../src/db/schema';
+import { adminUser, order, patient, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -453,7 +453,10 @@ describe('Prescription (e2e)', () => {
       expect(new Date(contacted.storeContactedAt).toISOString()).toBe('2026-09-20T10:15:00.000Z');
       expect(contacted.billed).toBe(false);
 
-      await db.insert(bill).values({ orderId: linked.id, image: '' });
+      // "billed" means converted to bill — the admin console's own
+      // "Billing" milestone — not whether a priced `app.bill` row exists
+      // yet, which lands later as its own separate step.
+      await db.update(order).set({ convertedToBillAt: new Date('2026-09-21T09:00:00Z') }).where(eq(order.id, linked.id));
       expect((await getRx()).order.billed).toBe(true);
 
       await db.update(order).set({ status: 'DELIVERED' }).where(eq(order.id, linked.id));
