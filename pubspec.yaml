@@ -1,7 +1,7 @@
 name: shield
 description: Sahakar 360 customer app.
 publish_to: 'none'
-version: 1.0.0+10
+version: 1.0.1+11
 
 environment:
   sdk: ^3.10.0
