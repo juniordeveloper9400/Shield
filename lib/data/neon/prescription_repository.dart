@@ -215,6 +215,19 @@ class PrescriptionRepository {
       // 3b · The script image, as its own statement. A photo that is too large
       // for one request must not take the whole prescription down with it, so
       // this is attempted separately and its failure is swallowed.
+      //
+      // Written to both places an image can live: the legacy single column
+      // `app.prescription.image` — still what [fetchForMember] (My
+      // Prescriptions) reads — and a first-page row in `app.prescription_image`
+      // (`sort = 0`), the newer, multi-page-capable table `OrderRepository.
+      // fetchPrescriptions` reads for the Track Order screen's own "View"
+      // button (and the only one the investor app's `backend/api` ever
+      // writes or reads). Writing only the first and not the second is
+      // exactly the bug this comment used to leave in place: a script shows
+      // its thumbnail on My Prescriptions, gets correctly priced by the
+      // pharmacist, and yet never has anything to view from Track Order,
+      // because that screen's query was looking at a table this write never
+      // touched.
       if (image != null && image.isNotEmpty) {
         try {
           await NeonHttp.instance.query(
@@ -225,6 +238,22 @@ class PrescriptionRepository {
           NeonHttp.log(
             'PrescriptionRepository: script image failed to save '
             '(${image.length} chars) — prescription $prescriptionId kept',
+            error: error,
+          );
+        }
+        try {
+          await NeonHttp.instance.query(
+            '''
+              INSERT INTO app.prescription_image (prescription_id, sort, image)
+              VALUES (\$1, 0, \$2)
+            ''',
+            [prescriptionId, image],
+          );
+        } catch (error) {
+          NeonHttp.log(
+            'PrescriptionRepository: script image failed to save to '
+            'prescription_image (${image.length} chars) — prescription '
+            '$prescriptionId kept',
             error: error,
           );
         }
