@@ -329,6 +329,60 @@ describe('Commerce (e2e)', () => {
     expect(bill.body.image).toBe('data:image/png;base64,AAAA');
   });
 
+  it(
+    "a priced bill's own discount — not the checkout-time mrpTotal/paidTotal "
+      + 'gap — is what the member order list carries as billDiscount',
+    async () => {
+      await request(app.getHttpServer())
+        .put(`/v1/staff/orders/${orderId}/bill`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({
+          amount: 180,
+          discountAmount: 20,
+          lines: [{ name: 'Vitamin C', pack: '', unitPrice: 100, qty: 2 }],
+        })
+        .expect(200);
+
+      const list = await request(app.getHttpServer())
+        .get('/v1/member/orders')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .expect(200);
+      const row = list.body.find((o: { id: number }) => o.id === orderId);
+      expect(Number(row.billAmount)).toBe(180);
+      expect(Number(row.billDiscount)).toBe(20);
+
+      // A re-send with a blank image keeps the one already on file — same
+      // rule shieldweb's own direct-SQL sendOrderInvoice applies — and lines
+      // sent again replace, not append to, the previous set.
+      await request(app.getHttpServer())
+        .put(`/v1/staff/orders/${orderId}/bill`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({
+          amount: 150,
+          discountAmount: 50,
+          lines: [{ name: 'Vitamin C', pack: '', unitPrice: 100, qty: 2 }],
+        })
+        .expect(200);
+
+      const bill = await request(app.getHttpServer())
+        .get(`/v1/member/orders/${orderId}/bill`)
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .expect(200);
+      expect(bill.body.image).toBe('data:image/png;base64,AAAA');
+      expect(bill.body.invoice.lines).toHaveLength(1);
+
+      // Leaves this order's bill with no lines of its own again — later
+      // tests in this file reuse the same order and assume a clean slate
+      // (see "uses the bill's own priced lines once the counter has
+      // entered them", which inserts its own directly).
+      await request(app.getHttpServer())
+        .put(`/v1/staff/orders/${orderId}/bill`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ lines: [] })
+        .expect(200);
+    },
+  );
+
   it("returns an itemised invoice with the bill: store, customer and only the order lines the counter could supply", async () => {
     // A line the counter marked out of stock must never reach the member.
     await db.execute(sql`

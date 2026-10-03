@@ -511,17 +511,54 @@ export class OrderService {
   async sendBill(role: AdminRole, storeId: number | null, orderId: number, dto: SendBillDto) {
     await this.getOwnedByStaffOrThrow(orderId, role, storeId);
 
-    const [existing] = await this.db.select({ id: bill.id }).from(bill).where(eq(bill.orderId, orderId)).limit(1);
-    if (existing) {
-      const [updated] = await this.db
-        .update(bill)
-        .set({ image: dto.image, updatedAt: new Date() })
-        .where(eq(bill.orderId, orderId))
-        .returning();
-      return updated;
-    }
-    const [created] = await this.db.insert(bill).values({ orderId, image: dto.image }).returning();
-    return created;
+    return this.db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
+      // A blank image keeps whatever the bill already had — same rule
+      // shieldweb's own direct-SQL sendOrderInvoice applies — so a
+      // line-items-only re-price (no new photo taken) never blanks out an
+      // image a caller sent earlier.
+      const image = dto.image ? dto.image : existing?.image ?? '';
+      const amount = dto.amount ?? existing?.amount ?? '0';
+
+      let billId: number;
+      if (existing) {
+        await tx
+          .update(bill)
+          .set({
+            image,
+            amount: amount.toString(),
+            discountAmount: dto.discountAmount.toString(),
+            sentAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(bill.id, existing.id));
+        billId = existing.id;
+      } else {
+        const [created] = await tx
+          .insert(bill)
+          .values({ orderId, image, amount: amount.toString(), discountAmount: dto.discountAmount.toString() })
+          .returning({ id: bill.id });
+        billId = created.id;
+      }
+
+      if (dto.lines) {
+        await tx.delete(billLine).where(eq(billLine.billId, billId));
+        if (dto.lines.length > 0) {
+          await tx.insert(billLine).values(
+            dto.lines.map((line) => ({
+              billId,
+              name: line.name,
+              pack: line.pack ?? '',
+              unitPrice: line.unitPrice.toString(),
+              qty: line.qty,
+            })),
+          );
+        }
+      }
+
+      const [result] = await tx.select().from(bill).where(eq(bill.id, billId)).limit(1);
+      return result;
+    });
   }
 
   /**

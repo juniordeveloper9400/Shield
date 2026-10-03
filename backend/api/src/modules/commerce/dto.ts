@@ -32,8 +32,28 @@ export const updateOrderStatusSchema = z.object({
 // Matches the existing app.bill.image convention (a data: URI) — see
 // backend/db/app_schema.sql. Moving this to object storage + a URL column
 // is a schema change out of scope for this module; see backend/docs/security.md.
+//
+// `amount`/`discountAmount`/`lines` mirror shieldweb's own richer
+// sendOrderInvoice (src/api/orders.ts) — a priced, line-itemised bill with a
+// real discount, the figure MemberEarnings/Purchase.billDiscount counts as
+// saved, never the checkout-time mrpTotal/paidTotal gap (see order.service.ts's
+// own listForMember doc). `image` alone still works for the old
+// photo-only flow this schema originally covered. Optional, not required,
+// so a caller that only has a picture (no itemised pricing yet) still works.
 export const sendBillSchema = z.object({
-  image: z.string().min(1),
+  image: z.string().default(''),
+  amount: z.number().nonnegative().optional(),
+  discountAmount: z.number().nonnegative().default(0),
+  lines: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        pack: z.string().optional(),
+        unitPrice: z.number().nonnegative(),
+        qty: z.number().int().positive().default(1),
+      }),
+    )
+    .optional(),
 });
 
 // A manual-transfer claim, not a payment confirmation — no image bytes: the
