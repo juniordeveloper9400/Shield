@@ -4,12 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../data/neon/agent_customer_repository.dart';
+import '../../data/backend/contact_repository.dart';
 import '../../data/neon/referral_repository.dart';
+import '../../phone.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/age_badge.dart';
 import '../../widgets/labelled_field.dart';
 import '../auth/auth_service.dart';
 import '../refer/invite_link.dart';
+import '../whatsapp/whatsapp_chooser.dart';
 import '../refer/referral_service.dart';
 import 'registration_celebration.dart';
 import 'registration_service.dart';
@@ -97,7 +100,16 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     StoreCatalog.instance.ensureLoaded();
     _syncSuggestedStore();
     _loadSavedReferralCode();
+    // The admin desk's WhatsApp, offered before any store is chosen or any
+    // registration is done. Null (and the option hidden) until it is set.
+    ContactRepository.instance.adminWhatsapp().then((number) {
+      if (mounted) {
+        setState(() => _adminWhatsapp = number);
+      }
+    });
   }
+
+  String? _adminWhatsapp;
 
   /// Shows a code the member already used back to them on a later visit to
   /// this form, rather than only while they are still typing it in — a code
@@ -586,17 +598,51 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         ),
         const SizedBox(height: 12),
         for (final store in visible) ...[
-          _StoreCard(
-            store: store,
-            selected: store.id == _storeId,
-            isNearest: suggested != null && store.id == suggested.id,
-            distanceKm: _located?.kmTo(store),
-            onTap: () => setState(() {
-              _storeId = store.id;
-              _storePickedByHand = true;
-            }),
+          Row(
+            children: [
+              Expanded(
+                child: _StoreCard(
+                  store: store,
+                  selected: store.id == _storeId,
+                  isNearest: suggested != null && store.id == suggested.id,
+                  distanceKm: _located?.kmTo(store),
+                  onTap: () => setState(() {
+                    _storeId = store.id;
+                    _storePickedByHand = true;
+                  }),
+                ),
+              ),
+              // The branch's own WhatsApp, when it publishes a number. Its
+              // own tap target, so it messages the store rather than picking it.
+              if (store.phone.trim().isNotEmpty)
+                IconButton(
+                  tooltip: 'Message ${store.name} on WhatsApp',
+                  onPressed: () => WhatsApp.open(context, store.phone),
+                  icon: const Icon(
+                    Icons.chat_rounded,
+                    color: AppColors.brandGreenDeep,
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 10),
+        ],
+        if (_adminWhatsapp != null) ...[
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => openWhatsAppChooser(
+                context,
+                title: 'Message on WhatsApp',
+                options: [
+                  WhatsAppOption(name: 'Sahakar 360 admin desk', number: _adminWhatsapp!),
+                ],
+              ),
+              icon: const Icon(Icons.chat_rounded, color: AppColors.brandGreenDeep),
+              label: const Text('Not sure which store? WhatsApp the admin desk'),
+            ),
+          ),
         ],
         if (ordered.length > visible.length || _showAllStores)
           Align(

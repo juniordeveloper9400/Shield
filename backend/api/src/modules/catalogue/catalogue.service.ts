@@ -70,6 +70,18 @@ export class CatalogueService {
    * to see *their own order's* branch's bank details for a manual transfer
    * gets them from [getStoreBankDetails] instead, scoped to that one store.
    */
+  /**
+   * The admin WhatsApp number the apps offer when a member has no store to
+   * message yet. Set in the admin console (app.app_setting, migration 0073).
+   * Blank until it has been set — the apps then hide that option.
+   */
+  async contactSettings(): Promise<{ adminWhatsapp: string }> {
+    const rows = (await this.db.execute(
+      sql`SELECT value FROM app.app_setting WHERE key = 'admin_whatsapp' LIMIT 1`,
+    )) as unknown as { value: string }[];
+    return { adminWhatsapp: (rows[0]?.value ?? '').trim() };
+  }
+
   async listStores() {
     return this.cache.getOrSet('catalogue:stores', TTL.LONG, () =>
       this.db

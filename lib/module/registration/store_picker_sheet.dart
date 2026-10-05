@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../../phone.dart';
 import '../../theme/app_colors.dart';
 import 'shield_store.dart';
 import 'store_locator.dart';
@@ -312,6 +313,21 @@ class _StoreOption extends StatelessWidget {
                   ],
                 ),
               ),
+              // The store's own WhatsApp, when it publishes a number. Its own
+              // tap target, so it messages the store rather than picking it.
+              if (store.phone.trim().isNotEmpty) ...[
+                const SizedBox(width: 6),
+                IconButton(
+                  tooltip: 'Message ${store.name} on WhatsApp',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => WhatsApp.open(context, store.phone),
+                  icon: const Icon(
+                    Icons.chat_rounded,
+                    color: AppColors.brandGreenDeep,
+                    size: 20,
+                  ),
+                ),
+              ],
               if (distanceLabel != null) ...[
                 const SizedBox(width: 8),
                 Container(

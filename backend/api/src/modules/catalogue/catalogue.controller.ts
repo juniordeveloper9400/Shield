@@ -25,6 +25,13 @@ export class CatalogueController {
     private readonly reviewVideoMedia: ReviewVideoMediaService,
   ) {}
 
+  /** Public contact numbers the apps need before sign-in. */
+  @Public()
+  @Get('contact')
+  contact() {
+    return this.catalogue.contactSettings();
+  }
+
   @Public()
   @Get('stores')
   stores() {
