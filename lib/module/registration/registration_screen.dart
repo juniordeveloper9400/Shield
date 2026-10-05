@@ -9,6 +9,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/age_badge.dart';
 import '../../widgets/labelled_field.dart';
 import '../auth/auth_service.dart';
+import '../refer/invite_link.dart';
 import '../refer/referral_service.dart';
 import 'registration_celebration.dart';
 import 'registration_service.dart';
@@ -111,13 +112,25 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       return;
     }
     final phone = AuthService.instance.currentUser.value?.phone;
-    if (phone == null || phone.isEmpty) {
-      return;
+    if (phone != null && phone.isNotEmpty) {
+      final code = await ReferralRepository.instance.codeUsedBy(phone) ??
+          await AgentCustomerRepository.instance.codeUsedBy(phone);
+      if (code != null) {
+        if (mounted && _referralCode.text.isEmpty) {
+          setState(() => _referralCode.text = code);
+        }
+        return;
+      }
     }
-    final code = await ReferralRepository.instance.codeUsedBy(phone) ??
-        await AgentCustomerRepository.instance.codeUsedBy(phone);
-    if (code != null && mounted && _referralCode.text.isEmpty) {
-      setState(() => _referralCode.text = code);
+    // A member who came in through a friend's invite link already has that
+    // friend's code here — read off the install (Play's referrer) or the link
+    // they opened on the web. Only for a first registration: editing an
+    // existing profile is not the moment to attach a referrer.
+    if (!widget.isEditing) {
+      final invited = await InstallReferrer.instance.code();
+      if (invited != null && mounted && _referralCode.text.isEmpty) {
+        setState(() => _referralCode.text = invited);
+      }
     }
   }
 
@@ -256,6 +269,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     // code must not hold up the celebration screen below.
     final referralCode = _referralCode.text.trim();
     if (referralCode.isNotEmpty) {
+      // Used now — don't offer the install's invite code again on a later visit.
+      unawaited(InstallReferrer.instance.forget());
       unawaited(ReferralService.instance.recordSignupCode(referralCode));
       // The same field also accepts an agent's own code (`SHD-WRD-004`, …) —
       // the two never collide, so trying both costs nothing when the code
