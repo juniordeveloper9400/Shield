@@ -13,12 +13,15 @@ Firebase client configuration is not equivalent to a service-account secret. Nev
 
 ## Current high-risk limitations
 
-1. The admin console credential list is bundled in `shieldweb/src/config/admins.ts`. Anyone who can retrieve the JavaScript bundle can recover the login passwords.
-2. The admin console stores the login id in `localStorage` and has no server-issued session or server-side authorization boundary.
-3. The admin console bundles a Neon database URL and queries Neon directly from the browser.
-4. The Android release script currently signs with the debug key.
+Checked against the code on 2026-10-05. Earlier versions of this page described the static admin credential list, which has since been removed.
 
-These are known implementation facts, not acceptable production security controls. Restrict the console to a trusted internal environment while they remain.
+1. **Admin login is real, but the session is held in the browser.** Staff sign in through `backend/api` (`/v1/staff/auth/*`) with bcrypt-hashed passwords and rotating refresh tokens. The refresh token is kept in `localStorage` (`shieldweb/src/context/AuthContext.tsx`), so any script running in the console's page could read it. Moving it to an HttpOnly cookie is still open.
+2. **The console still holds the full-privilege database credential.** `shieldweb/src/lib/db.ts` reads `VITE_DATABASE_URL`, which Vite inlines into the public bundle, and 14 API modules still run SQL from the browser. Order writes, the order board and the fulfilment status now go through `backend/api`; the remaining modules have not moved. Until they do, anyone who can read the bundle has direct database access.
+3. **Member and agent apps.** The member APK compiles in a database connection (`lib/data/neon/neon_secret.dart`). The agent/investor web build passes `DATABASE_URL` into its bundle through `vercel-build.sh`. Both are scheduled for removal in the client migration (`backend/docs/migration-plan.md`).
+4. **Release signing.** The root app and the agent/investor app both sign release builds with the upload key from `android/key.properties` (git-ignored). The debug key is used only when that file is missing, which should never happen for a release.
+5. **Money paths.** A wallet-paid order is marked paid only after the wallet debit succeeds; a refused debit cancels the order. Wallet card approval and national agent approval are guarded against concurrent double-credit. Agent withdrawal approval was already guarded in the database function `app.review_agent_withdrawal`.
+
+These are current facts, not acceptable production controls. Restrict the console to a trusted internal environment until items 1 and 2 are closed.
 
 ## Required remediation before public release
 
