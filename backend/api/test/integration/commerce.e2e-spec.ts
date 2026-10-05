@@ -569,22 +569,29 @@ describe('Commerce (e2e)', () => {
       });
     });
 
-    it('collects entirely in cash when the wallet has no balance', async () => {
+    it('leaves the whole bill owed in cash, unpaid, when the wallet has no balance', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/v1/staff/orders/${walletOrderId}/collect-wallet`)
         .set('Authorization', `Bearer ${storeAStaffToken}`)
         .expect(200);
-      expect(res.body).toEqual({ ok: true, walletAmount: 0, cashAmount: 1000 });
+      expect(res.body).toEqual({ ok: true, walletAmount: 0, cashAmount: 1000, settled: false });
 
+      // Cash is owed, not assumed collected: nothing is marked paid yet.
       const [theOrder] = await db.select().from(order).where(eq(order.id, walletOrderId));
-      expect(theOrder.paymentStatus).toBe('PAID');
+      expect(theOrder.paymentStatus).toBe('PENDING');
       const [theBill] = await db.select().from(bill).where(eq(bill.orderId, walletOrderId));
-      expect(theBill.status).toBe('PAID');
+      expect(theBill.status).not.toBe('PAID');
       expect(Number(theBill.walletCollected)).toBe(0);
-      expect(Number(theBill.cashCollected)).toBe(1000);
+      expect(Number(theBill.cashCollected)).toBe(0);
     });
 
     it('refuses to collect an already-paid bill a second time', async () => {
+      // The counter takes the cash through the Receive step, which settles it.
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${walletOrderId}/receive`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ cash: 1000, gpay: 0 })
+        .expect(200);
       const res = await request(app.getHttpServer())
         .patch(`/v1/staff/orders/${walletOrderId}/collect-wallet`)
         .set('Authorization', `Bearer ${storeAStaffToken}`)
@@ -592,7 +599,7 @@ describe('Commerce (e2e)', () => {
       expect(res.body).toEqual({ ok: false, reason: 'This bill is already paid.' });
     });
 
-    it('splits between wallet and cash when the balance only partly covers the bill', async () => {
+    it("takes what the wallet holds and leaves the rest owed when the balance only partly covers the bill", async () => {
       const { orderId: partialOrderId, memberId } = await freshBilledOrder(1000);
       const [memberWallet] = await db.insert(wallet).values({ memberId, balance: '400.00' }).returning();
 
@@ -600,7 +607,11 @@ describe('Commerce (e2e)', () => {
         .patch(`/v1/staff/orders/${partialOrderId}/collect-wallet`)
         .set('Authorization', `Bearer ${storeAStaffToken}`)
         .expect(200);
-      expect(res.body).toEqual({ ok: true, walletAmount: 400, cashAmount: 600 });
+      expect(res.body).toEqual({ ok: true, walletAmount: 400, cashAmount: 600, settled: false });
+      const [partialBill] = await db.select().from(bill).where(eq(bill.orderId, partialOrderId));
+      expect(partialBill.status).not.toBe('PAID');
+      expect(Number(partialBill.walletCollected)).toBe(400);
+      expect(Number(partialBill.cashCollected)).toBe(0);
 
       const [walletAfter] = await db.select().from(wallet).where(eq(wallet.id, memberWallet.id));
       expect(Number(walletAfter.balance)).toBe(0);
@@ -618,7 +629,9 @@ describe('Commerce (e2e)', () => {
         .patch(`/v1/staff/orders/${fullOrderId}/collect-wallet`)
         .set('Authorization', `Bearer ${storeAStaffToken}`)
         .expect(200);
-      expect(res.body).toEqual({ ok: true, walletAmount: 500, cashAmount: 0 });
+      expect(res.body).toEqual({ ok: true, walletAmount: 500, cashAmount: 0, settled: true });
+      const [fullBill] = await db.select().from(bill).where(eq(bill.orderId, fullOrderId));
+      expect(fullBill.status).toBe('PAID');
 
       const [walletAfter] = await db.select().from(wallet).where(eq(wallet.memberId, memberId));
       expect(Number(walletAfter.balance)).toBe(1500); // 2000 - 500
@@ -632,6 +645,80 @@ describe('Commerce (e2e)', () => {
         .expect(404); // store B genuinely cannot see this order exists
 
       void walletMemberToken; // reserved for a future member-side "bill paid" check
+    });
+  });
+
+  describe('a member cancelling their own order', () => {
+    // One member (one login — the auth route is throttled) owning many orders.
+    let cancelMemberId: number;
+    let cancelToken: string;
+
+    beforeAll(async () => {
+      const [m] = await db
+        .insert(users)
+        .values({
+          phone: '9200000001',
+          name: 'Cancelling Member',
+          firebaseUid: `member-cancel-${randomUUID()}`,
+          registrationCompletedAt: new Date(),
+        })
+        .returning();
+      cancelMemberId = m.id;
+      firebase.register('cancel-token', { uid: m.firebaseUid! });
+      cancelToken = (
+        await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'cancel-token' }).expect(200)
+      ).body.accessToken;
+    });
+
+    async function placeOrder(touch: Partial<typeof order.$inferInsert> = {}) {
+      const [theOrder] = await db
+        .insert(order)
+        .values({
+          memberId: cancelMemberId,
+          code: `CNL-${randomUUID().slice(0, 8)}`,
+          storeId: (await db.select({ id: shieldStore.id }).from(shieldStore).where(eq(shieldStore.code, 'SHD-A')))[0].id,
+          itemCount: 1,
+          placedOn: new Date().toISOString().slice(0, 10),
+          ...touch,
+        })
+        .returning();
+      return theOrder.id;
+    }
+
+    it('cancels an order the store has not touched, and a retry is harmless', async () => {
+      const id = await placeOrder();
+      await request(app.getHttpServer())
+        .post(`/v1/member/orders/${id}/cancel`)
+        .set('Authorization', `Bearer ${cancelToken}`)
+        .expect(201);
+      const [after] = await db.select().from(order).where(eq(order.id, id));
+      expect(after.status).toBe('CANCELLED');
+      await request(app.getHttpServer())
+        .post(`/v1/member/orders/${id}/cancel`)
+        .set('Authorization', `Bearer ${cancelToken}`)
+        .expect(201);
+    });
+
+    it.each([
+      ['reviewed', { reviewedAt: new Date() }],
+      ['contacted', { storeContactedAt: new Date() }],
+      ['converted to a bill', { convertedToBillAt: new Date() }],
+    ])('refuses (409) once the store has %s the order', async (_label, touch) => {
+      const id = await placeOrder(touch);
+      const res = await request(app.getHttpServer())
+        .post(`/v1/member/orders/${id}/cancel`)
+        .set('Authorization', `Bearer ${cancelToken}`)
+        .expect(409);
+      expect(res.body.error.code).toBe('ORDER_LOCKED');
+      const [after] = await db.select().from(order).where(eq(order.id, id));
+      expect(after.status).toBe('PROCESSING');
+    });
+
+    it("refuses cancelling someone else's order", async () => {
+      await request(app.getHttpServer())
+        .post(`/v1/member/orders/${orderId}/cancel`)
+        .set('Authorization', `Bearer ${cancelToken}`)
+        .expect(404);
     });
   });
 

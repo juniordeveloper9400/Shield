@@ -77,6 +77,11 @@ export class MemberCommerceController {
     return this.orders.getForMember(Number(user.subjectId), id);
   }
 
+  @Post('orders/:id/cancel')
+  cancelOrder(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    return this.orders.cancelForMember(Number(user.subjectId), id);
+  }
+
   @Get('orders/:id/bill')
   getBill(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
     return this.orders.getBillForMember(Number(user.subjectId), id);

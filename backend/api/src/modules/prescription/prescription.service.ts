@@ -14,6 +14,7 @@ import {
   users,
 } from '../../db/schema';
 import type { AdminRole } from '../auth/session.types';
+import { cancelOrderForMember } from '../commerce/member-withdrawal';
 import { assertLegalPrescriptionTransition, type PrescriptionStatus } from './prescription-status';
 import type {
   AddMedicineLineDto,
@@ -269,9 +270,14 @@ export class PrescriptionService {
   /** Soft-deletes one of the caller's own prescriptions — same pattern as
    *  IdentityService.softDeletePatient. The uploaded scan and any intake
    *  card the pharmacist already sent are left in place (deletedAt merely
-   *  drops it from listForMember/getForMember going forward); a prescription
-   *  already linked to an order stays fully intact for that order's own
-   *  history. */
+   *  drops it from listForMember/getForMember going forward).
+   *
+   *  Only while the store has not touched it: once any order it was submitted
+   *  with has been reviewed, contacted, billed, paid, delivered…, the delete
+   *  is refused (409 ORDER_LOCKED) and the store removes it from the admin
+   *  console. An order placed with it that is still untouched is cancelled in
+   *  the same step, so withdrawing the script never leaves a live order for
+   *  a script the member no longer has. */
   async deleteForMember(memberId: number, id: number) {
     const [found] = await this.db
       .select({ id: prescription.id, deletedAt: prescription.deletedAt })
@@ -283,12 +289,18 @@ export class PrescriptionService {
       throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Prescription not found' } });
     }
 
-    if (found.deletedAt == null) {
-      await this.db
-        .update(prescription)
-        .set({ deletedAt: new Date() })
-        .where(eq(prescription.id, id));
-    }
+    if (found.deletedAt != null) return;
+
+    await this.db.transaction(async (tx) => {
+      const linked = await tx
+        .select({ orderId: prescriptionOrder.orderId })
+        .from(prescriptionOrder)
+        .where(eq(prescriptionOrder.prescriptionId, id));
+      const orderIds = [...new Set(linked.map((l) => l.orderId).filter((v): v is number => v !== null))];
+      // Throws 409 ORDER_LOCKED for the first order the store has touched.
+      for (const orderId of orderIds) await cancelOrderForMember(tx, orderId);
+      await tx.update(prescription).set({ deletedAt: new Date() }).where(eq(prescription.id, id));
+    });
   }
 
   async listForStaff(role: AdminRole, storeId: number | null) {
