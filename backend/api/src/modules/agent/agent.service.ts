@@ -142,6 +142,11 @@ export class AgentService {
       const memberId = member.id;
 
       if (req.requestedLevel === 'NATIONAL') {
+        // Two approvals racing each other both read 'no national agent yet' and
+        // both insert one. A transaction-scoped advisory lock serialises the
+        // check-and-insert. The unique index is deliberately not used here: two
+        // NATIONAL rows already exist in production, so it could not be created.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext('national-agent-approval'))`);
         const [existingNational] = await tx
           .select({ id: agent.id })
           .from(agent)

@@ -1,5 +1,5 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
@@ -240,11 +240,18 @@ export class WalletService {
     if (!tier) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Membership tier not found' } });
 
     return this.db.transaction(async (tx) => {
+      // Guarded on the status it was read in: two approvals racing each other
+      // both pass the check above, and only the one that flips the row from
+      // PENDING/ON_HOLD may credit the wallet. The other finds nothing here,
+      // throws, and the transaction rolls back with it.
       const [updatedCard] = await tx
         .update(walletCard)
         .set({ status: 'APPROVED', reviewedAt: new Date() })
-        .where(eq(walletCard.id, cardId))
+        .where(and(eq(walletCard.id, cardId), inArray(walletCard.status, ['PENDING', 'ON_HOLD'])))
         .returning();
+      if (!updatedCard) {
+        throw new ConflictException({ error: { code: 'CONFLICT', message: 'This card was already decided.' } });
+      }
 
       const amount = Number(card.amount);
       const bonus = Number(card.bonus);
@@ -273,14 +280,16 @@ export class WalletService {
         });
       }
 
-      const [currentWallet] = await tx.select().from(wallet).where(eq(wallet.id, card.walletId)).limit(1);
+      // Added in SQL, not read-then-written: a balance read before a second
+      // credit landed would otherwise overwrite it.
       await tx
         .update(wallet)
         .set({
-          balance: (Number(currentWallet.balance) + amount + bonus).toString(),
-          openedAt: currentWallet.openedAt ?? new Date(),
+          balance: sql`${wallet.balance} + ${(amount + bonus).toString()}::numeric`,
+          openedAt: sql`COALESCE(${wallet.openedAt}, now())`,
         })
         .where(eq(wallet.id, card.walletId));
+      const [currentWallet] = await tx.select().from(wallet).where(eq(wallet.id, card.walletId)).limit(1);
 
       // Agent-portal bookkeeping — every agent_customer link this member
       // has, one row each, whether or not it ends up paying commission
