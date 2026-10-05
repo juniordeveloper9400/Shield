@@ -138,6 +138,12 @@ class PrescriptionCard extends StatelessWidget {
                         // already the button; a second target would only make
                         // the edges of the chip behave differently.
                         const IgnorePointer(child: _CallChip()),
+                        const SizedBox(width: 8),
+                        // Its own tap target, so it opens WhatsApp rather than
+                        // the card's call row it sits inside.
+                        _WhatsAppChip(
+                          onTap: () => WhatsApp.open(context, orderPhone),
+                        ),
                       ],
                     ),
                   ),
@@ -180,6 +186,40 @@ class _UploadChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The WhatsApp counterpart to [_CallChip]: same size and shape, green, with
+/// its own tap target. Material has no WhatsApp mark, so a chat bubble stands
+/// in for it, labelled for screen readers.
+class _WhatsAppChip extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _WhatsAppChip({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Message on WhatsApp to order',
+      child: Material(
+        color: AppColors.brandGreenDeep,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: const SizedBox(
+            width: 46,
+            height: 42,
+            child: Icon(
+              Icons.chat_rounded,
+              size: 21,
+              color: AppColors.white,
+            ),
+          ),
+        ),
       ),
     );
   }
