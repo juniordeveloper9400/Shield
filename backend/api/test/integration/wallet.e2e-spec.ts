@@ -882,11 +882,17 @@ describe('Wallet & Rewards (e2e)', () => {
     ).toEqual([]);
   });
 
-  it('rejects the commission reserve to ADMIN, even though that role can approve/reject wallet cards themselves', async () => {
-    await request(app.getHttpServer())
-      .get('/v1/staff/wallet-cards/reserve')
-      .set('Authorization', `Bearer ${adminToken}`)
-      .expect(403);
+  it('lets ADMIN and a branch PHARMACY read the reserve, split by store', async () => {
+    // Admin sees every store; a branch pharmacy sees only its own. Which
+    // store each total covers is checked in commission-reserve-by-store.
+    for (const token of [adminToken, pharmacyStaffToken]) {
+      const res = await request(app.getHttpServer())
+        .get('/v1/staff/wallet-cards/reserve')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(Array.isArray(res.body.byStore)).toBe(true);
+      expect(typeof res.body.total).toBe('number');
+    }
   });
 
   it('rejects redemption below the minimum or not a whole number of rupees (multiple of 100 points)', async () => {

@@ -1,4 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import type { AdminRole } from '../auth/session.types';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
@@ -571,9 +572,89 @@ export class WalletService {
    * way every other running total in this codebase is read, rather than
    * trusting a separately maintained counter that could drift from it.
    */
-  async getCommissionReserve() {
-    const entries = await this.db.select().from(commissionReserveEntry).orderBy(desc(commissionReserveEntry.createdAt));
-    const total = entries.reduce((sum, e) => sum + Number(e.amount), 0);
-    return { total: round2(total), entries };
+  /**
+   * The company's reserve, read from the ledger the same way every other
+   * running total here is — never a counter that could drift.
+   *
+   * Every reserve row is attributed to the store its activation was made at
+   * (`wallet_card.store_id`, the branch the member chose). Activations with no
+   * store recorded fall under `storeId: null` ("Unassigned").
+   *
+   * SUPERADMIN and ADMIN see every store and the grand total. A store-bound
+   * role (PHARMACY) sees only its own store's row and entries — the grand
+   * `total` is then that store's total, so a store's own figure is never
+   * shown alongside another store's.
+   */
+  async getCommissionReserve(role: AdminRole, storeId: number | null) {
+    const rows = await this.db
+      .select({
+        id: commissionReserveEntry.id,
+        walletCardId: commissionReserveEntry.walletCardId,
+        amount: commissionReserveEntry.amount,
+        source: commissionReserveEntry.source,
+        createdAt: commissionReserveEntry.createdAt,
+        storeId: walletCard.storeId,
+        storeCode: shieldStore.code,
+        storeName: shieldStore.name,
+      })
+      .from(commissionReserveEntry)
+      .innerJoin(walletCard, eq(walletCard.id, commissionReserveEntry.walletCardId))
+      .leftJoin(shieldStore, eq(shieldStore.id, walletCard.storeId))
+      .orderBy(desc(commissionReserveEntry.createdAt));
+
+    const unrestricted = role === 'SUPERADMIN' || role === 'ADMIN';
+    const visible = unrestricted
+      ? rows
+      : storeId == null
+        ? []
+        : rows.filter((r) => r.storeId === storeId);
+
+    const byStoreMap = new Map<string, {
+      storeId: number | null;
+      storeCode: string;
+      storeName: string;
+      total: number;
+      companyShare: number;
+      poolLeftover: number;
+    }>();
+    for (const r of visible) {
+      const key = String(r.storeId ?? 'none');
+      const bucket = byStoreMap.get(key) ?? {
+        storeId: r.storeId ?? null,
+        storeCode: r.storeCode ?? '',
+        storeName: r.storeName ?? 'Unassigned',
+        total: 0,
+        companyShare: 0,
+        poolLeftover: 0,
+      };
+      const amount = Number(r.amount);
+      bucket.total += amount;
+      if (r.source === 'COMPANY_SHARE') bucket.companyShare += amount;
+      else bucket.poolLeftover += amount;
+      byStoreMap.set(key, bucket);
+    }
+    const byStore = [...byStoreMap.values()]
+      .map((b) => ({
+        ...b,
+        total: round2(b.total),
+        companyShare: round2(b.companyShare),
+        poolLeftover: round2(b.poolLeftover),
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    const total = visible.reduce((sum, r) => sum + Number(r.amount), 0);
+    return {
+      total: round2(total),
+      byStore,
+      entries: visible.map((r) => ({
+        id: r.id,
+        walletCardId: r.walletCardId,
+        amount: Number(r.amount),
+        source: r.source,
+        createdAt: r.createdAt,
+        storeId: r.storeId ?? null,
+        storeName: r.storeName ?? 'Unassigned',
+      })),
+    };
   }
 }

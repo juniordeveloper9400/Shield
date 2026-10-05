@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { RequestSubject } from '../auth/session.types';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   holdWalletCardSchema,
@@ -41,14 +43,14 @@ export class StaffWalletController {
   }
 
   /**
-   * SUPERADMIN only, narrower than the rest of this controller — company
-   * money, not something an ADMIN role reviewing activations needs to see.
-   * See `commissionReserveEntry`'s own doc for what this actually is.
+   * The company's reserve, split by store. SUPERADMIN and ADMIN see every
+   * store; PHARMACY sees only its own store's reserve. See
+   * `WalletService.getCommissionReserve` for how each view is scoped.
    */
   @Get('reserve')
-  @RequireRole('SUPERADMIN')
-  reserve() {
-    return this.wallet.getCommissionReserve();
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  reserve(@CurrentUser() user: RequestSubject) {
+    return this.wallet.getCommissionReserve(user.role!, user.storeId ?? null);
   }
 
   @Get(':id/wallet-activity')
