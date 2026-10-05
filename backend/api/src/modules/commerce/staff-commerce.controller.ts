@@ -3,7 +3,14 @@ import { OrderService } from './order.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireRole, RequireStaff } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
-import { sendBillSchema, updateOrderStatusSchema, type SendBillDto, type UpdateOrderStatusDto } from './dto';
+import {
+  receiveBillPaymentSchema,
+  sendBillSchema,
+  updateOrderStatusSchema,
+  type ReceiveBillPaymentDto,
+  type SendBillDto,
+  type UpdateOrderStatusDto,
+} from './dto';
 import type { RequestSubject } from '../auth/session.types';
 
 /** Store-scoped for every role except SUPERADMIN/ADMIN — see order.service.ts. */
@@ -41,6 +48,21 @@ export class StaffCommerceController {
    * (superadmin/admin get every module, pharmacy is explicitly listed too;
    * lab/appointments/delivery are not), not the class-wide @RequireStaff().
    */
+  /**
+   * The Bills → Manual cash "Receive" panel: records GPay and/or cash the
+   * counter takes against a priced bill, as it arrives. Same role scope as
+   * collect-wallet below. The bill is marked PAID once it is fully covered.
+   */
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Patch('orders/:id/receive')
+  receive(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(receiveBillPaymentSchema)) dto: ReceiveBillPaymentDto,
+  ) {
+    return this.orders.receiveBillPayment(user.role!, user.storeId ?? null, id, dto);
+  }
+
   @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
   @Patch('orders/:id/collect-wallet')
   collectWithWallet(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {

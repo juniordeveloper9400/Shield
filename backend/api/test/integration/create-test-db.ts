@@ -379,6 +379,7 @@ export function createTestDb() {
       sent_at timestamptz NOT NULL DEFAULT now(),
       wallet_collected numeric(12,2) NOT NULL DEFAULT 0,
       cash_collected numeric(12,2) NOT NULL DEFAULT 0,
+      gpay_collected numeric(12,2) NOT NULL DEFAULT 0,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 

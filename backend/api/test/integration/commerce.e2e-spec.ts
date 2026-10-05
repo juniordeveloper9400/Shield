@@ -513,6 +513,58 @@ describe('Commerce (e2e)', () => {
       expect(res.body).toEqual({ ok: false, reason: 'No bill has been sent for this order yet.' });
     });
 
+    describe('Manual cash — receiving GPay and cash against a bill', () => {
+      const receive = (id: number, body: object, token = storeAStaffToken) =>
+        request(app.getHttpServer()).patch(`/v1/staff/orders/${id}/receive`).set('Authorization', `Bearer ${token}`).send(body);
+
+      it('records a part payment, leaving the rest owed, without marking the bill paid', async () => {
+        const { orderId } = await freshBilledOrder(500);
+        const res = await receive(orderId, { cash: 200 }).expect(200);
+        expect(res.body).toEqual({ ok: true, receivedCash: '200.00', receivedGpay: '0.00', remaining: '300.00', settled: false });
+        const [row] = await db.select().from(bill).where(eq(bill.orderId, orderId));
+        expect(row.status).toBe('PENDING');
+        expect(Number(row.cashCollected)).toBe(200);
+      });
+
+      it('keeps GPay apart from cash, and settles the bill once the split covers it', async () => {
+        const { orderId } = await freshBilledOrder(500);
+        await receive(orderId, { gpay: 300 }).expect(200);
+        const res = await receive(orderId, { cash: 200 }).expect(200);
+        expect(res.body).toEqual({ ok: true, receivedCash: '200.00', receivedGpay: '0.00', remaining: '0.00', settled: true });
+        const [row] = await db.select().from(bill).where(eq(bill.orderId, orderId));
+        expect(row.status).toBe('PAID');
+        expect(Number(row.gpayCollected)).toBe(300);
+        expect(Number(row.cashCollected)).toBe(200);
+        const [o] = await db.select().from(order).where(eq(order.id, orderId));
+        expect(o.paymentStatus).toBe('PAID');
+      });
+
+      it('refuses an amount larger than what is still owed, and writes nothing', async () => {
+        const { orderId } = await freshBilledOrder(100);
+        const res = await receive(orderId, { cash: 150 }).expect(200);
+        expect(res.body).toEqual({ ok: false, reason: 'Only ₹100.00 is still owed on this bill.' });
+        const [row] = await db.select().from(bill).where(eq(bill.orderId, orderId));
+        expect(Number(row.cashCollected)).toBe(0);
+      });
+
+      it('refuses an empty receipt, and a bill that is already paid', async () => {
+        const { orderId } = await freshBilledOrder(100);
+        await receive(orderId, { cash: 0, gpay: 0 }).expect(400);
+        await receive(orderId, { cash: 100 }).expect(200);
+        const res = await receive(orderId, { cash: 1 }).expect(200);
+        expect(res.body).toEqual({ ok: false, reason: 'This bill is already paid.' });
+      });
+
+      it('lets a LAB role without the bills module be refused', async () => {
+        const { orderId } = await freshBilledOrder(100);
+        await request(app.getHttpServer())
+          .patch(`/v1/staff/orders/${orderId}/receive`)
+          .set('Authorization', `Bearer ${labStaffToken}`)
+          .send({ cash: 10 })
+          .expect(403);
+      });
+    });
+
     it('collects entirely in cash when the wallet has no balance', async () => {
       const res = await request(app.getHttpServer())
         .patch(`/v1/staff/orders/${walletOrderId}/collect-wallet`)

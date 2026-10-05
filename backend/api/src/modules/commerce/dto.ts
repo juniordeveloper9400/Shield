@@ -60,6 +60,15 @@ export const sendBillSchema = z.object({
 // live app has never uploaded the receipt photo itself anywhere, only this
 // metadata (see order_repository.dart's OrderReceiptInput on the client this
 // mirrors). Staff settle the claim against `reference` by hand.
+/** Money the counter takes against a priced bill, as it arrives — GPay and
+ *  cash, either or both. Each is a rupee amount; at least one must be above 0. */
+export const receiveBillPaymentSchema = z
+  .object({
+    cash: z.number().nonnegative().max(10000000).default(0),
+    gpay: z.number().nonnegative().max(10000000).default(0),
+  })
+  .refine((v) => v.cash + v.gpay > 0, { message: 'Enter an amount to receive.' });
+
 export const submitOrderReceiptSchema = z.object({
   payerName: z.string().optional(),
   reference: z.string().optional(),
@@ -72,4 +81,5 @@ export type UpdateCartLineDto = z.infer<typeof updateCartLineSchema>;
 export type CheckoutDto = z.infer<typeof checkoutSchema>;
 export type UpdateOrderStatusDto = z.infer<typeof updateOrderStatusSchema>;
 export type SendBillDto = z.infer<typeof sendBillSchema>;
+export type ReceiveBillPaymentDto = z.infer<typeof receiveBillPaymentSchema>;
 export type SubmitOrderReceiptDto = z.infer<typeof submitOrderReceiptSchema>;

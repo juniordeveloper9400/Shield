@@ -147,6 +147,9 @@ export const bill = appSchema.table('bill', {
    *  cash handed over at collection. Both `0` until collected. */
   walletCollected: numeric('wallet_collected', { precision: 12, scale: 2 }).notNull().default('0'),
   cashCollected: numeric('cash_collected', { precision: 12, scale: 2 }).notNull().default('0'),
+  /** Migration 0071 — what the counter took by GPay, kept apart from cash
+   *  (`cash_collected`) so the counter's own record stays accurate. */
+  gpayCollected: numeric('gpay_collected', { precision: 12, scale: 2 }).notNull().default('0'),
   /** Migration 0064 — how much of the priced lines' subtotal the store
    *  knocked off to reach `amount`, which is already net of this. `0` for a
    *  bill with no discount. */

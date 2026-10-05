@@ -25,7 +25,13 @@ import {
 import type { AdminRole } from '../auth/session.types';
 import { CartService } from './cart.service';
 import { assertLegalTransition, type OrderStatus } from './order-status';
-import type { CheckoutDto, SendBillDto, SubmitOrderReceiptDto, UpdateOrderStatusDto } from './dto';
+import type {
+  CheckoutDto,
+  ReceiveBillPaymentDto,
+  SendBillDto,
+  SubmitOrderReceiptDto,
+  UpdateOrderStatusDto,
+} from './dto';
 import { ReferralService } from '../wallet/referral.service';
 
 /** ₹100 → 10 points (ten rupees to the point) — mirrors the client's own `RewardsService.pointsForSpend`. */
@@ -627,6 +633,87 @@ export class OrderService {
         .where(eq(bill.id, theBill.id));
 
       return { ok: true as const, walletAmount, cashAmount };
+    });
+  }
+
+  /**
+   * Records money the counter takes against a priced bill — GPay, cash, or
+   * both — as it arrives. Each amount adds to the bill's own running total
+   * (`cash_collected` / `gpay_collected`); the bill is marked PAID, and its
+   * order too, the moment what has been received covers everything still owed
+   * after the member's wallet share. Refused, with nothing written, if the
+   * amounts would take the bill past what is owed. Money is handled in whole
+   * paise so a split never drifts by a rounding cent.
+   *
+   * Same staff scope as `collectBillWithWallet` (the order's own branch, or
+   * any branch for an ADMIN/SUPERADMIN). Locks the bill row so two counters
+   * receiving at once cannot both count the same rupee.
+   */
+  async receiveBillPayment(
+    role: AdminRole,
+    storeId: number | null,
+    orderId: number,
+    dto: ReceiveBillPaymentDto,
+  ) {
+    await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+
+    const [theBill] = await this.db.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
+    if (!theBill) {
+      return { ok: false as const, reason: 'No bill has been sent for this order yet.' };
+    }
+    if (theBill.status === 'PAID') {
+      return { ok: false as const, reason: 'This bill is already paid.' };
+    }
+    if (Number(theBill.amount) <= 0) {
+      return { ok: false as const, reason: 'This bill has not been priced yet.' };
+    }
+
+    const toPaise = (rupees: number) => Math.round(rupees * 100);
+    const fromPaise = (paise: number) => (paise / 100).toFixed(2);
+
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx.select().from(bill).where(eq(bill.id, theBill.id)).limit(1).for('update');
+      const owedPaise =
+        toPaise(Number(current.amount)) -
+        toPaise(Number(current.walletCollected)) -
+        toPaise(Number(current.cashCollected)) -
+        toPaise(Number(current.gpayCollected));
+      const cashPaise = toPaise(dto.cash);
+      const gpayPaise = toPaise(dto.gpay);
+      const receivingPaise = cashPaise + gpayPaise;
+
+      if (current.status === 'PAID' || owedPaise <= 0) {
+        return { ok: false as const, reason: 'Nothing is left to receive on this bill.' };
+      }
+      if (receivingPaise > owedPaise) {
+        return {
+          ok: false as const,
+          reason: `Only ₹${(owedPaise / 100).toFixed(2)} is still owed on this bill.`,
+        };
+      }
+
+      const settled = receivingPaise === owedPaise;
+      await tx
+        .update(bill)
+        .set({
+          cashCollected: fromPaise(toPaise(Number(current.cashCollected)) + cashPaise),
+          gpayCollected: fromPaise(toPaise(Number(current.gpayCollected)) + gpayPaise),
+          ...(settled ? { status: 'PAID' as const, paidAt: new Date() } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(bill.id, current.id));
+
+      if (settled) {
+        await tx.update(order).set({ paymentStatus: 'PAID', paidAt: new Date() }).where(eq(order.id, orderId));
+      }
+
+      return {
+        ok: true as const,
+        receivedCash: fromPaise(cashPaise),
+        receivedGpay: fromPaise(gpayPaise),
+        remaining: fromPaise(owedPaise - receivingPaise),
+        settled,
+      };
     });
   }
 
