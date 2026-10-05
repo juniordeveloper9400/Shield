@@ -16,9 +16,12 @@ import {
   users,
   ward,
 } from '../../db/schema';
+import { FIREBASE_VERIFIER, type FirebaseVerifier } from '../auth/session.types';
+import { assertApprovalOtp } from './withdrawal-otp';
 import type { AgentLevel } from './session-types';
 import type {
   LinkCustomerDto,
+  MoveEarningsToWalletDto,
   RejectAgentRequestDto,
   RequestWithdrawalDto,
   ResolveWithdrawalDto,
@@ -29,7 +32,10 @@ type GeoLevel = Exclude<AgentLevel, 'NATIONAL'>;
 
 @Injectable()
 export class AgentService {
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    @Inject(FIREBASE_VERIFIER) private readonly firebase: FirebaseVerifier,
+  ) {}
 
   // ---- Member: submit a recruitment request --------------------------------
   // Never writes app.agent directly — see the live schema's own comment on
@@ -429,11 +435,51 @@ export class AgentService {
   }
 
   async resolveWithdrawal(withdrawalId: number, dto: ResolveWithdrawalDto, reviewer: string) {
+    // Approval alone is gated on the agent's phone OTP; recording payment and
+    // rejecting act on a request that was already approved (or is being turned
+    // down), so they need no code.
+    const otp = dto.status === 'APPROVED' ? await this.verifyApprovalOtp(withdrawalId, dto.otpIdToken) : null;
     return this.withdrawalCommand(async () => {
       const action = dto.status === 'APPROVED' ? 'APPROVE' : dto.status === 'PAID' ? 'PAY' : 'REJECT';
-      await this.db.execute(sql`select app.review_agent_withdrawal(${withdrawalId}, ${action}, ${reviewer},
-        ${dto.accountNumber}, ${dto.identityVerified}, ${dto.earningsVerified}, ${dto.note}, ${dto.paymentReference})`);
+      // One transaction: if the review function refuses the approval, the OTP
+      // audit columns roll back with it.
+      await this.db.transaction(async (tx) => {
+        if (otp) {
+          await tx.execute(sql`update app.agent_withdrawal set otp_verified_at = now(),
+            otp_verified_phone = ${otp.phone} where id = ${withdrawalId}`);
+        }
+        await tx.execute(sql`select app.review_agent_withdrawal(${withdrawalId}, ${action}, ${reviewer},
+          ${dto.accountNumber}, ${dto.identityVerified}, ${dto.earningsVerified}, ${dto.note}, ${dto.paymentReference})`);
+      });
       return { ok: true };
+    });
+  }
+
+  /** The agent's own phone confirmed a fresh SMS code — see withdrawal-otp.ts. */
+  private async verifyApprovalOtp(withdrawalId: number, idToken: string | undefined) {
+    const result = await this.db.execute(sql`select a.phone from app.agent_withdrawal w
+      join app.agent a on a.id = w.agent_id where w.id = ${withdrawalId}`);
+    const phone = (result.rows[0] as { phone?: string } | undefined)?.phone;
+    if (!phone) throw new NotFoundException('Withdrawal request not found');
+    if (!idToken) assertApprovalOtp({ uid: '' }, phone); // always throws: no verified code supplied
+    let verified;
+    try {
+      verified = await this.firebase.verifyIdToken(idToken as string);
+    } catch {
+      // Not a 401: the admin's own session is fine, only the code proof is not.
+      throw new ForbiddenException('That OTP verification is invalid or has expired — send a new code to the agent.');
+    }
+    assertApprovalOtp(verified, phone);
+    return { phone };
+  }
+
+  async moveEarningsToWallet(memberId: number, dto: MoveEarningsToWalletDto) {
+    const self = await this.getApprovedAgentByMemberIdOrThrow(memberId);
+    return this.withdrawalCommand(async () => {
+      const result = await this.db.execute(
+        sql`select app.move_agent_earnings_to_wallet(${self.id}, ${dto.amount}) as balance`,
+      );
+      return { ok: true, amount: dto.amount, walletBalance: (result.rows[0] as { balance: string }).balance };
     });
   }
 

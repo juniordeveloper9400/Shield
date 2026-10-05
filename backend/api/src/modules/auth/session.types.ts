@@ -20,6 +20,8 @@ export interface VerifiedFirebaseToken {
   uid: string;
   email?: string;
   phoneNumber?: string;
+  /** Unix seconds of the sign-in that minted this token (Firebase `auth_time`). */
+  authTime?: number;
 }
 
 /** Injection token for the Firebase verifier — real impl vs. test fake. */

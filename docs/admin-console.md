@@ -42,13 +42,28 @@ Admin queue. An active approved agent can request at least ₹3,000 from earned
 commission after paid and pending withdrawals are deducted. Approval requires
 the reviewer to cross-check identity, the registered bank account, earnings,
 previous payouts and other pending requests, re-enter the matching bank account
-and leave an audit note. Approval reserves the request but does not mark money
-as paid. After completing the bank transfer, the reviewer records its UTR or
+and leave an audit note. Approval is also gated on an **OTP to the agent's
+registered phone**: the reviewer taps "Send OTP to agent", the agent reads out
+the SMS code, and the reviewer enters it (Firebase phone auth, the same helper
+as bill collection — `src/lib/deliveryOtp.ts`). The resulting Firebase ID token
+is sent with the approval and **verified by `backend/api`**
+(`withdrawal-otp.ts`): it must be a phone-auth token for that agent's number,
+signed in within the last 5 minutes; otherwise the approval is refused (403).
+`otp_verified_at`/`otp_verified_phone` on `app.agent_withdrawal` record it
+(migration `0072`). Recording payment and rejecting need no code. Approval
+reserves the request but does not mark money as paid. After completing the bank transfer, the reviewer records its UTR or
 payment reference; only then does the request become `PAID` and increase the
 agent's redeemed total. Rejection requires a reason. The database functions in
 `0059_agent_withdrawal_review.sql` repeat every financial and eligibility check
 under row locks, so bypassing disabled browser controls cannot approve an
 invalid or duplicate payout.
+
+In the member app's Agent Portal, **Add to wallet** moves available commission
+(no ₹3,000 minimum) into the agent's own Sahakar 360 wallet through
+`POST /v1/agent/wallet-transfers` → `app.move_agent_earnings_to_wallet`
+(migration `0072`): one transaction raises the agent's `redeemed` and writes an
+`AGENT_EARNINGS` wallet entry plus the balance. It is idempotent and persisted;
+it is no longer session-only app state.
 
 ### Home & Lab banners (Banners → Home / Lab)
 

@@ -55,6 +55,13 @@ export const resolveWithdrawalSchema = z.object({
   earningsVerified: z.boolean().default(false),
   note: z.string().trim().max(2000).default(''),
   paymentReference: z.string().trim().max(200).default(''),
+  // Firebase ID token from confirming the SMS code sent to the agent's
+  // registered phone. Required (and checked server-side) for APPROVED only.
+  otpIdToken: z.string().trim().max(8192).optional(),
+});
+
+export const moveEarningsToWalletSchema = z.object({
+  amount: z.number().finite().positive().multipleOf(0.01),
 });
 
 export type SubmitAgentRequestDto = z.infer<typeof submitAgentRequestSchema>;
@@ -62,3 +69,4 @@ export type RejectAgentRequestDto = z.infer<typeof rejectAgentRequestSchema>;
 export type LinkCustomerDto = z.infer<typeof linkCustomerSchema>;
 export type RequestWithdrawalDto = z.infer<typeof requestWithdrawalSchema>;
 export type ResolveWithdrawalDto = z.infer<typeof resolveWithdrawalSchema>;
+export type MoveEarningsToWalletDto = z.infer<typeof moveEarningsToWalletSchema>;

@@ -19,6 +19,6 @@ import { FIREBASE_VERIFIER } from './session.types';
     RolesGuard,
     { provide: FIREBASE_VERIFIER, useClass: FirebaseAdminVerifier },
   ],
-  exports: [AuthService, TokenService, AuthGuard, RolesGuard],
+  exports: [AuthService, TokenService, AuthGuard, RolesGuard, FIREBASE_VERIFIER],
 })
 export class AuthModule {}

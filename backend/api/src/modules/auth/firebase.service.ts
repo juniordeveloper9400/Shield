@@ -45,7 +45,7 @@ export class FirebaseAdminVerifier implements FirebaseVerifier {
   async verifyIdToken(idToken: string): Promise<VerifiedFirebaseToken> {
     try {
       const decoded = await admin.auth(this.getApp()).verifyIdToken(idToken);
-      return { uid: decoded.uid, email: decoded.email, phoneNumber: decoded.phone_number };
+      return { uid: decoded.uid, email: decoded.email, phoneNumber: decoded.phone_number, authTime: decoded.auth_time };
     } catch (err) {
       this.logger.warn(`Firebase token verification failed: ${(err as Error).message}`);
       throw new UnauthorizedException({ error: { code: 'UNAUTHORIZED', message: 'Invalid or expired token' } });

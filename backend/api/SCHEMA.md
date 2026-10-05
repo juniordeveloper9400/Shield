@@ -181,7 +181,7 @@ below the controller's class-level guard).
   `/referrals/apply-code`
 - **agent**: `POST/GET agent/requests`, `GET agent/team`,
   `/team/pending`, `POST/GET agent/customers`,
-  `POST/GET agent/withdrawals`
+  `POST/GET agent/withdrawals`, `POST agent/wallet-transfers` (idempotent)
 - **investor**: `GET investor/me`, `POST/GET investor/plan-change-requests`
 
 ### Staff (`@RequireStaff()` unless narrowed)

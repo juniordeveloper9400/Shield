@@ -1,14 +1,18 @@
 import { Body, Controller, Get, Post } from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { IdempotencyKey } from '../../common/decorators/idempotency-key.decorator';
+import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { RequireMember } from '../../common/decorators/require-role.decorator';
 import { FinancialThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   linkCustomerSchema,
+  moveEarningsToWalletSchema,
   requestWithdrawalSchema,
   submitAgentRequestSchema,
   type LinkCustomerDto,
+  type MoveEarningsToWalletDto,
   type RequestWithdrawalDto,
   type SubmitAgentRequestDto,
 } from './dto';
@@ -17,7 +21,10 @@ import type { RequestSubject } from '../auth/session.types';
 @Controller('v1/agent')
 @RequireMember()
 export class MemberAgentController {
-  constructor(private readonly agents: AgentService) {}
+  constructor(
+    private readonly agents: AgentService,
+    private readonly idempotency: IdempotencyService,
+  ) {}
 
   @Post('requests')
   submitRequest(
@@ -64,5 +71,18 @@ export class MemberAgentController {
   @Get('withdrawals')
   listWithdrawals(@CurrentUser() user: RequestSubject) {
     return this.agents.listOwnWithdrawals(Number(user.subjectId));
+  }
+
+  /** Idempotent — a retried tap never moves the same earnings into the wallet twice. */
+  @FinancialThrottle()
+  @Post('wallet-transfers')
+  moveEarningsToWallet(
+    @CurrentUser() user: RequestSubject,
+    @IdempotencyKey() key: string,
+    @Body(new ZodValidationPipe(moveEarningsToWalletSchema)) dto: MoveEarningsToWalletDto,
+  ) {
+    return this.idempotency.run(user.sessionId, 'POST /v1/agent/wallet-transfers', key, () =>
+      this.agents.moveEarningsToWallet(Number(user.subjectId), dto),
+    );
   }
 }
