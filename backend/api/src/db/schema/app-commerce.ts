@@ -99,6 +99,14 @@ export const order = appSchema.table('order', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** migration 0044: the counter's own stock call on a line. Counter-only — never returned to the member. */
+export const orderLineStatusEnum = appSchema.enum('order_line_status', [
+  'AVAILABLE',
+  'OUT_OF_STOCK',
+  'NOT_POSSIBLE',
+  'CUSTOMER_NOT_NEEDED',
+]);
+
 export const orderLine = appSchema.table('order_line', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   orderId: bigint('order_id', { mode: 'number' }).notNull(),
@@ -108,6 +116,7 @@ export const orderLine = appSchema.table('order_line', {
   unitPrice: numeric('unit_price', { precision: 12, scale: 2 }).notNull().default('0'),
   mrp: numeric('mrp', { precision: 12, scale: 2 }).notNull().default('0'),
   qty: integer('qty').notNull().default(1),
+  stockStatus: orderLineStatusEnum('stock_status').notNull().default('AVAILABLE'),
 });
 
 export const orderTrackStep = appSchema.table('order_track_step', {

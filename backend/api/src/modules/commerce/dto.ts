@@ -83,3 +83,52 @@ export type UpdateOrderStatusDto = z.infer<typeof updateOrderStatusSchema>;
 export type SendBillDto = z.infer<typeof sendBillSchema>;
 export type ReceiveBillPaymentDto = z.infer<typeof receiveBillPaymentSchema>;
 export type SubmitOrderReceiptDto = z.infer<typeof submitOrderReceiptSchema>;
+
+// ---- Staff order writes (migrated from shieldweb's direct-SQL orders.ts) ----
+
+/** The counter's stock call on one line — the same four values as app.order_line_status. */
+export const orderLineStatusInput = z.enum(['AVAILABLE', 'OUT_OF_STOCK', 'NOT_POSSIBLE', 'CUSTOMER_NOT_NEEDED']);
+
+/** "Save"/"Convert to bill" on the review page. `lines` are the existing checkout lines (status only);
+ *  `newLines` are rows the counter added by hand; `storeId` moves the order to a branch. */
+export const reviewOrderSchema = z.object({
+  lines: z.array(z.object({ id: z.number().int().positive(), status: orderLineStatusInput })).default([]),
+  newLines: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(200),
+        pack: z.string().max(200).default(''),
+        unitPrice: z.number().nonnegative().max(10000000),
+        qty: z.number().int().min(1).max(9999).default(1),
+        status: orderLineStatusInput.default('AVAILABLE'),
+      }),
+    )
+    .default([]),
+  storeId: z.number().int().positive().nullable().default(null),
+});
+
+/** A priced, line-itemised invoice (see sendOrderInvoice in shieldweb's orders.ts). */
+export const sendInvoiceSchema = z.object({
+  image: z.string().default(''),
+  amount: z.number().nonnegative().max(10000000),
+  discountAmount: z.number().nonnegative().max(10000000).default(0),
+  lines: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1).max(200),
+        pack: z.string().max(200).optional(),
+        unitPrice: z.number().nonnegative().max(10000000),
+        qty: z.number().int().min(1).max(9999).default(1),
+      }),
+    )
+    .optional(),
+});
+
+/** A picture-only bill (shieldweb's sendOrderBill): leaves the bill's amount and discount alone. */
+export const sendPictureSchema = z.object({
+  image: z.string().min(1),
+});
+
+export type ReviewOrderDto = z.infer<typeof reviewOrderSchema>;
+export type SendInvoiceDto = z.infer<typeof sendInvoiceSchema>;
+export type SendPictureDto = z.infer<typeof sendPictureSchema>;

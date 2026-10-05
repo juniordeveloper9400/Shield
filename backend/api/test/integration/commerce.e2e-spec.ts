@@ -436,11 +436,15 @@ describe('Commerce (e2e)', () => {
     let walletMemberToken: string;
     let labStaffToken: string;
 
+    // A random phone here could land on a fixed one used elsewhere in this
+    // file (90000009NN collided with 9000000970 once in a while), so each
+    // member gets the next number in a namespace nothing else uses.
+    let freshPhoneSeq = 0;
     async function freshBilledOrder(billAmount: number) {
       const [member] = await db
         .insert(users)
         .values({
-          phone: `90000009${Math.floor(Math.random() * 90 + 10)}`,
+          phone: `9100${String(++freshPhoneSeq).padStart(6, '0')}`,
           name: 'Wallet Collect Member',
           firebaseUid: `member-wallet-collect-${randomUUID()}`,
           registrationCompletedAt: new Date(),

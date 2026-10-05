@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
@@ -28,7 +28,10 @@ import { assertLegalTransition, type OrderStatus } from './order-status';
 import type {
   CheckoutDto,
   ReceiveBillPaymentDto,
+  ReviewOrderDto,
   SendBillDto,
+  SendInvoiceDto,
+  SendPictureDto,
   SubmitOrderReceiptDto,
   UpdateOrderStatusDto,
 } from './dto';
@@ -715,6 +718,193 @@ export class OrderService {
         settled,
       };
     });
+  }
+
+  // ---- Staff order writes (store-scoped; migrated from shieldweb's direct SQL) ----
+  // Each one resolves the order through getOwnedByStaffOrThrow first, so a
+  // store-bound account can only ever touch its own branch's orders, and the
+  // controller restricts these to the roles that hold the 'orders' module.
+
+  /**
+   * "Save" / "Convert to bill" on the review page: stock calls on the existing
+   * lines, any counter-added lines, and the branch. Only an admin may move an
+   * order to a different branch — a store-bound account keeps its own.
+   */
+  async reviewOrder(role: AdminRole, storeId: number | null, orderId: number, dto: ReviewOrderDto) {
+    const found = await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    const isAdmin = role === 'SUPERADMIN' || role === 'ADMIN';
+    if (!isAdmin && (dto.storeId ?? null) !== (found.storeId ?? null)) {
+      throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Only an admin can move an order to another branch' } });
+    }
+
+    return this.db.transaction(async (tx) => {
+      for (const line of dto.lines) {
+        await tx
+          .update(orderLine)
+          .set({ stockStatus: line.status })
+          .where(and(eq(orderLine.id, line.id), eq(orderLine.orderId, orderId)));
+      }
+      if (dto.newLines.length > 0) {
+        await tx.insert(orderLine).values(
+          dto.newLines.map((line) => ({
+            orderId,
+            name: line.name,
+            pack: line.pack,
+            unitPrice: line.unitPrice.toString(),
+            qty: line.qty,
+            stockStatus: line.status,
+          })),
+        );
+      }
+      const [{ total }] = await tx
+        .select({ total: sql<number>`count(*)::int` })
+        .from(orderLine)
+        .where(eq(orderLine.orderId, orderId));
+      // mrpTotal and paidTotal are what the member checked out with — never
+      // touched here, whatever is added.
+      await tx
+        .update(order)
+        .set({ storeId: dto.storeId, itemCount: total, reviewedAt: new Date(), updatedAt: new Date() })
+        .where(eq(order.id, orderId));
+      return { ok: true as const };
+    });
+  }
+
+  /** "Convert to bill →": stamps the order onto the Bills page. Cancelled orders cannot be billed. */
+  async markConvertedToBill(role: AdminRole, storeId: number | null, orderId: number) {
+    const found = await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    if (found.status === 'CANCELLED') {
+      throw new ConflictException({ error: { code: 'CONFLICT', message: 'A cancelled order cannot be converted to a bill.' } });
+    }
+    const now = new Date();
+    await this.db
+      .update(order)
+      .set({
+        convertedToBillAt: found.convertedToBillAt ?? now,
+        reviewedAt: found.reviewedAt ?? now,
+        updatedAt: now,
+      })
+      .where(eq(order.id, orderId));
+    return { ok: true as const };
+  }
+
+  /**
+   * Call / WhatsApp for this member: the first stamp wins. A cancelled order
+   * returns null — nothing left to contact them about.
+   */
+  async markStoreContacted(role: AdminRole, storeId: number | null, orderId: number) {
+    const found = await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    if (found.status === 'CANCELLED') {
+      return { storeContactedAt: null };
+    }
+    if (found.storeContactedAt == null) {
+      const now = new Date();
+      await this.db.update(order).set({ storeContactedAt: now, updatedAt: now }).where(eq(order.id, orderId));
+      return { storeContactedAt: now.toISOString() };
+    }
+    return { storeContactedAt: found.storeContactedAt.toISOString() };
+  }
+
+  /**
+   * "Complete" on a priced bill. Changes fulfilment only — it never collects
+   * money (that is the separate collect/receive calls). Needs a priced bill
+   * and an order that has not been cancelled, same as before this move.
+   */
+  async completeBilledOrder(role: AdminRole, storeId: number | null, orderId: number) {
+    const found = await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    if (found.status === 'CANCELLED') {
+      throw new ConflictException({ error: { code: 'CONFLICT', message: 'Cancelled orders cannot be completed.' } });
+    }
+    const [priced] = await this.db
+      .select({ id: bill.id })
+      .from(bill)
+      .where(and(eq(bill.orderId, orderId), sql`${bill.amount} > 0`))
+      .limit(1);
+    if (!priced) {
+      throw new ConflictException({
+        error: { code: 'CONFLICT', message: 'Save a priced bill first. Cancelled orders cannot be completed.' },
+      });
+    }
+    await this.db.update(order).set({ status: 'DELIVERED', updatedAt: new Date() }).where(eq(order.id, orderId));
+    return { ok: true as const };
+  }
+
+  /**
+   * The itemised, priced invoice. Upserts the one bill row, replaces its lines
+   * when given, and reflects the priced total onto the order.
+   */
+  async sendInvoice(role: AdminRole, storeId: number | null, orderId: number, dto: SendInvoiceDto) {
+    await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    return this.db.transaction(async (tx) => {
+      const now = new Date();
+      const [existing] = await tx.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
+      // A blank image keeps whatever picture the bill already had.
+      const image = dto.image ? dto.image : existing?.image ?? '';
+      let billId: number;
+      let sentAt: Date;
+      if (existing) {
+        await tx
+          .update(bill)
+          .set({ image, amount: dto.amount.toString(), discountAmount: dto.discountAmount.toString(), sentAt: now, updatedAt: now })
+          .where(eq(bill.id, existing.id));
+        billId = existing.id;
+        sentAt = now;
+      } else {
+        const [created] = await tx
+          .insert(bill)
+          .values({ orderId, image, amount: dto.amount.toString(), discountAmount: dto.discountAmount.toString(), sentAt: now, updatedAt: now })
+          .returning({ id: bill.id, sentAt: bill.sentAt });
+        billId = created.id;
+        sentAt = created.sentAt;
+      }
+
+      if (dto.lines) {
+        await tx.delete(billLine).where(eq(billLine.billId, billId));
+        if (dto.lines.length > 0) {
+          await tx.insert(billLine).values(
+            dto.lines.map((line) => ({
+              billId,
+              name: line.name,
+              pack: line.pack ?? '',
+              unitPrice: line.unitPrice.toString(),
+              qty: line.qty,
+            })),
+          );
+        }
+      }
+
+      await tx
+        .update(order)
+        .set({
+          mrpTotal: dto.amount.toString(),
+          convertedToBillAt: sql`COALESCE(${order.convertedToBillAt}, now())`,
+          updatedAt: now,
+        })
+        .where(eq(order.id, orderId));
+      return { sentAt: sentAt.toISOString() };
+    });
+  }
+
+  /** A picture-only bill: sets the picture and bumps sent_at; amount and discount are left as they are. */
+  async sendPicture(role: AdminRole, storeId: number | null, orderId: number, dto: SendPictureDto) {
+    await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    return this.db.transaction(async (tx) => {
+      const now = new Date();
+      const [existing] = await tx.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
+      if (existing) {
+        await tx.update(bill).set({ image: dto.image, sentAt: now, updatedAt: now }).where(eq(bill.id, existing.id));
+      } else {
+        await tx.insert(bill).values({ orderId, image: dto.image, sentAt: now, updatedAt: now });
+      }
+      return { ok: true as const };
+    });
+  }
+
+  /** Withdraws a bill sent in error. Its lines go with it (ON DELETE CASCADE). */
+  async clearBill(role: AdminRole, storeId: number | null, orderId: number) {
+    await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    await this.db.delete(bill).where(eq(bill.orderId, orderId));
+    return { ok: true as const };
   }
 
   private async getOwnedByMemberOrThrow(orderId: number, memberId: number) {
