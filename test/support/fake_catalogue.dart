@@ -15,8 +15,9 @@ import 'package:shield/module/home/product_showcase.dart';
 ///    (Cetaphil, Minimalist) for the filter tests;
 ///  * exactly one product is named "Dolo 650mg Tablet" / packed "Strip of 15
 ///    tablets" for the search-by-name and search-by-pack tests;
-///  * two products are flagged `isPopular` and none `isOfferOfDay`, so the
-///    home feed shows exactly the three always-on rows.
+///  * the home tabs read their own flags with no fallback: two products are
+///    `isPopular`, two `isDeal` and one `isOfferOfDay`, so every tab has
+///    something to show.
 const List<Product> kFakeCatalogue = [
   // ---- Personal Care ----------------------------------------------------
   Product(
@@ -31,6 +32,7 @@ const List<Product> kFakeCatalogue = [
     categorySlug: 'personal-care',
     categoryTitle: 'Personal Care',
     subcategoryLabel: 'Skin Care',
+    isDeal: true,
   ),
   Product(
     id: 'fake-minimalist',
@@ -127,6 +129,7 @@ const List<Product> kFakeCatalogue = [
     categorySlug: 'vitamins-supplements',
     categoryTitle: 'Vitamins & Supplements',
     subcategoryLabel: 'Immunity',
+    isOfferOfDay: true,
   ),
 
   // ---- Diabetes Care ------------------------------------------------
@@ -142,6 +145,7 @@ const List<Product> kFakeCatalogue = [
     categorySlug: 'diabetes-care',
     categoryTitle: 'Diabetes Care',
     subcategoryLabel: 'Test Strips',
+    isDeal: true,
   ),
 
   // ---- Surgicals --------------------------------------------------
@@ -171,6 +175,7 @@ const List<Product> kFakeCatalogue = [
     categorySlug: 'lab-tests',
     categoryTitle: 'Lab Tests',
     subcategoryLabel: 'Full Body Checkup',
+    isDeal: true,
   ),
 ];
 

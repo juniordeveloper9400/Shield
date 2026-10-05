@@ -5,6 +5,11 @@ import '../../data/neon/product_repository.dart';
 import '../home/product_showcase.dart';
 
 /// Where the catalogue load has got to.
+/// The three product tabs on the member home feed. The admin ticks a product
+/// for one (or more) of these on the Add product page; each tab shows exactly
+/// those products.
+enum HomeTab { offerOfTheDay, popular, deals }
+
 enum CatalogueStatus {
   /// Not asked for yet.
   idle,
@@ -158,6 +163,18 @@ class CatalogueService extends ChangeNotifier {
   /// (and the row is hidden) when the admin has not chosen any.
   List<Product> get offerOfTheDay =>
       _all.where((p) => p.isOfferOfDay).take(rowLimit).toList();
+
+  /// The home tabs. Each one shows only the products the admin has ticked for
+  /// it, with no fallback: a tab with nothing in it says so, rather than
+  /// quietly borrowing products from another tab.
+  List<Product> homeTabProducts(HomeTab tab) {
+    final flagged = switch (tab) {
+      HomeTab.offerOfTheDay => _all.where((p) => p.isOfferOfDay),
+      HomeTab.popular => _all.where((p) => p.isPopular),
+      HomeTab.deals => _all.where((p) => p.isDeal),
+    };
+    return flagged.take(rowLimit).toList();
+  }
 
   /// The "Vitamins & Supplements" storefront category.
   List<Product> get wellness =>

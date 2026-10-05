@@ -7,6 +7,7 @@ import '../module/cart/cart_badge.dart';
 import '../module/cart/cart_bar.dart';
 import '../module/cart/cart_service.dart';
 import '../theme/app_colors.dart';
+import '../module/home/home_product_tabs.dart';
 import '../module/home/brand_quote.dart';
 import '../module/home/category_section.dart';
 import '../module/home/customer_reviews.dart';
@@ -379,24 +380,7 @@ class _HomeProductRowsState extends State<_HomeProductRows> {
 
         return Column(
           children: [
-            if (catalogue.offerOfTheDay.isNotEmpty)
-              ProductShowcase(
-                title: 'Offer of the Day',
-                subtitle: 'Handpicked by the pharmacy today',
-                products: catalogue.offerOfTheDay,
-              ),
-            if (catalogue.popularPicks.isNotEmpty)
-              ProductShowcase(
-                title: 'Popular Items',
-                subtitle: 'Freshly added at the pharmacy',
-                products: catalogue.popularPicks,
-              ),
-            if (catalogue.dealsYouLove.isNotEmpty)
-              ProductShowcase(
-                title: 'Deals You Love',
-                subtitle: 'Big savings & special discounts',
-                products: catalogue.dealsYouLove,
-              ),
+            const HomeProductTabs(),
             if (catalogue.wellness.isNotEmpty)
               ProductShowcase(
                 title: 'Wellness & Supplements',

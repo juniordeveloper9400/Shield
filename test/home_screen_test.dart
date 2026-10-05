@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/module/catalogue/catalogue_service.dart';
 import 'package:shield/module/cart/cart_badge.dart';
 import 'package:shield/module/cart/cart_screen.dart';
 import 'package:shield/module/home/brand_quote.dart';
@@ -69,6 +70,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  /// Taps one of the home feed's product tabs (keys `home-tab-<name>`).
+  Future<void> selectHomeTab(WidgetTester tester, HomeTab tab) async {
+    final chip = find.byKey(ValueKey('home-tab-${tab.name}'));
+    await tester.ensureVisible(chip);
+    await tester.tap(chip);
+    await tester.pumpAndSettle();
+  }
+
+  /// The products the Deals tab shows, straight from the seeded catalogue.
+  List<Product> dealsTabProducts() =>
+      CatalogueService.instance.homeTabProducts(HomeTab.deals);
+
   /// How opaque a widget is drawn, read off the Opacity wrapping it.
   double opacityOf(WidgetTester tester, Finder finder) => tester
       .widget<Opacity>(
@@ -104,10 +117,45 @@ void main() {
   testWidgets('narrow viewport still lays out product cards', (tester) async {
     await pumpHome(tester, const Size(320, 8000));
 
+    // All three tab labels sit in the chip row; one tab's products show at a time.
     expect(find.text('Popular Items'), findsOneWidget);
     expect(find.text('Deals You Love'), findsOneWidget);
     expect(find.text('Wellness & Supplements'), findsOneWidget);
-    expect(find.byType(ProductShowcase), findsNWidgets(3));
+
+    await selectHomeTab(tester, HomeTab.popular);
+    expect(find.byType(ProductShowcase), findsNWidgets(2));
+    expect(find.text('Wellness & Supplements'), findsOneWidget);
+  });
+
+  testWidgets('each tab shows only the products the admin ticked for it', (
+    tester,
+  ) async {
+    await pumpHome(tester, const Size(400, 8000));
+
+    // Offer of the Day is the default tab: one flagged product.
+    expect(find.text('Sahakar 360 Immunity Plus'), findsWidgets);
+    expect(find.text('Dolo 650mg Tablet'), findsNothing);
+
+    await selectHomeTab(tester, HomeTab.popular);
+    expect(find.text('Dolo 650mg Tablet'), findsOneWidget);
+    expect(find.text('Cetaphil Oil Control Sunscreen SPF 30'), findsNothing);
+
+    await selectHomeTab(tester, HomeTab.deals);
+    expect(find.text('Cetaphil Oil Control Sunscreen SPF 30'), findsOneWidget);
+    expect(find.text('Dolo 650mg Tablet'), findsNothing);
+  });
+
+  testWidgets('a tab with nothing ticked says so instead of borrowing products', (
+    tester,
+  ) async {
+    seedFakeCatalogue(
+      kFakeCatalogue.where((p) => !p.isOfferOfDay).toList(),
+    );
+    await pumpHome(tester, const Size(400, 8000));
+
+    expect(find.byKey(const ValueKey('home-tab-empty')), findsOneWidget);
+    expect(find.text('No offers picked for today yet.'), findsOneWidget);
+    expect(find.text('Sahakar 360 Immunity Plus'), findsNothing);
   });
 
   testWidgets('home shows the cart icon beside the wallet', (tester) async {
@@ -429,8 +477,9 @@ void main() {
     tester,
   ) async {
     await pumpHome(tester, const Size(400, 9000));
+    await selectHomeTab(tester, HomeTab.deals);
 
-    // The "View all" belonging to "Deals You Love".
+    // The "View all" belonging to the Deals tab's row.
     final viewAll = find.descendant(
       of: find.ancestor(
         of: find.text('Deals You Love'),
@@ -443,21 +492,18 @@ void main() {
     await tester.pumpAndSettle();
 
     // Lands on the collection screen carrying that row's title and every one
-    // of its products — including ones further along than the feed showed.
+    // of its products.
+    final deals = dealsTabProducts();
     expect(find.byType(ProductCollectionScreen), findsOneWidget);
     expect(find.text('Deals You Love'), findsOneWidget);
-    expect(
-      find.text('${ProductCatalogue.dealsYouLove.length} items'),
-      findsOneWidget,
-    );
-    // Every product in that row is on the grid, including ones past where the
-    // horizontal feed row stopped.
-    expect(find.text(ProductCatalogue.dealsYouLove.last.name), findsOneWidget);
+    expect(find.text('${deals.length} items'), findsOneWidget);
+    expect(find.text(deals.last.name), findsOneWidget);
   });
 
   group('the "View all" collection screen', () {
     Future<void> openDealsCollection(WidgetTester tester) async {
       await pumpHome(tester, const Size(400, 9000));
+      await selectHomeTab(tester, HomeTab.deals);
       final viewAll = find.descendant(
         of: find.ancestor(
           of: find.text('Deals You Love'),
@@ -499,7 +545,7 @@ void main() {
 
       // Sorted low-to-high, the catalogue's cheapest deal leads the grid and
       // its dearest sits below.
-      final byPrice = [...ProductCatalogue.dealsYouLove]
+      final byPrice = [...dealsTabProducts()]
         ..sort((a, b) => _rupees(a.price).compareTo(_rupees(b.price)));
       final cheapest = tester.getTopLeft(find.text(byPrice.first.name)).dy;
       final dearest = tester.getTopLeft(find.text(byPrice.last.name)).dy;
