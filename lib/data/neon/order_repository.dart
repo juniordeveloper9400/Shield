@@ -742,8 +742,10 @@ class OrderRepository {
             fulfillmentType == FulfillmentType.storePickup
                 ? 'STORE_PICKUP'
                 : 'HOME_DELIVERY',
-            walletDebit != null ? 'PAID' : 'PENDING',
-            walletDebit != null,
+            // Never written PAID up front: a wallet order is marked paid only
+            // once the debit below has actually succeeded.
+            'PENDING',
+            false,
           ],
         );
         if (inserted.isNotEmpty) {
@@ -760,12 +762,38 @@ class OrderRepository {
       await _seedTrackSteps(orderId, _standardStages);
 
       if (walletDebit != null) {
-        await WalletRepository.instance.recordSpend(
+        final debited = await WalletRepository.instance.recordSpend(
           memberPhone: walletDebit.memberPhone,
           amount: walletDebit.amount,
           label: walletDebit.label,
           orderId: orderId,
         );
+        if (debited) {
+          await NeonHttp.instance.query(
+            '''
+              UPDATE app."order"
+              SET payment_status = 'PAID'::app.order_payment_status, paid_at = now()
+              WHERE id = \$1
+            ''',
+            [orderId],
+          );
+        } else {
+          // The money never moved, so this must not read as paid. Cancelling
+          // it is the honest outcome: the member sees the order did not go
+          // through, rather than a paid order with no wallet entry behind it.
+          await NeonHttp.instance.query(
+            '''
+              UPDATE app."order"
+              SET status = 'CANCELLED'::app.order_status
+              WHERE id = \$1
+            ''',
+            [orderId],
+          );
+          NeonHttp.log(
+            'OrderRepository.saveStandardOrder: wallet debit refused, order cancelled',
+          );
+          return;
+        }
       }
 
       if (receipt != null) {
@@ -831,17 +859,43 @@ class OrderRepository {
         storeCode: storeCode,
         paymentMethodCode: paymentMethodCode,
         fulfillmentType: fulfillmentType,
-        paid: walletDebit != null,
+        // Written unpaid; marked paid below only once the debit has succeeded.
+        paid: false,
       );
       if (orderId != null) {
         await _seedTrackSteps(orderId, _prescriptionStages);
         if (walletDebit != null) {
-          await WalletRepository.instance.recordSpend(
+          final debited = await WalletRepository.instance.recordSpend(
             memberPhone: walletDebit.memberPhone,
             amount: walletDebit.amount,
             label: walletDebit.label,
             orderId: orderId,
           );
+          if (debited) {
+            await NeonHttp.instance.query(
+              '''
+                UPDATE app."order"
+                SET payment_status = 'PAID'::app.order_payment_status, paid_at = now()
+                WHERE id = \$1
+              ''',
+              [orderId],
+            );
+          } else {
+            // Same as a standard order: a refused debit must not file a paid
+            // order with no wallet entry behind it.
+            await NeonHttp.instance.query(
+              '''
+                UPDATE app."order"
+                SET status = 'CANCELLED'::app.order_status
+                WHERE id = \$1
+              ''',
+              [orderId],
+            );
+            NeonHttp.log(
+              'OrderRepository.savePrescriptionOrder: wallet debit refused, order cancelled',
+            );
+            return;
+          }
         }
       }
       final storeId = await _storeId(storeCode);
