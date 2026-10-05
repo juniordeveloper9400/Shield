@@ -24,6 +24,11 @@ export const checkoutSchema = z.object({
   walletAmount: z.number().nonnegative().optional(),
 });
 
+/** Fulfilment status set from the admin console (cancel, delivered, out for delivery). No legal-transition check: see OrderService.setFulfilmentStatus. */
+export const setFulfilmentStatusSchema = z.object({
+  status: z.enum(['PROCESSING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']),
+});
+
 export const updateOrderStatusSchema = z.object({
   status: z.enum(['PROCESSING', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED']),
   detail: z.string().optional(),
@@ -132,3 +137,4 @@ export const sendPictureSchema = z.object({
 export type ReviewOrderDto = z.infer<typeof reviewOrderSchema>;
 export type SendInvoiceDto = z.infer<typeof sendInvoiceSchema>;
 export type SendPictureDto = z.infer<typeof sendPictureSchema>;
+export type SetFulfilmentStatusDto = z.infer<typeof setFulfilmentStatusSchema>;

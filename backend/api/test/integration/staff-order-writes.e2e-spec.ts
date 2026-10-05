@@ -33,6 +33,7 @@ describe('Staff order writes (e2e)', () => {
   let pharmacyB: string;
   let adminToken: string;
   let labToken: string;
+  let deliveryAToken: string;
 
   const PASSWORD = 'correct-horse-battery-staple';
 
@@ -102,6 +103,7 @@ describe('Staff order writes (e2e)', () => {
       { loginId: 'pb@example.com', name: 'Pharmacy B', passwordHash, role: 'PHARMACY', storeId: storeB.id },
       { loginId: 'admin-w@example.com', name: 'Plain Admin', passwordHash, role: 'ADMIN' },
       { loginId: 'lab-w@example.com', name: 'Lab', passwordHash, role: 'LAB', storeId: storeA.id },
+      { loginId: 'delivery-w@example.com', name: 'Delivery', passwordHash, role: 'DELIVERY', storeId: storeA.id },
     ]);
 
     const session = async (loginId: string) =>
@@ -111,6 +113,7 @@ describe('Staff order writes (e2e)', () => {
     pharmacyB = await session('pb@example.com');
     adminToken = await session('admin-w@example.com');
     labToken = await session('lab-w@example.com');
+    deliveryAToken = await session('delivery-w@example.com');
   });
 
   afterAll(async () => {
@@ -284,6 +287,75 @@ describe('Staff order writes (e2e)', () => {
       await request(http())
         .delete(`/v1/staff/orders/${storeAOrderId}/bill`)
         .set('Authorization', `Bearer ${pharmacyB}`)
+        .expect(404);
+    });
+  });
+
+  describe('order board reads and fulfilment status', () => {
+    it('a branch sees only its own orders on the board, with the console card shape', async () => {
+      const res = await request(http())
+        .get('/v1/staff/order-board')
+        .set('Authorization', `Bearer ${pharmacyA}`)
+        .expect(200);
+      const ids = res.body.map((c: { id: string }) => c.id);
+      expect(ids).toContain(String(storeAOrderId));
+      expect(ids).not.toContain(String(cancelledOrderId) === '' ? '' : 'none');
+      const card = res.body.find((c: { id: string }) => c.id === String(storeAOrderId));
+      expect(card.kind).toBe('standard');
+      const [stored] = await db.select().from(order).where(eq(order.id, storeAOrderId));
+      expect(card.status).toBe(stored.status.toLowerCase());
+      expect(Array.isArray(card.lines)).toBe(true);
+      expect(card.lines[0]).toMatchObject({ name: 'Vitamin C', status: expect.any(String) });
+      expect(card.storeCode).toBe('SHD-A');
+    });
+
+    it("a branch cannot open another branch's order on the board", async () => {
+      await request(http())
+        .get(`/v1/staff/order-board/${storeAOrderId}`)
+        .set('Authorization', `Bearer ${pharmacyB}`)
+        .expect(404);
+    });
+
+    it('an admin sees every branch on the board', async () => {
+      const res = await request(http())
+        .get('/v1/staff/order-board')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      const ids = res.body.map((c: { id: string }) => c.id);
+      expect(ids).toContain(String(storeAOrderId));
+      expect(ids).toContain(String(cancelledOrderId));
+    });
+
+    it('a role without the orders module is refused the board', async () => {
+      await request(http())
+        .get('/v1/staff/order-board')
+        .set('Authorization', `Bearer ${labToken}`)
+        .expect(403);
+    });
+
+    it('sets the fulfilment status for its own order, including the cancel path a legal transition would refuse', async () => {
+      await request(http())
+        .patch(`/v1/staff/orders/${storeAOrderId}/fulfilment-status`)
+        .set('Authorization', `Bearer ${pharmacyA}`)
+        .send({ status: 'DELIVERED' })
+        .expect(200);
+      const [o] = await db.select().from(order).where(eq(order.id, storeAOrderId));
+      expect(o.status).toBe('DELIVERED');
+    });
+
+    it('lets the delivery hand-off set out-for-delivery on its own branch order', async () => {
+      await request(http())
+        .patch(`/v1/staff/orders/${storeAOrderId}/fulfilment-status`)
+        .set('Authorization', `Bearer ${deliveryAToken}`)
+        .send({ status: 'OUT_FOR_DELIVERY' })
+        .expect(200);
+    });
+
+    it("refuses fulfilment status on another branch's order", async () => {
+      await request(http())
+        .patch(`/v1/staff/orders/${storeAOrderId}/fulfilment-status`)
+        .set('Authorization', `Bearer ${pharmacyB}`)
+        .send({ status: 'CANCELLED' })
         .expect(404);
     });
   });

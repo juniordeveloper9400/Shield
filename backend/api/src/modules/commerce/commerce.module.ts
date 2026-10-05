@@ -3,12 +3,13 @@ import { CartService } from './cart.service';
 import { OrderService } from './order.service';
 import { MemberCommerceController } from './member-commerce.controller';
 import { StaffCommerceController } from './staff-commerce.controller';
+import { StaffOrderBoardService } from './staff-order-board.service';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
   imports: [WalletModule],
   controllers: [MemberCommerceController, StaffCommerceController],
-  providers: [CartService, OrderService, IdempotencyService],
+  providers: [CartService, OrderService, IdempotencyService, StaffOrderBoardService],
 })
 export class CommerceModule {}

@@ -1,9 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Put } from '@nestjs/common';
 import { OrderService } from './order.service';
+import { StaffOrderBoardService } from './staff-order-board.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireRole, RequireStaff } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
+  setFulfilmentStatusSchema,
   receiveBillPaymentSchema,
   reviewOrderSchema,
   sendBillSchema,
@@ -16,6 +18,7 @@ import {
   type SendInvoiceDto,
   type SendPictureDto,
   type UpdateOrderStatusDto,
+  type SetFulfilmentStatusDto,
 } from './dto';
 import type { RequestSubject } from '../auth/session.types';
 
@@ -23,7 +26,37 @@ import type { RequestSubject } from '../auth/session.types';
 @Controller('v1/staff')
 @RequireStaff()
 export class StaffCommerceController {
-  constructor(private readonly orders: OrderService) {}
+  constructor(
+    private readonly orders: OrderService,
+    private readonly board: StaffOrderBoardService,
+  ) {}
+
+  /** The admin console's order board: one card per order, with lines, bill, receipt. */
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Get('order-board')
+  orderBoard(@CurrentUser() user: RequestSubject) {
+    return this.board.listForStaff(user.role!, user.storeId ?? null);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Get('order-board/:id')
+  async orderBoardOne(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    const card = await this.board.getForStaff(user.role!, user.storeId ?? null, id);
+    if (!card) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
+    return card;
+  }
+
+  /** Cancel / out for delivery / delivered — set by the counter, the prescription flow and the delivery hand-off. */
+  // DELIVERY too: the delivery hand-off on the Deliveries page sets out-for-delivery and delivered.
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY', 'DELIVERY')
+  @Patch('orders/:id/fulfilment-status')
+  setFulfilmentStatus(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(setFulfilmentStatusSchema)) dto: SetFulfilmentStatusDto,
+  ) {
+    return this.orders.setFulfilmentStatus(user.role!, user.storeId ?? null, id, dto.status);
+  }
 
   @Get('orders')
   list(@CurrentUser() user: RequestSubject) {
