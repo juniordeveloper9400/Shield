@@ -917,21 +917,43 @@ export class OrderService {
     return found;
   }
 
+  /**
+   * An order belongs to the branch it was booked at, or — when none was set —
+   * to the member's home branch. That is the same rule the admin console uses
+   * to show a branch its orders (see StaffOrderBoardService), so what a branch
+   * can see is exactly what it can act on.
+   */
   private async getOwnedByStaffOrThrow(orderId: number, role: AdminRole, storeId: number | null) {
-    const conditions = [eq(order.id, orderId)];
+    const [row] = await this.db
+      .select({ o: order, homeStoreId: users.homeStoreId })
+      .from(order)
+      .leftJoin(users, eq(users.id, order.memberId))
+      .where(eq(order.id, orderId))
+      .limit(1);
+    if (!row) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
+
     if (role !== 'SUPERADMIN' && role !== 'ADMIN') {
       if (storeId == null) {
         throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Staff account has no store assigned' } });
       }
-      conditions.push(eq(order.storeId, storeId));
+      const effectiveStoreId = row.o.storeId ?? row.homeStoreId ?? null;
+      if (effectiveStoreId !== storeId) {
+        throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
+      }
     }
+    return row.o;
+  }
 
-    const [found] = await this.db
-      .select()
-      .from(order)
-      .where(and(...conditions))
-      .limit(1);
-    if (!found) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Order not found' } });
-    return found;
+  /**
+   * Sets an order's fulfilment status — cancel, out for delivery, delivered —
+   * for the branch that owns it. Kept without the legal-transition check the
+   * member-facing status route applies: the prescription "delivered" step and
+   * the delivery handoff have always moved statuses this way, and changing
+   * that is a product decision, not part of the access fix.
+   */
+  async setFulfilmentStatus(role: AdminRole, storeId: number | null, orderId: number, status: UpdateOrderStatusDto['status']) {
+    await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    await this.db.update(order).set({ status, updatedAt: new Date() }).where(eq(order.id, orderId));
+    return { ok: true as const };
   }
 }

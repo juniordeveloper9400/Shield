@@ -141,9 +141,11 @@ export const orderReceipt = appSchema.table('order_receipt', {
   mimeType: text('mime_type'),
   uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
   verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  // The receipt photo as a data URI — the console's order board reads it.
+  image: text('image'),
 });
 
-export const bill = appSchema.table('bill', {
+export const bill =appSchema.table('bill', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   uuid: uuid('uuid').notNull().defaultRandom(),
   orderId: bigint('order_id', { mode: 'number' }).notNull(),

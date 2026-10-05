@@ -403,7 +403,8 @@ export function createTestDb() {
       file_name text,
       mime_type text,
       uploaded_at timestamptz NOT NULL DEFAULT now(),
-      verified_at timestamptz
+      verified_at timestamptz,
+      image text
     );
 
     CREATE TABLE app.prescription (
