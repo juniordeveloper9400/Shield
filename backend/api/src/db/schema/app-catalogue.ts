@@ -42,6 +42,9 @@ export const shieldStore = appSchema.table('shield_store', {
   sort: integer('sort').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Migration 0074 — the legal entity this shop's money belongs to. Every
+   *  journal entry for this store's transactions carries this entity. */
+  entityId: bigint('entity_id', { mode: 'number' }),
 });
 
 export const productCategory = appSchema.table('product_category', {

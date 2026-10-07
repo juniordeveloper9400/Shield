@@ -965,6 +965,72 @@ export function createTestDb() {
       resolved_at timestamptz
     );
 
+    -- Migration 0074 — ledger core. See that migration for why there is no
+    -- balance-checking trigger here: assert_journal_entry_balanced and
+    -- assert_ledger_period_open are called explicitly by posting functions
+    -- instead, the same pattern resolveWithdrawal's OTP check already uses.
+    CREATE TABLE app.legal_entity (
+      id bigserial PRIMARY KEY,
+      code text NOT NULL UNIQUE,
+      name text NOT NULL,
+      is_provisional boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    ALTER TABLE app.shield_store ADD COLUMN entity_id bigint REFERENCES app.legal_entity(id);
+
+    CREATE TABLE app.chart_of_account (
+      id bigserial PRIMARY KEY,
+      code text NOT NULL UNIQUE,
+      name text NOT NULL,
+      type text NOT NULL CHECK (type IN ('ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE')),
+      is_provisional boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE app.posting_rule (
+      id bigserial PRIMARY KEY,
+      event text NOT NULL,
+      line_role text NOT NULL,
+      account_code text NOT NULL REFERENCES app.chart_of_account(code),
+      is_provisional boolean NOT NULL DEFAULT true,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (event, line_role)
+    );
+
+    CREATE TABLE app.journal_entry (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      entity_id bigint NOT NULL REFERENCES app.legal_entity(id),
+      posted_on date NOT NULL DEFAULT current_date,
+      source_table text NOT NULL,
+      source_id text NOT NULL,
+      event text NOT NULL,
+      description text NOT NULL DEFAULT '',
+      reversal_of uuid REFERENCES app.journal_entry(id),
+      reversed_by uuid REFERENCES app.journal_entry(id),
+      created_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE (source_table, source_id, event, entity_id)
+    );
+
+    CREATE TABLE app.journal_line (
+      id bigserial PRIMARY KEY,
+      entry_id uuid NOT NULL REFERENCES app.journal_entry(id) ON DELETE CASCADE,
+      account_id bigint NOT NULL REFERENCES app.chart_of_account(id),
+      debit numeric(12,2) NOT NULL DEFAULT 0 CHECK (debit >= 0),
+      credit numeric(12,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CHECK ((debit = 0) <> (credit = 0))
+    );
+
+    CREATE TABLE app.ledger_period (
+      id bigserial PRIMARY KEY,
+      entity_id bigint NOT NULL REFERENCES app.legal_entity(id),
+      period date NOT NULL,
+      closed_at timestamptz,
+      closed_by text,
+      UNIQUE (entity_id, period)
+    );
+
     CREATE TABLE backend.auth_session (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       subject_type backend_subject_type NOT NULL,
