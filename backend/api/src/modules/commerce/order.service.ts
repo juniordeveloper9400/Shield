@@ -41,6 +41,7 @@ import type {
   UpdateOrderStatusDto,
 } from './dto';
 import { ReferralService } from '../wallet/referral.service';
+import { postRewardPointsIssued } from '../ledger/reward-points-ledger';
 
 /** ₹100 → 10 points (ten rupees to the point) — mirrors the client's own `RewardsService.pointsForSpend`. */
 const RUPEES_PER_POINT = 10;
@@ -155,13 +156,21 @@ export class OrderService {
       if (paidTotal > 0) {
         const points = Math.floor(paidTotal / RUPEES_PER_POINT);
         if (points > 0) {
-          await tx.insert(rewardPointTransaction).values({
-            memberId,
+          const [rewardTxn] = await tx
+            .insert(rewardPointTransaction)
+            .values({
+              memberId,
+              points,
+              reason: 'ORDER',
+              note: `Order ${created.code}`,
+              refType: 'order',
+              refId: created.id,
+            })
+            .returning();
+          await postRewardPointsIssued(tx, {
+            rewardPointTransactionId: rewardTxn.id,
             points,
-            reason: 'ORDER',
-            note: `Order ${created.code}`,
-            refType: 'order',
-            refId: created.id,
+            reason: `order ${created.code}`,
           });
           const currentPoints = await this.currentRewardPoints(tx, memberId);
           await tx

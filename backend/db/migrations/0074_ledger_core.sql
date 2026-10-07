@@ -88,6 +88,7 @@ INSERT INTO app.chart_of_account (code, name, type) VALUES
     ('4003', 'Consultation revenue — appointments',         'REVENUE'),
     ('5001', 'Agent commission expense',                    'EXPENSE'),
     ('5002', 'Discounts given',                              'EXPENSE'),
+    ('5004', 'Reward points expense',                        'EXPENSE'),
     ('3001', 'Opening balance / retained earnings (backfill plug)', 'EQUITY')
 ON CONFLICT (code) DO NOTHING;
 
@@ -136,10 +137,13 @@ INSERT INTO app.posting_rule (event, line_role, account_code) VALUES
     ('appointment_fee_collected', 'cash_in',      '1001'),
     ('appointment_fee_collected', 'revenue',      '4003'),
     -- Reward points issued / redeemed.
-    ('reward_points_issued', 'expense',           '5001'),
+    ('reward_points_issued', 'expense',           '5004'),
     ('reward_points_issued', 'liability',         '2003'),
+    -- A redemption converts points into wallet balance, not revenue: the
+    -- points liability falls and the member wallet liability rises by the
+    -- same rupee figure (100 points = ₹1 — see RewardsService.redeem).
     ('reward_points_redeemed', 'liability',       '2003'),
-    ('reward_points_redeemed', 'revenue',         '4001')
+    ('reward_points_redeemed', 'member_wallet',   '2001')
 ON CONFLICT (event, line_role) DO NOTHING;
 
 -- ---- journal ----------------------------------------------------------------

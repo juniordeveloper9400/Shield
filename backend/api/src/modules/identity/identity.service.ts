@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { adminUser, memberAddress, patient, rewardPointTransaction, shieldStore, users } from '../../db/schema';
 import { AuthService } from '../auth/auth.service';
+import { postRewardPointsIssued } from '../ledger/reward-points-ledger';
 import type { CreateAddressDto, CreatePatientDto, UpdateAddressDto, UpdateMemberProfileDto, UpdatePatientDto } from './dto';
 
 /** Credited once, the first time a member completes registration. Mirrors the client's own display constant (`RewardsService.registrationBonus`). */
@@ -138,11 +139,19 @@ export class IdentityService {
         });
 
       if (isFirstCompletion) {
-        await tx.insert(rewardPointTransaction).values({
-          memberId,
+        const [rewardTxn] = await tx
+          .insert(rewardPointTransaction)
+          .values({
+            memberId,
+            points: REGISTRATION_BONUS_POINTS,
+            reason: 'REGISTRATION',
+            note: 'Registration bonus',
+          })
+          .returning();
+        await postRewardPointsIssued(tx, {
+          rewardPointTransactionId: rewardTxn.id,
           points: REGISTRATION_BONUS_POINTS,
-          reason: 'REGISTRATION',
-          note: 'Registration bonus',
+          reason: 'registration bonus',
         });
         await tx
           .update(users)

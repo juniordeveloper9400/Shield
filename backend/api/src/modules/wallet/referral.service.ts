@@ -13,6 +13,7 @@ import {
   walletEntry,
 } from '../../db/schema';
 import type { ApplyReferralCodeDto, CreateReferralDto } from './dto';
+import { postRewardPointsIssued } from '../ledger/reward-points-ledger';
 
 /** The Member ID shown in the apps: `SAHAKAR-####`, this member's own invite code. */
 const MEMBER_CODE_PREFIX = 'SAHAKAR-';
@@ -313,11 +314,19 @@ export class ReferralService {
     const newPoints = crossedLevels.reduce((sum, l) => sum + l.points, 0);
     const newLevel = Math.max(...crossedLevels.map((l) => l.level));
 
-    await tx.insert(rewardPointTransaction).values({
-      memberId: inviterMemberId,
+    const [rewardTxn] = await tx
+      .insert(rewardPointTransaction)
+      .values({
+        memberId: inviterMemberId,
+        points: newPoints,
+        reason: 'REFERRAL_LEVEL',
+        note: `Referral ladder — level ${newLevel}`,
+      })
+      .returning();
+    await postRewardPointsIssued(tx, {
+      rewardPointTransactionId: rewardTxn.id,
       points: newPoints,
-      reason: 'REFERRAL_LEVEL',
-      note: `Referral ladder — level ${newLevel}`,
+      reason: `referral ladder level ${newLevel}`,
     });
     await tx
       .update(users)

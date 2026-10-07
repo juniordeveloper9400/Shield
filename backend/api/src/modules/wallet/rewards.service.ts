@@ -3,6 +3,7 @@ import { desc, eq } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { rewardPointTransaction, users, wallet, walletEntry } from '../../db/schema';
 import type { RedeemPointsDto } from './dto';
+import { postRewardPointsRedeemed } from '../ledger/reward-points-ledger';
 
 // The programme's one exchange rate: 100 points are worth ₹1. Mirrors
 // `RewardsService.pointsPerRupee` in both Flutter apps — change them
@@ -60,11 +61,15 @@ export class RewardsService {
       const rupees = dto.points / POINTS_PER_RUPEE;
       const today = new Date().toISOString().slice(0, 10);
 
-      await tx.insert(rewardPointTransaction).values({
-        memberId,
-        points: -dto.points,
-        reason: 'REDEMPTION',
-      });
+      const [rewardTxn] = await tx
+        .insert(rewardPointTransaction)
+        .values({
+          memberId,
+          points: -dto.points,
+          reason: 'REDEMPTION',
+        })
+        .returning();
+      await postRewardPointsRedeemed(tx, { rewardPointTransactionId: rewardTxn.id, points: dto.points });
 
       await tx.insert(walletEntry).values({
         walletId: theWallet.id,
