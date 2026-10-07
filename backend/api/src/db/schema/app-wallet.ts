@@ -119,6 +119,23 @@ export const commissionReserveEntry = appSchema.table('commission_reserve_entry'
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Migration 0079 — one row per agent actually credited from one
+ *  activation's commission pool (the direct seller, hop 0, and each paid
+ *  ancestor, hop 1..6). `journalEntryId` links to the Head Office journal
+ *  entry whose 'agent_commission' line this row is part of — null until
+ *  that entry is posted in the same transaction. `app.agent.earned` stays
+ *  the running lifetime total; this is the row-level record behind it. */
+export const agentCommission = appSchema.table('agent_commission', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  walletCardId: bigint('wallet_card_id', { mode: 'number' }).notNull(),
+  agentId: bigint('agent_id', { mode: 'number' }).notNull(),
+  hop: integer('hop').notNull(),
+  rate: numeric('rate', { precision: 5, scale: 4 }).notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+  journalEntryId: uuid('journal_entry_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const walletEntry = appSchema.table('wallet_entry', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   walletId: bigint('wallet_id', { mode: 'number' }).notNull(),

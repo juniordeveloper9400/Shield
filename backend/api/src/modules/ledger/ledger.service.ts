@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { chartOfAccount, journalEntry, journalLine, ledgerPeriod, legalEntity } from '../../db/schema';
+import { agent, agentCommission, chartOfAccount, journalEntry, journalLine, ledgerPeriod, legalEntity } from '../../db/schema';
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -84,6 +84,35 @@ export class LedgerService {
       .from(ledgerPeriod)
       .where(entityId !== undefined ? eq(ledgerPeriod.entityId, entityId) : undefined)
       .orderBy(desc(ledgerPeriod.period));
+  }
+
+  /** Every agent actually credited from one activation's commission pool —
+   *  the row-level record behind `app.agent.earned`'s running total (see
+   *  migration 0079). `walletCardId` or `agentId` narrows it; neither
+   *  returns everything, which isn't useful on a real dataset. */
+  async agentCommissions(params: { walletCardId?: number; agentId?: number }) {
+    if (params.walletCardId === undefined && params.agentId === undefined) return [];
+    const conditions = [];
+    if (params.walletCardId !== undefined) conditions.push(eq(agentCommission.walletCardId, params.walletCardId));
+    if (params.agentId !== undefined) conditions.push(eq(agentCommission.agentId, params.agentId));
+
+    return this.db
+      .select({
+        id: agentCommission.id,
+        walletCardId: agentCommission.walletCardId,
+        agentId: agentCommission.agentId,
+        agentCode: agent.code,
+        agentName: agent.name,
+        hop: agentCommission.hop,
+        rate: agentCommission.rate,
+        amount: agentCommission.amount,
+        journalEntryId: agentCommission.journalEntryId,
+        createdAt: agentCommission.createdAt,
+      })
+      .from(agentCommission)
+      .innerJoin(agent, eq(agent.id, agentCommission.agentId))
+      .where(and(...conditions))
+      .orderBy(agentCommission.hop);
   }
 
   /** Blocks any further posting into this entity's month — enforced by

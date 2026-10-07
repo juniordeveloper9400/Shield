@@ -867,6 +867,19 @@ export function createTestDb() {
       wallet_card_id bigint REFERENCES app.wallet_card(id) ON DELETE SET NULL
     );
 
+    -- Migration 0079 — one row per agent credited from an activation's
+    -- commission pool; see app-wallet.ts's own doc comment.
+    CREATE TABLE app.agent_commission (
+      id bigserial PRIMARY KEY,
+      wallet_card_id bigint NOT NULL,
+      agent_id bigint NOT NULL,
+      hop integer NOT NULL,
+      rate numeric(5,4) NOT NULL,
+      amount numeric(12,2) NOT NULL,
+      journal_entry_id uuid,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE app.agent_withdrawal (
       id bigserial PRIMARY KEY,
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),

@@ -40,6 +40,14 @@ export class StaffLedgerController {
     return this.ledger.listPeriods(entityId ? Number(entityId) : undefined);
   }
 
+  @Get('agent-commissions')
+  agentCommissions(@Query('walletCardId') walletCardId?: string, @Query('agentId') agentId?: string) {
+    return this.ledger.agentCommissions({
+      walletCardId: walletCardId ? Number(walletCardId) : undefined,
+      agentId: agentId ? Number(agentId) : undefined,
+    });
+  }
+
   @RequireRole('SUPERADMIN')
   @Post('entities/:entityId/periods/close')
   closePeriod(
