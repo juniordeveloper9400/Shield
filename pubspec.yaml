@@ -73,6 +73,7 @@ flutter:
     - assets/logos/
     - assets/categories/
     - assets/banners/
+    - assets/dietitian/
 
 # Launcher icon generation: `dart run flutter_launcher_icons`.
 # The mark is 4500x4500 with no padding of its own, so the adaptive icon gets

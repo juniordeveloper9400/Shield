@@ -436,7 +436,9 @@ Purchase _billedOrder({
   mrpTotal: 0,
   paidTotal: 0,
   status: OrderStatus.delivered,
+  paymentStatus: OrderPaymentStatus.paid,
   billAmount: billAmount,
+  billStatus: OrderPaymentStatus.paid,
   billDiscount: billDiscount,
 );
 
