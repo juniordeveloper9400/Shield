@@ -233,7 +233,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(DietitianScreen), findsOneWidget);
-    expect(find.text('Talk to a dietitian'), findsOneWidget);
     // Still inside the section, so its bar stays put.
     expect(find.byType(HealthBottomBar), findsOneWidget);
 

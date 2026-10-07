@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart' show FaIcon;
 
 import 'package:shield/data/neon/care_repository.dart';
 import 'package:shield/module/dietitian/dietitian.dart';
 import 'package:shield/module/dietitian/dietitian_screen.dart';
+import 'package:shield/phone.dart';
 
 const _dietitians = [
   Dietitian(
@@ -124,12 +126,36 @@ void main() {
   });
 
   group('the screen', () {
-    testWidgets('leads with what a consultation includes', (tester) async {
+    testWidgets('a WhatsApp button at the bottom right opens a dietitian chat',
+        (tester) async {
+      final opened = <Uri>[];
+      WhatsApp.opener = (uri) async {
+        opened.add(uri);
+        return true;
+      };
+      addTearDown(WhatsApp.resetForTest);
+
+      await pumpScreen(tester);
+      expect(find.byType(FloatingActionButton), findsOneWidget);
+      expect(find.byType(FaIcon), findsOneWidget);
+
+      await tester.tap(find.byType(FloatingActionButton));
+      await tester.pumpAndSettle();
+
+      expect(opened, hasLength(1));
+      expect(opened.single.host, 'wa.me');
+      expect(
+        opened.single.queryParameters['text'],
+        'Hi, I would like to talk to a dietitian.',
+      );
+    });
+
+    testWidgets('has no "Talk to a dietitian" intro card', (tester) async {
       await pumpScreen(tester);
 
-      expect(find.text('Talk to a dietitian'), findsOneWidget);
+      expect(find.text('Talk to a dietitian'), findsNothing);
       for (final line in DietitianDirectory.included) {
-        expect(find.text(line), findsOneWidget, reason: line);
+        expect(find.text(line), findsNothing, reason: line);
       }
     });
 
@@ -197,7 +223,6 @@ void main() {
     testWidgets('lays out on a narrow phone', (tester) async {
       await pumpScreen(tester, size: const Size(320, 3400));
 
-      expect(find.text('Talk to a dietitian'), findsOneWidget);
       expect(find.text(_dietitians.last.name), findsOneWidget);
     });
   });
