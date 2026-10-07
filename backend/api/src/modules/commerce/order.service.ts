@@ -1,17 +1,21 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   bill,
   billLine,
   cartLine,
+  chartOfAccount,
+  journalEntry,
+  journalLine,
   memberAddress,
   order,
   orderLine,
   orderReceipt,
   orderTrackStep,
   paymentMethod,
+  postingRule,
   prescription,
   prescriptionImage,
   prescriptionOrder,
@@ -602,6 +606,74 @@ export class OrderService {
    * endpoint's own trust boundary is "a valid staff session with the right
    * role", not an independent server-side OTP check.
    */
+  /**
+   * Posts a store's cash/GPay/wallet receipt against a shop order's bill to
+   * the ledger (migrations 0074–0076). The account mapping is the same
+   * `app.posting_rule` migration 0075's database functions read —
+   * reproduced here in TypeScript because order/bill collection lives in
+   * this service, not a database function. One entry per call, not per
+   * order: a cash payment and a later GPay payment on the same bill are two
+   * separate postings, each for what that call actually collected.
+   *
+   * Never blocks the real collection: any problem here (no store, no
+   * entity, an unconfigured posting rule) is swallowed, not thrown — the
+   * same tolerance migration 0075's own posting blocks use, since this is
+   * new, still-unreviewed infrastructure riding alongside working code
+   * that moves real money.
+   */
+  private async postOrderCollection(
+    tx: Database,
+    params: { orderId: number; orderCode: string; storeId: number | null; cash: number; gpay: number; wallet: number },
+  ) {
+    try {
+      if (!params.storeId) return;
+      const [store] = await tx.select({ entityId: shieldStore.entityId }).from(shieldStore).where(eq(shieldStore.id, params.storeId));
+      if (!store?.entityId) return;
+
+      const mapped = await tx
+        .select({ lineRole: postingRule.lineRole, accountId: chartOfAccount.id })
+        .from(postingRule)
+        .innerJoin(chartOfAccount, eq(chartOfAccount.code, postingRule.accountCode))
+        .where(and(eq(postingRule.event, 'order_collected'), inArray(postingRule.lineRole, ['cash_in', 'wallet_in', 'revenue'])));
+      const byRole: Record<string, number> = Object.fromEntries(mapped.map((a) => [a.lineRole, a.accountId]));
+      if (!byRole.cash_in || !byRole.wallet_in || !byRole.revenue) return;
+
+      // GPay has no line role of its own yet (see migration 0074's header on
+      // the activation's cash_in account) — folded into the same "received
+      // at store" account as cash until the accountant wants that split.
+      const received = params.cash + params.gpay;
+      const lines: { accountId: number; debit: string; credit: string }[] = [];
+      if (received > 0) lines.push({ accountId: byRole.cash_in, debit: received.toFixed(2), credit: '0' });
+      if (params.wallet > 0) lines.push({ accountId: byRole.wallet_in, debit: params.wallet.toFixed(2), credit: '0' });
+      const total = received + params.wallet;
+      if (total <= 0 || lines.length === 0) return;
+      lines.push({ accountId: byRole.revenue, debit: '0', credit: total.toFixed(2) });
+
+      const [entry] = await tx
+        .insert(journalEntry)
+        .values({
+          // Generated explicitly, not left to the column default: pg-mem's
+          // gen_random_uuid() mock reuses the same value across repeat
+          // inserts in one statement plan (the same limitation
+          // agent.e2e-spec.ts documents for the withdrawal functions), and
+          // a cash-then-GPay split on one order calls this twice.
+          id: randomUUID(),
+          entityId: store.entityId,
+          postedOn: new Date().toISOString().slice(0, 10),
+          sourceTable: 'bill',
+          sourceId: `${params.orderId}-${randomBytes(4).toString('hex')}`,
+          event: 'order_collected',
+          description: `Order ${params.orderCode} collected`,
+        })
+        .returning();
+      if (!entry) return;
+
+      await tx.insert(journalLine).values(lines.map((l) => ({ entryId: entry.id, accountId: l.accountId, debit: l.debit, credit: l.credit })));
+    } catch {
+      // Ledger posting must never block a real payment being recorded.
+    }
+  }
+
   async collectBillWithWallet(role: AdminRole, storeId: number | null, orderId: number) {
     const found = await this.getOwnedByStaffOrThrow(orderId, role, storeId);
 
@@ -663,6 +735,17 @@ export class OrderService {
         await tx.update(order).set({ paymentStatus: 'PAID', paidAt: new Date() }).where(eq(order.id, orderId));
       }
 
+      if (walletPaise > 0) {
+        await this.postOrderCollection(tx, {
+          orderId,
+          orderCode: found.code,
+          storeId: found.storeId,
+          cash: 0,
+          gpay: 0,
+          wallet: walletPaise / 100,
+        });
+      }
+
       return {
         ok: true as const,
         walletAmount: walletPaise / 100,
@@ -691,7 +774,7 @@ export class OrderService {
     orderId: number,
     dto: ReceiveBillPaymentDto,
   ) {
-    await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    const found = await this.getOwnedByStaffOrThrow(orderId, role, storeId);
 
     const [theBill] = await this.db.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
     if (!theBill) {
@@ -741,6 +824,17 @@ export class OrderService {
 
       if (settled) {
         await tx.update(order).set({ paymentStatus: 'PAID', paidAt: new Date() }).where(eq(order.id, orderId));
+      }
+
+      if (receivingPaise > 0) {
+        await this.postOrderCollection(tx, {
+          orderId,
+          orderCode: found.code,
+          storeId: found.storeId,
+          cash: cashPaise / 100,
+          gpay: gpayPaise / 100,
+          wallet: 0,
+        });
       }
 
       return {

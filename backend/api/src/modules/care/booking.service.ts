@@ -3,7 +3,10 @@ import { and, asc, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   appointment,
+  chartOfAccount,
   dietitian,
+  journalEntry,
+  journalLine,
   labBill,
   labBillLine,
   labBooking,
@@ -11,11 +14,13 @@ import {
   labBookingReport,
   labPackage,
   patient,
+  postingRule,
   shieldStore,
   users,
   wallet,
   walletEntry,
 } from '../../db/schema';
+import { randomUUID } from 'node:crypto';
 import type { AdminRole } from '../auth/session.types';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
 import type {
@@ -282,6 +287,57 @@ export class BookingService {
    * member's wallet first, up to what it actually holds, and treats the rest
    * as collected in cash in the same action.
    */
+  /**
+   * Posts a store's cash/wallet receipt against a lab bill to the ledger
+   * (migrations 0074–0076), mirroring OrderService.postOrderCollection —
+   * same `app.posting_rule` mapping, same tolerance: never blocks the real
+   * collection, since this is new, still-unreviewed infrastructure riding
+   * alongside working code that moves real money.
+   */
+  private async postLabBillCollection(
+    tx: Database,
+    params: { bookingId: number; storeId: number | null; cash: number; wallet: number },
+  ) {
+    try {
+      if (!params.storeId) return;
+      const [store] = await tx.select({ entityId: shieldStore.entityId }).from(shieldStore).where(eq(shieldStore.id, params.storeId));
+      if (!store?.entityId) return;
+
+      const mapped = await tx
+        .select({ lineRole: postingRule.lineRole, accountId: chartOfAccount.id })
+        .from(postingRule)
+        .innerJoin(chartOfAccount, eq(chartOfAccount.code, postingRule.accountCode))
+        .where(and(eq(postingRule.event, 'lab_bill_collected'), inArray(postingRule.lineRole, ['cash_in', 'wallet_in', 'revenue'])));
+      const byRole: Record<string, number> = Object.fromEntries(mapped.map((a) => [a.lineRole, a.accountId]));
+      if (!byRole.cash_in || !byRole.wallet_in || !byRole.revenue) return;
+
+      const lines: { accountId: number; debit: string; credit: string }[] = [];
+      if (params.cash > 0) lines.push({ accountId: byRole.cash_in, debit: params.cash.toFixed(2), credit: '0' });
+      if (params.wallet > 0) lines.push({ accountId: byRole.wallet_in, debit: params.wallet.toFixed(2), credit: '0' });
+      const total = params.cash + params.wallet;
+      if (total <= 0 || lines.length === 0) return;
+      lines.push({ accountId: byRole.revenue, debit: '0', credit: total.toFixed(2) });
+
+      const [entry] = await tx
+        .insert(journalEntry)
+        .values({
+          id: randomUUID(),
+          entityId: store.entityId,
+          postedOn: new Date().toISOString().slice(0, 10),
+          sourceTable: 'lab_bill',
+          sourceId: String(params.bookingId),
+          event: 'lab_bill_collected',
+          description: `Lab booking LB-${params.bookingId.toString().padStart(4, '0')} collected`,
+        })
+        .returning();
+      if (!entry) return;
+
+      await tx.insert(journalLine).values(lines.map((l) => ({ entryId: entry.id, accountId: l.accountId, debit: l.debit, credit: l.credit })));
+    } catch {
+      // Ledger posting must never block a real payment being recorded.
+    }
+  }
+
   async collectLabBillWithWallet(role: AdminRole, storeId: number | null, bookingId: number) {
     const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
 
@@ -328,6 +384,13 @@ export class BookingService {
           updatedAt: new Date(),
         })
         .where(eq(labBill.id, theBill.id));
+
+      await this.postLabBillCollection(tx, {
+        bookingId: found.id,
+        storeId: found.storeId,
+        cash: cashAmount,
+        wallet: walletAmount,
+      });
 
       return { ok: true as const, walletAmount, cashAmount };
     });
