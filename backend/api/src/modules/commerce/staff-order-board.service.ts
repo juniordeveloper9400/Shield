@@ -91,6 +91,7 @@ export interface StaffOrderCard {
   billAmount: number;
   billDiscount: number;
   billId: string;
+  billNumber: string;
   billWalletCollected: number;
   billCashCollected: number;
   billGpayCollected: number;
@@ -149,6 +150,7 @@ export class StaffOrderBoardService {
         placedAt: order.placedAt,
         billId: bill.id,
         billImage: bill.image,
+        billNumber: bill.billNumber,
         billedAt: bill.sentAt,
         billAmount: bill.amount,
         billDiscount: bill.discountAmount,
@@ -296,6 +298,7 @@ export class StaffOrderBoardService {
         billAmount: numberOf(r.billAmount),
         billDiscount: numberOf(r.billDiscount),
         billId: r.billId == null ? '' : String(r.billId),
+        billNumber: r.billNumber ?? '',
         billWalletCollected: numberOf(r.billWalletCollected),
         billCashCollected: numberOf(r.billCashCollected),
         billGpayCollected: numberOf(r.billGpayCollected),

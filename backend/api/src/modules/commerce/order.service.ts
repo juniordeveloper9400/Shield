@@ -555,6 +555,7 @@ export class OrderService {
       // image a caller sent earlier.
       const image = dto.image ? dto.image : existing?.image ?? '';
       const amount = dto.amount ?? existing?.amount ?? '0';
+      const billNumber = dto.billNumber ? dto.billNumber : existing?.billNumber ?? null;
 
       let billId: number;
       if (existing) {
@@ -564,6 +565,7 @@ export class OrderService {
             image,
             amount: amount.toString(),
             discountAmount: dto.discountAmount.toString(),
+            billNumber,
             sentAt: new Date(),
             updatedAt: new Date(),
           })
@@ -572,7 +574,7 @@ export class OrderService {
       } else {
         const [created] = await tx
           .insert(bill)
-          .values({ orderId, image, amount: amount.toString(), discountAmount: dto.discountAmount.toString() })
+          .values({ orderId, image, amount: amount.toString(), discountAmount: dto.discountAmount.toString(), billNumber })
           .returning({ id: bill.id });
         billId = created.id;
       }
@@ -1015,21 +1017,38 @@ export class OrderService {
     return this.db.transaction(async (tx) => {
       const now = new Date();
       const [existing] = await tx.select().from(bill).where(eq(bill.orderId, orderId)).limit(1);
-      // A blank image keeps whatever picture the bill already had.
+      // A blank image keeps whatever picture the bill already had; the bill
+      // number follows the same rule.
       const image = dto.image ? dto.image : existing?.image ?? '';
+      const billNumber = dto.billNumber ? dto.billNumber : existing?.billNumber ?? null;
       let billId: number;
       let sentAt: Date;
       if (existing) {
         await tx
           .update(bill)
-          .set({ image, amount: dto.amount.toString(), discountAmount: dto.discountAmount.toString(), sentAt: now, updatedAt: now })
+          .set({
+            image,
+            amount: dto.amount.toString(),
+            discountAmount: dto.discountAmount.toString(),
+            billNumber,
+            sentAt: now,
+            updatedAt: now,
+          })
           .where(eq(bill.id, existing.id));
         billId = existing.id;
         sentAt = now;
       } else {
         const [created] = await tx
           .insert(bill)
-          .values({ orderId, image, amount: dto.amount.toString(), discountAmount: dto.discountAmount.toString(), sentAt: now, updatedAt: now })
+          .values({
+            orderId,
+            image,
+            amount: dto.amount.toString(),
+            discountAmount: dto.discountAmount.toString(),
+            billNumber,
+            sentAt: now,
+            updatedAt: now,
+          })
           .returning({ id: bill.id, sentAt: bill.sentAt });
         billId = created.id;
         sentAt = created.sentAt;

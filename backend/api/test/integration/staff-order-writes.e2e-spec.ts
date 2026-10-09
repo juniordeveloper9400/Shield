@@ -263,6 +263,49 @@ describe('Staff order writes (e2e)', () => {
       expect(lines.map((l) => l.name).sort()).toEqual(['Vitamin C', 'Zinc']);
     });
 
+    it('records the counter\'s own bill number, and keeps it on a re-price that sends none', async () => {
+      // A fresh order of its own — the other tests in this block reuse and
+      // reprice storeAOrderId's bill, so a shared one here would race them.
+      const [member] = await db
+        .insert(users)
+        .values({ phone: '9000000051', name: 'Bill Number Member', firebaseUid: 'member-bill-number-1' })
+        .returning();
+      const [bareOrder] = await db
+        .insert(order)
+        .values({
+          memberId: member.id,
+          code: 'SHD-W-BILLNUM',
+          storeId: storeAId,
+          placedOn: new Date().toISOString().slice(0, 10),
+          itemCount: 1,
+          mrpTotal: '100.00',
+          paidTotal: '0.00',
+        })
+        .returning();
+
+      await request(http())
+        .put(`/v1/staff/orders/${bareOrder.id}/invoice`)
+        .set('Authorization', `Bearer ${pharmacyA}`)
+        .send({ amount: 100, lines: [{ name: 'Vitamin C', unitPrice: 100, qty: 1 }], billNumber: 'BK-4521' })
+        .expect(200);
+      const [first] = await db.select().from(bill).where(eq(bill.orderId, bareOrder.id));
+      expect(first.billNumber).toBe('BK-4521');
+
+      await request(http())
+        .put(`/v1/staff/orders/${bareOrder.id}/invoice`)
+        .set('Authorization', `Bearer ${pharmacyA}`)
+        .send({ amount: 120, lines: [{ name: 'Vitamin C', unitPrice: 120, qty: 1 }] })
+        .expect(200);
+      const [second] = await db.select().from(bill).where(eq(bill.orderId, bareOrder.id));
+      expect(second.billNumber).toBe('BK-4521');
+
+      const card = await request(http())
+        .get(`/v1/staff/order-board/${bareOrder.id}`)
+        .set('Authorization', `Bearer ${pharmacyA}`)
+        .expect(200);
+      expect(card.body.billNumber).toBe('BK-4521');
+    });
+
     it('a picture-only send keeps the priced amount and the discount', async () => {
       await request(http())
         .put(`/v1/staff/orders/${storeAOrderId}/picture`)

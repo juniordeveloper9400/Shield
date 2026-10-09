@@ -165,6 +165,9 @@ export const bill =appSchema.table('bill', {
    *  knocked off to reach `amount`, which is already net of this. `0` for a
    *  bill with no discount. */
   discountAmount: numeric('discount_amount', { precision: 12, scale: 2 }).notNull().default('0'),
+  /** Migration 0087 — the counter's own receipt-book / POS number for this
+   *  bill, free text, typed by staff. Null until they add one. */
+  billNumber: text('bill_number'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

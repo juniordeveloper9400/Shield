@@ -380,6 +380,7 @@ export function createTestDb() {
       wallet_collected numeric(12,2) NOT NULL DEFAULT 0,
       cash_collected numeric(12,2) NOT NULL DEFAULT 0,
       gpay_collected numeric(12,2) NOT NULL DEFAULT 0,
+      bill_number text,
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 

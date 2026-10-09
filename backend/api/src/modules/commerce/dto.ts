@@ -49,6 +49,10 @@ export const sendBillSchema = z.object({
   image: z.string().default(''),
   amount: z.number().nonnegative().optional(),
   discountAmount: z.number().nonnegative().default(0),
+  // The counter's own receipt-book / POS number — free text, optional. Same
+  // "blank keeps whatever is already on record" rule as `image` below, so a
+  // line-items-only re-price never blanks out a number typed in earlier.
+  billNumber: z.string().default(''),
   lines: z
     .array(
       z.object({
@@ -117,6 +121,10 @@ export const sendInvoiceSchema = z.object({
   image: z.string().default(''),
   amount: z.number().nonnegative().max(10000000),
   discountAmount: z.number().nonnegative().max(10000000).default(0),
+  // The counter's own receipt-book / POS number — free text, optional. Blank
+  // keeps whatever is already on record, same rule `image` already follows,
+  // so a line-items-only re-price never blanks out a number typed in earlier.
+  billNumber: z.string().max(100).default(''),
   lines: z
     .array(
       z.object({
