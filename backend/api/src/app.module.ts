@@ -18,6 +18,7 @@ import { AgentModule } from './modules/agent/agent.module';
 import { InvestorModule } from './modules/investor/investor.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
+import { OtpModule } from './modules/otp/otp.module';
 import { HealthController } from './modules/health/health.controller';
 import { AuthGuard } from './common/guards/auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -51,6 +52,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     InvestorModule,
     AdminModule,
     LedgerModule,
+    OtpModule,
   ],
   controllers: [HealthController],
   providers: [

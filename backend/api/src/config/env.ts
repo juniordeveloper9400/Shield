@@ -51,6 +51,12 @@ const envSchema = z
     // other integration here that degrades gracefully unset: leaving it
     // blank just means Sentry stays disabled, not a boot failure.
     SENTRY_DSN: z.string().optional(),
+    // MSG91's master Auth Key — server-only, never the browser-safe
+    // `tokenAuth` widget token (see modules/otp/otp.service.ts). Used to
+    // confirm a widget access-token server-side before anything trusts it.
+    // Optional in dev/test the same way Firebase is; required in production
+    // below, since the staff-side wallet-collection OTP depends on it.
+    MSG91_AUTH_KEY: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.NODE_ENV === 'production') {
@@ -63,6 +69,9 @@ const envSchema = z
           path: ['FIREBASE_ADMIN_CREDENTIALS'],
           message: 'FIREBASE_ADMIN_CREDENTIALS or FIREBASE_ADMIN_CREDENTIALS_FILE is required in production',
         });
+      }
+      if (!val.MSG91_AUTH_KEY) {
+        ctx.addIssue({ code: 'custom', path: ['MSG91_AUTH_KEY'], message: 'required in production' });
       }
     }
   });
