@@ -57,6 +57,15 @@ const envSchema = z
     // Optional in dev/test the same way Firebase is; required in production
     // below, since the staff-side wallet-collection OTP depends on it.
     MSG91_AUTH_KEY: z.string().optional(),
+    // The same widgetId/tokenAuth pair shieldweb's own VITE_MSG91_WIDGET_ID/
+    // VITE_MSG91_TOKEN_AUTH use (or a separate widget, if a dedicated
+    // throttle bucket for the agent app is wanted) — see
+    // modules/otp/otp.service.ts's sendMsg91Otp/verifyMsg91Otp. Optional
+    // everywhere for now: this backs a newly-added flow (agent-registration
+    // phone verification) that still needs its first live confirmation
+    // before it's load-bearing enough to fail a production boot over.
+    MSG91_WIDGET_ID: z.string().optional(),
+    MSG91_WIDGET_TOKEN_AUTH: z.string().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.NODE_ENV === 'production') {

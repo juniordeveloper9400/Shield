@@ -2,7 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../../config/env';
 
-const VERIFY_URL = 'https://control.msg91.com/api/v5/widget/verifyAccessToken';
+const VERIFY_ACCESS_TOKEN_URL = 'https://control.msg91.com/api/v5/widget/verifyAccessToken';
+const SEND_OTP_URL = 'https://control.msg91.com/api/v5/widget/sendOtp';
+const VERIFY_OTP_URL = 'https://control.msg91.com/api/v5/widget/verifyOtp';
 
 export interface VerifyMsg91Result {
   ok: boolean;
@@ -48,7 +50,7 @@ export class OtpService {
 
     let body: unknown;
     try {
-      const res = await fetch(VERIFY_URL, {
+      const res = await fetch(VERIFY_ACCESS_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ authkey, 'access-token': accessToken }),
@@ -82,6 +84,87 @@ export class OtpService {
 
     return { ok: true };
   }
+
+  /**
+   * Sends an SMS OTP to [phone] via MSG91's Widget — the server-side
+   * counterpart of the same widget shieldweb's JS runs, used here because
+   * the agent-registration screen that needs this (`AgentPhoneVerifier` in
+   * the Flutter app) has no browser to run that JS in. Uses `widgetId` +
+   * the browser-safe scoped `tokenAuth` (never the master Auth Key) —
+   * exactly what the widget itself sends, just from this server instead of
+   * a page.
+   *
+   * STATUS: this specific REST shape (`widgetId`/`tokenAuth`/`identifier`
+   * in the body, mirroring the JS widget's own internal calls) has not
+   * been confirmed against a real MSG91 response — unlike
+   * `verifyMsg91AccessToken`'s endpoint, which came straight off this
+   * project's own dashboard. Confirm the first real send/verify from the
+   * agent registration screen and adjust `isFailureShape`/this method if
+   * MSG91's actual response doesn't match.
+   */
+  async sendMsg91Otp(phone: string): Promise<VerifyMsg91Result> {
+    const widgetId = this.config.get('MSG91_WIDGET_ID', { infer: true });
+    const tokenAuth = this.config.get('MSG91_WIDGET_TOKEN_AUTH', { infer: true });
+    if (!widgetId || !tokenAuth) {
+      return { ok: false, reason: 'OTP sending is not configured on the server yet.' };
+    }
+
+    let body: unknown;
+    try {
+      const res = await fetch(SEND_OTP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ widgetId, tokenAuth, identifier: toMsg91Identifier(phone) }),
+      });
+      body = await res.json().catch(() => null);
+      this.logger.log(`MSG91 sendOtp response: ${JSON.stringify(body)}`);
+      if (!res.ok || isFailureShape(body)) {
+        return { ok: false, reason: 'Could not send the code. Try again in a moment.' };
+      }
+    } catch (error) {
+      this.logger.error('MSG91 sendOtp request failed', error instanceof Error ? error.stack : error);
+      return { ok: false, reason: 'Could not reach MSG91 to send the code.' };
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Checks [code] against the last [sendMsg91Otp] call for [phone] — see
+   * that method's own doc for the same unconfirmed-shape caveat.
+   */
+  async verifyMsg91Otp(phone: string, code: string): Promise<VerifyMsg91Result> {
+    const widgetId = this.config.get('MSG91_WIDGET_ID', { infer: true });
+    const tokenAuth = this.config.get('MSG91_WIDGET_TOKEN_AUTH', { infer: true });
+    if (!widgetId || !tokenAuth) {
+      return { ok: false, reason: 'OTP verification is not configured on the server yet.' };
+    }
+
+    let body: unknown;
+    try {
+      const res = await fetch(VERIFY_OTP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ widgetId, tokenAuth, identifier: toMsg91Identifier(phone), otp: code }),
+      });
+      body = await res.json().catch(() => null);
+      this.logger.log(`MSG91 verifyOtp response: ${JSON.stringify(body)}`);
+      if (!res.ok || isFailureShape(body)) {
+        return { ok: false, reason: 'That code is not right or has expired.' };
+      }
+    } catch (error) {
+      this.logger.error('MSG91 verifyOtp request failed', error instanceof Error ? error.stack : error);
+      return { ok: false, reason: 'Could not reach MSG91 to verify the code.' };
+    }
+
+    return { ok: true };
+  }
+}
+
+/** MSG91 identifiers are plain digits, country-code-prefixed, no `+`. */
+export function toMsg91Identifier(phone: string): string {
+  const digits = lastTenDigits(phone);
+  return `91${digits}`;
 }
 
 /** The last 10 digits, country code and punctuation stripped — Indian

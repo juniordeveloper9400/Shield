@@ -3,8 +3,10 @@
 The app code is done. Member sign-in (`AuthService`) runs Firebase Phone Auth
 only — there is no demo or offline fallback, so a `Firebase.initializeApp()`
 failure at launch is fatal by design (see `lib/main.dart`). The agent
-registration screen keeps a separate placeholder `123456` step; that is
-unrelated to member sign-in.
+registration screen's own phone-ownership check (`AgentPhoneVerifier`) no
+longer uses Firebase at all — it calls `backend/api`'s MSG91-backed
+`/v1/agent/otp/*` endpoints instead (see `agent_phone_verifier.dart` and
+`backend/api/src/modules/otp/`); this document only covers member sign-in.
 
 **Project:** `shield-zabnix`
 **Android package / iOS bundle id:** `com.zabnix.shield`

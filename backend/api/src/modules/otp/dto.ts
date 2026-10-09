@@ -11,3 +11,18 @@ export const verifyMsg91Schema = z.object({
 });
 
 export type VerifyMsg91Dto = z.infer<typeof verifyMsg91Schema>;
+
+/** The phone to send a code to — the recruit's number on the agent
+ *  registration form, not the recruiting agent's own. */
+export const sendAgentOtpSchema = z.object({
+  phone: z.string().min(10).max(15),
+});
+
+export type SendAgentOtpDto = z.infer<typeof sendAgentOtpSchema>;
+
+export const verifyAgentOtpSchema = z.object({
+  phone: z.string().min(10).max(15),
+  code: z.string().min(4).max(6),
+});
+
+export type VerifyAgentOtpDto = z.infer<typeof verifyAgentOtpSchema>;

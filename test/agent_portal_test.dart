@@ -24,7 +24,7 @@ import 'package:shield/module/home/refer_earn_card.dart';
 import 'package:shield/screens/home_screen.dart';
 
 import 'support/agent_geo_seed_fixture.dart';
-import 'support/fake_auth_gateway.dart';
+import 'support/fake_agent_otp_transport.dart';
 
 void main() {
   final national = AgentDirectory.national;
@@ -34,9 +34,10 @@ void main() {
   setUp(() {
     AuthService.instance.reset();
     service.reset();
-    // The registration form runs real Firebase phone verification; give it an
-    // in-memory gateway so tests can drive it with FakeAuthGateway.code.
-    AgentPhoneVerifier.instance.useGateway(FakeAuthGateway());
+    // The registration form runs a real MSG91-backed backend call; give it
+    // an in-memory transport so tests can drive it with
+    // FakeAgentOtpTransport.code (same value as AuthService.demoOtp).
+    AgentPhoneVerifier.instance.useTransport(FakeAgentOtpTransport());
     // The app now starts with an empty hierarchy (the real tables load from
     // Neon); these tests want the full fixture tree to exercise placement.
     AgentGeo.instance.useHierarchy(seedGeo);

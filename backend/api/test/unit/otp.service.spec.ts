@@ -1,4 +1,4 @@
-import { isFailureShape, lastTenDigitsMatch, verifiedPhoneFrom } from '../../src/modules/otp/otp.service';
+import { isFailureShape, lastTenDigitsMatch, toMsg91Identifier, verifiedPhoneFrom } from '../../src/modules/otp/otp.service';
 
 describe('lastTenDigitsMatch', () => {
   it('matches however each side carries the +91 country code', () => {
@@ -44,5 +44,13 @@ describe('verifiedPhoneFrom', () => {
     expect(verifiedPhoneFrom({ type: 'success' })).toBeNull();
     expect(verifiedPhoneFrom({ message: 'ok' })).toBeNull();
     expect(verifiedPhoneFrom(null)).toBeNull();
+  });
+});
+
+describe('toMsg91Identifier', () => {
+  it('prefixes the bare last-10-digits with 91, however the input is formatted', () => {
+    expect(toMsg91Identifier('9876543210')).toBe('919876543210');
+    expect(toMsg91Identifier('+91 98765 43210')).toBe('919876543210');
+    expect(toMsg91Identifier('919876543210')).toBe('919876543210');
   });
 });
