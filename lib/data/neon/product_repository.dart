@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../module/product/product_detail_content.dart';
 import '../../module/home/product_showcase.dart';
 import 'neon_http.dart';
@@ -21,6 +23,14 @@ class ProductRepository {
 
   /// Whether a read would actually reach the database.
   bool get isAvailable => NeonHttp.isConfigured;
+
+  /// Test-only seam: a widget test can't reach a real Neon database, so this
+  /// swaps in fixture data for [detailFor] instead of exercising the network
+  /// path — the same shape of hook the other repositories' overrides use.
+  /// Reset to null in `tearDown`.
+  @visibleForTesting
+  static Future<ProductDetailData?> Function(String productUuid)?
+  detailOverride;
 
   /// Every `ACTIVE` product, newest first, mapped to the UI [Product] model.
   ///
@@ -72,6 +82,10 @@ class ProductRepository {
   /// content. Array columns are wrapped as JSON strings by `to_json(...)` so
   /// they survive Neon's raw-text output.
   Future<ProductDetailData?> detailFor(String productUuid) async {
+    final override = detailOverride;
+    if (override != null) {
+      return override(productUuid);
+    }
     if (!NeonHttp.isConfigured || productUuid.isEmpty) {
       return null;
     }
