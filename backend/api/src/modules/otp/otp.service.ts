@@ -94,13 +94,13 @@ export class OtpService {
    * exactly what the widget itself sends, just from this server instead of
    * a page.
    *
-   * STATUS: this specific REST shape (`widgetId`/`tokenAuth`/`identifier`
-   * in the body, mirroring the JS widget's own internal calls) has not
-   * been confirmed against a real MSG91 response — unlike
-   * `verifyMsg91AccessToken`'s endpoint, which came straight off this
-   * project's own dashboard. Confirm the first real send/verify from the
-   * agent registration screen and adjust `isFailureShape`/this method if
-   * MSG91's actual response doesn't match.
+   * CONFIRMED against a real MSG91 response (a live member sign-in on
+   * 2026-10-09) — this REST shape (`widgetId`/`tokenAuth`/`identifier` in
+   * the body) works. One thing the live test surfaced: this widget's own
+   * dashboard-configured "OTP Length" (4 digits) did not match the actual
+   * SMS sent (6 digits) — `sendAgentOtpSchema`/`verifyMemberOtpSchema` etc.
+   * already accept 4–6 digit codes for exactly this reason, so nothing
+   * needed changing here.
    */
   async sendMsg91Otp(phone: string): Promise<VerifyMsg91Result> {
     const widgetId = this.config.get('MSG91_WIDGET_ID', { infer: true });
@@ -131,7 +131,7 @@ export class OtpService {
 
   /**
    * Checks [code] against the last [sendMsg91Otp] call for [phone] — see
-   * that method's own doc for the same unconfirmed-shape caveat.
+   * that method's own doc; confirmed working the same way.
    */
   async verifyMsg91Otp(phone: string, code: string): Promise<VerifyMsg91Result> {
     const widgetId = this.config.get('MSG91_WIDGET_ID', { infer: true });
@@ -180,8 +180,10 @@ export function lastTenDigitsMatch(a: string, b: string): boolean {
 }
 
 /** `{type: 'error' | 'failure', ...}` is the shape MSG91's own widget
- *  callbacks use elsewhere; checked defensively since this endpoint's own
- *  response shape was never confirmed against a real call. */
+ *  callbacks use elsewhere; confirmed correct for sendOtp/verifyOtp against
+ *  a real call (see sendMsg91Otp's own doc). verifyAccessToken's response
+ *  shape is a separate, still-unconfirmed endpoint — this same check is
+ *  kept defensive there too. */
 export function isFailureShape(body: unknown): boolean {
   if (!body || typeof body !== 'object') return false;
   const type = (body as Record<string, unknown>).type;
