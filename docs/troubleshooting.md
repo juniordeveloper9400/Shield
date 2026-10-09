@@ -4,9 +4,9 @@
 
 Run `dart run tool/gen_neon_secret.dart` after changing `.env`. On Windows, do not rely on a raw `--dart-define` for a connection string containing `&`; the build wrapper generates the ignored Dart secret instead. Check the launch log for the Neon configured/endpoint status.
 
-## Firebase phone auth is unavailable
+## OTP sign-in reports "not configured" / "unavailable"
 
-Confirm `android/app/google-services.json` exists, the package id is `com.zabnix.shield`, Phone sign-in is enabled, and the SHA-1/SHA-256 fingerprints for the signing key are registered. Re-download the Firebase config after adding fingerprints. See `FIREBASE_SETUP.md`.
+Member sign-in and agent registration's phone check both run through `backend/api`'s MSG91-backed endpoints now, not Firebase. "Not configured" means `MSG91_WIDGET_ID`/`MSG91_WIDGET_TOKEN_AUTH` are unset on the backend; "unavailable" means the app couldn't reach the backend at all — confirm `BACKEND_API_BASE_URL` was set at build time (`--dart-define=BACKEND_API_BASE_URL=...`) and the backend is actually reachable. See `backend/api/src/modules/otp/otp.service.ts`.
 
 ## Admin console is empty
 

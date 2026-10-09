@@ -41,7 +41,7 @@ const List<_Section> _sections = [
   _Section('1. Information we collect', [
     _Sub('Information you give us:'),
     _Bullets([
-      'Your name and mobile number, verified by a one-time code (OTP) sent via Firebase Phone Authentication.',
+      'Your name and mobile number, verified by a one-time code (OTP) sent via our SMS verification provider (MSG91).',
       'Delivery addresses, and details of any patients you add to your account (name, age, gender, relation, address, phone number).',
       'Prescription images you upload, and any medicine or lab-test orders you place.',
       'Payment-related information: your Sahakar 360 wallet balance and transaction history, and — for a manual bank transfer — the payment reference and receipt you submit. We do not collect or store your card, UPI PIN, or net-banking credentials; those are handled entirely by your bank or payment app.',
@@ -68,7 +68,7 @@ const List<_Section> _sections = [
     _Bullets([
       'Sahakar 360 branch and pharmacy staff, so they can prepare, price, and dispatch your order or prescription.',
       'Delivery personnel, so your order can be handed to the right person at the right address.',
-      'Service providers who help us run the app — for example, Firebase (Google) for phone verification, and our hosting and database providers — bound to use your information only to provide that service.',
+      'Service providers who help us run the app — for example, MSG91 for phone verification, and our hosting and database providers — bound to use your information only to provide that service.',
       'Law enforcement or regulators, only where required by law.',
     ]),
   ]),

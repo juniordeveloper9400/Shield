@@ -63,38 +63,42 @@ enum OtpError {
   /// The verification session lapsed before the code was entered.
   codeExpired,
 
-  /// Firebase is rate-limiting this device or number.
+  /// MSG91 (or the backend's own `AuthThrottle`) is rate-limiting this
+  /// device or number.
   tooManyRequests,
 
-  /// The app's own cap — four code requests inside an hour — has been hit.
-  /// Unlike [tooManyRequests] this never reaches Firebase; it keeps the
-  /// device well inside Firebase's harsher, opaque block. See
-  /// [AuthService.sendCooldownRemaining] for the wait.
+  /// Unused by the current MSG91-backed transports — kept because the UI
+  /// still switches over it. Historical: the app's own on-device cap (four
+  /// code requests inside an hour), removed once Firebase's own
+  /// `too-many-requests` block turned out harsher and this just piled a
+  /// redundant hour-long lock on top of it. See [AuthService.sendCooldownRemaining].
   throttled,
 
-  /// The project's SMS allowance is used up.
+  /// Unused by the current MSG91-backed transports — kept because the UI
+  /// still switches over it. Historical: Firebase Phone Auth's project-wide
+  /// SMS allowance being used up, which MSG91 has no direct equivalent of
+  /// surfaced through this enum today.
   quotaExceeded,
 
-  /// The send or verify call could not reach Firebase.
+  /// The send or verify call could not reach the backend.
   network,
 
-  /// Firebase never called back — usually the reCAPTCHA "verifying you're not
-  /// a robot" fallback opened and stalled, so `codeSent` never fired and no
-  /// SMS went out. The flow is abandoned rather than left spinning forever.
+  /// The backend call took too long to answer. The flow is abandoned rather
+  /// than left spinning forever.
   timeout,
 
-  /// Firebase Phone Auth is not available on this build — usually
-  /// `Firebase.initializeApp()` failed at launch because the current platform
-  /// has no configured options (only Android is wired; see FIREBASE_SETUP.md).
+  /// OTP sending/verification is unavailable right now — the backend is
+  /// unreachable, or `BACKEND_API_BASE_URL` was not configured at build
+  /// time (see `BackendHttp.isConfigured`).
   unavailable,
 
-  /// The Firebase project itself is not set up to send this SMS and retrying
-  /// will not help: the Phone provider is disabled, the project is still on
-  /// the no-billing Spark plan, or this build's SHA fingerprints are not
-  /// registered. See FIREBASE_SETUP.md.
+  /// The backend reports MSG91 itself is not configured
+  /// (`MSG91_WIDGET_ID`/`MSG91_WIDGET_TOKEN_AUTH` unset — see
+  /// `otp.service.ts`'s own doc) — a server-side setup gap, not something
+  /// retrying fixes from here.
   configError,
 
-  /// Anything Firebase reported that does not map to one of the above.
+  /// Anything the backend reported that does not map to one of the above.
   unknown,
 }
 

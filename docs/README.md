@@ -50,7 +50,6 @@ Each application folder contains its own PRD, FRD, TRD, ERD, tech-stack, and UI/
 - Admin routes: `shieldweb/src/App.tsx`
 - App schema: `backend/db/app_schema.sql`
 - Public schema snapshot: `backend/db/SCHEMA.md`
-- Firebase setup: `FIREBASE_SETUP.md`
 
 ## Product name
 

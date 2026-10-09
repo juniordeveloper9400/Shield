@@ -25,9 +25,9 @@ Check connectivity without changing data:
 dart run tool/neon_ping.dart
 ```
 
-## Firebase phone auth
+## OTP verification
 
-Follow `FIREBASE_SETUP.md`. The Android application id is `com.zabnix.shield`; `android/app/google-services.json` must be present for Android Firebase wiring. Enable Phone sign-in and register the fingerprints for the key that signs the build. Never add an Admin SDK service-account key to this app.
+Member sign-in and agent-registration's phone check both run through `backend/api`'s MSG91-backed `/v1/*/auth/otp/*` endpoints (see `backend/api/src/modules/otp/`) — no Firebase setup is needed in this app any more. Set `MSG91_WIDGET_ID`/`MSG91_WIDGET_TOKEN_AUTH` in `backend/api`'s own env (see its `.env.example`) for OTP sending to actually work; left unset, the endpoints report themselves unconfigured instead of crashing.
 
 ## Run the Flutter app
 

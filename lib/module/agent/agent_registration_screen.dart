@@ -434,8 +434,8 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
       _error = null;
     });
 
-    // Real Firebase Phone Auth, on a secondary app so it never touches the
-    // recruiter's own session — same SMS code the member sign-in sends.
+    // Real MSG91-backed SMS verification, mediated entirely through
+    // backend/api — see AgentPhoneVerifier.
     final failure = await AgentPhoneVerifier.instance
         .sendCode('+91${_phone.text.trim()}');
     if (!mounted) {
@@ -618,8 +618,9 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
     }
   }
 
-  /// The raw Firebase code, appended in parentheses when there is one — turns
-  /// a support screenshot into a precise pointer at the console setting to fix.
+  /// The backend's own `reason` string, appended in parentheses when there
+  /// is one — turns a support screenshot into a precise pointer at what to
+  /// fix.
   String _diagnosticSuffix() {
     final code = AgentPhoneVerifier.instance.lastDiagnostic;
     return code == null || code.isEmpty ? '' : '\n($code)';

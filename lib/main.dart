@@ -1,12 +1,10 @@
 import 'dart:async';
 
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'data/backend/backend_http.dart';
 import 'data/neon/neon_http.dart';
-import 'firebase_options.dart';
 import 'module/auth/auth_service.dart';
 import 'module/auth/persona_gate.dart';
 import 'module/agent/agent_geo.dart';
@@ -27,7 +25,7 @@ Future<void> main() async {
   // Crash and error reporting. Safe to call unconditionally — the SDK's own
   // documented behavior is to stay disabled when `dsn` is empty, the same
   // "no-op until configured" contract every other optional integration in
-  // this app already follows (NeonHttp, Firebase). Build with
+  // this app already follows (NeonHttp). Build with
   // --dart-define=SENTRY_DSN=... (or via --dart-define-from-file=.env) to
   // turn it on; see docs/sentry.md.
   await SentryFlutter.init((options) {
@@ -41,25 +39,6 @@ Future<void> main() async {
     // plan's event quota from error events.
     options.tracesSampleRate = 0;
   });
-
-  // Neither member sign-in (AuthService) nor agent-registration's phone
-  // check (AgentPhoneVerifier) use Firebase any more — both now run through
-  // backend/api's MSG91-backed OTP endpoints instead (see
-  // backend/api/src/modules/otp/). Nothing in this app currently reads from
-  // Firebase, so this init is effectively a no-op kept only in case a
-  // future feature needs it again; see FIREBASE_SETUP.md for the historical
-  // setup notes and AgentWithdrawalsPage's unrelated, still-Firebase-backed
-  // flow in shieldweb (a different app) for the one place Firebase is still
-  // live across this project.
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (error, stack) {
-    debugPrint('Firebase init failed (harmless — nothing in this app reads '
-        'from it): $error');
-    debugPrintStack(stackTrace: stack);
-  }
 
   // Bring back a member who has signed in before, so they land in the app
   // rather than on the login screen. Best-effort — a failure here must not
