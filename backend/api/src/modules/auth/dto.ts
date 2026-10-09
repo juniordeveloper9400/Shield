@@ -29,8 +29,35 @@ export const phoneLookupSchema = z.object({
   phone: z.string().regex(/^[6-9]\d{9}$/, 'phone must be a 10-digit Indian mobile number'),
 });
 
+/** 10-digit Indian mobile — the shared shape every MSG91-backed member-auth
+ *  route below validates its [phone] against. */
+const indianPhone = z.string().regex(/^[6-9]\d{9}$/, 'phone must be a 10-digit Indian mobile number');
+
+/** Sends the member-login OTP — see auth.service.ts sendMemberOtp. */
+export const sendMemberOtpSchema = z.object({
+  phone: indianPhone,
+});
+
+/** Member sign-in: the phone already has an app.users row — see
+ *  auth.service.ts exchangeMemberPhone. */
+export const verifyMemberOtpSchema = z.object({
+  phone: indianPhone,
+  code: z.string().min(4).max(6),
+});
+
+/** Member self-registration by phone — see auth.service.ts
+ *  registerMemberByPhone. */
+export const registerMemberOtpSchema = z.object({
+  phone: indianPhone,
+  code: z.string().min(4).max(6),
+  name: z.string().min(1),
+});
+
 export type IdTokenDto = z.infer<typeof idTokenSchema>;
 export type RegisterMemberDto = z.infer<typeof registerMemberSchema>;
 export type StaffLoginDto = z.infer<typeof staffLoginSchema>;
 export type RefreshTokenDto = z.infer<typeof refreshTokenSchema>;
 export type PhoneLookupDto = z.infer<typeof phoneLookupSchema>;
+export type SendMemberOtpDto = z.infer<typeof sendMemberOtpSchema>;
+export type VerifyMemberOtpDto = z.infer<typeof verifyMemberOtpSchema>;
+export type RegisterMemberOtpDto = z.infer<typeof registerMemberOtpSchema>;

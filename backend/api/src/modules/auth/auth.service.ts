@@ -7,6 +7,7 @@ import { adminUser, users } from '../../db/schema';
 import { authSession, refreshToken } from '../../db/schema/backend-auth';
 import { TokenService, REFRESH_TOKEN_TTL_MS } from './token.service';
 import { FIREBASE_VERIFIER, type FirebaseVerifier, type IssuedTokens, type RequestSubject } from './session.types';
+import { OtpService, type VerifyMsg91Result } from '../otp/otp.service';
 
 export interface RequestContext {
   userAgent?: string;
@@ -32,6 +33,7 @@ export class AuthService {
     @Inject(DRIZZLE) private readonly db: Database,
     @Inject(FIREBASE_VERIFIER) private readonly firebase: FirebaseVerifier,
     private readonly tokens: TokenService,
+    private readonly otp: OtpService,
   ) {}
 
   /**
@@ -141,6 +143,91 @@ export class AuthService {
         .insert(users)
         .values({ phone: '', name, firebaseUid: decoded.uid })
         .returning();
+      memberId = created.id;
+    }
+
+    return this.createSession('MEMBER', String(memberId), undefined, undefined, ctx);
+  }
+
+  /**
+   * Sends the member-login OTP via MSG91 — the replacement for the client
+   * driving Firebase Phone Auth on its own. See OtpService.sendMsg91Otp for
+   * the MSG91 side; this exists mainly so the controller has a thin,
+   * unauthenticated route to call before any login decision is made.
+   */
+  async sendMemberOtp(phone: string): Promise<VerifyMsg91Result> {
+    return this.otp.sendMsg91Otp(phone);
+  }
+
+  /**
+   * Member login, MSG91-backed: verifies [code] against the last
+   * [sendMemberOtp] for [phone] via MSG91, then issues a session for the
+   * matching app.users row — same "we do NOT create rows here" contract as
+   * [exchangeMemberToken]. Keyed on the bare phone number instead of a
+   * Firebase UID: MSG91 has no notion of a stable per-identity id the way
+   * Firebase does, and `users.phone` is already the real unique identity
+   * (`member_phone_key`) every Firebase row was normalized down to anyway.
+   *
+   * Throws the same 401 shape whether the code was wrong/expired *or*
+   * MSG91 itself is unreachable/unconfigured — deliberately not
+   * distinguished to the client beyond OtpService's own `reason` string,
+   * since neither case is something retrying the same code fixes.
+   */
+  async exchangeMemberPhone(phone: string, code: string, ctx: RequestContext): Promise<IssuedTokens> {
+    const result = await this.otp.verifyMsg91Otp(phone, code);
+    if (!result.ok) {
+      throw new UnauthorizedException({
+        error: { code: 'UNAUTHORIZED', message: result.reason ?? 'That code is not right or has expired.' },
+      });
+    }
+
+    const [member] = await this.db
+      .select()
+      .from(users)
+      .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!member) {
+      throw new NotFoundException({
+        error: { code: 'NOT_FOUND', message: 'No member registered for this number yet' },
+      });
+    }
+
+    return this.createSession('MEMBER', String(member.id), undefined, undefined, ctx);
+  }
+
+  /**
+   * Member self-registration, MSG91-backed: verifies [code] the same way
+   * [exchangeMemberPhone] does, then finds-or-creates the app.users row by
+   * [phone] — the same reactivation rules [registerMember] applies (a live
+   * account keeps its own name; a reactivated deleted one, or a row with no
+   * usable name, takes the incoming [name]), just keyed on phone alone
+   * since there is no firebaseUid to look up by on this path.
+   */
+  async registerMemberByPhone(phone: string, code: string, name: string, ctx: RequestContext): Promise<IssuedTokens> {
+    const result = await this.otp.verifyMsg91Otp(phone, code);
+    if (!result.ok) {
+      throw new UnauthorizedException({
+        error: { code: 'UNAUTHORIZED', message: result.reason ?? 'That code is not right or has expired.' },
+      });
+    }
+
+    // Not filtered to isNull(deletedAt) — see registerMember's own doc on
+    // why a deleted account's row (still holding the UNIQUE phone) must be
+    // reactivated here rather than hit as a raw insert conflict.
+    const [byPhone] = await this.db.select().from(users).where(eq(users.phone, phone)).limit(1);
+
+    let memberId: number;
+    if (byPhone) {
+      const wasDeleted = byPhone.deletedAt !== null;
+      const hasUsableName = !wasDeleted && byPhone.name.trim() !== '';
+      await this.db
+        .update(users)
+        .set({ deletedAt: null, name: hasUsableName ? byPhone.name : name })
+        .where(eq(users.id, byPhone.id));
+      memberId = byPhone.id;
+    } else {
+      const [created] = await this.db.insert(users).values({ phone, name }).returning();
       memberId = created.id;
     }
 

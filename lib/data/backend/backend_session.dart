@@ -2,9 +2,13 @@ import 'package:flutter/foundation.dart';
 
 import 'backend_http.dart';
 
-/// The Firebase→backend session bridge: after the app finishes its own
-/// Firebase phone-auth flow, this exchanges the resulting ID token for a
-/// backend-issued session, registering a first-time identity when needed.
+/// The member session bridge to `backend/api`: issues, restores, and
+/// revokes the backend-issued access/refresh token pair. [setTokens] adopts
+/// a pair the MSG91-backed OTP flow already minted directly;
+/// [signInWithFirebaseToken] is the older path that instead exchanges a
+/// Firebase ID token for one — kept for `BackendSession.signInWithFirebaseToken`'s
+/// own tests and any caller still on that flow, though `auth_service.dart`'s
+/// member login no longer is.
 ///
 /// This is additive alongside the existing phone-keyed Neon writes
 /// (`MemberRepository.instance.upsertOnSignIn`) — see `auth_service.dart`'s
@@ -103,6 +107,15 @@ class BackendSession {
       BackendHttp.log('restore failed', error: error);
       return false;
     }
+  }
+
+  /// Adopts a token pair the caller already minted some other way — the
+  /// MSG91-backed member OTP flow's `/otp/verify` and `/otp/register` return
+  /// a session directly in the same call that confirms the code, so there
+  /// is no separate exchange step to run the way [signInWithFirebaseToken]
+  /// needs one. See `AuthService`'s `BackendMemberOtpTransport`.
+  Future<void> setTokens({required String accessToken, required String refreshToken}) {
+    return _http.setSession(accessToken: accessToken, refreshToken: refreshToken);
   }
 
   /// Revokes the backend session and clears local tokens. Never throws —

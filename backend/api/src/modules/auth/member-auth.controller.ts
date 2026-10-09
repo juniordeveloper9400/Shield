@@ -10,11 +10,17 @@ import {
   idTokenSchema,
   phoneLookupSchema,
   refreshTokenSchema,
+  registerMemberOtpSchema,
   registerMemberSchema,
+  sendMemberOtpSchema,
+  verifyMemberOtpSchema,
   type IdTokenDto,
   type PhoneLookupDto,
   type RefreshTokenDto,
   type RegisterMemberDto,
+  type RegisterMemberOtpDto,
+  type SendMemberOtpDto,
+  type VerifyMemberOtpDto,
 } from './dto';
 import type { RequestSubject } from './session.types';
 
@@ -44,6 +50,36 @@ export class MemberAuthController {
   @HttpCode(HttpStatus.OK)
   async register(@Body(new ZodValidationPipe(registerMemberSchema)) body: RegisterMemberDto, @Req() req: Request) {
     return this.auth.registerMember(body.idToken, body.name, { userAgent: req.headers['user-agent'], ip: req.ip });
+  }
+
+  @Public()
+  @AuthThrottle()
+  @Post('otp/send')
+  @HttpCode(HttpStatus.OK)
+  async sendOtp(@Body(new ZodValidationPipe(sendMemberOtpSchema)) body: SendMemberOtpDto) {
+    return this.auth.sendMemberOtp(body.phone);
+  }
+
+  /** Sign-in path — the client's own `phone-lookup` check decides this vs.
+   *  `otp/register` *before* the OTP is even sent; see AuthService's doc on
+   *  why there is no idToken-style retry fallback between the two here. */
+  @Public()
+  @AuthThrottle()
+  @Post('otp/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyOtp(@Body(new ZodValidationPipe(verifyMemberOtpSchema)) body: VerifyMemberOtpDto, @Req() req: Request) {
+    return this.auth.exchangeMemberPhone(body.phone, body.code, { userAgent: req.headers['user-agent'], ip: req.ip });
+  }
+
+  @Public()
+  @AuthThrottle()
+  @Post('otp/register')
+  @HttpCode(HttpStatus.OK)
+  async registerOtp(@Body(new ZodValidationPipe(registerMemberOtpSchema)) body: RegisterMemberOtpDto, @Req() req: Request) {
+    return this.auth.registerMemberByPhone(body.phone, body.code, body.name, {
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
   }
 
   @Public()

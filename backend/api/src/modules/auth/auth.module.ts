@@ -8,9 +8,10 @@ import { StaffAuthController } from './staff-auth.controller';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { FIREBASE_VERIFIER } from './session.types';
+import { OtpModule } from '../otp/otp.module';
 
 @Module({
-  imports: [JwtModule.register({})],
+  imports: [JwtModule.register({}), OtpModule],
   controllers: [MemberAuthController, StaffAuthController],
   providers: [
     AuthService,

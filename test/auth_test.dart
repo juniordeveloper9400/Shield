@@ -13,13 +13,13 @@ import 'package:shield/screens/app_shell.dart';
 import 'package:shield/screens/root_screen.dart';
 import 'package:shield/screens/splash_screen.dart';
 
-import 'support/fake_auth_gateway.dart';
+import 'support/fake_member_otp_transport.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     AuthService.instance.reset();
-    AuthService.instance.useGateway(FakeAuthGateway());
+    AuthService.instance.useTransport(FakeMemberOtpTransport());
     // No member exists yet, so every number typed on the login screen is a new
     // user's. (The existing-member paths are in login_new_user_flow_test.dart.)
     AuthService.instance.useMemberLookup(
@@ -133,7 +133,7 @@ void main() {
       expect(auth.pendingPhone, phone);
       expect(auth.isSignedIn, isFalse, reason: 'the code is not verified yet');
 
-      expect(await auth.verifyOtp(FakeAuthGateway.code), isNull);
+      expect(await auth.verifyOtp(FakeMemberOtpTransport.code), isNull);
       expect(auth.isSignedIn, isTrue);
       expect(auth.currentUser.value?.name, name);
       expect(auth.currentUser.value?.phone, phone);
@@ -152,13 +152,13 @@ void main() {
         reason: 'a mistyped code must not force the number to be re-entered',
       );
 
-      expect(await auth.verifyOtp(FakeAuthGateway.code), isNull);
+      expect(await auth.verifyOtp(FakeMemberOtpTransport.code), isNull);
       expect(auth.isSignedIn, isTrue);
     });
 
     test('verifying without a request is refused', () async {
       expect(
-        await AuthService.instance.verifyOtp(FakeAuthGateway.code),
+        await AuthService.instance.verifyOtp(FakeMemberOtpTransport.code),
         OtpError.noPendingRequest,
       );
       expect(AuthService.instance.isSignedIn, isFalse);
@@ -188,7 +188,7 @@ void main() {
         name: '  Asha Nair  ',
         phone: ' $phone ',
       );
-      await AuthService.instance.verifyOtp(FakeAuthGateway.code);
+      await AuthService.instance.verifyOtp(FakeMemberOtpTransport.code);
 
       expect(AuthService.instance.currentUser.value?.name, name);
       expect(AuthService.instance.currentUser.value?.phone, phone);
@@ -204,11 +204,8 @@ void main() {
       expect(auth.hasPendingOtp, isFalse);
     });
 
-    test('deleting the account ends the session and deletes the Firebase '
-        'identity outright when Firebase allows it', () async {
+    test('deleting the account ends the session', () async {
       final auth = AuthService.instance;
-      final gateway = FakeAuthGateway();
-      auth.useGateway(gateway);
       auth.signInAs();
       expect(auth.isSignedIn, isTrue);
 
@@ -216,44 +213,14 @@ void main() {
 
       expect(auth.isSignedIn, isFalse);
       expect(auth.hasPendingOtp, isFalse);
-      expect(
-        gateway.signOutCalled,
-        isFalse,
-        reason: 'deleteFirebaseUser succeeded — no fallback sign-out needed',
-      );
-    });
-
-    test('deleting the account still ends the session when Firebase refuses '
-        '(requires-recent-login)', () async {
-      final auth = AuthService.instance;
-      final gateway = FakeAuthGateway()..refuseDelete = true;
-      auth.useGateway(gateway);
-      auth.signInAs();
-
-      await auth.deleteAccount();
-
-      expect(
-        auth.isSignedIn,
-        isFalse,
-        reason: 'the account is already gone in app.users regardless',
-      );
-      expect(
-        gateway.signOutCalled,
-        isTrue,
-        reason: 'falls back to a plain sign-out when the identity itself '
-            'cannot be deleted outright',
-      );
     });
 
     test('deleting with nobody signed in is a no-op', () async {
       final auth = AuthService.instance;
-      final gateway = FakeAuthGateway();
-      auth.useGateway(gateway);
 
       await auth.deleteAccount();
 
       expect(auth.isSignedIn, isFalse);
-      expect(gateway.signOutCalled, isFalse);
     });
 
     test('going back from the code step drops the pending request', () async {
@@ -263,7 +230,7 @@ void main() {
 
       expect(auth.hasPendingOtp, isFalse);
       expect(
-        await auth.verifyOtp(FakeAuthGateway.code),
+        await auth.verifyOtp(FakeMemberOtpTransport.code),
         OtpError.noPendingRequest,
       );
     });
@@ -365,7 +332,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await requestCode(tester);
-      await enterCode(tester, FakeAuthGateway.code);
+      await enterCode(tester, FakeMemberOtpTransport.code);
 
       expect(AuthService.instance.isSignedIn, isTrue);
       expect(find.byType(LoginScreen), findsNothing);
@@ -438,7 +405,7 @@ void main() {
       await pumpLogin(tester);
       await requestCode(tester);
 
-      await enterCode(tester, FakeAuthGateway.code);
+      await enterCode(tester, FakeMemberOtpTransport.code);
 
       expect(AuthService.instance.isSignedIn, isTrue);
       expect(AuthService.instance.currentUser.value?.name, name);
@@ -518,7 +485,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await requestCode(tester);
-      await enterCode(tester, FakeAuthGateway.code);
+      await enterCode(tester, FakeMemberOtpTransport.code);
 
       expect(find.byType(LoginScreen), findsNothing);
       expect(AuthService.instance.isSignedIn, isTrue);

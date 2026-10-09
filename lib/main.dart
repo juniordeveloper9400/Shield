@@ -42,29 +42,31 @@ Future<void> main() async {
     options.tracesSampleRate = 0;
   });
 
-  // Member sign-in is Firebase Phone Auth with no demo or offline fallback.
-  // Bring Firebase up before the app starts; if the current platform has no
-  // configured options (Android and web are wired today — see
-  // FIREBASE_SETUP.md) the app still starts so the UI is reachable, and the
-  // sign-in step reports that verification is unavailable instead of
-  // white-screening here.
+  // Neither member sign-in (AuthService) nor agent-registration's phone
+  // check (AgentPhoneVerifier) use Firebase any more — both now run through
+  // backend/api's MSG91-backed OTP endpoints instead (see
+  // backend/api/src/modules/otp/). Nothing in this app currently reads from
+  // Firebase, so this init is effectively a no-op kept only in case a
+  // future feature needs it again; see FIREBASE_SETUP.md for the historical
+  // setup notes and AgentWithdrawalsPage's unrelated, still-Firebase-backed
+  // flow in shieldweb (a different app) for the one place Firebase is still
+  // live across this project.
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
   } catch (error, stack) {
-    debugPrint('Firebase init failed — member sign-in will be unavailable: '
-        '$error');
+    debugPrint('Firebase init failed (harmless — nothing in this app reads '
+        'from it): $error');
     debugPrintStack(stackTrace: stack);
   }
 
   // Bring back a member who has signed in before, so they land in the app
   // rather than on the login screen. Best-effort — a failure here must not
-  // hold up launch. As of the backend/api foundation slice this also tries
-  // to restore (or freshly bridge) a backend-issued session alongside the
-  // existing Neon one — see AuthService.restoreSession/_afterSignIn's own
-  // docs. No screen reads from backend/api yet, so this is currently inert
-  // beyond holding a token in memory.
+  // hold up launch. Restores purely from the backend-issued session
+  // persisted on an earlier run (see AuthService.restoreSession's own doc) —
+  // this is now a hard dependency on `backend/api` being configured and
+  // reachable, unlike the old Firebase+Neon-direct restore it replaces.
   try {
     await AuthService.instance.restoreSession();
   } catch (error) {

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:shield/module/account/account_screen.dart';
 import 'package:shield/module/auth/auth_service.dart';
-
-import 'support/fake_auth_gateway.dart';
 
 void main() {
   Future<void> pump(WidgetTester tester, Widget child) async {
@@ -27,6 +26,11 @@ void main() {
   }
 
   setUp(() {
+    // deleteAccount now ends with BackendSession.signOut(), which persists
+    // the cleared session via shared_preferences — needs a mock channel the
+    // same way auth_test.dart/login_new_user_flow_test.dart already set one
+    // up, or the call hangs waiting on a real platform channel.
+    SharedPreferences.setMockInitialValues({});
     AuthService.instance.reset();
   });
   tearDown(() {
@@ -98,7 +102,6 @@ void main() {
   testWidgets('confirming deletes the account and the gate returns to login', (
     tester,
   ) async {
-    AuthService.instance.useGateway(FakeAuthGateway());
     await pumpToSettings(tester);
 
     await tester.tap(find.text('Delete Account'));

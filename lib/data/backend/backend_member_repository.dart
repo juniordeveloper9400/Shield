@@ -62,6 +62,32 @@ class BackendMemberRepository {
     }
   }
 
+  /// The signed-in member's own name and phone, straight from `app.users`
+  /// via `GET /v1/member/me` — what [AuthService.restoreSession] reads back
+  /// once a persisted backend session (see `BackendSession.restore`) is
+  /// live again, now that there is no Firebase `currentUser` left to ask
+  /// instead. Null when there is no live backend session
+  /// ([BackendHttp.isSignedIn] false), the backend could not be reached, or
+  /// the account itself no longer exists (deleted, or a session surviving
+  /// past an account deletion elsewhere) — any of which the caller treats
+  /// as "nothing to restore", never a guess.
+  Future<MemberProfile?> currentProfile() async {
+    if (!_http.isSignedIn) {
+      return null;
+    }
+    try {
+      final result = await _http.request('GET', '/v1/member/me') as Map<String, dynamic>;
+      final phone = result['phone'] as String?;
+      if (phone == null || phone.isEmpty) {
+        return null;
+      }
+      return MemberProfile(name: (result['name'] as String?) ?? '', phone: phone);
+    } catch (error) {
+      BackendHttp.log('currentProfile failed', error: error);
+      return null;
+    }
+  }
+
   /// Permanently deletes the signed-in member's account server-side — see
   /// `identity.service.ts`'s `deleteAccount` for exactly what gets cleared
   /// (soft-deleted, personal fields wiped, every live session revoked).
@@ -81,4 +107,15 @@ class BackendMemberRepository {
       return false;
     }
   }
+}
+
+/// The handful of `GET /v1/member/me` fields [BackendMemberRepository.currentProfile]
+/// actually needs — not the whole profile the member-facing account screen
+/// reads via its own, separate repository call.
+@immutable
+class MemberProfile {
+  final String name;
+  final String phone;
+
+  const MemberProfile({required this.name, required this.phone});
 }
