@@ -35,6 +35,22 @@ class _HomeProductTabsState extends State<HomeProductTabs> {
     HomeTab.deals: 'No deals picked yet.',
   };
 
+  /// Each tab's own background — distinguishes the three at a glance, the
+  /// whole panel (chip row included), not just the product cards.
+  static const Map<HomeTab, Color> _background = {
+    HomeTab.offerOfTheDay: AppColors.offerTint,
+    HomeTab.popular: AppColors.panelGreen,
+    HomeTab.deals: AppColors.panelCream,
+  };
+
+  /// Each tab's accent — the selected chip's fill and the row title's
+  /// colour, tuned to read clearly against that tab's [_background].
+  static const Map<HomeTab, Color> _accent = {
+    HomeTab.offerOfTheDay: AppColors.brandBlue,
+    HomeTab.popular: AppColors.brandGreenDeep,
+    HomeTab.deals: AppColors.goldAccent,
+  };
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -42,9 +58,11 @@ class _HomeProductTabsState extends State<HomeProductTabs> {
       builder: (context, _) {
         final catalogue = CatalogueService.instance;
         final products = catalogue.homeTabProducts(_selected);
+        final background = _background[_selected]!;
+        final accent = _accent[_selected]!;
 
         return Container(
-          color: AppColors.white,
+          color: background,
           padding: const EdgeInsets.only(top: 12, bottom: 4),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,7 +79,8 @@ class _HomeProductTabsState extends State<HomeProductTabs> {
                           key: ValueKey('home-tab-${tab.name}'),
                           label: Text(_labels[tab]!),
                           selected: _selected == tab,
-                          selectedColor: AppColors.brandBlue,
+                          selectedColor: _accent[tab]!,
+                          backgroundColor: AppColors.white,
                           labelStyle: TextStyle(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w700,
@@ -88,6 +107,8 @@ class _HomeProductTabsState extends State<HomeProductTabs> {
                   title: _labels[_selected]!,
                   subtitle: _subtitles[_selected],
                   products: products,
+                  backgroundColor: background,
+                  titleColor: accent,
                 ),
             ],
           ),
