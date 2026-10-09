@@ -18,10 +18,12 @@ import {
   shieldStore,
   users,
   wallet,
+  walletCard,
   walletEntry,
 } from '../../db/schema';
 import { randomUUID } from 'node:crypto';
 import type { AdminRole } from '../auth/session.types';
+import { availablePlanAllowance, toIsoDate } from '../wallet/wallet-month';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
 import type {
   BookAppointmentDto,
@@ -338,6 +340,36 @@ export class BookingService {
     }
   }
 
+  /**
+   * What a member's wallet is actually good for right now: their balance,
+   * further capped by what's left of this month's Health Pass allowance —
+   * same calculation `OrderService.availableWalletCapForMember` uses,
+   * ported from shieldweb's `walletMonth.ts` so a lab bill collection never
+   * disagrees with the preview staff were already shown. A member with no
+   * approved wallet card isn't on Health Pass, so nothing caps them beyond
+   * their own balance.
+   */
+  private async availableWalletCapForMember(tx: Database, walletId: number, balance: number): Promise<number> {
+    const cards = await tx
+      .select({ amount: walletCard.amount, bonus: walletCard.bonus, rechargedExtra: walletCard.rechargedExtra, issuedOn: walletCard.issuedOn })
+      .from(walletCard)
+      .where(and(eq(walletCard.walletId, walletId), eq(walletCard.status, 'APPROVED')));
+    if (cards.length === 0) {
+      return balance;
+    }
+    const entries = await tx
+      .select({ kind: walletEntry.kind, amount: walletEntry.amount, occurredOn: walletEntry.occurredOn, createdAt: walletEntry.createdAt })
+      .from(walletEntry)
+      .where(eq(walletEntry.walletId, walletId))
+      .orderBy(walletEntry.createdAt, walletEntry.id);
+    return availablePlanAllowance(
+      cards.map((c) => ({ loaded: Number(c.amount) + Number(c.bonus) + Number(c.rechargedExtra), issuedOn: toIsoDate(c.issuedOn) })),
+      entries.map((e) => ({ kind: e.kind, amount: Number(e.amount), occurredOn: toIsoDate(e.occurredOn) })),
+      new Date(),
+      balance,
+    );
+  }
+
   async collectLabBillWithWallet(role: AdminRole, storeId: number | null, bookingId: number) {
     const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
 
@@ -356,7 +388,12 @@ export class BookingService {
     return this.db.transaction(async (tx) => {
       const [theWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
       const balance = theWallet ? Number(theWallet.balance) : 0;
-      const walletAmount = Math.min(balance, billAmount);
+      // Capped at this month's Health Pass allowance, not just the raw
+      // balance — see OrderService.collectBillWithWallet's identical fix for
+      // why: without it, a member who has already used up this month's
+      // allowance could still have their whole wallet balance drawn here.
+      const walletCap = theWallet ? await this.availableWalletCapForMember(tx, theWallet.id, balance) : 0;
+      const walletAmount = Math.min(walletCap, billAmount);
       const cashAmount = billAmount - walletAmount;
 
       if (theWallet && walletAmount > 0) {

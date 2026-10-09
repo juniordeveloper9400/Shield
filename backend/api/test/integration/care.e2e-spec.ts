@@ -12,18 +12,22 @@ import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { eq } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import {
   adminUser,
   dietitian,
   labBill,
+  labBooking,
   labBookingReport,
   labCategory,
   labPackage,
   labPackageExtraCategory,
+  membershipTier,
   patient,
   shieldStore,
   users,
   wallet,
+  walletCard,
   walletEntry,
 } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
@@ -400,6 +404,53 @@ describe('Care Services (e2e)', () => {
       .set('Authorization', `Bearer ${staffAccessToken}`)
       .expect(200);
     expect(again.body).toEqual({ ok: false, reason: 'This bill is already paid.' });
+  });
+
+  it("caps the lab-bill wallet draw at this month's Health Pass allowance, not just the raw balance — same fix as order.service.ts's collectBillWithWallet", async () => {
+    const [freshMember] = await db
+      .insert(users)
+      .values({ phone: '9000000099', name: 'Allowance Cap Lab Member', firebaseUid: `member-lab-allowance-cap-${randomUUID()}`, registrationCompletedAt: new Date() })
+      .returning();
+    const [freshWallet] = await db.insert(wallet).values({ memberId: freshMember.id, balance: '54034.00' }).returning();
+    const existingTier = await db.select().from(membershipTier).where(eq(membershipTier.kind, 'PLATINUM')).limit(1);
+    const tier =
+      existingTier[0] ??
+      (await db.insert(membershipTier).values({ kind: 'PLATINUM', name: 'Platinum', bin: '900099', bonusRate: '0.1', validityMonths: 12 }).returning())[0];
+    await db.insert(walletCard).values({
+      walletId: freshWallet.id,
+      tierId: tier.id,
+      amount: '108000.00', // releases 9000/month
+      bonus: '0',
+      status: 'APPROVED',
+      issuedOn: new Date().toISOString().slice(0, 10),
+      rechargedOn: new Date().toISOString().slice(0, 10),
+      expiresOn: '2099-01-01',
+    });
+    // This month's whole allowance is already spent elsewhere.
+    await db.insert(walletEntry).values({
+      walletId: freshWallet.id,
+      kind: 'SPEND',
+      label: 'Earlier order this month',
+      amount: '-9000.00',
+      occurredOn: new Date().toISOString().slice(0, 10),
+    });
+    const [freshBooking] = await db
+      .insert(labBooking)
+      .values({ memberId: freshMember.id, labPackageId, storeId: labStoreId, patientsCount: 1, unitPrice: '1000', totalPrice: '1000' })
+      .returning();
+    await db.insert(labBill).values({ labBookingId: freshBooking.id, image: '', amount: '1000' });
+
+    const res = await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${freshBooking.id}/collect-wallet`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+
+    // Allowance is exhausted — nothing comes from the wallet despite its
+    // ₹54,034 balance; the whole bill is left owed in cash instead.
+    expect(res.body).toEqual({ ok: true, walletAmount: 0, cashAmount: 1000 });
+    const [theBill] = await db.select().from(labBill).where(eq(labBill.labBookingId, freshBooking.id));
+    expect(Number(theBill.walletCollected)).toBe(0);
+    expect(await db.select().from(walletEntry).where(eq(walletEntry.labBookingId, freshBooking.id))).toEqual([]);
   });
 
   it("a store's own LAB_TECHNICIAN sees and manages only that store's bookings, in full detail", async () => {

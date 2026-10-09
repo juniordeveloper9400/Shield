@@ -22,10 +22,12 @@ import {
   paymentMethod,
   product,
   productCategory,
+  membershipTier,
   referral,
   shieldStore,
   users,
   wallet,
+  walletCard,
   walletEntry,
 } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
@@ -635,6 +637,104 @@ describe('Commerce (e2e)', () => {
 
       const [walletAfter] = await db.select().from(wallet).where(eq(wallet.memberId, memberId));
       expect(Number(walletAfter.balance)).toBe(1500); // 2000 - 500
+    });
+
+    describe("capping the wallet draw at this month's Health Pass allowance, not just the raw balance", () => {
+      /** A fresh member with an approved Health Pass card (one month of it
+       *  already released, since it's issued today), a ₹54,034 wallet
+       *  balance (the real figure this bug was found against), and a billed
+       *  order of [billAmount] ready to collect. */
+      async function freshMemberWithCard(monthlyRelease: number, billAmount: number) {
+        const [member] = await db
+          .insert(users)
+          .values({
+            phone: `9200${String(++freshPhoneSeq).padStart(6, '0')}`,
+            name: 'Allowance Cap Member',
+            firebaseUid: `member-allowance-cap-${randomUUID()}`,
+            registrationCompletedAt: new Date(),
+          })
+          .returning();
+        const [memberWallet] = await db.insert(wallet).values({ memberId: member.id, balance: '54034.00' }).returning();
+        const existingTier = await db.select().from(membershipTier).where(eq(membershipTier.kind, 'PLATINUM')).limit(1);
+        const tier =
+          existingTier[0] ??
+          (
+            await db
+              .insert(membershipTier)
+              .values({ kind: 'PLATINUM', name: 'Platinum', bin: String(900000 + freshPhoneSeq), bonusRate: '0.1', validityMonths: 12 })
+              .returning()
+          )[0];
+        await db.insert(walletCard).values({
+          walletId: memberWallet.id,
+          tierId: tier.id,
+          amount: (monthlyRelease * 12).toString(),
+          bonus: '0',
+          status: 'APPROVED',
+          issuedOn: new Date().toISOString().slice(0, 10),
+          rechargedOn: new Date().toISOString().slice(0, 10),
+          expiresOn: '2099-01-01',
+        });
+        const [storeA] = await db.select({ id: shieldStore.id }).from(shieldStore).where(eq(shieldStore.code, 'SHD-A'));
+        const [theOrder] = await db
+          .insert(order)
+          .values({
+            memberId: member.id,
+            code: `ACAP-${randomUUID().slice(0, 8)}`,
+            storeId: storeA.id,
+            itemCount: 1,
+            placedOn: new Date().toISOString().slice(0, 10),
+          })
+          .returning();
+        await db.insert(bill).values({ orderId: theOrder.id, image: 'data:image/png;base64,AAAA', amount: billAmount.toString() });
+        return { orderId: theOrder.id, walletId: memberWallet.id };
+      }
+
+      it('draws only what is left of the allowance, leaving the rest in cash, even though the raw balance covers the whole bill', async () => {
+        const { orderId, walletId } = await freshMemberWithCard(9000, 1000);
+        // The member has already spent this month's whole allowance elsewhere.
+        await db.insert(walletEntry).values({
+          walletId,
+          kind: 'SPEND',
+          label: 'Earlier order this month',
+          amount: '-9000.00',
+          occurredOn: new Date().toISOString().slice(0, 10),
+        });
+
+        const res = await request(app.getHttpServer())
+          .patch(`/v1/staff/orders/${orderId}/collect-wallet`)
+          .set('Authorization', `Bearer ${storeAStaffToken}`)
+          .expect(200);
+
+        // Allowance is exhausted — nothing comes from the wallet despite its
+        // ₹54,034 balance; the whole bill is left owed in cash instead.
+        expect(res.body).toEqual({ ok: true, walletAmount: 0, cashAmount: 1000, settled: false });
+        const [theBill] = await db.select().from(bill).where(eq(bill.orderId, orderId));
+        expect(Number(theBill.walletCollected)).toBe(0);
+        expect(await db.select().from(walletEntry).where(eq(walletEntry.orderId, orderId))).toEqual([]);
+      });
+
+      it('still draws from the wallet, up to what the allowance leaves, when some of it is unspent', async () => {
+        const { orderId } = await freshMemberWithCard(9000, 3000); // nothing spent yet this month
+
+        const res = await request(app.getHttpServer())
+          .patch(`/v1/staff/orders/${orderId}/collect-wallet`)
+          .set('Authorization', `Bearer ${storeAStaffToken}`)
+          .expect(200);
+
+        expect(res.body).toEqual({ ok: true, walletAmount: 3000, cashAmount: 0, settled: true });
+      });
+
+      it('is not capped at all for a member with no Health Pass card — their own balance is the only limit', async () => {
+        const { orderId: plainOrderId, memberId } = await freshBilledOrder(2000);
+        await db.insert(wallet).values({ memberId, balance: '5000.00' });
+
+        const res = await request(app.getHttpServer())
+          .patch(`/v1/staff/orders/${plainOrderId}/collect-wallet`)
+          .set('Authorization', `Bearer ${storeAStaffToken}`)
+          .expect(200);
+
+        expect(res.body).toEqual({ ok: true, walletAmount: 2000, cashAmount: 0, settled: true });
+      });
     });
 
     it("scopes bill collection to the order's own store, same as every other staff order action", async () => {
