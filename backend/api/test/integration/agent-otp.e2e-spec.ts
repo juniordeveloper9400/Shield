@@ -103,4 +103,32 @@ describe('Agent-registration OTP (e2e)', () => {
       .expect(200);
     expect(res.body).toEqual({ ok: false, reason: 'OTP verification is not configured on the server yet.' });
   });
+
+  // The MSG91-Widget-access-token path — a client (a WebView on native)
+  // that ran MSG91's own JS widget instead of asking this backend to send
+  // the code. Uses MSG91_AUTH_KEY (unset in this test env, same as
+  // otp.e2e-spec.ts), so this exercises the same unconfigured path.
+  it('rejects an unauthenticated verify-widget', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/agent/otp/verify-widget')
+      .send({ accessToken: 'whatever', expectedPhone: '9876543210' })
+      .expect(401);
+  });
+
+  it('rejects a malformed verify-widget body', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/agent/otp/verify-widget')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ accessToken: '' })
+      .expect(400);
+  });
+
+  it('reports verify-widget as unconfigured rather than crashing when MSG91_AUTH_KEY is unset', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/agent/otp/verify-widget')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ accessToken: 'some-jwt', expectedPhone: '9876543210' })
+      .expect(200);
+    expect(res.body).toEqual({ ok: false, reason: 'OTP verification is not configured on the server yet.' });
+  });
 });

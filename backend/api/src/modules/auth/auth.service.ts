@@ -235,6 +235,79 @@ export class AuthService {
   }
 
   /**
+   * Member login, MSG91 Widget-backed: the client already ran MSG91's own
+   * JS widget (in a browser, or a WebView on native) and got back a signed
+   * access-token proving it holds [phone] — this verifies that token
+   * server-side via `verifyMsg91AccessToken` (the one MSG91 endpoint
+   * actually confirmed from the dashboard's own docs) and issues a session,
+   * same contract as [exchangeMemberPhone]. This is the path native apps
+   * use instead of [exchangeMemberPhone]/[sendMemberOtp]: MSG91's Widget
+   * has no real server-to-server "send" — see otp.service.ts's own doc on
+   * why `sendMsg91Otp`/`verifyMsg91Otp` turned out not to be a supported
+   * flow at all.
+   */
+  async exchangeMemberWidgetToken(accessToken: string, phone: string, ctx: RequestContext): Promise<IssuedTokens> {
+    const result = await this.otp.verifyMsg91AccessToken(accessToken, phone);
+    if (!result.ok) {
+      throw new UnauthorizedException({
+        error: { code: 'UNAUTHORIZED', message: result.reason ?? 'That code is not right or has expired.' },
+      });
+    }
+
+    const [member] = await this.db
+      .select()
+      .from(users)
+      .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!member) {
+      throw new NotFoundException({
+        error: { code: 'NOT_FOUND', message: 'No member registered for this number yet' },
+      });
+    }
+
+    return this.createSession('MEMBER', String(member.id), undefined, undefined, ctx);
+  }
+
+  /**
+   * Member self-registration, MSG91 Widget-backed — see
+   * [exchangeMemberWidgetToken] for the access-token verification and
+   * [registerMemberByPhone] for the identical find-or-create/reactivation
+   * rules this otherwise follows.
+   */
+  async registerMemberByWidgetToken(
+    accessToken: string,
+    phone: string,
+    name: string,
+    ctx: RequestContext,
+  ): Promise<IssuedTokens> {
+    const result = await this.otp.verifyMsg91AccessToken(accessToken, phone);
+    if (!result.ok) {
+      throw new UnauthorizedException({
+        error: { code: 'UNAUTHORIZED', message: result.reason ?? 'That code is not right or has expired.' },
+      });
+    }
+
+    const [byPhone] = await this.db.select().from(users).where(eq(users.phone, phone)).limit(1);
+
+    let memberId: number;
+    if (byPhone) {
+      const wasDeleted = byPhone.deletedAt !== null;
+      const hasUsableName = !wasDeleted && byPhone.name.trim() !== '';
+      await this.db
+        .update(users)
+        .set({ deletedAt: null, name: hasUsableName ? byPhone.name : name })
+        .where(eq(users.id, byPhone.id));
+      memberId = byPhone.id;
+    } else {
+      const [created] = await this.db.insert(users).values({ phone, name }).returning();
+      memberId = created.id;
+    }
+
+    return this.createSession('MEMBER', String(memberId), undefined, undefined, ctx);
+  }
+
+  /**
    * Staff login: login id + password, checked directly against the bcrypt
    * hash on app.admin_user — no Firebase involved (that's member-only, see
    * exchangeMemberToken). Deliberately the same generic error for "no such

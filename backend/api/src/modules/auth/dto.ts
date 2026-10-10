@@ -53,6 +53,21 @@ export const registerMemberOtpSchema = z.object({
   name: z.string().min(1),
 });
 
+/** Member sign-in via the MSG91 Widget access-token — see auth.service.ts
+ *  exchangeMemberWidgetToken. */
+export const verifyMemberWidgetSchema = z.object({
+  phone: indianPhone,
+  accessToken: z.string().min(1),
+});
+
+/** Member self-registration via the MSG91 Widget access-token — see
+ *  auth.service.ts registerMemberByWidgetToken. */
+export const registerMemberWidgetSchema = z.object({
+  phone: indianPhone,
+  accessToken: z.string().min(1),
+  name: z.string().min(1),
+});
+
 export type IdTokenDto = z.infer<typeof idTokenSchema>;
 export type RegisterMemberDto = z.infer<typeof registerMemberSchema>;
 export type StaffLoginDto = z.infer<typeof staffLoginSchema>;
@@ -61,3 +76,5 @@ export type PhoneLookupDto = z.infer<typeof phoneLookupSchema>;
 export type SendMemberOtpDto = z.infer<typeof sendMemberOtpSchema>;
 export type VerifyMemberOtpDto = z.infer<typeof verifyMemberOtpSchema>;
 export type RegisterMemberOtpDto = z.infer<typeof registerMemberOtpSchema>;
+export type VerifyMemberWidgetDto = z.infer<typeof verifyMemberWidgetSchema>;
+export type RegisterMemberWidgetDto = z.infer<typeof registerMemberWidgetSchema>;

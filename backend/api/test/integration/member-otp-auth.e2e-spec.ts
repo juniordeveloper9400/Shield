@@ -36,6 +36,20 @@ class FakeOtpService {
       ? { ok: true }
       : { ok: false, reason: 'That code is not right or has expired.' };
   }
+
+  /** [acceptedToken] is the one access-token `verifyMsg91AccessToken`
+   *  treats as valid, for exactly [acceptedTokenPhone]. */
+  acceptedToken = 'valid-widget-token';
+  acceptedTokenPhone = '9876500001';
+
+  async verifyMsg91AccessToken(accessToken: string, expectedPhone: string) {
+    if (accessToken !== this.acceptedToken) {
+      return { ok: false, reason: 'That code is not right or has expired.' };
+    }
+    return this.acceptedTokenPhone === expectedPhone
+      ? { ok: true }
+      : { ok: false, reason: 'That code verified a different phone number.' };
+  }
 }
 
 describe('Member login via MSG91 OTP (e2e)', () => {
@@ -210,5 +224,45 @@ describe('Member login via MSG91 OTP — with MSG91 faked (e2e)', () => {
       .post('/v1/member/auth/otp/register')
       .send({ phone: '9876500004', code: '000000', name: 'Nope' })
       .expect(401);
+  });
+
+  // The MSG91-Widget-access-token path (lib/.../BackendMemberOtpTransport's
+  // widget equivalent — a client that ran the JS widget itself, instead of
+  // this backend sending a code) — see FakeOtpService.verifyMsg91AccessToken
+  // for the fixed token/phone pair this exercises against.
+  describe('widget access-token sign-in/registration', () => {
+    it('signs an existing member in with a valid access-token', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/member/auth/widget/verify')
+        .send({ phone: '9876500001', accessToken: 'valid-widget-token' })
+        .expect(200);
+      expect(res.body.accessToken).toBeTruthy();
+    });
+
+    it('rejects an invalid access-token', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/member/auth/widget/verify')
+        .send({ phone: '9876500001', accessToken: 'forged-token' })
+        .expect(401);
+    });
+
+    it('rejects a token that verified a different phone', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/member/auth/widget/verify')
+        .send({ phone: '9876500099', accessToken: 'valid-widget-token' })
+        .expect(401);
+    });
+
+    it('registers a brand-new phone via widget token and signs it in', async () => {
+      otp.acceptedTokenPhone = '9876500005';
+      const res = await request(app.getHttpServer())
+        .post('/v1/member/auth/widget/register')
+        .send({ phone: '9876500005', accessToken: 'valid-widget-token', name: 'Widget New Member' })
+        .expect(200);
+      expect(res.body.accessToken).toBeTruthy();
+
+      const [row] = await db.select().from(users).where(eq(users.phone, '9876500005'));
+      expect(row?.name).toBe('Widget New Member');
+    });
   });
 });

@@ -12,15 +12,19 @@ import {
   refreshTokenSchema,
   registerMemberOtpSchema,
   registerMemberSchema,
+  registerMemberWidgetSchema,
   sendMemberOtpSchema,
   verifyMemberOtpSchema,
+  verifyMemberWidgetSchema,
   type IdTokenDto,
   type PhoneLookupDto,
   type RefreshTokenDto,
   type RegisterMemberDto,
   type RegisterMemberOtpDto,
+  type RegisterMemberWidgetDto,
   type SendMemberOtpDto,
   type VerifyMemberOtpDto,
+  type VerifyMemberWidgetDto,
 } from './dto';
 import type { RequestSubject } from './session.types';
 
@@ -77,6 +81,32 @@ export class MemberAuthController {
   @HttpCode(HttpStatus.OK)
   async registerOtp(@Body(new ZodValidationPipe(registerMemberOtpSchema)) body: RegisterMemberOtpDto, @Req() req: Request) {
     return this.auth.registerMemberByPhone(body.phone, body.code, body.name, {
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
+  }
+
+  /** Sign-in path for a client that ran MSG91's JS widget itself (a
+   *  browser, or a WebView on native) instead of asking this backend to
+   *  send the code — see AuthService.exchangeMemberWidgetToken's own doc on
+   *  why native apps need this instead of `otp/send`+`otp/verify`. */
+  @Public()
+  @AuthThrottle()
+  @Post('widget/verify')
+  @HttpCode(HttpStatus.OK)
+  async verifyWidget(@Body(new ZodValidationPipe(verifyMemberWidgetSchema)) body: VerifyMemberWidgetDto, @Req() req: Request) {
+    return this.auth.exchangeMemberWidgetToken(body.accessToken, body.phone, {
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
+  }
+
+  @Public()
+  @AuthThrottle()
+  @Post('widget/register')
+  @HttpCode(HttpStatus.OK)
+  async registerWidget(@Body(new ZodValidationPipe(registerMemberWidgetSchema)) body: RegisterMemberWidgetDto, @Req() req: Request) {
+    return this.auth.registerMemberByWidgetToken(body.accessToken, body.phone, body.name, {
       userAgent: req.headers['user-agent'],
       ip: req.ip,
     });

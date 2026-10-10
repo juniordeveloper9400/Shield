@@ -28,6 +28,10 @@ dependencies:
   # endpoint instead of the socket above: plain HTTPS on 443, same behaviour in
   # debug and release, reliable from a phone. See data/neon/neon_http.dart.
   http: ^1.6.0
+  # Runs MSG91's OTP widget JS directly on the web build (dart:js_interop) —
+  # see module/auth/msg91_web_otp.dart. Already a transitive dependency via
+  # Flutter's own web tooling; listed directly since this file imports it.
+  web: ^1.1.0
   # "Your Sahakar 360 store" branch picker map. OpenStreetMap tiles (no API key, no
   # billing); geolocator adds the optional "nearest to me" ranking. Renders the
   # same on the APK and the web build. See registration/store_map_view.dart.
