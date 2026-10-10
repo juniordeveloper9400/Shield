@@ -63,13 +63,13 @@ class MemberRepository {
       '''
         INSERT INTO app.users (
           phone, name, email, gender, dob,
-          address, place, pincode, state,
+          address, place, pincode, state, pan,
           home_store_id, registration_completed_at
         )
         VALUES (
           \$1, \$2, \$3, \$4::app.gender, \$5::date,
-          \$6, \$7, \$8, \$9,
-          (SELECT id FROM app.shield_store WHERE code = \$10),
+          \$6, \$7, \$8, \$9, \$10,
+          (SELECT id FROM app.shield_store WHERE code = \$11),
           now()
         )
         ON CONFLICT (phone) DO UPDATE SET
@@ -81,6 +81,7 @@ class MemberRepository {
           place                     = EXCLUDED.place,
           pincode                   = EXCLUDED.pincode,
           state                     = EXCLUDED.state,
+          pan                       = EXCLUDED.pan,
           home_store_id             = EXCLUDED.home_store_id,
           registration_completed_at = COALESCE(
             app.users.registration_completed_at,
@@ -97,6 +98,7 @@ class MemberRepository {
         registration.place,
         registration.pincode,
         registration.state,
+        registration.pan.isEmpty ? null : registration.pan,
         registration.storeId,
       ],
     );
@@ -138,7 +140,7 @@ class MemberRepository {
       final rows = await NeonHttp.instance.query(
         '''
           SELECT u.name, u.email, u.gender, u.dob,
-                 u.address, u.place, u.pincode, u.state,
+                 u.address, u.place, u.pincode, u.state, u.pan,
                  s.code AS store_code
           FROM app.users u
           LEFT JOIN app.shield_store s ON s.id = u.home_store_id
@@ -174,6 +176,7 @@ class MemberRepository {
         place: (row['place'] as String?) ?? '',
         pincode: (row['pincode'] as String?) ?? '',
         state: (row['state'] as String?) ?? '',
+        pan: (row['pan'] as String?) ?? '',
         storeId: storeCode,
       );
     } catch (error) {

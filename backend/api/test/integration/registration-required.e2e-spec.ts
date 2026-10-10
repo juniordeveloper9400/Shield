@@ -221,6 +221,29 @@ describe('Registration is required to act, and is read back reliably (e2e)', () 
       expect(me.body.homeStoreCode).toBe('SHD-OPEN');
     });
 
+    it('saves a well-formed PAN and reads it back, but refuses a malformed one', async () => {
+      const { token } = linking;
+      const bad = await request(app.getHttpServer())
+        .patch('/v1/member/me')
+        .set(auth(token))
+        .send({ pan: 'not-a-pan' })
+        .expect(400);
+      expect(bad.body.error.code).toBe('VALIDATION_ERROR');
+      expect(bad.body.error.details.fieldErrors.pan).toEqual(
+        expect.arrayContaining([expect.stringMatching(/pan must look like/)]),
+      );
+
+      const saved = await request(app.getHttpServer())
+        .patch('/v1/member/me')
+        .set(auth(token))
+        .send({ pan: 'ABCDE1234F' })
+        .expect(200);
+      expect(saved.body.pan).toBe('ABCDE1234F');
+
+      const me = await request(app.getHttpServer()).get('/v1/member/me').set(auth(token)).expect(200);
+      expect(me.body.pan).toBe('ABCDE1234F');
+    });
+
     it('still accepts the branch by numeric id, as before', async () => {
       const res = await request(app.getHttpServer())
         .patch('/v1/member/me')

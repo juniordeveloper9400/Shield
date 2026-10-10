@@ -35,6 +35,7 @@ export class IdentityService {
         place: users.place,
         pincode: users.pincode,
         state: users.state,
+        pan: users.pan,
         homeStoreId: users.homeStoreId,
         // The branch's code whether or not the branch is still active — a
         // member's registration must read back the same after a branch is
@@ -133,6 +134,7 @@ export class IdentityService {
           place: users.place,
           pincode: users.pincode,
           state: users.state,
+          pan: users.pan,
           homeStoreId: users.homeStoreId,
           rewardPoints: users.rewardPoints,
           registrationCompletedAt: users.registrationCompletedAt,

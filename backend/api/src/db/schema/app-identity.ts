@@ -36,6 +36,8 @@ export const users = appSchema.table('users', {
   place: text('place'),
   pincode: text('pincode'),
   state: text('state'),
+  // migration 0088: the member's own PAN, captured at registration.
+  pan: text('pan'),
   homeStoreId: bigint('home_store_id', { mode: 'number' }),
   rewardPoints: integer('reward_points').notNull().default(0),
   referralCode: text('referral_code'),

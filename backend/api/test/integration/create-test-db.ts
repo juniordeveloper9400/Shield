@@ -64,6 +64,7 @@ export function createTestDb() {
       place text,
       pincode text,
       state text,
+      pan text,
       home_store_id bigint,
       reward_points integer NOT NULL DEFAULT 0,
       referral_code text UNIQUE,

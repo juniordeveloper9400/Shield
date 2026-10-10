@@ -55,6 +55,10 @@ class BackendRegistrationRepository {
         'place': registration.place,
         'pincode': registration.pincode,
         'state': registration.state,
+        // A blank PAN is sent as '' — clears it server-side the same way a
+        // blank email/address would, rather than leaving a typed-then-
+        // deleted value stuck on the account.
+        'pan': registration.pan,
         if (registration.storeId.isNotEmpty) 'homeStoreCode': registration.storeId,
       },
     );
@@ -96,6 +100,7 @@ class BackendRegistrationRepository {
       place: (me['place'] as String?) ?? '',
       pincode: (me['pincode'] as String?) ?? '',
       state: (me['state'] as String?) ?? '',
+      pan: (me['pan'] as String?) ?? '',
       storeId: storeCode,
     );
   }

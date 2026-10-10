@@ -44,6 +44,16 @@ export const updateMemberProfileSchema = z.object({
   place: z.string().optional(),
   pincode: z.string().optional(),
   state: z.string().optional(),
+  // The real Indian PAN format (AAAAA9999A) — same check the apps' own
+  // client-side validators already use (AgentService.validatePan /
+  // RegistrationService.validatePan) before ever sending it, enforced again
+  // here so a malformed PAN can't reach app.users any other way. Optional —
+  // a blank string clears it; the field is nullable, not required.
+  pan: z
+    .string()
+    .regex(/^[A-Z]{5}[0-9]{4}[A-Z]$/, 'pan must look like ABCDE1234F')
+    .or(z.literal(''))
+    .optional(),
   homeStoreId: z.number().int().positive().optional(),
   // The branch by its stable code (`SHD-MEL`) — what the apps hold. Resolved
   // server-side, so a client never needs the (active-only) public store list
