@@ -247,10 +247,10 @@ void main() {
     expect(find.text('Home (679322)'), findsOneWidget);
     expect(find.text('PATIENT'), findsOneWidget);
     expect(find.text('Asha Nair'), findsOneWidget);
-    // Wallet/cash — not bank transfer — is the delivering checkout's payment
-    // panel, and cash is selected from the start.
-    expect(find.text('Wallet balance'), findsOneWidget);
-    expect(find.text('Cash'), findsOneWidget);
+    // A delivering checkout shows no payment-option panel at all — it
+    // always settles cash-on-delivery/pickup, nothing to choose.
+    expect(find.text('Payment option'), findsNothing);
+    expect(find.text('Wallet balance'), findsNothing);
 
     await tester.enterText(find.byType(TextField).first, 'AGT99');
     await tester.pumpAndSettle();
