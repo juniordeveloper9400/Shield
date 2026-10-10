@@ -70,3 +70,7 @@ lib/data/neon/neon_secret.dart
 /shield agent_invester/
 .vercel
 .env*
+
+# Local-only dart-define values (real secrets) — never commit
+msg91.local.json
+*.local.json
