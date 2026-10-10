@@ -6,9 +6,10 @@ import 'package:flutter/services.dart';
 import '../../data/neon/agent_customer_repository.dart';
 import '../../data/backend/contact_repository.dart';
 import '../../data/neon/referral_repository.dart';
+import '../../dates.dart';
 import '../../phone.dart';
 import '../../theme/app_colors.dart';
-import '../../widgets/age_badge.dart';
+import '../../widgets/age_picker.dart';
 import '../../widgets/labelled_field.dart';
 import '../auth/auth_service.dart';
 import '../refer/invite_link.dart';
@@ -90,7 +91,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _pincode.text = profile?.pincode ?? '';
     _gender = profile?.gender;
     _dob = profile?.dob;
-    _dobText.text = profile == null ? '' : Registration.formatDate(profile.dob);
+    _dobText.text = profile == null ? '' : ageWithBirthYearLabel(profile.dob);
     _state = profile?.state;
     _storeId = profile?.storeId;
     _storePickedByHand = profile != null;
@@ -198,30 +199,17 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   // ---- Pickers ----
 
-  Future<void> _pickDob() async {
+  Future<void> _pickAge() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dob ?? DateTime(now.year - 25, now.month, now.day),
-      firstDate: DateTime(now.year - 110),
-      lastDate: now,
-      helpText: 'Date of birth',
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(
-            primary: AppColors.brandBlue,
-            onPrimary: AppColors.white,
-            onSurface: AppColors.textDark,
-          ),
-        ),
-        child: child!,
-      ),
+    final picked = await pickAge(
+      context,
+      initialAge: _dob == null ? null : ageInYears(_dob!),
     );
     if (picked != null && mounted) {
+      final dob = dobForAge(picked);
       setState(() {
-        _dob = picked;
-        _dobText.text = Registration.formatDate(picked);
+        _dob = dob;
+        _dobText.text = ageWithBirthYearLabel(dob);
       });
     }
   }
@@ -473,20 +461,20 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         if (_submitted && _gender == null) const _FieldError('Pick one'),
         const SizedBox(height: 14),
         LabelledField(
-          label: 'Date of birth',
-          hint: 'Select your date of birth',
-          // A read-only field opening the picker: typing a date invites every
-          // format under the sun, and the picker is the only source here.
+          label: 'Age',
+          hint: 'Select your age',
+          // A read-only field opening the picker: the picker is the only
+          // source of the value here, same as the old date-of-birth field.
           controller: _dobText,
           icon: Icons.cake_outlined,
           readOnly: true,
-          onTap: _pickDob,
-          // The age rides in the field itself: it is derived from the date the
-          // moment one is picked, never asked for as a second answer.
-          suffix: DobFieldSuffix(dob: _dob),
+          onTap: _pickAge,
+          suffix: const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: AppColors.textMuted,
+          ),
         ),
-        if (_submitted && _dob == null)
-          const _FieldError('Date of birth is required'),
+        if (_submitted && _dob == null) const _FieldError('Age is required'),
         // Shown on every visit to this form, not just a first registration —
         // both the agent-link and the referral-code paths this feeds are
         // idempotent (ON CONFLICT DO NOTHING / WHERE NOT EXISTS), so a

@@ -212,7 +212,7 @@ void main() {
     await tester.ensureVisible(find.byIcon(Icons.event_rounded));
     await tester.tap(find.byIcon(Icons.event_rounded));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('OK'));
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     await pickRegionIfShown(tester);
     await pickStateIfShown(tester, 'Kerala');
@@ -1577,7 +1577,7 @@ void main() {
       // The KYC fields the flow captures.
       expect(find.text('Aadhaar number'), findsOneWidget);
       expect(find.text('PAN'), findsOneWidget);
-      expect(find.text('Date of birth'), findsOneWidget);
+      expect(find.text('Age'), findsOneWidget);
       expect(find.text('Bank account number'), findsOneWidget);
     });
 
@@ -1669,11 +1669,12 @@ void main() {
         '123456789012',
       );
 
-      // Date of birth through the picker, reached from the field's icon.
+      // Age through the picker, reached from the field's icon — accepts the
+      // age the picker opens on.
       await tester.ensureVisible(find.byIcon(Icons.event_rounded));
       await tester.tap(find.byIcon(Icons.event_rounded));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
 
       await pickRegionIfShown(tester);
@@ -1737,7 +1738,7 @@ void main() {
       await tester.ensureVisible(find.byIcon(Icons.event_rounded));
       await tester.tap(find.byIcon(Icons.event_rounded));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Send OTP'));
       await tester.tap(find.text('Send OTP'));
@@ -1798,7 +1799,7 @@ void main() {
         await tester.ensureVisible(find.byIcon(Icons.event_rounded));
         await tester.tap(find.byIcon(Icons.event_rounded));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('OK'));
+        await tester.tap(find.text('Done'));
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Send OTP'));
         await tester.tap(find.text('Send OTP'));
@@ -1855,7 +1856,7 @@ void main() {
       await tester.ensureVisible(find.byIcon(Icons.event_rounded));
       await tester.tap(find.byIcon(Icons.event_rounded));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Send OTP'));
       await tester.tap(find.text('Send OTP'));
@@ -1924,7 +1925,7 @@ void main() {
         await tester.ensureVisible(find.byIcon(Icons.event_rounded));
         await tester.tap(find.byIcon(Icons.event_rounded));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('OK'));
+        await tester.tap(find.text('Done'));
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.text('Send OTP'));
         await tester.tap(find.text('Send OTP'));
@@ -1975,7 +1976,7 @@ void main() {
       await tester.ensureVisible(find.byIcon(Icons.event_rounded));
       await tester.tap(find.byIcon(Icons.event_rounded));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       // A district agent is placed through the region → state cascade; the
       // state picked (Delhi) names no districts of its own, so that is as far
@@ -2019,7 +2020,7 @@ void main() {
       await tester.ensureVisible(find.byIcon(Icons.event_rounded));
       await tester.tap(find.byIcon(Icons.event_rounded));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       await pickRegionIfShown(tester);
       await tester.ensureVisible(find.text('Send OTP'));
@@ -2073,7 +2074,7 @@ void main() {
       await tester.ensureVisible(find.byIcon(Icons.event_rounded));
       await tester.tap(find.byIcon(Icons.event_rounded));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('OK'));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
       await pickRegionIfShown(tester);
       await tester.ensureVisible(find.text('Send OTP'));

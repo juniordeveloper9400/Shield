@@ -12,7 +12,6 @@ import 'package:shield/module/registration/shield_store.dart';
 import 'package:shield/module/registration/store_map_view.dart';
 import 'package:shield/dates.dart';
 import 'package:shield/screens/app_shell.dart';
-import 'package:shield/widgets/age_badge.dart';
 import 'package:shield/widgets/bottom_nav.dart';
 import 'package:shield/widgets/labelled_field.dart';
 
@@ -62,11 +61,11 @@ void main() {
 
   Future<void> pickDob(WidgetTester tester) async {
     await tester.tap(
-      find.widgetWithText(TextFormField, 'Select your date of birth'),
+      find.widgetWithText(TextFormField, 'Select your age'),
     );
     await tester.pumpAndSettle();
-    // Accepts the date the picker opens on — 25 years back.
-    await tester.tap(find.text('OK'));
+    // Accepts the age the picker opens on — 25.
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
   }
 
@@ -320,7 +319,7 @@ void main() {
       expect(find.text('Mobile number'), findsOneWidget);
       expect(find.text('Email address'), findsOneWidget);
       expect(find.text('Gender'), findsOneWidget);
-      expect(find.text('Date of birth'), findsOneWidget);
+      expect(find.text('Age'), findsOneWidget);
       expect(find.text('Address'), findsOneWidget);
       expect(find.text('Place'), findsOneWidget);
       expect(find.text('Pincode'), findsOneWidget);
@@ -329,32 +328,20 @@ void main() {
     });
 
     testWidgets(
-      'the date field works the age out as soon as a date is picked',
+      'the age field shows the birth year the picked age implies',
       (tester) async {
         await pumpForm(tester);
 
-        // Nothing to derive an age from yet.
-        expect(find.byType(AgeBadge), findsNothing);
-
         await pickDob(tester);
 
-        // The picker opens 25 years back, so that is what the field reports.
-        expect(find.byType(AgeBadge), findsOneWidget);
+        // The picker opens on 25, and the field reports that back with the
+        // birth year it implies (this year minus 25).
+        final thisYear = DateTime.now().year;
         expect(
-          find.descendant(
-            of: find.byType(AgeBadge),
-            matching: find.text('25 yrs'),
-          ),
+          find.widgetWithText(LabelledField, 'Age'),
           findsOneWidget,
         );
-        // In the date field itself, not somewhere else on the form.
-        expect(
-          find.descendant(
-            of: find.widgetWithText(LabelledField, 'Date of birth'),
-            matching: find.byType(AgeBadge),
-          ),
-          findsOneWidget,
-        );
+        expect(find.text('25 yrs · Born ${thisYear - 25}'), findsOneWidget);
       },
     );
 
@@ -378,10 +365,7 @@ void main() {
       await pumpForm(tester, isEditing: true);
 
       expect(
-        find.descendant(
-          of: find.byType(AgeBadge),
-          matching: find.text(ageLabel(DateTime(1994, 9, 4))),
-        ),
+        find.text(ageWithBirthYearLabel(DateTime(1994, 9, 4))),
         findsOneWidget,
       );
     });
@@ -424,7 +408,7 @@ void main() {
 
       expect(find.text('Email is required'), findsOneWidget);
       expect(find.text('Pick one'), findsOneWidget);
-      expect(find.text('Date of birth is required'), findsOneWidget);
+      expect(find.text('Age is required'), findsOneWidget);
       expect(find.text('Address is required'), findsOneWidget);
       expect(find.text('Place is required'), findsOneWidget);
       expect(find.text('Enter a valid 6-digit pincode'), findsOneWidget);
