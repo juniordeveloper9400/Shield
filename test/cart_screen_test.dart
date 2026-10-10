@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shield/module/cart/cart_control.dart';
 import 'package:shield/module/cart/cart_screen.dart';
 import 'package:shield/module/cart/cart_service.dart';
-import 'package:shield/module/prescription/upload_prescription_screen.dart';
 import 'package:shield/widgets/app_image.dart';
 
 void main() {
@@ -37,7 +36,7 @@ void main() {
       expect(find.text('Neurobion Forte Tablet 30'), findsOneWidget);
       expect(find.text('15% OFF'), findsOneWidget);
       expect(find.text('Add more medicines'), findsOneWidget);
-      expect(find.text('Upload a Prescription'), findsOneWidget);
+      expect(find.text('Upload a Prescription'), findsNothing);
       expect(find.text('Apply coupon'), findsOneWidget);
       expect(find.text('View bill'), findsOneWidget);
       expect(find.text('Proceed to checkout'), findsOneWidget);
@@ -191,16 +190,6 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(CartService.instance.isEmpty, isTrue);
-    });
-
-    testWidgets('Upload a Prescription opens the upload screen', (tester) async {
-      seedOne();
-      await pumpCart(tester);
-
-      await tester.tap(find.text('Upload a Prescription'));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(UploadPrescriptionScreen), findsOneWidget);
     });
   });
 
