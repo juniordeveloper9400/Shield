@@ -6,11 +6,6 @@ const VERIFY_ACCESS_TOKEN_URL = 'https://control.msg91.com/api/v5/widget/verifyA
 const SEND_OTP_URL = 'https://control.msg91.com/api/v5/widget/sendOtp';
 const VERIFY_OTP_URL = 'https://control.msg91.com/api/v5/widget/verifyOtp';
 
-/** Requested SMS code length — see sendMsg91Otp's own doc on why this is
- *  passed explicitly rather than trusted to the widget dashboard's own
- *  "OTP Length" setting. */
-const OTP_LENGTH = 4;
-
 export interface VerifyMsg91Result {
   ok: boolean;
   reason?: string;
@@ -101,17 +96,16 @@ export class OtpService {
    *
    * CONFIRMED against a real MSG91 response (a live member sign-in on
    * 2026-10-09) — this REST shape (`widgetId`/`tokenAuth`/`identifier` in
-   * the body) works. That live test also surfaced a mismatch: this
-   * widget's own dashboard-configured "OTP Length" (4 digits) did not
-   * match the actual SMS sent (6 digits) — the widget dashboard setting
-   * apparently doesn't govern this REST endpoint's default. `otp_length`
-   * below is this endpoint's own (separately documented, for MSG91's
-   * plain SendOTP API — not yet confirmed identical for the Widget
-   * endpoint) override parameter; send a real code and check the logged
-   * response/actual SMS to confirm it actually lands on 4 digits here too
-   * before trusting it. `sendAgentOtpSchema`/`verifyMemberOtpSchema` etc.
-   * deliberately still accept 4–6 digit codes regardless, so a send that
-   * ignores this parameter keeps working, just at the old length.
+   * the body, with NO other fields) works and sends a 6-digit code. This
+   * widget's own dashboard-configured "OTP Length" (4 digits) does not
+   * govern this REST endpoint — confirmed by a second live test, where
+   * adding an `otp_length` field (documented for MSG91's separate, unused
+   * plain SendOTP API) made MSG91 reject the entire request outright
+   * (`{"message":"Invalid request","type":"error",...}`, logged
+   * server-side on 2026-10-10). There is currently no known way to change
+   * the code length through this endpoint — leave the body exactly as
+   * below. `sendAgentOtpSchema`/`verifyMemberOtpSchema` etc. accept 4–6
+   * digit codes regardless, matching the 6 digits MSG91 actually sends.
    */
   async sendMsg91Otp(phone: string): Promise<VerifyMsg91Result> {
     const widgetId = this.config.get('MSG91_WIDGET_ID', { infer: true });
@@ -129,7 +123,6 @@ export class OtpService {
           widgetId,
           tokenAuth,
           identifier: toMsg91Identifier(phone),
-          otp_length: OTP_LENGTH,
         }),
       });
       body = await res.json().catch(() => null);
