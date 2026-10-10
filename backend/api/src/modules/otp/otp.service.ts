@@ -6,6 +6,11 @@ const VERIFY_ACCESS_TOKEN_URL = 'https://control.msg91.com/api/v5/widget/verifyA
 const SEND_OTP_URL = 'https://control.msg91.com/api/v5/widget/sendOtp';
 const VERIFY_OTP_URL = 'https://control.msg91.com/api/v5/widget/verifyOtp';
 
+/** Requested SMS code length — see sendMsg91Otp's own doc on why this is
+ *  passed explicitly rather than trusted to the widget dashboard's own
+ *  "OTP Length" setting. */
+const OTP_LENGTH = 4;
+
 export interface VerifyMsg91Result {
   ok: boolean;
   reason?: string;
@@ -96,11 +101,17 @@ export class OtpService {
    *
    * CONFIRMED against a real MSG91 response (a live member sign-in on
    * 2026-10-09) — this REST shape (`widgetId`/`tokenAuth`/`identifier` in
-   * the body) works. One thing the live test surfaced: this widget's own
-   * dashboard-configured "OTP Length" (4 digits) did not match the actual
-   * SMS sent (6 digits) — `sendAgentOtpSchema`/`verifyMemberOtpSchema` etc.
-   * already accept 4–6 digit codes for exactly this reason, so nothing
-   * needed changing here.
+   * the body) works. That live test also surfaced a mismatch: this
+   * widget's own dashboard-configured "OTP Length" (4 digits) did not
+   * match the actual SMS sent (6 digits) — the widget dashboard setting
+   * apparently doesn't govern this REST endpoint's default. `otp_length`
+   * below is this endpoint's own (separately documented, for MSG91's
+   * plain SendOTP API — not yet confirmed identical for the Widget
+   * endpoint) override parameter; send a real code and check the logged
+   * response/actual SMS to confirm it actually lands on 4 digits here too
+   * before trusting it. `sendAgentOtpSchema`/`verifyMemberOtpSchema` etc.
+   * deliberately still accept 4–6 digit codes regardless, so a send that
+   * ignores this parameter keeps working, just at the old length.
    */
   async sendMsg91Otp(phone: string): Promise<VerifyMsg91Result> {
     const widgetId = this.config.get('MSG91_WIDGET_ID', { infer: true });
@@ -114,7 +125,12 @@ export class OtpService {
       const res = await fetch(SEND_OTP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ widgetId, tokenAuth, identifier: toMsg91Identifier(phone) }),
+        body: JSON.stringify({
+          widgetId,
+          tokenAuth,
+          identifier: toMsg91Identifier(phone),
+          otp_length: OTP_LENGTH,
+        }),
       });
       body = await res.json().catch(() => null);
       this.logger.log(`MSG91 sendOtp response: ${JSON.stringify(body)}`);
