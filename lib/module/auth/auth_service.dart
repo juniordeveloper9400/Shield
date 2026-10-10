@@ -136,10 +136,14 @@ class AuthService {
   /// The fixed code [FakeMemberOtpTransport] treats as correct, exposed here
   /// so widget tests can type a known value into the OTP field. No
   /// production path uses this — real sign-in runs real MSG91 verification.
-  static const String demoOtp = '123456';
+  static const String demoOtp = '1234';
 
-  /// Digits in a code. The OTP field draws this many boxes.
-  static const int otpLength = 6;
+  /// Digits in a code. The OTP field draws this many boxes. Confirmed via a
+  /// real send through MSG91's actual widget flow (2026-10-10) — the
+  /// widget dashboard's own "OTP Length: 4" setting is honored for this
+  /// path, unlike the broken server-side REST call that used to ignore it
+  /// (see otp.service.ts's own doc on that).
+  static const int otpLength = 4;
 
   /// How long the member waits before a resend is offered.
   static const Duration resendCooldown = Duration(seconds: 30);

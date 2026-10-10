@@ -9,8 +9,9 @@ import 'package:shield/module/auth/auth_service.dart';
 /// enter [FakeAgentOtpTransport.code] (same value as [AuthService.demoOtp])
 /// on the OTP step.
 class FakeAgentOtpTransport implements AgentOtpTransport {
-  /// The one code [confirmCode] treats as correct.
-  static const String code = '123456';
+  /// The one code [confirmCode] treats as correct — matches
+  /// [AuthService.otpLength] (4).
+  static const String code = '1234';
 
   bool _sent = false;
 

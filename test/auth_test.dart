@@ -391,7 +391,7 @@ void main() {
 
       expect(find.text('Verify your number'), findsOneWidget);
       expect(
-        find.text('Enter the 6-digit code sent to +91 $phone.'),
+        find.text('Enter the ${AuthService.otpLength}-digit code sent to +91 $phone.'),
         findsOneWidget,
       );
       expect(find.byType(OtpField), findsOneWidget);
