@@ -32,18 +32,34 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
   bool _placing = false;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    // Same pre-selection the medicine checkout does for a delivering order —
+    // a member with an address already on file sees it chosen here rather
+    // than being steered toward "add a new one" as if none existed.
+    AddressBook.instance.ensureDeliverToSelected();
+  }
+
   bool get _canPlace =>
       !_placing &&
       !LabCartService.instance.isEmpty &&
-      LabCartService.instance.store != null;
+      LabCartService.instance.store != null &&
+      AddressBook.instance.deliverTo != null;
 
   Future<void> _placeLabTest() async {
     final cart = LabCartService.instance;
     final user = AuthService.instance.currentUser.value;
+    final hasAddress = AddressBook.instance.deliverTo != null;
     if (!_canPlace || user == null) {
       setState(() {
-        _error = cart.store == null
+        _error = cart.store == null && !hasAddress
+            ? 'Choose a branch and a delivery address above before placing '
+                  'this booking.'
+            : cart.store == null
             ? 'Choose a branch above before placing this booking.'
+            : !hasAddress
+            ? 'Choose a delivery address above before placing this booking.'
             : null;
       });
       return;
@@ -129,13 +145,23 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
         ),
       ),
       body: ListenableBuilder(
-        listenable: LabCartService.instance,
+        listenable: Listenable.merge([
+          LabCartService.instance,
+          AddressBook.instance,
+        ]),
         builder: (context, _) {
           final cart = LabCartService.instance;
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               _ReviewCard(bookings: cart.bookings),
+              const SizedBox(height: 12),
+              // Not const — like LabBranchRow below, its build() reads
+              // AddressBook.instance.deliverTo directly rather than a
+              // constructor field, so a const instance would never rebuild
+              // after AddressBook changes (Flutter skips rebuilding an
+              // unchanged const widget outright).
+              LabAddressRow(),
               const SizedBox(height: 12),
               LabBranchRow(),
               const SizedBox(height: 12),
@@ -165,7 +191,10 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: ListenableBuilder(
-              listenable: LabCartService.instance,
+              listenable: Listenable.merge([
+                LabCartService.instance,
+                AddressBook.instance,
+              ]),
               builder: (context, _) {
                 final cart = LabCartService.instance;
                 return Row(

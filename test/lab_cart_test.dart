@@ -14,6 +14,7 @@ import 'package:shield/module/labtest/lab_package.dart';
 import 'package:shield/module/labtest/lab_package_screen.dart';
 import 'package:shield/module/labtest/patient_count_sheet.dart';
 import 'package:shield/module/labtest/top_packages_screen.dart';
+import 'package:shield/module/location/address_book.dart';
 import 'package:shield/module/registration/store_picker_sheet.dart';
 
 const _activeLife = LabPackage(
@@ -85,14 +86,29 @@ void main() {
   setUp(() {
     LabCartService.instance.reset();
     CartService.instance.reset();
+    AddressBook.instance.reset();
     CareRepository.labPackagesOverride =
         () async => [_preventivePlus, _activeLife, _completeCare];
   });
   tearDown(() {
     LabCartService.instance.reset();
     CartService.instance.reset();
+    AddressBook.instance.reset();
     CareRepository.labPackagesOverride = null;
   });
+
+  void giveAddress() {
+    AddressBook.instance.add(
+      const Address(
+        pincode: '679322',
+        house: '12/A',
+        area: 'Palm Grove',
+        firstName: 'Asha',
+        phone: '9000012345',
+        label: AddressLabel.home,
+      ),
+    );
+  }
 
   Future<void> pump(
     WidgetTester tester,
@@ -485,6 +501,52 @@ void main() {
       },
     );
 
+    testWidgets(
+      'a delivery address is required to place the booking, and the row '
+      'picks up an address added elsewhere',
+      (tester) async {
+        AuthService.instance.signInAs();
+        LabCartService.instance.book(_activeLife, patients: 2);
+        await pump(tester, const LabCartScreen());
+        await chooseBranch(tester);
+        await tester.tap(find.text('Proceed to checkout'));
+        await tester.pumpAndSettle();
+
+        // Nothing on file yet: the row asks for one, same red-border guard
+        // the branch row already uses, and "Place lab test" is disabled —
+        // same as a missing branch already disables it.
+        expect(find.text('Choose a delivery address'), findsOneWidget);
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Place lab test'),
+              )
+              .onPressed,
+          isNull,
+        );
+
+        // Added straight on AddressBook — the same singleton
+        // ManageAddressesScreen (opened from "Change") would have written to
+        // — and the row picks it up without anything else changing.
+        AddressBook.instance.add(
+          const Address(
+            pincode: '679322',
+            house: '12/A',
+            area: 'Palm Grove',
+            firstName: 'Asha',
+            phone: '9000012345',
+            label: AddressLabel.home,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Home (679322)'), findsOneWidget);
+
+        await tester.tap(find.text('Place lab test'));
+        await tester.pumpAndSettle();
+        expect(find.byType(LabBookingPlacedScreen), findsOneWidget);
+      },
+    );
+
     testWidgets('signed out, asks to sign in before opening checkout', (
       tester,
     ) async {
@@ -504,6 +566,7 @@ void main() {
       'confirmation screen',
       (tester) async {
         AuthService.instance.signInAs();
+        giveAddress();
         LabCartService.instance.book(_activeLife, patients: 2);
         await pump(tester, const LabCartScreen());
         await chooseBranch(tester);
