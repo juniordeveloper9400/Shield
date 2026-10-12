@@ -2,17 +2,18 @@ import '../../module/agent/agent_customer.dart';
 import '../../module/privilege/privilege_tier.dart';
 import 'neon_http.dart';
 
-/// Reads and writes an agent's "Direct sale" customers on `app.agent_customer`
-/// / `app.agent_customer_plan`.
+/// Reads an agent's "Direct sale" customers from `app.agent_customer` /
+/// `app.agent_customer_plan`.
 ///
-/// A customer is linked to an agent once, at registration — [linkCustomer] is
-/// called with whatever code the member typed into the (existing) "Referral
-/// code" field, alongside the ordinary member-to-member referral attempt; a
-/// code that resolves to an *agent* rather than another member links here
-/// instead. From then on, every Health Pass plan approved for that member
-/// (`shieldweb`'s `approveActivation`, on the admin console) writes a matching
-/// `app.agent_customer_plan` row itself — this repository's [fetchAll] just
-/// reads what has already accumulated there.
+/// Linking a customer at registration — formerly this class's own
+/// `linkCustomer`, tried alongside the ordinary member-to-member referral
+/// attempt whenever the "Referral code" field held an agent's own code
+/// instead — moved to `backend/api`'s `POST /v1/member/referrals/apply-code`
+/// (see `ReferralRepository.applyCode`'s own doc): one call now resolves
+/// either kind of code the field can hold. Every Health Pass plan approved
+/// for a linked member (`shieldweb`'s `approveActivation`, on the admin
+/// console) writes a matching `app.agent_customer_plan` row itself — this
+/// repository's [fetchAll] just reads what has already accumulated there.
 ///
 /// Best-effort, the same contract as the other Neon repositories: a missing
 /// `DATABASE_URL` or a network blip no-ops / returns null rather than
@@ -25,84 +26,6 @@ class AgentCustomerRepository {
   static const AgentCustomerRepository instance = AgentCustomerRepository._();
 
   bool get isAvailable => NeonHttp.isConfigured;
-
-  /// Links [memberPhone] to the agent whose printed code (`SHD-WRD-004`, …)
-  /// — or whose own *permanent* Member ID (`SAHAKAR-0000`), once they are a
-  /// current, approved agent — is [code]. A no-op (returns `false`, writes
-  /// nothing) when [code] does not resolve to an *approved* agent either way,
-  /// or the phone has no `app.users` row yet.
-  ///
-  /// The permanent-ID match is what lets a member who becomes an agent keep
-  /// sharing the one ID they always had — nobody has to learn or switch to a
-  /// separate agent code for a referral through it to count as a direct sale
-  /// from then on. Safe to call unconditionally alongside the ordinary
-  /// member-referral attempt: [ReferralRepository.recordSignup] checks the
-  /// same "is this code's owner currently an approved agent" question and
-  /// skips creating a referral edge when it is, so the two never both apply
-  /// to the same signup. `ON CONFLICT DO NOTHING` (migration 0026's unique
-  /// constraint) makes a repeat call for an already-linked member harmless.
-  Future<bool> linkCustomer({
-    required String code,
-    required String memberPhone,
-    required String memberName,
-  }) async {
-    final result = await _run<bool>('linkCustomer', () async {
-      final trimmedCode = code.trim();
-      if (trimmedCode.isEmpty) {
-        return false;
-      }
-      final inserted = await NeonHttp.instance.query(
-        r'''
-          WITH agent_row AS (
-            SELECT a.id
-            FROM app.agent a
-            LEFT JOIN app.users u ON u.id = a.member_id
-            WHERE a.approval_status = 'APPROVED'
-              AND ($1 = a.code OR (u.referral_code IS NOT NULL AND $1 = u.referral_code))
-            LIMIT 1
-          ),
-          member_row AS (
-            SELECT id FROM app.users WHERE phone = $2
-          )
-          INSERT INTO app.agent_customer (agent_id, member_id, name, phone)
-          SELECT agent_row.id, member_row.id, $3, $2
-          FROM agent_row, member_row
-          ON CONFLICT (agent_id, member_id) DO NOTHING
-          RETURNING id
-        ''',
-        [trimmedCode, memberPhone, memberName],
-      );
-      return inserted.isNotEmpty;
-    });
-    return result ?? false;
-  }
-
-  /// The agent code [memberPhone] linked with at registration, if any —
-  /// `app.agent.code` for whichever agent's `app.agent_customer` row carries
-  /// this phone. The registration form's sibling lookup to
-  /// [ReferralRepository.codeUsedBy]: between the two, whichever resolves is
-  /// what the "Referral code" field shows back to the member on a later
-  /// visit. Null when this member was never linked to an agent this way, or
-  /// the database is unreachable.
-  Future<String?> codeUsedBy(String memberPhone) {
-    return _run('codeUsedBy', () async {
-      final rows = await NeonHttp.instance.query(
-        r'''
-          SELECT a.code
-          FROM app.agent_customer ac
-          JOIN app.agent a ON a.id = ac.agent_id
-          WHERE ac.phone = $1
-          LIMIT 1
-        ''',
-        [memberPhone],
-      );
-      if (rows.isEmpty) {
-        return null;
-      }
-      final code = rows.first['code']?.toString();
-      return (code == null || code.isEmpty) ? null : code;
-    });
-  }
 
   /// Every agent's direct-sale customers, plans included — [AgentService]
   /// folds these into its in-memory roster the same way it already folds in

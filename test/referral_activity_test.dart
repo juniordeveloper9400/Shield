@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:shield/data/neon/referral_repository.dart';
+import 'package:shield/data/backend/referral_repository.dart';
 import 'package:shield/module/refer/journey_map.dart';
 import 'package:shield/module/refer/refer_earn_screen.dart';
 import 'package:shield/module/refer/referral_level.dart';
@@ -92,23 +92,26 @@ void main() {
   });
 
   group('turning the referral rows into the people list', () {
-    test('keeps the order, drops shared invites, and shortens names', () {
+    test('keeps the order, drops shared invites, and falls back on a blank name', () {
+      // The backend's own `/referrals/progress` route has already cut each
+      // name to first name + last initial (and resolved a missing
+      // registeredAt to the row's createdAt) before this ever reads it —
+      // see referral.service.ts's listInvitees.
       final people = ReferralRepository.inviteesFrom([
         {
           'status': 'PLAN_ACTIVATED',
-          'name': 'Althaf Muhammed',
-          'registered_at': '2026-09-01T10:00:00.000Z',
-          'transacted_at': '2026-09-02T10:00:00.000Z',
-          'plan_activated_at': '2026-09-03T10:00:00.000Z',
+          'name': 'Althaf M.',
+          'registeredAt': '2026-09-01T10:00:00.000Z',
+          'transactedAt': '2026-09-02T10:00:00.000Z',
+          'planActivatedAt': '2026-09-03T10:00:00.000Z',
         },
         {'status': 'SHARED', 'name': null},
         {
           'status': 'REGISTERED',
           'name': null,
-          'registered_at': null,
-          'created_at': '2026-09-20T08:30:00.000Z',
+          'registeredAt': '2026-09-20T08:30:00.000Z',
         },
-        {'status': 'TRANSACTED', 'name': 'Nihal Kumar'},
+        {'status': 'TRANSACTED', 'name': 'Nihal K.'},
       ]);
 
       expect(people.map((p) => p.name), ['Althaf M.', 'A friend', 'Nihal K.']);
@@ -118,7 +121,6 @@ void main() {
         ReferredStage.transacted,
       ]);
       expect(people[0].planActivatedAt, DateTime.utc(2026, 9, 3, 10));
-      // No registered_at: the row's creation time stands in for when they joined.
       expect(people[1].joinedAt, DateTime.utc(2026, 9, 20, 8, 30));
       expect(people[2].transactedAt, isNull);
     });

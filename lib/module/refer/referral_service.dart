@@ -2,16 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../data/neon/neon_http.dart';
-import '../../data/neon/referral_repository.dart';
+import '../../data/backend/backend_http.dart';
+import '../../data/backend/referral_repository.dart';
 import '../auth/auth_service.dart';
 import '../wallet/wallet_service.dart';
 import 'referral_level.dart';
 
 enum ReferralStatus { idle, loading, ready, error }
 
-/// The signed-in member's refer-and-earn standing, backed by `app.referral`
-/// and `app.users.referral_code` on Neon (see [ReferralRepository]).
+/// The signed-in member's refer-and-earn standing, read through
+/// `backend/api`'s `/v1/member/referrals/*` routes (see [ReferralRepository]).
 ///
 /// Mirrors [RewardsService]: one figure kept once, so the home card and the
 /// refer & earn screen read the same real numbers rather than each carrying
@@ -25,7 +25,7 @@ class ReferralService extends ChangeNotifier {
   ReferralStatus _status = ReferralStatus.idle;
   ReferralStatus get status => _status;
   bool get isLoading => _status == ReferralStatus.loading;
-  bool get isConfigured => NeonHttp.isConfigured;
+  bool get isConfigured => BackendHttp.isConfigured;
 
   ReferralProgress _progress = const ReferralProgress(directReferrals: 0);
 
@@ -97,7 +97,7 @@ class ReferralService extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (!NeonHttp.isConfigured) {
+    if (!BackendHttp.isConfigured) {
       _status = ReferralStatus.error;
       _inFlight = null;
       notifyListeners();
@@ -119,7 +119,7 @@ class ReferralService extends ChangeNotifier {
       }
       _status = progress == null ? ReferralStatus.error : ReferralStatus.ready;
     } catch (error) {
-      NeonHttp.log('ReferralService load failed', error: error);
+      BackendHttp.log('ReferralService load failed', error: error);
       _status = ReferralStatus.error;
     } finally {
       _inFlight = null;
@@ -129,39 +129,23 @@ class ReferralService extends ChangeNotifier {
 
   // ---- writes ------------------------------------------------------
 
-  /// Records a referral code entered on the registration form — right after
-  /// [RegistrationService.save], on a first-time registration or an edit
-  /// alike. `ReferralRepository.recordSignup`'s own `WHERE NOT EXISTS`
-  /// guard is what actually enforces "at most one inbound referral, ever";
-  /// this can be called as many times as the member saves the form.
+  /// Resolves a code entered into the "Referral ID" field on the
+  /// registration form — right after [RegistrationService.save], on a
+  /// first-time registration or an edit alike. One backend call now covers
+  /// both the member-referral and the agent-direct-sale path a code could
+  /// resolve to (see [ReferralRepository.applyCode]'s own doc); this used
+  /// to be two separate direct-Neon writes (this, plus
+  /// `AgentCustomerRepository.linkCustomer`), tried alongside each other
+  /// from the registration screen.
   ///
   /// Best-effort and silent either way: a bad, self-used or already-spent
   /// code must not stop the registration it rode in on.
-  Future<void> recordSignupCode(String code) async {
-    final phone = AuthService.instance.currentUser.value?.phone;
+  Future<void> applyCode(String code) async {
     final trimmed = code.trim();
-    if (phone == null || trimmed.isEmpty) {
+    if (trimmed.isEmpty) {
       return;
     }
-    await ReferralRepository.instance.recordSignup(
-      code: trimmed,
-      newMemberPhone: phone,
-    );
-  }
-
-  /// Marks the signed-in member's own inbound referral as transacted — they
-  /// were the one invited, and have just completed their first paid order.
-  /// Called alongside `RewardsService.awardForOrder` from
-  /// `PurchaseService.record`. A no-op for a member nobody referred.
-  Future<void> markTransacted() async {
-    final phone = AuthService.instance.currentUser.value?.phone;
-    if (phone == null) {
-      return;
-    }
-    await ReferralRepository.instance.markTransacted(phone);
-    // The rung this unlocks (or the commission a later plan will pay) should
-    // show up without the member having to leave the screen and come back.
-    await refresh();
+    await ReferralRepository.instance.applyCode(trimmed);
   }
 
   // ---- test hooks --------------------------------------------------

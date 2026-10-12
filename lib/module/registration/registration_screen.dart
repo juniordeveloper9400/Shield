@@ -3,9 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../data/neon/agent_customer_repository.dart';
 import '../../data/backend/contact_repository.dart';
-import '../../data/neon/referral_repository.dart';
+import '../../data/backend/referral_repository.dart';
 import '../../dates.dart';
 import '../../phone.dart';
 import '../../theme/app_colors.dart';
@@ -128,8 +127,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     }
     final phone = AuthService.instance.currentUser.value?.phone;
     if (phone != null && phone.isNotEmpty) {
-      final code = await ReferralRepository.instance.codeUsedBy(phone) ??
-          await AgentCustomerRepository.instance.codeUsedBy(phone);
+      final code = await ReferralRepository.instance.usedCodeFor(phone);
       if (code != null) {
         if (mounted && _referralCode.text.isEmpty) {
           setState(() => _referralCode.text = code);
@@ -266,26 +264,20 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
       ),
     );
 
-    // Tried on every save, not just a first registration — both paths below
-    // are idempotent (ON CONFLICT DO NOTHING / WHERE NOT EXISTS), so a
-    // member who skipped this the first time round can still add one
-    // later. Best-effort and fire-and-forget either way: a bad or reused
-    // code must not hold up the celebration screen below.
+    // Tried on every save, not just a first registration — the backend's
+    // own `WHERE NOT EXISTS`-equivalent guard is what actually enforces "at
+    // most one inbound referral/agent link, ever", so a member who skipped
+    // this the first time round can still add one later. Best-effort and
+    // fire-and-forget: a bad or reused code must not hold up the
+    // celebration screen below.
     final referralCode = _referralCode.text.trim();
     if (referralCode.isNotEmpty) {
       // Used now — don't offer the install's invite code again on a later visit.
       unawaited(InstallReferrer.instance.forget());
-      unawaited(ReferralService.instance.recordSignupCode(referralCode));
-      // The same field also accepts an agent's own code (`SHD-WRD-004`, …) —
-      // the two never collide, so trying both costs nothing when the code
-      // was really a member's referral code and matches no agent.
-      unawaited(
-        AgentCustomerRepository.instance.linkCustomer(
-          code: referralCode,
-          memberPhone: _phone.text.trim(),
-          memberName: _name.text.trim(),
-        ),
-      );
+      // One backend call resolves whichever of the two the field held — an
+      // agent's own code (a direct sale) or a fellow member's referral code
+      // — see ReferralRepository.applyCode's own doc.
+      unawaited(ReferralService.instance.applyCode(referralCode));
     }
 
     // Show the confirmation on this route while it is still up, then close the
