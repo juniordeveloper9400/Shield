@@ -41,6 +41,18 @@ export class MemberController {
     await this.identity.deleteAccount(Number(user.subjectId));
   }
 
+  /**
+   * Bumps `last_login_at` for a session restored at app launch — a fresh
+   * OTP sign-in already sets it via `createSession`; this covers every
+   * later launch that just restores a persisted refresh token, with no
+   * session-creation call of its own to piggyback on otherwise.
+   */
+  @Post('me/touch-login')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async touchLogin(@CurrentUser() user: RequestSubject) {
+    await this.identity.touchLogin(Number(user.subjectId));
+  }
+
   @Get('addresses')
   async addresses(@CurrentUser() user: RequestSubject) {
     return this.identity.listAddresses(Number(user.subjectId));

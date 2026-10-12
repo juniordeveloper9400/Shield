@@ -183,4 +183,35 @@ describe('Member account lifecycle (e2e)', () => {
       await request(app.getHttpServer()).delete('/v1/member/me').expect(401);
     });
   });
+
+  describe('POST /v1/member/me/touch-login', () => {
+    it('bumps last_login_at for the signed-in member', async () => {
+      firebase.register('touch-login-token', { uid: 'touch-login-uid', phoneNumber: '+919199999090' });
+      await db
+        .insert(users)
+        .values({ phone: '9199999090', name: 'Touch Login', firebaseUid: 'touch-login-uid', lastLoginAt: null });
+
+      const login = await request(app.getHttpServer())
+        .post('/v1/member/auth/session')
+        .send({ idToken: 'touch-login-token' })
+        .expect(200);
+      const token = login.body.accessToken as string;
+
+      // createSession itself already set last_login_at on the sign-in
+      // above; clear it so this call is the only thing that could set it.
+      await db.update(users).set({ lastLoginAt: null }).where(eq(users.phone, '9199999090'));
+
+      await request(app.getHttpServer())
+        .post('/v1/member/me/touch-login')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      const [row] = await db.select().from(users).where(eq(users.phone, '9199999090'));
+      expect(row.lastLoginAt).not.toBeNull();
+    });
+
+    it('rejects an unauthenticated call', async () => {
+      await request(app.getHttpServer()).post('/v1/member/me/touch-login').expect(401);
+    });
+  });
 });

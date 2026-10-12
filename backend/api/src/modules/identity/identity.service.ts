@@ -53,6 +53,11 @@ export class IdentityService {
     return member;
   }
 
+  /** See `MemberController.touchLogin`'s own doc. */
+  async touchLogin(memberId: number): Promise<void> {
+    await this.db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, memberId));
+  }
+
   /**
    * The branch a profile save names, by code or id — or undefined when it names
    * none. A branch must exist, and must be active to be *newly* chosen; a
