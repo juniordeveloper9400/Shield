@@ -297,12 +297,17 @@ export class OrderService {
   /**
    * Every order the member has placed, newest first. Left-joined against
    * `bill` (0-or-1 per order) so a prescription order's priced amount, its
-   * paid/pending status, and how much of it was actually discounted —
-   * `billAmount`/`billStatus`/`billDiscount` on the client's `Purchase`
-   * (`billDiscount` is what "Your earnings" counts as saved, not the
-   * checkout-time mrpTotal/paidTotal gap — see `MemberEarnings`'s own doc)
-   * — come back alongside the order's own columns without a second round
-   * trip per row.
+   * paid/pending status, how much of it was actually discounted, its own
+   * attached picture and when it was sent —
+   * `billAmount`/`billStatus`/`billDiscount`/`billImage`/`billedAt` on the
+   * client's `Purchase` (`billDiscount` is what "Your earnings" counts as
+   * saved, not the checkout-time mrpTotal/paidTotal gap — see
+   * `MemberEarnings`'s own doc) — come back alongside the order's own
+   * columns without a second round trip per row. `billImage` is a `data:`
+   * URI and can run large, but the Flutter client already expected this
+   * eagerly on every row (its own direct-Neon `listForMember` always
+   * joined it the same way) — keeping it here avoids changing that
+   * contract on top of moving where it reads from.
    */
   async listForMember(memberId: number) {
     return this.db
@@ -311,6 +316,8 @@ export class OrderService {
         billAmount: bill.amount,
         billStatus: bill.status,
         billDiscount: bill.discountAmount,
+        billImage: bill.image,
+        billedAt: bill.sentAt,
       })
       .from(order)
       .leftJoin(bill, eq(bill.orderId, order.id))
