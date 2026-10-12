@@ -1,9 +1,11 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   appointment,
   chartOfAccount,
+  clinic,
   dietitian,
   journalEntry,
   journalLine,
@@ -512,9 +514,33 @@ export class BookingService {
     return found;
   }
 
-  /** No branch scoping — appointment has no store_id in the live schema either. */
+  /**
+   * No branch scoping — appointment has no store_id in the live schema
+   * either. Joined out to the member/provider/store names the console's
+   * card actually shows, matching what `shieldweb`'s own direct SQL used to
+   * do before this route existed — see migration-plan.md Phase 1.
+   */
   async listAppointmentsForStaff() {
-    return this.db.select().from(appointment).orderBy(desc(appointment.createdAt));
+    const memberStore = alias(shieldStore, 'member_store');
+    return this.db
+      .select({
+        id: appointment.id,
+        memberName: users.name,
+        memberPhone: users.phone,
+        kind: appointment.kind,
+        providerName: sql<string>`coalesce(${clinic.name}, ${dietitian.name}, ${appointment.doctorName}, 'Sahakar 360 Tele-Consult')`,
+        storeName: memberStore.name,
+        scheduledFor: appointment.scheduledFor,
+        status: appointment.status,
+        remarks: appointment.remarks,
+        createdAt: appointment.createdAt,
+      })
+      .from(appointment)
+      .leftJoin(users, eq(users.id, appointment.memberId))
+      .leftJoin(clinic, eq(clinic.id, appointment.clinicId))
+      .leftJoin(dietitian, eq(dietitian.id, appointment.dietitianId))
+      .leftJoin(memberStore, eq(memberStore.id, users.homeStoreId))
+      .orderBy(desc(appointment.createdAt));
   }
 
   async updateAppointmentStatus(id: number, dto: UpdateAppointmentStatusDto) {

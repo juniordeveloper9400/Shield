@@ -528,6 +528,25 @@ describe('Care Services (e2e)', () => {
     expect(res.body.fee).toBeNull();
   });
 
+  it('the staff list carries the member, provider and store names, not just ids', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/member/appointments')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ kind: 'DIETITIAN', dietitianId, patientId: ownedPatientId })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .get('/v1/staff/appointments')
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+
+    const found = res.body.find((a: { providerName?: string }) => a.providerName === 'Dr. Nutrition');
+    expect(found).toBeDefined();
+    expect(found.memberName).toBe('Care Member');
+    expect(found.memberPhone).toBe('9000000004');
+    expect(found.storeName).toBe('Tirur');
+  });
+
   it('rejects booking an appointment for a patient that is not the member\'s own', async () => {
     await request(app.getHttpServer())
       .post('/v1/member/appointments')
