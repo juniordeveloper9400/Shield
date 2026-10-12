@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../../data/backend/backend_persona_repository.dart';
-import '../../data/neon/persona_repository.dart' show PersonaSnapshot;
+import '../../data/neon/persona_repository.dart' show PersonaSnapshot, RemoteInvestor;
+import '../investor/investor_model.dart';
+import '../investor/investor_service.dart';
+import '../registration/shield_store.dart';
 import 'auth_service.dart';
 
 /// Where the persona check has got to for the signed-in member.
@@ -130,6 +133,7 @@ class PersonaGate extends ChangeNotifier {
       _checkedPhone = null;
       _inFlight = null;
       _snapshot = PersonaSnapshot.none;
+      InvestorService.instance.applyRemoteInvestor(null);
       _pollTimer?.cancel();
       _pollTimer = null;
       _set(PersonaStatus.unknown);
@@ -203,6 +207,9 @@ class PersonaGate extends ChangeNotifier {
 
     _checkedPhone = phone;
     _snapshot = snapshot;
+    InvestorService.instance.applyRemoteInvestor(
+      snapshot.investor == null ? null : _toInvestor(snapshot.investor!, phone),
+    );
     _set(
       snapshot.deleted
           ? PersonaStatus.deleted
@@ -233,6 +240,11 @@ class PersonaGate extends ChangeNotifier {
     _checkedPhone = AuthService.instance.currentUser.value?.phone;
     _inFlight = null;
     _snapshot = snapshot;
+    InvestorService.instance.applyRemoteInvestor(
+      snapshot.investor == null
+          ? null
+          : _toInvestor(snapshot.investor!, _checkedPhone),
+    );
     _set(status);
   }
 
@@ -247,7 +259,29 @@ class PersonaGate extends ChangeNotifier {
     _inFlight = null;
     _snapshot = PersonaSnapshot.none;
     _status = PersonaStatus.unknown;
+    InvestorService.instance.applyRemoteInvestor(null);
     _pollTimer?.cancel();
     _pollTimer = null;
   }
 }
+
+/// [RemoteInvestor] (the backend's own JSON shape) → the [Investor] model
+/// every investor screen already reads. The authenticated endpoint
+/// identifies the owner, so [memberPhone] (the session phone) is used
+/// rather than [RemoteInvestor.phone] — kept in step with how the old
+/// direct-Neon row read it.
+Investor _toInvestor(RemoteInvestor r, String? memberPhone) => Investor(
+      id: r.code,
+      name: r.name,
+      phone: memberPhone ?? r.phone,
+      investorCode: r.code,
+      investedStore: StoreDirectory.byId(r.storeCode ?? '') ?? StoreDirectory.all.first,
+      totalUnits: r.totalUnits,
+      unitPrice: r.unitPrice,
+      investedSince: r.investedSince,
+      roiPercent: r.roiPercent,
+      planType: InvestorPlanType.values.firstWhere(
+        (p) => p.name == r.planType,
+        orElse: () => InvestorPlanType.yearly,
+      ),
+    );

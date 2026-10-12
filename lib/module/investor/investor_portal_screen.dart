@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../data/neon/investor_repository.dart';
+import '../../data/backend/backend_investor_repository.dart';
 import '../../dates.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
@@ -407,7 +407,7 @@ class _ReturnPlanCard extends StatelessWidget {
 /// plan to the other cadence.
 ///
 /// The plan is fixed when the stake is opened, so this cannot flip it — it
-/// records a `REQUESTED` row ([InvestorRepository.requestPlanChange], which
+/// records a `REQUESTED` row ([BackendInvestorRepository.requestPlanChange], which
 /// writes `app.investor_plan_change_request`) and marks the session
 /// ([InvestorService.markPlanChangeRequested]) so the button reads back as
 /// pending and cannot be sent twice.
@@ -445,21 +445,12 @@ class _PlanChangeAction extends StatelessWidget {
     }
 
     InvestorService.instance.markPlanChangeRequested();
-    // Best-effort durable copy — a build with no DATABASE_URL, or an
-    // unreachable database, must not swallow the request the investor just
+    // Best-effort durable copy — a build with no backend configured, or an
+    // unreachable one, must not swallow the request the investor just
     // confirmed.
     unawaited(
-      InvestorRepository.instance.requestPlanChange(
-        investorCode: investor.investorCode,
-        investorName: investor.name,
-        investorPhone: investor.phone,
-        currentPlanType: investor.planType,
+      BackendInvestorRepository.instance.requestPlanChange(
         requestedPlanType: target,
-        investedStoreCode: investor.investedStore.id,
-        totalUnits: investor.totalUnits,
-        unitPrice: investor.unitPrice,
-        investedSince: investor.investedSince,
-        roiPercent: investor.roiPercent,
       ),
     );
 

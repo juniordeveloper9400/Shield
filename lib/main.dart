@@ -11,7 +11,6 @@ import 'module/agent/agent_geo.dart';
 import 'module/catalogue/catalogue_service.dart';
 import 'module/categories/category_catalogue.dart';
 import 'module/home/customer_reviews_service.dart';
-import 'module/investor/investor_service.dart';
 import 'module/refer/referral_service.dart';
 import 'module/registration/shield_store.dart';
 import 'module/rewards/rewards_service.dart';
@@ -104,10 +103,8 @@ Future<void> main() async {
   // than the bundled seed.
   unawaited(StoreCatalog.instance.ensureLoaded());
 
-  // Warm the investor roster so the home screen's Investor Access card is
-  // driven by who the admin console has actually converted, not the bundled
-  // demo persona.
-  unawaited(InvestorService.instance.ensureLoaded());
+  // The investor persona (if any) is applied by PersonaGate's own check
+  // above, not loaded here — see InvestorService's own doc.
 
   // One line at launch — via dart:developer so it survives a release build —
   // saying whether the Neon write-through is live. A build started without

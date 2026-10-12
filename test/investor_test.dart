@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/data/backend/backend_investor_repository.dart';
 import 'package:shield/dates.dart';
 import 'package:shield/money.dart';
 import 'package:shield/module/account/account_screen.dart';
@@ -381,5 +382,14 @@ void main() {
 
       expect(find.text('Portfolio'), findsNothing);
     });
+  });
+
+  test('BackendInvestorRepository.requestPlanChange no-ops unconfigured', () async {
+    await expectLater(
+      BackendInvestorRepository.instance.requestPlanChange(
+        requestedPlanType: InvestorPlanType.monthly,
+      ),
+      completes,
+    );
   });
 }
