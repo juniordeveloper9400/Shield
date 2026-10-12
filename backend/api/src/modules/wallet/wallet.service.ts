@@ -593,12 +593,18 @@ export class WalletService {
         amount: commissionReserveEntry.amount,
         source: commissionReserveEntry.source,
         createdAt: commissionReserveEntry.createdAt,
+        memberName: users.name,
+        memberPhone: users.phone,
+        tierName: membershipTier.name,
         storeId: walletCard.storeId,
         storeCode: shieldStore.code,
         storeName: shieldStore.name,
       })
       .from(commissionReserveEntry)
       .innerJoin(walletCard, eq(walletCard.id, commissionReserveEntry.walletCardId))
+      .innerJoin(wallet, eq(wallet.id, walletCard.walletId))
+      .innerJoin(users, eq(users.id, wallet.memberId))
+      .innerJoin(membershipTier, eq(membershipTier.id, walletCard.tierId))
       .leftJoin(shieldStore, eq(shieldStore.id, walletCard.storeId))
       .orderBy(desc(commissionReserveEntry.createdAt));
 
@@ -610,6 +616,7 @@ export class WalletService {
         : rows.filter((r) => r.storeId === storeId);
 
     const byStoreMap = new Map<string, {
+      id: string;
       storeId: number | null;
       storeCode: string;
       storeName: string;
@@ -617,9 +624,12 @@ export class WalletService {
       companyShare: number;
       poolLeftover: number;
     }>();
+    let companyShare = 0;
+    let poolLeftover = 0;
     for (const r of visible) {
-      const key = String(r.storeId ?? 'none');
+      const key = r.storeId == null ? 'unassigned' : String(r.storeId);
       const bucket = byStoreMap.get(key) ?? {
+        id: key,
         storeId: r.storeId ?? null,
         storeCode: r.storeCode ?? '',
         storeName: r.storeName ?? 'Unassigned',
@@ -629,8 +639,13 @@ export class WalletService {
       };
       const amount = Number(r.amount);
       bucket.total += amount;
-      if (r.source === 'COMPANY_SHARE') bucket.companyShare += amount;
-      else bucket.poolLeftover += amount;
+      if (r.source === 'COMPANY_SHARE') {
+        bucket.companyShare += amount;
+        companyShare += amount;
+      } else {
+        bucket.poolLeftover += amount;
+        poolLeftover += amount;
+      }
       byStoreMap.set(key, bucket);
     }
     const byStore = [...byStoreMap.values()]
@@ -645,6 +660,8 @@ export class WalletService {
     const total = visible.reduce((sum, r) => sum + Number(r.amount), 0);
     return {
       total: round2(total),
+      companyShare: round2(companyShare),
+      poolLeftover: round2(poolLeftover),
       byStore,
       entries: visible.map((r) => ({
         id: r.id,
@@ -652,7 +669,11 @@ export class WalletService {
         amount: Number(r.amount),
         source: r.source,
         createdAt: r.createdAt,
+        memberName: r.memberName ?? '—',
+        memberPhone: r.memberPhone ?? '',
+        tierName: r.tierName ?? '—',
         storeId: r.storeId ?? null,
+        storeCode: r.storeCode ?? '',
         storeName: r.storeName ?? 'Unassigned',
       })),
     };
