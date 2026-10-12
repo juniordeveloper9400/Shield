@@ -97,3 +97,83 @@ export function availablePlanAllowance(
   }
   return Math.max(0, Math.min(balance, released - spent));
 }
+
+/**
+ * How much of this calendar month's allowance has been drawn: every debit
+ * dated in the month of [now], less the part of it paid out of the member's
+ * earned commission (which is theirs to spend whenever, so it never counts
+ * against the allowance). [entriesOldestFirst] must be in the order they
+ * happened — earnings are spent first, and what "was left" depends on the
+ * sequence. Ported from shieldweb's `walletMonth.ts` — see this file's own
+ * doc on why each surface keeps its own copy.
+ */
+export function redeemedThisMonth(entriesOldestFirst: LedgerEntry[], now: Date): number {
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  let earnings = 0;
+  let total = 0;
+  for (const entry of entriesOldestFirst) {
+    if (isEarnings(entry) && entry.amount > 0) {
+      earnings += entry.amount;
+    }
+    const earningsSpent = entry.amount < 0 ? Math.min(earnings, -entry.amount) : 0;
+    earnings -= earningsSpent;
+    if (entry.amount < 0 && isInMonth(entry.occurredOn, year, month)) {
+      total += -entry.amount - earningsSpent;
+    }
+  }
+  return total;
+}
+
+/**
+ * "Health Pass monthly redeemable": this whole month's allowance plus any
+ * carry-forward from earlier months — a fixed figure for the month, less
+ * whatever plan spending happened *before* the month [now] falls in (that
+ * month's own spending is [redeemedThisMonth], shown — and subtracted —
+ * separately, right next to it).
+ *
+ * Not "which cards have come round to release a *fresh* twelfth today" (the
+ * narrower question a per-card due-day check answers) — this is the number
+ * that actually belongs under "Health Pass monthly redeemable", so staff
+ * collecting a bill are never shown ₹0 while a real, unused balance from an
+ * earlier month is sitting right there. Floored at zero the same way
+ * [availablePlanAllowance] is; deliberately *not* also capped at the wallet
+ * balance — unlike that figure (what is actually left to spend right now),
+ * this is the size of the allowance pool itself, which a part-spent balance
+ * does not shrink.
+ */
+export function redeemableAllowance(cards: AllowanceCard[], entriesOldestFirst: LedgerEntry[], now: Date): number {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const released = releasedThroughMonth(cards, today);
+  // The last day of the month before [now]'s — spending on or before this
+  // counts as "before this month began"; [redeemedThisMonth] picks up from
+  // the day after.
+  const cutoff = new Date(today.getFullYear(), today.getMonth(), 0);
+  const cutoffIso = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+  let earnings = 0;
+  let spentBeforeThisMonth = 0;
+  for (const entry of entriesOldestFirst) {
+    if (entry.occurredOn.slice(0, 10) > cutoffIso) continue;
+    if (isEarnings(entry) && entry.amount > 0) earnings += entry.amount;
+    if (entry.amount < 0) {
+      const fromEarnings = Math.min(earnings, -entry.amount);
+      earnings -= fromEarnings;
+      spentBeforeThisMonth += -entry.amount - fromEarnings;
+    }
+  }
+  return Math.max(0, released - spentBeforeThisMonth);
+}
+
+function isInMonth(isoDate: string, year: number, month: number): boolean {
+  const match = /^(\d{4})-(\d{2})-\d{2}/.exec(isoDate);
+  return match !== null && Number(match[1]) === year && Number(match[2]) === month;
+}
+
+/**
+ * What is left of this month's allowance. Floored at zero: an allowance
+ * that has been used up is used up, and a negative one would read as a debt
+ * the member does not owe.
+ */
+export function monthlyBalanceOf(monthlyRedeemable: number, redeemed: number): number {
+  return Math.max(0, monthlyRedeemable - redeemed);
+}

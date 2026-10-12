@@ -28,7 +28,7 @@ import {
   walletEntry,
 } from '../../db/schema';
 import type { AdminRole } from '../auth/session.types';
-import { availablePlanAllowance, toIsoDate } from '../wallet/wallet-month';
+import { availablePlanAllowance, redeemableAllowance, redeemedThisMonth, toIsoDate } from '../wallet/wallet-month';
 import { CartService } from './cart.service';
 import { assertLegalTransition, type OrderStatus } from './order-status';
 import { cancelOrderForMember } from './member-withdrawal';
@@ -688,6 +688,27 @@ export class OrderService {
   }
 
   /**
+   * The cards/entries shape `wallet-month.ts`'s pure functions all take, for
+   * one member's wallet — shared by `availableWalletCapForMember` and
+   * `getWalletPreview` so there is one query for it, not two.
+   */
+  private async walletMonthInputs(tx: Database, walletId: number) {
+    const cards = await tx
+      .select({ amount: walletCard.amount, bonus: walletCard.bonus, rechargedExtra: walletCard.rechargedExtra, issuedOn: walletCard.issuedOn })
+      .from(walletCard)
+      .where(and(eq(walletCard.walletId, walletId), eq(walletCard.status, 'APPROVED')));
+    const entries = await tx
+      .select({ kind: walletEntry.kind, amount: walletEntry.amount, occurredOn: walletEntry.occurredOn, createdAt: walletEntry.createdAt })
+      .from(walletEntry)
+      .where(eq(walletEntry.walletId, walletId))
+      .orderBy(walletEntry.createdAt, walletEntry.id);
+    return {
+      cards: cards.map((c) => ({ loaded: Number(c.amount) + Number(c.bonus) + Number(c.rechargedExtra), issuedOn: toIsoDate(c.issuedOn) })),
+      entries: entries.map((e) => ({ kind: e.kind, amount: Number(e.amount), occurredOn: toIsoDate(e.occurredOn) })),
+    };
+  }
+
+  /**
    * What a member's wallet is actually good for right now: their balance,
    * further capped by what's left of this month's Health Pass allowance —
    * same rule as `availablePlanAllowance` (ported from shieldweb's
@@ -697,24 +718,39 @@ export class OrderService {
    * beyond their own balance.
    */
   private async availableWalletCapForMember(tx: Database, walletId: number, balance: number): Promise<number> {
-    const cards = await tx
-      .select({ amount: walletCard.amount, bonus: walletCard.bonus, rechargedExtra: walletCard.rechargedExtra, issuedOn: walletCard.issuedOn })
-      .from(walletCard)
-      .where(and(eq(walletCard.walletId, walletId), eq(walletCard.status, 'APPROVED')));
+    const { cards, entries } = await this.walletMonthInputs(tx, walletId);
     if (cards.length === 0) {
       return balance;
     }
-    const entries = await tx
-      .select({ kind: walletEntry.kind, amount: walletEntry.amount, occurredOn: walletEntry.occurredOn, createdAt: walletEntry.createdAt })
-      .from(walletEntry)
-      .where(eq(walletEntry.walletId, walletId))
-      .orderBy(walletEntry.createdAt, walletEntry.id);
-    return availablePlanAllowance(
-      cards.map((c) => ({ loaded: Number(c.amount) + Number(c.bonus) + Number(c.rechargedExtra), issuedOn: toIsoDate(c.issuedOn) })),
-      entries.map((e) => ({ kind: e.kind, amount: Number(e.amount), occurredOn: toIsoDate(e.occurredOn) })),
-      new Date(),
+    return availablePlanAllowance(cards, entries, new Date(), balance);
+  }
+
+  /**
+   * The four Health Pass figures `BillEditorModal` (and the lab-booking
+   * equivalent) show staff before they ever send the collection OTP — what
+   * [collectBillWithWallet] would actually draw never disagrees with this,
+   * since both read the same cards/entries through the same pure functions.
+   * `0` across the board for a member with no wallet row at all, same as
+   * [collectBillWithWallet] treats one.
+   */
+  async getWalletPreview(role: AdminRole, storeId: number | null, orderId: number) {
+    const found = await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+
+    const [theWallet] = await this.db.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
+    if (!theWallet) {
+      return { balance: 0, availableAllowance: 0, monthlyRedeemable: 0, redeemedThisMonth: 0 };
+    }
+
+    const balance = Number(theWallet.balance);
+    const { cards, entries } = await this.walletMonthInputs(this.db, theWallet.id);
+    const now = new Date();
+
+    return {
       balance,
-    );
+      availableAllowance: cards.length === 0 ? balance : availablePlanAllowance(cards, entries, now, balance),
+      monthlyRedeemable: redeemableAllowance(cards, entries, now),
+      redeemedThisMonth: redeemedThisMonth(entries, now),
+    };
   }
 
   async collectBillWithWallet(role: AdminRole, storeId: number | null, orderId: number) {

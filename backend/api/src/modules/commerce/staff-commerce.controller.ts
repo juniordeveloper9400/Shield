@@ -108,6 +108,18 @@ export class StaffCommerceController {
     return this.orders.collectBillWithWallet(user.role!, user.storeId ?? null, id);
   }
 
+  /**
+   * The wallet/allowance figures `BillEditorModal` shows before collection —
+   * balance, what's actually drawable right now, this month's Health Pass
+   * allowance, and what it has already drawn this month. Read-only; same
+   * role scope as the two writes above.
+   */
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Get('orders/:id/wallet-preview')
+  walletPreview(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    return this.orders.getWalletPreview(user.role!, user.storeId ?? null, id);
+  }
+
   // ---- Order review, billing and invoicing (shieldweb's orders module) ----
   // Narrowed to the roles that hold the 'orders' module in
   // shieldweb/src/config/permissions.ts. Every call still resolves the order
