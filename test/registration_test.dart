@@ -273,9 +273,10 @@ void main() {
     );
 
     test('registering marks the profile; editing is not a re-registration', () {
-      // The reward bonus is now a server-side ledger row
-      // (RewardsService.awardRegistrationBonus), guarded once-only and a
-      // no-op without a database, so this covers only the profile side.
+      // The reward bonus is a server-side ledger row, credited by the
+      // backend itself inside the same profile-save call — see
+      // RegistrationService.save's own doc — so this covers only the
+      // profile side.
       final service = RegistrationService.instance;
       expect(service.isRegistered, isFalse);
 

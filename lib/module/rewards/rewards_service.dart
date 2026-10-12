@@ -2,14 +2,26 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../data/neon/neon_http.dart';
-import '../../data/neon/rewards_repository.dart';
+import '../../data/backend/backend_http.dart';
+import '../../data/backend/backend_rewards_repository.dart';
+import '../../data/neon/rewards_repository.dart' show RewardTxn, RewardsRepository;
 import '../auth/auth_service.dart';
 
 enum RewardsStatus { idle, loading, ready, error }
 
-/// The member's reward-points balance, backed by the `app.reward_point_transaction`
-/// ledger on Neon (see [RewardsRepository]).
+/// The member's reward-points balance, backed by the
+/// `app.reward_point_transaction` ledger — reads and redemption go through
+/// `backend/api` (see [BackendRewardsRepository]); crediting a paid order's
+/// points still goes straight to Neon ([RewardsRepository.credit], via
+/// [awardForOrder]) because checkout itself (`lib/data/neon/order_repository.dart`)
+/// is not migrated to the backend yet — see `docs/security.md` and
+/// `backend/docs/migration-plan.md`. The registration bonus and a
+/// never-wired referral bonus used to also credit straight to Neon from
+/// here; both are gone now — the registration bonus is credited
+/// automatically by the backend inside `PATCH /v1/member/me` (see
+/// `RegistrationService.save`'s doc), and the referral bonus had no real
+/// trigger before this either ("nothing calls it yet" was this method's
+/// own doc), so nothing is lost in not porting it.
 ///
 /// One number, one source of truth: the balance is `SUM(points)` over the
 /// ledger, and every earn / redeem is a real row. The header coin, the rewards
@@ -62,7 +74,7 @@ class RewardsService extends ChangeNotifier {
   List<RewardTxn> _history = const [];
   List<RewardTxn> get history => _history;
 
-  bool get isConfigured => NeonHttp.isConfigured;
+  bool get isConfigured => BackendHttp.isConfigured;
   bool get isLoading => _status == RewardsStatus.loading;
 
   String? _phone;
@@ -120,7 +132,7 @@ class RewardsService extends ChangeNotifier {
       notifyListeners();
       return;
     }
-    if (!NeonHttp.isConfigured) {
+    if (!BackendHttp.isConfigured) {
       _status = RewardsStatus.error;
       _inFlight = null;
       notifyListeners();
@@ -129,13 +141,13 @@ class RewardsService extends ChangeNotifier {
     _status = RewardsStatus.loading;
     notifyListeners();
     try {
-      final balance = await RewardsRepository.instance.balanceFor(phone);
-      final history = await RewardsRepository.instance.historyFor(phone);
+      final balance = await BackendRewardsRepository.instance.balanceFor();
+      final history = await BackendRewardsRepository.instance.historyFor();
       if (balance != null) _balance = balance;
       if (history != null) _history = history;
       _status = balance == null ? RewardsStatus.error : RewardsStatus.ready;
     } catch (error) {
-      NeonHttp.log('RewardsService load failed', error: error);
+      BackendHttp.log('RewardsService load failed', error: error);
       _status = RewardsStatus.error;
     } finally {
       _inFlight = null;
@@ -144,26 +156,19 @@ class RewardsService extends ChangeNotifier {
   }
 
   // ---- earning ----------------------------------------------------------
+  //
+  // The registration bonus and a never-wired referral bonus used to also
+  // live here, calling straight through to Neon. Both are gone now — see
+  // this class's own doc.
 
-  /// Credits the one-time registration bonus. Safe to call on every completed
-  /// registration — the ledger write is guarded so it only lands once.
-  Future<void> awardRegistrationBonus({
-    required String phone,
-    required String name,
-  }) async {
-    await RewardsRepository.instance.credit(
-      phone: phone,
-      name: name,
-      points: registrationBonus,
-      reason: 'REGISTRATION',
-      note: 'Registration bonus',
-      once: true,
-    );
-    await refresh();
-  }
-
-  /// Credits points for a paid order (see [pointsForSpend]). A no-op while
-  /// signed out or when the order earned nothing.
+  /// Credits points for a paid order (see [pointsForSpend]) — still a
+  /// direct Neon write ([RewardsRepository.credit]), not a backend call:
+  /// `backend/api` has no member-facing "credit me points" endpoint by
+  /// design (see [BackendRewardsRepository]'s own doc) and checkout itself
+  /// does not run through the backend yet, so there is nothing server-side
+  /// for this to call instead. A no-op while signed out or when the order
+  /// earned nothing. Remove this once checkout migrates and credits order
+  /// points itself, the way registration already does.
   Future<void> awardForOrder({
     required String code,
     required int paidRupees,
@@ -180,27 +185,6 @@ class RewardsService extends ChangeNotifier {
       reason: 'ORDER',
       note: 'Order $code',
       refType: 'order',
-    );
-    await refresh();
-  }
-
-  /// Credits a completed-referral reward. Wired for when the referral flow can
-  /// say a referral has reached plan activation — nothing calls it yet.
-  Future<void> awardForReferral({
-    required String phone,
-    required String name,
-    required int points,
-    String note = 'Referral reward',
-  }) async {
-    if (points <= 0) {
-      return;
-    }
-    await RewardsRepository.instance.credit(
-      phone: phone,
-      name: name,
-      points: points,
-      reason: 'REFERRAL_LEVEL',
-      note: note,
     );
     await refresh();
   }
@@ -232,22 +216,18 @@ class RewardsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Spends [points] from the balance as a negative `REDEMPTION` ledger row.
-  /// The caller does the wallet-side credit. Returns `true` when the row was
-  /// written.
-  Future<bool> redeem(int points, {String note = 'Redeemed to wallet'}) async {
+  /// Spends [points] from the balance into the wallet — one backend call
+  /// does both the points-ledger debit and the wallet credit, atomically
+  /// (`BackendRewardsRepository.redeem`), unlike the old direct-Neon
+  /// version's two separate client-driven writes. Returns `true` on
+  /// success.
+  Future<bool> redeem(int points) async {
     final user = AuthService.instance.currentUser.value;
     if (user == null || points <= 0 || points > _balance) {
       return false;
     }
-    final wrote = await RewardsRepository.instance.credit(
-      phone: user.phone,
-      name: user.name,
-      points: -points,
-      reason: 'REDEMPTION',
-      note: note,
-    );
+    final spent = await BackendRewardsRepository.instance.redeem(points);
     await refresh();
-    return wrote != null;
+    return spent;
   }
 }

@@ -88,6 +88,21 @@ class BackendMemberRepository {
     }
   }
 
+  /// Bumps `last_login_at` for a session restored at launch — see
+  /// `POST /v1/member/me/touch-login`'s own doc on `member.controller.ts`.
+  /// Best-effort, same contract as every other call here: no live session,
+  /// unreachable backend, or a server error all just no-op.
+  Future<void> touchLogin() async {
+    if (!_http.isSignedIn) {
+      return;
+    }
+    try {
+      await _http.request('POST', '/v1/member/me/touch-login');
+    } catch (error) {
+      BackendHttp.log('touchLogin failed', error: error);
+    }
+  }
+
   /// Permanently deletes the signed-in member's account server-side — see
   /// `identity.service.ts`'s `deleteAccount` for exactly what gets cleared
   /// (soft-deleted, personal fields wiped, every live session revoked).

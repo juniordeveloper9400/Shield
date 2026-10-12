@@ -5,23 +5,26 @@ import 'package:flutter/foundation.dart';
 import '../../data/backend/backend_http.dart';
 import '../../data/backend/backend_member_repository.dart';
 import '../../data/backend/backend_session.dart';
-import '../../data/neon/member_repository.dart';
 import '../registration/registration_service.dart';
 import 'msg91_widget_otp.dart' as widget_otp;
 import 'otp_send_throttle.dart';
 
-/// The production default for [AuthService._phoneExists]: the backend's
-/// throttled phone-lookup first (see [BackendMemberRepository.phoneExists]'s
-/// own doc), falling back to the direct Neon read only when the backend
-/// itself could not answer — never when it cleanly answered `false`. A
-/// top-level function, not a method, so it can be torn off as a field
-/// default before [AuthService]'s constructor body runs.
-Future<bool?> _phoneExistsBackendFirst(String phone) async {
-  final fromBackend = await BackendMemberRepository.instance.phoneExists(phone);
-  if (fromBackend != null) {
-    return fromBackend;
-  }
-  return MemberRepository.instance.phoneExists(phone);
+/// The production default for [AuthService._phoneExists] — see
+/// [BackendMemberRepository.phoneExists]'s own doc. A top-level function,
+/// not a method, so it can be torn off as a field default before
+/// [AuthService]'s constructor body runs.
+Future<bool?> _phoneExistsBackend(String phone) =>
+    BackendMemberRepository.instance.phoneExists(phone);
+
+/// The production default for [AuthService._nameByPhone] — the signed-in
+/// member's own name, via `GET /v1/member/me`. Ignores [phone]: by the time
+/// this runs (right after [AuthService.verifyOtp]'s own transport call
+/// succeeds), the backend session it reads already identifies the right
+/// member. A top-level function for the same reason as
+/// [_phoneExistsBackend].
+Future<String?> _nameByPhoneBackend(String phone) async {
+  final profile = await BackendMemberRepository.instance.currentProfile();
+  return profile?.name;
 }
 
 /// A signed-in member.
@@ -213,23 +216,16 @@ class AuthService {
     return typed.isEmpty ? 'Member' : typed;
   }
 
-  /// Persists the freshly signed-in user: records the account in the
-  /// `app.users` table (via the direct Neon path every screen in this app
-  /// already reads from). Best-effort, never blocks the sign-in. The
-  /// backend-issued session itself is already live by the time this runs —
-  /// [requestOtp]/[verifyOtp]'s own `/otp/verify`/`/otp/register` call sets
-  /// it directly, there is no separate bridging step left to do here.
+  /// Marks a freshly signed-in user as fresh (for the one-time welcome) and
+  /// resets the send cooldown. The `app.users` row itself is already
+  /// written — [requestOtp]/[verifyOtp]'s own `/otp/verify`/`/otp/register`
+  /// call creates or updates it server-side in the same call that issues
+  /// the session, so there is no separate write left to do here.
   void _afterSignIn(AuthUser user) {
     _freshSignIn = user;
     // Signed in — clear the hourly send cap so a later sign-in starts fresh.
     _sendCooldownRemaining = null;
     unawaited(_sendThrottle.reset());
-    unawaited(
-      MemberRepository.instance.upsertOnSignIn(
-        name: user.name,
-        phone: user.phone,
-      ),
-    );
   }
 
   /// Restores a persisted sign-in at launch, so a member who has signed in
@@ -284,19 +280,13 @@ class AuthService {
     // case cannot reach here anyway: currentProfile's own backend query
     // already filters deleted_at and returns null for a deleted account.)
 
-    var name = profile.name.trim();
-    if (name.isEmpty) {
-      name = (await MemberRepository.instance.nameByPhone(profile.phone))
-              ?.trim() ??
-          '';
-    }
-
+    final name = profile.name.trim();
     final user = AuthUser(
       name: name.isEmpty ? 'Member' : name,
       phone: profile.phone,
     );
     currentUser.value = user;
-    unawaited(MemberRepository.instance.touchLogin(profile.phone));
+    unawaited(BackendMemberRepository.instance.touchLogin());
   }
 
   /// Null when [value] is usable as a name, otherwise the reason it is not.
@@ -338,9 +328,8 @@ class AuthService {
   /// instead of firing an OTP at a number with no account.
   Future<bool?> hasAccount(String phone) => _phoneExists(phone.trim());
 
-  Future<bool?> Function(String phone) _phoneExists = _phoneExistsBackendFirst;
-  Future<String?> Function(String phone) _nameByPhone =
-      MemberRepository.instance.nameByPhone;
+  Future<bool?> Function(String phone) _phoneExists = _phoneExistsBackend;
+  Future<String?> Function(String phone) _nameByPhone = _nameByPhoneBackend;
 
   /// Sends a code to [phone] and holds the details until it is verified.
   /// Returns null when the code went out, otherwise the reason it did not.
@@ -431,30 +420,20 @@ class AuthService {
   }
 
   /// Permanently deletes the signed-in member's account and ends the
-  /// session — see [MemberRepository.deleteAccount] for exactly what gets
-  /// cleared (soft-deleted, not a row wiped out from under their order
-  /// history). A no-op when nobody is signed in.
-  ///
-  /// The database side is best-effort, same contract as every other write in
-  /// this app, and is what actually governs the account from here on —
-  /// [MemberRepository.phoneExists] and [restoreSession] both read
-  /// `deleted_at`. There is no separate remote identity left to delete the
-  /// way the old Firebase version had to (`deleteFirebaseUser`) — a phone
-  /// number verified through MSG91 leaves nothing behind to clean up beyond
-  /// the backend session, which [BackendMemberRepository.deleteAccount]
-  /// already revokes.
+  /// session — see [BackendMemberRepository.deleteAccount] for exactly what
+  /// gets cleared (soft-deleted, not a row wiped out from under their order
+  /// history). A no-op when nobody is signed in. There is no separate
+  /// remote identity left to delete the way the old Firebase version had to
+  /// (`deleteFirebaseUser`) — a phone number verified through MSG91 leaves
+  /// nothing behind to clean up beyond the backend session, which
+  /// [BackendMemberRepository.deleteAccount] already revokes as part of
+  /// the same call.
   Future<void> deleteAccount() async {
     final user = currentUser.value;
     if (user == null) {
       return;
     }
-    // Both run: the backend-issued session (if any) is what actually needs
-    // revoking so a token minted elsewhere can't keep acting as this member,
-    // and Neon's own deleted_at is still what phoneExists/restoreSession
-    // enforce today — see MemberRepository.deleteAccount's own doc. Neither
-    // failing should stop the other; both are best-effort by contract.
     await BackendMemberRepository.instance.deleteAccount();
-    await MemberRepository.instance.deleteAccount(user.phone);
     await BackendSession.instance.signOut();
     _pending = null;
     _freshSignIn = null;
@@ -479,8 +458,8 @@ class AuthService {
     _freshSignIn = null;
     _transport = _defaultTransport();
     _lastDiagnostic = null;
-    _phoneExists = _phoneExistsBackendFirst;
-    _nameByPhone = MemberRepository.instance.nameByPhone;
+    _phoneExists = _phoneExistsBackend;
+    _nameByPhone = _nameByPhoneBackend;
     currentUser.value = null;
   }
 

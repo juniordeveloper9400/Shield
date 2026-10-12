@@ -137,8 +137,10 @@ class RegistrationService extends ChangeNotifier {
   static final RegistrationService instance = RegistrationService._();
 
   /// Credited once, on the first completed registration — the figure the
-  /// registration screens quote. The real credit is a ledger row written by
-  /// [RewardsService.awardRegistrationBonus]; this constant is only the copy.
+  /// registration screens quote. The real credit is a ledger row the
+  /// backend writes itself, server-side, inside the same call that saves
+  /// the profile (`identity.service.ts`'s `updateProfile`); this constant
+  /// is only the copy.
   static const int rewardPoints = RewardsService.registrationBonus;
 
   /// The states and union territories the address form offers.
@@ -195,32 +197,24 @@ class RegistrationService extends ChangeNotifier {
   /// Whether the home and checkout prompts should still be offered.
   bool get shouldPrompt => !isRegistered && !_promptDismissed;
 
-  /// Saves the profile and, the first time only, credits the registration
-  /// bonus — a later edit is not a second reward.
+  /// Saves the profile. The registration bonus is credited exactly once,
+  /// server-side, inside this same backend call the first time a
+  /// registration completes (see [_persist]) — there is no separate
+  /// client-driven credit here any more; a later edit is simply not a
+  /// first completion, so nothing re-credits it.
   ///
-  /// The profile update is synchronous so the UI reacts at once; the write to
-  /// `app.users` and the reward-points ledger row both go in the background.
-  /// A failed or unconfigured database write is logged, never thrown —
-  /// registration is an offer, not a gate, and must not break here. The
-  /// [RewardsService] credit is guarded server-side, so re-saving cannot
-  /// double it.
+  /// The profile update is synchronous so the UI reacts at once; the write
+  /// to the backend goes in the background. A failed or unconfigured write
+  /// is logged, never thrown — registration is an offer, not a gate, and
+  /// must not break here.
   void save(Registration registration) {
-    final isFirst = _profile == null;
     _profile = registration;
     _promptDismissed = false;
     notifyListeners();
-    if (isFirst) {
-      unawaited(
-        RewardsService.instance.awardRegistrationBonus(
-          phone: registration.phone,
-          name: registration.name,
-        ),
-      );
-    }
     unawaited(_persist(registration));
   }
 
-  /// Write-through to Neon (`app.users`). Best-effort: see [save].
+  /// Write-through to `backend/api`. Best-effort: see [save].
   Future<void> _persist(Registration registration) async {
     if (!MemberRepository.instance.isAvailable) {
       return;
