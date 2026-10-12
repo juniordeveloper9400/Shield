@@ -301,8 +301,6 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
       PatientRepository.instance
           .upsert(
             uuid: saved.remoteId,
-            memberPhone: account.phone,
-            memberName: account.name,
             name: saved.name,
             phone: saved.phone,
             address: saved.address,

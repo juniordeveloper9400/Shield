@@ -1,46 +1,36 @@
 import '../../module/patients/patient_book.dart';
 import '../backend/backend_patient_repository.dart';
-import 'neon_http.dart';
 
-/// Reads and writes the people on an account.
+/// Reads and writes the people on an account through `backend/api`
+/// (`BackendPatientRepository`), never a direct Neon connection. This used
+/// to also hold a direct-Neon fallback for when the backend call failed;
+/// that path is gone now, along with the compiled-in database credential
+/// it depended on (see `docs/security.md` and
+/// `backend/docs/migration-plan.md`'s Phase 5).
 ///
-/// Tries `backend/api` first (`BackendPatientRepository`) and falls back to
-/// the direct-Neon path below only when the backend is unavailable, there
-/// is no session yet, or the call fails — both write the identical table
-/// (`app.patient`), this is a resilience fallback during the migration off
-/// the compiled-in Neon credential, not two independently maintained
-/// copies.
-///
-/// Every method is best-effort: with no `DATABASE_URL` compiled in (tests) or
-/// the network down, writes no-op and reads return null. Adding a patient must
-/// never fail because the database is unreachable — [PatientBook] stays the
-/// source of truth for the running app, and this table is the durable copy that
-/// is read back on the next launch.
-///
-/// `app.patient.member_id` is `NOT NULL`, so [upsert]'s own direct-Neon path
-/// resolves the owning `app.users` row from the signed-in mobile number
-/// first, inserting a minimal user if sign-in has not already written one.
+/// Every method is best-effort: an unconfigured backend or no live
+/// session makes writes no-op and reads return null. Adding a patient
+/// must never fail because the backend is unreachable — [PatientBook]
+/// stays the source of truth for the running app, and this table is the
+/// durable copy that is read back on the next launch.
 class PatientRepository {
   const PatientRepository._();
 
   static const PatientRepository instance = PatientRepository._();
 
-  /// Whether a write or read would actually reach a database — the backend
-  /// or Neon.
-  bool get isAvailable =>
-      BackendPatientRepository.instance.isAvailable || NeonHttp.isConfigured;
+  /// Whether a write or read would actually reach the backend.
+  bool get isAvailable => BackendPatientRepository.instance.isAvailable;
 
-  /// Inserts a new patient, or updates the existing row when [uuid] is given
-  /// (the value a previous call returned, held on [Patient.remoteId] — the
-  /// backend's own numeric id once this writes through it, still a Neon row
-  /// uuid on the fallback path; either way opaque to every caller).
+  /// Inserts a new patient, or updates the existing row when [uuid] is
+  /// given (the value a previous call returned, held on
+  /// [Patient.remoteId] — the backend's own numeric id, opaque to every
+  /// caller).
   ///
   /// Returns the row's id so the caller can pin it onto the in-memory
-  /// record with [PatientBook.attachRemoteId]. Null when nothing was written.
+  /// record with [PatientBook.attachRemoteId]. Null when nothing was
+  /// written.
   Future<String?> upsert({
     String? uuid,
-    required String memberPhone,
-    required String memberName,
     required String name,
     required String phone,
     required String address,
@@ -48,186 +38,31 @@ class PatientRepository {
     required PatientGender gender,
     required PatientRelation relation,
     required String abhaId,
-  }) async {
-    final backend = BackendPatientRepository.instance;
-    if (backend.isAvailable) {
-      final id = await backend.upsert(
-        id: uuid,
-        name: name,
-        phone: phone,
-        address: address,
-        dob: dob,
-        gender: gender,
-        relation: relation,
-        abhaId: abhaId,
-      );
-      if (id != null) {
-        return id;
-      }
-      // Falls through to Neon: either the backend genuinely couldn't save
-      // it (worth a second, independent attempt rather than losing the
-      // patient), or it just refused for a reason this best-effort method
-      // doesn't distinguish — see every other write in this class's own
-      // contract.
-    }
-
-    if (!NeonHttp.isConfigured) {
-      return null;
-    }
-
-    final n = name.trim();
-    final p = phone.trim();
-    final addr = address.trim();
-    final dobIso = _isoDate(dob);
-    final g = gender.name.toUpperCase();
-    final r = relation.name.toUpperCase();
-    final abha = abhaId.replaceAll(RegExp(r'\D'), '');
-
-    try {
-      if (uuid != null) {
-        final updated = await NeonHttp.instance.query(
-          r'''
-            UPDATE app.patient SET
-              name       = $1,
-              phone      = $2,
-              address    = $3,
-              dob        = $4::date,
-              gender     = $5::app.gender,
-              relation   = $6::app.patient_relation,
-              abha_id    = $7,
-              updated_at = now()
-            WHERE uuid = $8::uuid AND deleted_at IS NULL
-            RETURNING uuid
-          ''',
-          [n, p, addr, dobIso, g, r, abha, uuid],
-        );
-        if (updated.isNotEmpty) {
-          return updated.first['uuid']?.toString();
-        }
-        // Row is gone (database wiped, or a stale id) — fall through and write a
-        // fresh one rather than silently losing the patient.
-      }
-
-      final inserted = await NeonHttp.instance.query(
-        r'''
-          WITH owner AS (
-            INSERT INTO app.users (phone, name)
-            VALUES ($1, $2)
-            ON CONFLICT (phone) DO UPDATE SET updated_at = now()
-            RETURNING id
-          )
-          INSERT INTO app.patient
-            (member_id, name, phone, address, dob, gender, relation, abha_id)
-          SELECT owner.id, $3, $4, $5, $6::date,
-                 $7::app.gender, $8::app.patient_relation, $9
-          FROM owner
-          RETURNING uuid
-        ''',
-        [memberPhone, memberName, n, p, addr, dobIso, g, r, abha],
-      );
-      final id = inserted.isEmpty ? null : inserted.first['uuid']?.toString();
-      NeonHttp.log('PatientRepository.upsert: saved $n ($id)');
-      return id;
-    } catch (error) {
-      NeonHttp.log('PatientRepository.upsert failed', error: error);
-      return null;
-    }
-  }
-
-  /// Marks a patient row soft-deleted (`deleted_at = now()`). A no-op when
-  /// [uuid] is unknown to a given path — both the backend and Neon are
-  /// tried, since a delete's id could have come from either store
-  /// (created before or after this migration's bridge), and each simply
-  /// no-ops on an id it does not recognize rather than erroring.
-  Future<void> softDelete(String uuid) async {
-    final backend = BackendPatientRepository.instance;
-    if (backend.isAvailable) {
-      await backend.softDelete(uuid);
-    }
-
-    if (!NeonHttp.isConfigured) {
-      return;
-    }
-    try {
-      await NeonHttp.instance.query(
-        r'UPDATE app.patient SET deleted_at = now() '
-        r'WHERE uuid = $1::uuid AND deleted_at IS NULL',
-        [uuid],
-      );
-    } catch (error) {
-      NeonHttp.log('PatientRepository.softDelete failed', error: error);
-    }
-  }
-
-  /// Every non-deleted patient for the member with [memberPhone], oldest first.
-  ///
-  /// Returns `null` (not an empty list) when neither the backend nor Neon
-  /// could answer, so the caller can tell "this account has no saved
-  /// patients" from "could not load them" and avoid wiping the in-memory
-  /// list on a transient failure.
-  Future<List<Patient>?> listForMember(String memberPhone) async {
-    final backend = BackendPatientRepository.instance;
-    if (backend.isAvailable) {
-      final patients = await backend.listForMember();
-      if (patients != null) {
-        return patients;
-      }
-    }
-
-    if (!NeonHttp.isConfigured) {
-      return null;
-    }
-    try {
-      final rows = await NeonHttp.instance.query(
-        r'''
-          SELECT p.uuid, p.name, p.phone, p.address, p.dob,
-                 p.gender::text   AS gender,
-                 p.relation::text AS relation,
-                 p.abha_id
-          FROM app.patient p
-          JOIN app.users u ON u.id = p.member_id
-          WHERE u.phone = $1 AND p.deleted_at IS NULL
-          ORDER BY p.created_at
-        ''',
-        [memberPhone],
-      );
-      return rows.map(_toPatient).toList();
-    } catch (error) {
-      NeonHttp.log('PatientRepository.listForMember failed', error: error);
-      return null;
-    }
-  }
-
-  /// One `app.patient` row → a [Patient]. The id is derived from the row `uuid`
-  /// so a reload lands on the same in-memory record, and `remoteId` is set so
-  /// [PatientBook] knows this one is already backed by the database.
-  static Patient _toPatient(Map<String, dynamic> row) {
-    final uuid = row['uuid']?.toString() ?? '';
-    return Patient(
-      id: 'remote-$uuid',
-      remoteId: uuid.isEmpty ? null : uuid,
-      name: (row['name'] ?? '').toString(),
-      phone: (row['phone'] ?? '').toString(),
-      address: (row['address'] ?? '').toString(),
-      dob: DateTime.tryParse((row['dob'] ?? '').toString()) ?? DateTime(2000),
-      gender: _genderFrom(row['gender']?.toString()),
-      relation: _relationFrom(row['relation']?.toString()),
-      abhaId: (row['abha_id'] ?? '').toString(),
+  }) {
+    return BackendPatientRepository.instance.upsert(
+      id: uuid,
+      name: name,
+      phone: phone,
+      address: address,
+      dob: dob,
+      gender: gender,
+      relation: relation,
+      abhaId: abhaId,
     );
   }
 
-  static PatientGender _genderFrom(String? label) => PatientGender.values
-      .firstWhere((g) => g.name.toUpperCase() == label,
-          orElse: () => PatientGender.other);
+  /// Marks a patient row soft-deleted.
+  Future<void> softDelete(String uuid) =>
+      BackendPatientRepository.instance.softDelete(uuid);
 
-  static PatientRelation _relationFrom(String? label) => PatientRelation.values
-      .firstWhere((r) => r.name.toUpperCase() == label,
-          orElse: () => PatientRelation.other);
-
-  /// `1994-09-04` — an unambiguous value for a `date` column.
-  static String _isoDate(DateTime date) {
-    final month = date.month.toString().padLeft(2, '0');
-    final day = date.day.toString().padLeft(2, '0');
-    return '${date.year}-$month-$day';
-  }
+  /// Every non-deleted patient for the signed-in member, oldest first.
+  ///
+  /// Returns `null` (not an empty list) when the backend could not
+  /// answer, so the caller can tell "this account has no saved patients"
+  /// from "could not load them" and avoid wiping the in-memory list on a
+  /// transient failure. [memberPhone] is accepted for parity with the old
+  /// direct-Neon signature; the lookup itself is scoped to the signed-in
+  /// session, not this value.
+  Future<List<Patient>?> listForMember(String memberPhone) =>
+      BackendPatientRepository.instance.listForMember();
 }

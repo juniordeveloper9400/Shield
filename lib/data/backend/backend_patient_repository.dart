@@ -9,9 +9,8 @@ import 'backend_http.dart';
 /// Ported from `shield agent_invester/lib/data/backend/patient_repository.dart`.
 /// `lib/data/neon/patient_repository.dart` (the class `PatientBook` actually
 /// calls, whose own `uuid`-named parameters and return values this class
-/// leaves untouched) tries this first and falls back to its own direct-Neon
-/// path when the backend is unavailable, there is no session yet, or the
-/// call fails.
+/// leaves untouched) is a thin pass-through to this now — no direct-Neon
+/// fallback any more.
 ///
 /// Every method is best-effort: with an unconfigured or unsigned-in backend,
 /// writes no-op and reads return null. Adding a patient must never fail
