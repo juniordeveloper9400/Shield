@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, getTableColumns } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
-import { investor, investorPlanChangeRequest } from '../../db/schema';
+import { investor, investorPlanChangeRequest, shieldStore } from '../../db/schema';
 import type { CreatePlanChangeRequestDto, ResolvePlanChangeRequestDto } from './dto';
 
 /**
@@ -69,8 +69,18 @@ export class InvestorService {
     });
   }
 
+  /**
+   * Joined to the invested branch's stable code — the client
+   * (`lib/data/neon/persona_repository.dart`'s `RemoteInvestor.storeCode`,
+   * now gone) reads the branch by code, not the backend's own numeric id.
+   */
   private async getByMemberIdOrThrow(memberId: number) {
-    const [found] = await this.db.select().from(investor).where(eq(investor.memberId, memberId)).limit(1);
+    const [found] = await this.db
+      .select({ ...getTableColumns(investor), storeCode: shieldStore.code })
+      .from(investor)
+      .leftJoin(shieldStore, eq(shieldStore.id, investor.investedStoreId))
+      .where(eq(investor.memberId, memberId))
+      .limit(1);
     if (!found) throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Not an investor' } });
     return found;
   }

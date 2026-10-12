@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, ne, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
@@ -36,6 +37,26 @@ export class AgentService {
     @Inject(DRIZZLE) private readonly db: Database,
     @Inject(FIREBASE_VERIFIER) private readonly firebase: FirebaseVerifier,
   ) {}
+
+  /**
+   * The signed-in member's own agent row, if the Super Admin has made them
+   * one — the "is this member also an agent" check a client used to run
+   * directly against `app.agent` with the compiled-in Neon credential (see
+   * `lib/data/neon/persona_repository.dart`'s own doc, now gone). Throws
+   * (treated by the caller as "not an agent") when there is none, same as
+   * `InvestorService.getByMemberIdOrThrow`.
+   */
+  async getOwnProfile(memberId: number) {
+    const parent = alias(agent, 'parent_agent');
+    const [found] = await this.db
+      .select({ ...getTableColumns(agent), parentCode: parent.code })
+      .from(agent)
+      .leftJoin(parent, eq(parent.id, agent.parentId))
+      .where(eq(agent.memberId, memberId))
+      .limit(1);
+    if (!found) throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Not an agent' } });
+    return found;
+  }
 
   // ---- Member: submit a recruitment request --------------------------------
   // Never writes app.agent directly — see the live schema's own comment on

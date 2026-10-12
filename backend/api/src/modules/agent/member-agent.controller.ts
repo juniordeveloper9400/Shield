@@ -26,6 +26,12 @@ export class MemberAgentController {
     private readonly idempotency: IdempotencyService,
   ) {}
 
+  /** See `AgentService.getOwnProfile`'s own doc. */
+  @Get('me')
+  getProfile(@CurrentUser() user: RequestSubject) {
+    return this.agents.getOwnProfile(Number(user.subjectId));
+  }
+
   @Post('requests')
   submitRequest(
     @CurrentUser() user: RequestSubject,
