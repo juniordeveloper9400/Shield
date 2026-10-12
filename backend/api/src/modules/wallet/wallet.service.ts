@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { AdminRole } from '../auth/session.types';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
@@ -178,6 +178,14 @@ export class WalletService {
       soldByAgentId = found?.id;
     }
 
+    // Same lenient resolution as agentCode above — an unknown branch code
+    // must never be a reason to refuse the member's own submission.
+    let storeId: number | undefined;
+    if (dto.storeCode) {
+      const [found] = await this.db.select({ id: shieldStore.id }).from(shieldStore).where(eq(shieldStore.code, dto.storeCode)).limit(1);
+      storeId = found?.id;
+    }
+
     const [created] = await this.db
       .insert(walletCard)
       .values({
@@ -186,6 +194,7 @@ export class WalletService {
         amount: dto.amount.toString(),
         bonus: bonus.toString(),
         cardNumber: dto.cardNumber,
+        storeId,
         receiptReference: dto.receiptReference,
         receiptFileName: dto.receiptFileName,
         receiptImage: dto.receiptImage,
@@ -206,7 +215,12 @@ export class WalletService {
    */
   async listCardsForMember(memberId: number) {
     const theWallet = await this.getOrCreateWallet(memberId);
-    return this.db.select().from(walletCard).where(eq(walletCard.walletId, theWallet.id)).orderBy(walletCard.submittedAt);
+    return this.db
+      .select({ ...getTableColumns(walletCard), storeCode: shieldStore.code })
+      .from(walletCard)
+      .leftJoin(shieldStore, eq(shieldStore.id, walletCard.storeId))
+      .where(eq(walletCard.walletId, theWallet.id))
+      .orderBy(walletCard.submittedAt);
   }
 
   /**

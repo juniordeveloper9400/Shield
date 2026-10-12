@@ -15,6 +15,13 @@ export const submitWalletCardSchema = z.object({
    * plan purchase must not fail over someone else's typo.
    */
   agentCode: z.string().trim().optional(),
+  /**
+   * The branch chosen at checkout — resolved to `app.wallet_card.store_id`
+   * in `WalletService.submitCard` so the approved plan is served by it. An
+   * unknown code is dropped the same lenient way `agentCode` is, never a
+   * reason to refuse the member's own submission.
+   */
+  storeCode: z.string().trim().optional(),
 });
 
 export const rejectWalletCardSchema = z.object({

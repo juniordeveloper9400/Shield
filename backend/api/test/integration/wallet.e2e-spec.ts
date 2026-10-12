@@ -22,6 +22,7 @@ import {
   membershipTier,
   membershipTierLoad,
   referral,
+  shieldStore,
   users,
   wallet,
   walletEntry,
@@ -212,6 +213,40 @@ describe('Wallet & Rewards (e2e)', () => {
     expect(cards.body).toHaveLength(1);
     expect(cards.body[0].id).toBe(cardId);
     expect(cards.body[0].status).toBe('PENDING');
+  });
+
+  it('resolves a storeCode typed at checkout to the branch the approved plan will be served by, and drops an unknown one', async () => {
+    const [store] = await db
+      .insert(shieldStore)
+      .values({ code: 'SHD-WAL-TEST', name: 'Wallet Test Branch', area: 'A', city: 'A', state: 'A', pincode: '111111' })
+      .returning();
+    const [storeMember] = await db
+      .insert(users)
+      .values({ phone: '9000000050', name: 'Store Code Member', firebaseUid: 'member-store-code', registrationCompletedAt: new Date() })
+      .returning();
+    const storeToken = await directMemberToken(storeMember.id);
+
+    const withStore = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${storeToken}`)
+      .send({ tierId, amount: 10000, storeCode: store.code })
+      .expect(201);
+
+    const withUnknownStore = await request(app.getHttpServer())
+      .post('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${storeToken}`)
+      .send({ tierId, amount: 10000, storeCode: 'NOT-A-REAL-BRANCH' })
+      .expect(201);
+
+    const cards = await request(app.getHttpServer())
+      .get('/v1/member/wallet/cards')
+      .set('Authorization', `Bearer ${storeToken}`)
+      .expect(200);
+
+    const found = cards.body.find((c: { id: number }) => c.id === withStore.body.id);
+    expect(found.storeCode).toBe('SHD-WAL-TEST');
+    const foundUnknown = cards.body.find((c: { id: number }) => c.id === withUnknownStore.body.id);
+    expect(foundUnknown.storeCode ?? null).toBeNull();
   });
 
   it('rejects redeeming points before the wallet has ever been opened', async () => {
