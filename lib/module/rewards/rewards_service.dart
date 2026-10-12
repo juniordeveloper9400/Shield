@@ -4,24 +4,25 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/backend/backend_http.dart';
 import '../../data/backend/backend_rewards_repository.dart';
-import '../../data/neon/rewards_repository.dart' show RewardTxn, RewardsRepository;
+import '../../data/neon/rewards_repository.dart' show RewardTxn;
 import '../auth/auth_service.dart';
 
 enum RewardsStatus { idle, loading, ready, error }
 
 /// The member's reward-points balance, backed by the
-/// `app.reward_point_transaction` ledger — reads and redemption go through
-/// `backend/api` (see [BackendRewardsRepository]); crediting a paid order's
-/// points still goes straight to Neon ([RewardsRepository.credit], via
-/// [awardForOrder]) because checkout itself (`lib/data/neon/order_repository.dart`)
-/// is not migrated to the backend yet — see `docs/security.md` and
-/// `backend/docs/migration-plan.md`. The registration bonus and a
-/// never-wired referral bonus used to also credit straight to Neon from
-/// here; both are gone now — the registration bonus is credited
-/// automatically by the backend inside `PATCH /v1/member/me` (see
-/// `RegistrationService.save`'s doc), and the referral bonus had no real
-/// trigger before this either ("nothing calls it yet" was this method's
-/// own doc), so nothing is lost in not porting it.
+/// `app.reward_point_transaction` ledger — reads, redemption, and crediting
+/// all go through `backend/api` now (see [BackendRewardsRepository]).
+/// Crediting a paid order's points used to be a direct-Neon write made from
+/// here ([awardForOrder]), back when checkout itself did not run through
+/// the backend; now that it does, `order.service.ts`'s own checkout
+/// transaction credits the points automatically, so this class no longer
+/// needs to. The registration bonus and a never-wired referral bonus used
+/// to also credit straight to Neon from here; both are gone too — the
+/// registration bonus is credited automatically by the backend inside
+/// `PATCH /v1/member/me` (see `RegistrationService.save`'s doc), and the
+/// referral bonus had no real trigger before this either ("nothing calls
+/// it yet" was that method's own doc), so nothing was lost in not porting
+/// it.
 ///
 /// One number, one source of truth: the balance is `SUM(points)` over the
 /// ledger, and every earn / redeem is a real row. The header coin, the rewards
@@ -157,37 +158,14 @@ class RewardsService extends ChangeNotifier {
 
   // ---- earning ----------------------------------------------------------
   //
-  // The registration bonus and a never-wired referral bonus used to also
-  // live here, calling straight through to Neon. Both are gone now — see
-  // this class's own doc.
-
-  /// Credits points for a paid order (see [pointsForSpend]) — still a
-  /// direct Neon write ([RewardsRepository.credit]), not a backend call:
-  /// `backend/api` has no member-facing "credit me points" endpoint by
-  /// design (see [BackendRewardsRepository]'s own doc) and checkout itself
-  /// does not run through the backend yet, so there is nothing server-side
-  /// for this to call instead. A no-op while signed out or when the order
-  /// earned nothing. Remove this once checkout migrates and credits order
-  /// points itself, the way registration already does.
-  Future<void> awardForOrder({
-    required String code,
-    required int paidRupees,
-  }) async {
-    final user = AuthService.instance.currentUser.value;
-    final points = pointsForSpend(paidRupees);
-    if (user == null || points <= 0) {
-      return;
-    }
-    await RewardsRepository.instance.credit(
-      phone: user.phone,
-      name: user.name,
-      points: points,
-      reason: 'ORDER',
-      note: 'Order $code',
-      refType: 'order',
-    );
-    await refresh();
-  }
+  // The registration bonus, a never-wired referral bonus, and awardForOrder
+  // (crediting a paid order's points) used to also live here, calling
+  // straight through to Neon. All three are gone now: the registration
+  // bonus is credited automatically by the backend inside `PATCH
+  // /v1/member/me`, order points the same way inside checkout's own
+  // transaction (`order.service.ts`'s `checkout`) now that checkout itself
+  // runs through the backend — see this class's own doc — and the referral
+  // bonus had no real trigger before this either.
 
   // ---- redemption -----------------------------------------------------
 
