@@ -296,10 +296,25 @@ describe('Commerce (e2e)', () => {
     const receipt = await request(app.getHttpServer())
       .post(`/v1/member/orders/${orderId}/receipt`)
       .set('Authorization', `Bearer ${memberAccessToken}`)
-      .send({ payerName: 'Commerce Member', reference: 'UTR12345', amount: 200, fileName: 'receipt.jpg' })
+      .send({
+        payerName: 'Commerce Member',
+        reference: 'UTR12345',
+        amount: 200,
+        fileName: 'receipt.jpg',
+        image: 'data:image/png;base64,AAAA',
+      })
       .expect(201);
     expect(receipt.body.reference).toBe('UTR12345');
     expect(Number(receipt.body.amount)).toBe(200);
+    expect(receipt.body.image).toBe('data:image/png;base64,AAAA');
+  });
+
+  it('rejects a receipt claim whose image is not a data: URI', async () => {
+    await request(app.getHttpServer())
+      .post(`/v1/member/orders/${orderId}/receipt`)
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ reference: 'UTR99999', image: 'https://evil.example/x.png' })
+      .expect(400);
   });
 
   it("rejects a receipt claim against an order that isn't the caller's own", async () => {

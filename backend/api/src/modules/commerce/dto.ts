@@ -65,10 +65,6 @@ export const sendBillSchema = z.object({
     .optional(),
 });
 
-// A manual-transfer claim, not a payment confirmation — no image bytes: the
-// live app has never uploaded the receipt photo itself anywhere, only this
-// metadata (see order_repository.dart's OrderReceiptInput on the client this
-// mirrors). Staff settle the claim against `reference` by hand.
 /** Money the counter takes against a priced bill, as it arrives — GPay and
  *  cash, either or both. Each is a rupee amount; at least one must be above 0. */
 export const receiveBillPaymentSchema = z
@@ -78,11 +74,22 @@ export const receiveBillPaymentSchema = z
   })
   .refine((v) => v.cash + v.gpay > 0, { message: 'Enter an amount to receive.' });
 
+// A manual-transfer claim, not a payment confirmation — staff settle it
+// against `reference` by hand. `image` is the receipt photo itself (already
+// shrunk client-side the same way a prescription scan is, see
+// order_repository.dart's OrderReceiptInput on the client this mirrors) —
+// what the admin console's order board shows alongside the claim; optional,
+// since the picker can fail to read the file and the claim is still worth
+// filing on its other fields.
 export const submitOrderReceiptSchema = z.object({
   payerName: z.string().optional(),
   reference: z.string().optional(),
   amount: z.number().nonnegative().optional(),
   fileName: z.string().optional(),
+  image: z
+    .string()
+    .regex(/^data:image\/(png|jpe?g);base64,/, 'image must be a data: URI (png/jpeg)')
+    .optional(),
 });
 
 export type AddCartLineDto = z.infer<typeof addCartLineSchema>;

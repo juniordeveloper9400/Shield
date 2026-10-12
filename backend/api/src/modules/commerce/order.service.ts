@@ -358,6 +358,7 @@ export class OrderService {
         reference: dto.reference,
         amount: dto.amount?.toFixed(2),
         fileName: dto.fileName,
+        image: dto.image,
       })
       .returning();
     return created;
