@@ -7,8 +7,6 @@ import '../../money.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
 import '../checkout/fulfillment_type.dart';
-import '../refer/referral_service.dart';
-import '../rewards/rewards_service.dart';
 
 /// Where an order has got to.
 enum OrderStatus {
@@ -530,8 +528,21 @@ class PurchaseService extends ChangeNotifier {
   int get billSavedTotal =>
       billDiscounted.fold(0, (sum, purchase) => sum + purchase.billDiscount);
 
-  /// Files a completed order and returns the record that was filed, so a
+  /// Files an optimistic local placeholder for an order the checkout screen
+  /// has just submitted, and returns the record that was filed, so a
   /// confirmation screen can carry the member straight to it.
+  ///
+  /// This never awards reward points or advances a referral itself —
+  /// `order.service.ts`'s own `checkout` transaction already does both,
+  /// server-side, in the same write as the order (reward points whenever
+  /// `paidTotal > 0`, the referral the moment a wallet payment settles it
+  /// in full). A client-side award here would double-credit a wallet-paid
+  /// order once [BackendOrderRepository.checkoutStandardOrder]'s real
+  /// result lands via `PurchaseService.ensureLoaded(force: true)` — this
+  /// placeholder is only ever a stand-in for that, shown for the instant
+  /// before it arrives (a prescription order's own `paidTotal` is still 0
+  /// at this point regardless, pricing happens later, so this was already
+  /// a no-op on that path).
   Purchase record({
     required String id,
     required String placedOn,
@@ -555,24 +566,22 @@ class PurchaseService extends ChangeNotifier {
       paymentStatus: paymentStatus,
     );
     _purchases.insert(0, purchase);
-
-    // Reward points for what was actually paid (₹100 → 10 pts).
-    // Best-effort and signed-in only; a prescription order still awaiting
-    // pricing has paidTotal 0 and earns nothing until it is paid.
-    if (purchase.status.counts &&
-        paymentStatus == OrderPaymentStatus.paid &&
-        paidTotal > 0) {
-      unawaited(
-        RewardsService.instance.awardForOrder(code: id, paidRupees: paidTotal),
-      );
-      // If somebody referred this member, their first paid order is the
-      // "transacted" step the ladder actually asks for — see
-      // ReferralLadder.stepsFor. A no-op for a member nobody referred.
-      unawaited(ReferralService.instance.markTransacted());
-    }
-
     notifyListeners();
     return purchase;
+  }
+
+  /// Drops [id]'s optimistic local copy — called when the real backend
+  /// checkout behind a [record] call turns out to have failed. Without
+  /// this, an order that was never actually written to `app."order"` would
+  /// still sit in "My Orders" claiming to be placed, with nothing for the
+  /// admin console (which reads the real table) to ever show for it. A
+  /// no-op when [id] isn't (any longer) on file.
+  void discard(String id) {
+    final before = _purchases.length;
+    _purchases.removeWhere((p) => p.id == id);
+    if (_purchases.length != before) {
+      notifyListeners();
+    }
   }
 
   /// Replaces one order in place — what a wallet "Pay now" calls once its

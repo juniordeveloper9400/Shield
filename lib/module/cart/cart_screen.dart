@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../data/neon/order_repository.dart';
+import '../../data/backend/backend_order_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
@@ -15,6 +15,7 @@ import '../location/address_book.dart';
 import '../orders/order_placed_screen.dart';
 import '../orders/purchase_service.dart';
 import '../registration/registration_flow.dart';
+import '../wallet/wallet_service.dart';
 import 'cart_control.dart';
 import 'cart_service.dart';
 
@@ -107,7 +108,11 @@ class _CartScreenState extends State<CartScreen> {
           onComplete: (receipt) async {
             // Read fresh rather than from whatever was captured when this
             // screen first opened — the very last-minute buy could still be
-            // sitting in the cart, uncounted, otherwise.
+            // sitting in the cart, uncounted, otherwise. Placed PENDING
+            // regardless of payment method: this is only an optimistic
+            // stand-in for the real row [BackendOrderRepository.
+            // checkoutStandardOrder] returns below, which carries its own,
+            // server-decided payment status.
             placed = PurchaseService.instance.record(
               id: id,
               placedOn: formatDateTime12h(DateTime.now()),
@@ -116,70 +121,66 @@ class _CartScreenState extends State<CartScreen> {
               paidTotal: _cart.subtotal.round(),
               kind: OrderKind.standard,
               fulfillmentType: receipt.fulfillmentType,
-              paymentStatus: receipt.paidViaWallet
-                  ? OrderPaymentStatus.paid
-                  : OrderPaymentStatus.pending,
             );
-            // Write the order through to Neon while the cart lines are still
-            // here to copy. Best-effort: a database that is absent (tests, a
-            // build with no DATABASE_URL) or down must not stop the order.
+            // Place the order through backend/api while the cart lines are
+            // still here to copy — the one write in this screen that is not
+            // best-effort: a failure here must stop the member from being
+            // shown "Order placed" for an order the admin console never
+            // sees (see CheckoutFailedException's own doc).
             final user = AuthService.instance.currentUser.value;
             if (user != null) {
-              // Shrunk before it ever reaches Neon — same treatment a
+              // Shrunk before it ever reaches the backend — same treatment a
               // prescription script gets — so a full-resolution photo does
-              // not sit against the 5 MB cap on the HTTP endpoint's own
-              // request. Awaited here (off the main thread via `compute`) so
-              // the write below carries the picture on its first try, rather
-              // than firing without it and hoping a later save catches up.
+              // not sit against the request body's own cap.
               final receiptImage = receipt.imageBytes == null
                   ? null
                   : await compressImageDataUrl(receipt.imageBytes!);
-              unawaited(
-                OrderRepository.instance.saveStandardOrder(
-                  phone: user.phone,
-                  name: user.name,
-                  code: id,
-                  lines: [
-                    for (final line in _cart.lines)
-                      OrderLineInput(
-                        name: line.name,
-                        pack: line.pack,
-                        unitPrice: line.price,
-                        mrp: line.mrp,
-                        qty: line.qty,
-                      ),
-                  ],
-                  mrpTotal: _cart.mrpTotal.round(),
-                  paidTotal: _cart.subtotal.round(),
-                  deliveryFee: _cart.deliveryFee.round(),
-                  itemCount: _cart.itemCount,
-                  storeCode: receipt.storeId,
-                  paymentMethodCode: receipt.method.id,
+              Purchase? realOrder;
+              try {
+                realOrder = await BackendOrderRepository.instance.checkoutStandardOrder(
+                  lines: List.of(_cart.lines),
+                  address: AddressBook.instance.deliverTo,
                   reference: receipt.bankReference.isEmpty
                       ? id
                       : receipt.bankReference,
-                  address: AddressBook.instance.deliverTo?.toDeliveryInput(),
                   fulfillmentType: receipt.fulfillmentType,
-                  walletDebit: receipt.paidViaWallet
-                      ? WalletDebitInput(
-                          memberPhone: user.phone,
-                          amount: _cart.payable.round(),
-                          label: 'Order $id',
-                        )
-                      : null,
+                  paymentMethodCode: receipt.method.id,
                   // A delivering order (wallet or cash) never uploads a
                   // receipt file — only the bank-transfer path does.
-                  receipt: receipt.fileName.isEmpty
+                  receiptPayerName: receipt.fileName.isEmpty ? null : user.name,
+                  receiptReference: receipt.fileName.isEmpty
                       ? null
-                      : OrderReceiptInput(
-                          payerName: user.name,
-                          reference: receipt.bankReference,
-                          amount: _cart.payable,
-                          fileName: receipt.fileName,
-                          image: receiptImage,
-                        ),
-                ),
-              );
+                      : receipt.bankReference,
+                  receiptAmount: receipt.fileName.isEmpty ? null : _cart.payable,
+                  receiptFileName: receipt.fileName.isEmpty
+                      ? null
+                      : receipt.fileName,
+                  receiptImage: receiptImage,
+                );
+              } on CheckoutFailedException {
+                // Never leave the optimistic placeholder sitting in My
+                // Orders claiming to be placed when it never actually
+                // reached the database.
+                PurchaseService.instance.discard(placed!.id);
+                rethrow;
+              }
+              // realOrder is null only when the backend isn't configured at
+              // all (a test build) — nothing checked out, so the optimistic
+              // placeholder already filed above stands as the only copy,
+              // same as every other best-effort write in this app.
+              if (realOrder != null) {
+                if (receipt.paidViaWallet) {
+                  // Whether that debit landed or was rolled back, this is
+                  // what brings the wallet back in step with the real,
+                  // server-held balance — see WalletService.
+                  // refreshFromDatabase.
+                  unawaited(WalletService.instance.refreshFromDatabase(user.phone));
+                }
+                // Re-list from the backend so this order's real `code` and
+                // `backendId` replace the optimistic local placeholder.
+                await PurchaseService.instance.ensureLoaded(force: true);
+                placed = realOrder;
+              }
             }
             _cart.clear();
           },

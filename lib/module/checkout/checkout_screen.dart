@@ -469,21 +469,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
       }
 
-      await widget.onComplete(
-        PaymentReceipt(
-          method: _method,
-          fileName: '',
-          bytes: 0,
-          orderReference: _order.reference,
-          storeId: _store.id,
-          bankAccount: _account,
-          agentCode: _agent.text.trim(),
-          bankReference: '',
-          submittedAt: DateTime.now(),
-          fulfillmentType: _fulfillment,
-          paidViaWallet: paidByWallet,
-        ),
-      );
+      try {
+        await widget.onComplete(
+          PaymentReceipt(
+            method: _method,
+            fileName: '',
+            bytes: 0,
+            orderReference: _order.reference,
+            storeId: _store.id,
+            bankAccount: _account,
+            agentCode: _agent.text.trim(),
+            bankReference: '',
+            submittedAt: DateTime.now(),
+            fulfillmentType: _fulfillment,
+            paidViaWallet: paidByWallet,
+          ),
+        );
+      } on CheckoutFailedException catch (error) {
+        if (mounted) _showCheckoutFailure(error.message);
+        return;
+      }
       if (!mounted) return;
       final success = widget.successScreen;
       if (success != null) {
@@ -500,6 +505,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  /// Shown when a [CheckoutComplete] implementation throws
+  /// [CheckoutFailedException] — the order genuinely never reached the
+  /// backend, so the member stays right here rather than being carried on
+  /// to a "success" screen for an order that doesn't really exist yet.
+  void _showCheckoutFailure(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: AppColors.danger),
+      );
+  }
+
   Future<void> _submit() async {
     if (!_canSubmit) {
       return;
@@ -507,20 +524,25 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     _receipt.setBusy(true);
     try {
       final file = _receipt.file!;
-      await widget.onComplete(
-        PaymentReceipt(
-          method: _method,
-          fileName: file.name,
-          bytes: file.bytes,
-          imageBytes: file.data,
-          orderReference: _order.reference,
-          storeId: _store.id,
-          bankAccount: _account,
-          agentCode: _agent.text.trim(),
-          bankReference: _receipt.bankReference,
-          submittedAt: DateTime.now(),
-        ),
-      );
+      try {
+        await widget.onComplete(
+          PaymentReceipt(
+            method: _method,
+            fileName: file.name,
+            bytes: file.bytes,
+            imageBytes: file.data,
+            orderReference: _order.reference,
+            storeId: _store.id,
+            bankAccount: _account,
+            agentCode: _agent.text.trim(),
+            bankReference: _receipt.bankReference,
+            submittedAt: DateTime.now(),
+          ),
+        );
+      } on CheckoutFailedException catch (error) {
+        if (mounted) _showCheckoutFailure(error.message);
+        return;
+      }
       if (!mounted) return;
       final success = widget.successScreen;
       if (success != null) {

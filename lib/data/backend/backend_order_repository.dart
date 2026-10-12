@@ -1,8 +1,14 @@
+import 'dart:math';
+
 import '../../dates.dart';
+import '../../module/cart/cart_service.dart';
+import '../../module/checkout/checkout_order.dart' show CheckoutFailedException;
 import '../../module/checkout/fulfillment_type.dart';
+import '../../module/location/address_book.dart';
 import '../../module/orders/bill_invoice.dart';
 import '../../module/orders/purchase_service.dart';
 import '../neon/order_repository.dart' show OrderItem, OrderPrescription;
+import 'backend_address_repository.dart';
 import 'backend_http.dart';
 
 /// One order's `app.bill` row, as [BackendOrderRepository.fetchBill] reads
@@ -17,26 +23,41 @@ class OrderBillDetail {
   const OrderBillDetail({required this.invoice});
 }
 
-/// Reads placed orders through `backend/api`'s `/v1/member/orders` routes
-/// (see `order.service.ts`), never a direct Neon connection.
+/// Reads and places standard-order checkouts through `backend/api`'s
+/// `/v1/member/{cart,orders}` routes (see `cart.service.ts`/`order.service.ts`),
+/// never a direct Neon connection.
 ///
-/// Read-only for now: [OrderRepository] (the direct-Neon class this
-/// doesn't replace yet) still files standard-order checkouts,
-/// prescription-order checkouts, lab bookings, and the member-triggered
-/// wallet-pay write — see that class's own doc for why each stays there.
-/// Every order this reads back is the exact same `app."order"` row
-/// regardless of which path wrote it: there is one production database
-/// behind both, so this is safe to migrate on its own, write paths and
-/// all.
+/// [OrderRepository] (the direct-Neon class this doesn't fully replace) still
+/// files prescription-order checkouts and lab bookings — the former has no
+/// backend route at all yet, the latter is blocked on migrating the lab
+/// package catalogue off direct Neon first; see that class's own doc.
+/// [listForMember]/[fetchBill]/[fetchPrescriptions]/[fetchItems] read the
+/// exact same `app."order"` rows regardless of which path wrote them —
+/// there is one production database behind both — so reading through this
+/// class was always safe independently of [checkoutStandardOrder] existing.
 ///
-/// Best-effort, the same contract as every other backend repository: an
-/// unconfigured backend or the network down returns `null`/`[]` rather
-/// than throwing, so a transient failure never looks like "no orders at
-/// all" — [PurchaseService] keeps whatever it already has.
+/// Checkout here is fundamentally different in shape from the old direct-
+/// Neon version: the backend has its own server-side cart, priced from live
+/// product rows, and computes every total itself — a client-submitted
+/// amount is never trusted. [checkoutStandardOrder] bridges the app's
+/// in-memory `CartService` (still the UI's source of truth) to that
+/// server-side cart at the moment of checkout: sync the lines across, then
+/// check out. The backend's own transaction also awards reward points and
+/// advances a referral when the order is paid — `PurchaseService.record`
+/// deliberately does neither any more, to avoid double-crediting once this
+/// exists.
+///
+/// Best-effort, the same contract as every other backend repository, with
+/// one deliberate exception: an unconfigured backend returns `null`/`[]`
+/// rather than throwing (there is nothing to read or write through to, by
+/// design), but a *configured* backend that fails [checkoutStandardOrder]
+/// throws rather than swallowing it — that write must never fail silently,
+/// since it would show "Order placed" for a purchase the admin console
+/// never sees; see that method's own doc.
 class BackendOrderRepository {
-  const BackendOrderRepository._();
+  BackendOrderRepository._();
 
-  static const BackendOrderRepository instance = BackendOrderRepository._();
+  static final BackendOrderRepository instance = BackendOrderRepository._();
 
   bool get isAvailable => BackendHttp.isConfigured;
 
@@ -58,6 +79,214 @@ class BackendOrderRepository {
       BackendHttp.log('BackendOrderRepository.listForMember failed', error: error);
       return null;
     }
+  }
+
+  /// `code` (`'wallet'`/`'cash'`) → the backend's numeric `payment_method.id`
+  /// — resolved once against the public catalogue and cached, the same
+  /// pattern `WalletService`'s own tier-id lookups use. The checkout DTO
+  /// only accepts the numeric id; the app only knows methods by their
+  /// [PaymentMethod.id] code.
+  Map<String, int>? _paymentMethodIdCache;
+
+  Future<int?> _paymentMethodIdFor(String code) async {
+    final cached = _paymentMethodIdCache;
+    if (cached != null) {
+      return cached[code];
+    }
+    try {
+      final rows = await BackendHttp.instance.request(
+        'GET',
+        '/v1/public/catalogue/payment-methods',
+        auth: false,
+      ) as List<dynamic>;
+      final map = <String, int>{};
+      for (final row in rows.cast<Map<String, dynamic>>()) {
+        final rowCode = row['code']?.toString();
+        final id = row['id'];
+        if (rowCode != null && id != null) {
+          map[rowCode] = (id as num).toInt();
+        }
+      }
+      _paymentMethodIdCache = map;
+      return map[code];
+    } catch (error) {
+      BackendHttp.log('BackendOrderRepository._paymentMethodIdFor failed', error: error);
+      return null;
+    }
+  }
+
+  /// Syncs [lines] into the backend's own cart (clearing anything stale left
+  /// over from an earlier abandoned session first — a client-side cart
+  /// reload must never leak into a fresh checkout), resolves [address] to a
+  /// real `deliveryAddressId` (creating it fresh when it has never been
+  /// written through — see [Address.remoteId]'s own doc), checks out with a
+  /// fresh `Idempotency-Key`, and files [receiptPayerName]/[receiptReference]/
+  /// [receiptAmount]/[receiptFileName]/[receiptImage] as the manual-transfer
+  /// claim against the order it just placed.
+  ///
+  /// A line with no resolvable [CartLine.productId] (a stale add, or a
+  /// catalogue read that never carried an id through) is skipped rather
+  /// than failing the whole checkout — the same "never block the order"
+  /// philosophy as every other best-effort write here.
+  ///
+  /// Unconfigured (a test build, or one with no `BACKEND_API_BASE_URL` —
+  /// nothing to write through to, by design) returns `null`, same as every
+  /// other method here — there is simply nothing to check out against. A
+  /// *configured* backend that fails the checkout is different: that is a
+  /// real order a member was about to be told was placed, so this throws
+  /// [CheckoutFailedException] instead, letting the checkout screen keep
+  /// them on the payment form rather than moving on to a "success" screen
+  /// for an order that was never placed — see that exception's own doc.
+  ///
+  /// [fulfillmentType] is how the order reaches the member.
+  /// [paymentMethodCode] is `'wallet'` (settles the order instantly — the
+  /// backend debits the balance and marks it PAID in the same transaction
+  /// as the order itself, see `order.service.ts`'s `checkout`) or `'cash'`
+  /// (leaves it PENDING until it is collected in person).
+  ///
+  /// Returns the placed order, mapped the same way [listForMember]'s own
+  /// rows are.
+  Future<Purchase?> checkoutStandardOrder({
+    required List<CartLine> lines,
+    Address? address,
+    String? reference,
+    FulfillmentType fulfillmentType = FulfillmentType.homeDelivery,
+    required String paymentMethodCode,
+    String? receiptPayerName,
+    String? receiptReference,
+    double? receiptAmount,
+    String? receiptFileName,
+    String? receiptImage,
+  }) async {
+    if (!BackendHttp.isConfigured) {
+      return null;
+    }
+    if (lines.isEmpty) {
+      throw const CheckoutFailedException('Your cart is empty.');
+    }
+    try {
+      // 1 · Clear any stale server-side lines from an earlier session.
+      final existingCart = await BackendHttp.instance.request('GET', '/v1/member/cart')
+          as Map<String, dynamic>;
+      for (final line in (existingCart['lines'] as List<dynamic>).cast<Map<String, dynamic>>()) {
+        await BackendHttp.instance.request('DELETE', '/v1/member/cart/lines/${line['id']}');
+      }
+
+      // 2 · Add the current in-memory lines.
+      var addedAny = false;
+      for (final line in lines) {
+        final productId = line.productId;
+        if (productId == null) {
+          BackendHttp.log(
+            'BackendOrderRepository.checkoutStandardOrder: "${line.name}" has no product id — skipped',
+          );
+          continue;
+        }
+        await BackendHttp.instance.request(
+          'POST',
+          '/v1/member/cart/lines',
+          body: {'productId': productId, 'qty': line.qty},
+        );
+        addedAny = true;
+      }
+      if (!addedAny) {
+        throw const CheckoutFailedException(
+          'Could not place your order — none of your items could be matched '
+          'to the catalogue. Remove and re-add them, then try again.',
+        );
+      }
+
+      // 3 · A real deliveryAddressId — the one already on file, or a fresh
+      // write when this address has never been synced.
+      final addressId = address == null
+          ? null
+          : int.tryParse(address.remoteId ?? '') ??
+              int.tryParse(
+                await BackendAddressRepository.instance.upsert(
+                      label: address.label.name.toUpperCase(),
+                      house: address.house,
+                      area: address.area,
+                      landmark: address.landmark,
+                      pincode: address.pincode,
+                      firstName: address.firstName,
+                      lastName: address.lastName,
+                      phone: address.phone,
+                      patientId: address.patientId,
+                    ) ??
+                    '',
+              );
+
+      // 3b · The chosen payment method's numeric id.
+      final paymentMethodId = await _paymentMethodIdFor(paymentMethodCode);
+
+      // 4 · Checkout — totals are computed server-side from the lines just synced.
+      final createdOrder = await BackendHttp.instance.request(
+        'POST',
+        '/v1/member/orders',
+        body: {
+          if (addressId != null) 'deliveryAddressId': addressId,
+          if (reference != null) 'reference': reference,
+          if (paymentMethodId != null) 'paymentMethodId': paymentMethodId,
+          'fulfillmentType': fulfillmentType == FulfillmentType.storePickup
+              ? 'STORE_PICKUP'
+              : 'HOME_DELIVERY',
+        },
+        headers: {'Idempotency-Key': _newIdempotencyKey()},
+      ) as Map<String, dynamic>;
+
+      // 5 · The manual-transfer claim, against the order just placed — only
+      // when there is one to file (a wallet or cash order never uploads a
+      // receipt — see checkout_screen.dart's `_submitDelivering`).
+      final hasReceipt =
+          receiptPayerName != null ||
+          receiptReference != null ||
+          receiptAmount != null ||
+          (receiptFileName != null && receiptFileName.isNotEmpty);
+      if (hasReceipt) {
+        try {
+          await BackendHttp.instance.request(
+            'POST',
+            '/v1/member/orders/${createdOrder['id']}/receipt',
+            body: {
+              if (receiptPayerName != null) 'payerName': receiptPayerName,
+              if (receiptReference != null) 'reference': receiptReference,
+              if (receiptAmount != null) 'amount': receiptAmount,
+              if (receiptFileName != null) 'fileName': receiptFileName,
+              if (receiptImage != null) 'image': receiptImage,
+            },
+          );
+        } catch (error) {
+          // The order itself is real even if the receipt claim failed to
+          // attach — never unwind a placed order over this.
+          BackendHttp.log(
+            'BackendOrderRepository: receipt claim failed for order ${createdOrder['id']}',
+            error: error,
+          );
+        }
+      }
+
+      return _toPurchase(createdOrder);
+    } on CheckoutFailedException {
+      rethrow;
+    } catch (error) {
+      BackendHttp.log('BackendOrderRepository.checkoutStandardOrder failed', error: error);
+      throw const CheckoutFailedException(
+        'Could not place your order — check your connection and try again.',
+      );
+    }
+  }
+
+  /// A fresh random v4-shaped UUID for one checkout attempt. See
+  /// `RewardsRepository`'s identical helper for why this must be
+  /// high-entropy rather than derived from a timestamp.
+  static String _newIdempotencyKey() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    String hex(int start, int end) =>
+        bytes.sublist(start, end).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex(0, 4)}-${hex(4, 6)}-${hex(6, 8)}-${hex(8, 10)}-${hex(10, 16)}';
   }
 
   /// The store's itemised invoice for one of the member's own orders —
