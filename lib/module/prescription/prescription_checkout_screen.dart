@@ -2,20 +2,19 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../data/neon/order_repository.dart';
-import '../../data/neon/prescription_repository.dart';
+import '../../data/backend/backend_order_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_flow.dart';
 import '../auth/auth_service.dart';
 import '../checkout/checkout_chrome.dart';
+import '../checkout/checkout_order.dart' show CheckoutFailedException;
 import '../checkout/fulfillment_type.dart';
 import '../location/address_book.dart';
 import '../location/address_form_screen.dart';
 import '../orders/purchase_service.dart';
 import '../registration/registration_service.dart';
 import '../registration/shield_store.dart';
-import 'medicine_duration.dart';
 import 'prescription_record.dart';
 import 'prescription_order_placed_screen.dart';
 
@@ -111,7 +110,11 @@ class _PrescriptionCheckoutScreenState
 
     await AuthFlow.guard(context, () async {
       final id = 'SHD-${100500 + PurchaseService.instance.purchases.length}';
-      final purchase = PurchaseService.instance.record(
+      // An optimistic stand-in for the real row BackendOrderRepository.
+      // submitPrescriptionOrder returns below — never awards anything
+      // itself, same reasoning as the standard-order checkout's own
+      // placeholder (see PurchaseService.record's own doc).
+      var purchase = PurchaseService.instance.record(
         id: id,
         placedOn: formatDate(DateTime.now()),
         // One line per prescription — the medicines are not known yet, the
@@ -124,43 +127,54 @@ class _PrescriptionCheckoutScreenState
         status: OrderStatus.processing,
         kind: OrderKind.prescription,
       );
-      // Write the prescription chain — patient, prescription and a
-      // kind:PRESCRIPTION order — through to Neon. Best-effort: a missing or
-      // unreachable database must not stop the order.
       final user = AuthService.instance.currentUser.value;
       if (user != null) {
         // Make sure each prescription's own upload write has actually
-        // landed on Neon before asking `savePrescriptionOrder` to link
-        // against it. Without this, a slow connection (web's per-call CORS
-        // preflight especially) can lose the race: `_resolvePrescriptionId`
-        // finds no row yet, so the order save falls back to filing a fresh,
-        // image-less prescription row instead of the one the member
-        // actually uploaded. A no-op once the write has already finished,
-        // which is the common case.
+        // landed on the backend before asking it to link an order against
+        // one. Without this, a slow connection (web's per-call CORS
+        // preflight especially) can lose the race: the prescription this
+        // screen means to order would not exist yet to submit. A no-op
+        // once the write has already finished, which is the common case.
         await Future.wait([
           for (final record in widget.records)
             PrescriptionBook.instance.awaitPendingUpload(record.id),
         ]);
-        unawaited(
-          OrderRepository.instance.savePrescriptionOrder(
-            phone: user.phone,
-            name: user.name,
-            orderCode: id,
-            storeCode: _store.id,
-            address: AddressBook.instance.deliverTo?.toDeliveryInput(),
-            fulfillmentType: _fulfillment,
-            prescriptions: [
-              for (final record in widget.records) _prescriptionInput(record),
-            ],
-          ),
-        );
-        for (final record in widget.records) {
-          unawaited(
-            PrescriptionRepository.instance.markOrdered(
-              memberPhone: user.phone,
-              prescriptionUuid: record.remoteId,
-            ),
-          );
+
+        final prescriptionIds = [
+          for (final record in widget.records)
+            if (int.tryParse(record.remoteId ?? '') case final remoteId? when remoteId > 0)
+              remoteId,
+        ];
+        if (prescriptionIds.isNotEmpty) {
+          Purchase? realOrder;
+          try {
+            realOrder = await BackendOrderRepository.instance.submitPrescriptionOrder(
+              prescriptionIds: prescriptionIds,
+              address: AddressBook.instance.deliverTo,
+              fulfillmentType: _fulfillment,
+            );
+          } on CheckoutFailedException catch (error) {
+            PurchaseService.instance.discard(purchase.id);
+            if (mounted) {
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text(error.message),
+                    backgroundColor: AppColors.danger,
+                  ),
+                );
+            }
+            return;
+          }
+          // realOrder is null only when the backend isn't configured at all
+          // (a test build) — the optimistic placeholder already filed
+          // above stands as the only copy, same as every other best-effort
+          // write in this app.
+          if (realOrder != null) {
+            await PurchaseService.instance.ensureLoaded(force: true);
+            purchase = realOrder;
+          }
         }
       }
       // The records stay in the book; they just move to the "ordered, waiting
@@ -185,53 +199,6 @@ class _PrescriptionCheckoutScreenState
       setState(() => _placing = false);
     }
   }
-
-  /// One [PrescriptionRecord] as the plain-values shape [OrderRepository]
-  /// persists. Only complete medicine lines are sent — a half-keyed row is not
-  /// something to file.
-  static PrescriptionInput _prescriptionInput(PrescriptionRecord record) {
-    final patient = record.patient;
-    return PrescriptionInput(
-      remoteUuid: record.remoteId,
-      code: record.number,
-      fileName: record.fileName,
-      doctor: record.doctor,
-      duration: _durationToken(record.duration),
-      customDays: record.customDays,
-      recurringFrom: record.recurring?.from,
-      recurringUntil: record.recurring?.until,
-      patient: PrescriptionPatientInput(
-        remoteUuid: patient.remoteId,
-        name: patient.name,
-        phone: patient.phone,
-        address: patient.address,
-        dob: patient.dob,
-        gender: patient.gender.name.toUpperCase(),
-        relation: patient.relation.name.toUpperCase(),
-        abhaId: patient.abhaId,
-      ),
-      medicines: [
-        for (final medicine in record.dispensable)
-          PrescriptionMedicineInput(
-            name: medicine.name,
-            pack: medicine.pack,
-            doseMorning: medicine.intake.morning,
-            doseAfternoon: medicine.intake.afternoon,
-            doseNight: medicine.intake.night,
-          ),
-      ],
-    );
-  }
-
-  /// [MedicineDuration] as its `app.medicine_duration` token, or null.
-  static String? _durationToken(MedicineDuration? duration) => switch (duration) {
-        MedicineDuration.oneWeek => 'ONE_WEEK',
-        MedicineDuration.fifteenDays => 'FIFTEEN_DAYS',
-        MedicineDuration.oneMonth => 'ONE_MONTH',
-        MedicineDuration.twoMonths => 'TWO_MONTHS',
-        MedicineDuration.threeMonths => 'THREE_MONTHS',
-        null => null,
-      };
 
   @override
   Widget build(BuildContext context) {

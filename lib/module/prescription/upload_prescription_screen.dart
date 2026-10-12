@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../data/backend/backend_http.dart';
 import '../../data/backend/backend_order_repository.dart';
-import '../../data/neon/neon_http.dart';
-import '../../data/neon/prescription_repository.dart';
+import '../../data/backend/prescription_repository.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
 import '../orders/purchase_service.dart';
@@ -76,7 +76,7 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
     _book.addListener(_onBookChanged);
     _refreshFromBackend();
     _refreshOrders();
-    if (NeonHttp.isConfigured) {
+    if (BackendHttp.isConfigured) {
       _orderTimer = Timer.periodic(const Duration(seconds: 15), (_) {
         if (WidgetsBinding.instance.lifecycleState ==
                 AppLifecycleState.resumed &&
@@ -125,15 +125,16 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
   Future<void> _pullToRefresh() =>
       Future.wait([_refreshFromBackend(), _refreshOrders()]);
 
-  /// Reads the pharmacist-built intake cards from Neon and folds them into the
-  /// in-memory records — so a card that was "waiting on the pharmacist" fills
-  /// in and expands. Runs on open and on pull-to-refresh. Best-effort.
+  /// Reads the pharmacist-built intake cards from the backend and folds
+  /// them into the in-memory records — so a card that was "waiting on the
+  /// pharmacist" fills in and expands. Runs on open and on pull-to-refresh.
+  /// Best-effort.
   Future<void> _refreshFromBackend() async {
     final phone = AuthService.instance.currentUser.value?.phone;
     if (phone == null || _book.isEmpty) {
       return;
     }
-    final cards = await PrescriptionRepository.instance.fetchForMember(phone);
+    final cards = await PrescriptionRepository.instance.fetchForMember();
     if (cards == null || !mounted) {
       return;
     }
@@ -162,7 +163,11 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
               ),
               totalUnits: m.totalUnits > 0 ? m.totalUnits : null,
               routeTime: m.routeTime,
-              stockStatus: MedicineStockStatus.tryParse(m.status),
+              // The backend's member-facing view never carries a medicine
+              // line's stock status (staff-only — see `toMemberMedicine` in
+              // `prescription.service.ts`), so this is always null now; the
+              // chip it used to feed simply stops showing, same as every
+              // other screen that lost a staff-only field in this migration.
             ),
         ],
       );

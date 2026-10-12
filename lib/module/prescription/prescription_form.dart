@@ -4,17 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../../data/neon/prescription_repository.dart';
+import '../../data/backend/prescription_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/image_data_url.dart';
 import '../../widgets/upload_picker.dart';
 import '../auth/auth_service.dart';
-import '../location/address_book.dart';
 import '../patients/patient_book.dart';
 import '../patients/patient_picker.dart';
-import '../registration/registration_service.dart';
-import '../registration/shield_store.dart';
 import 'medicine_duration.dart';
 import 'prescription_copy.dart';
 import 'prescription_image_view.dart';
@@ -184,11 +181,6 @@ class PrescriptionFormController extends ChangeNotifier {
       return;
     }
     final patient = record.patient;
-    // A readable, collision-safe code for a row that outlives the session
-    // counter behind [PrescriptionRecord.number].
-    final code =
-        'RX-'
-        '${DateTime.now().millisecondsSinceEpoch.remainder(100000000).toString().padLeft(8, '0')}';
     // The script itself, resized small, so the pharmacy console can read it
     // and build the intake card from it. Best-effort — a photo that will not
     // decode just leaves the row without an image.
@@ -208,49 +200,23 @@ class PrescriptionFormController extends ChangeNotifier {
       }
     }
     try {
-      final uuid = await PrescriptionRepository.instance.insertUpload(
-        memberPhone: user.phone,
-        memberName: user.name,
-        patientUuid: patient.remoteId,
-        patientName: patient.name,
-        patientPhone: patient.phone,
-        patientAddress: patient.address,
-        patientDob: patient.dob,
-        patientGender: patient.gender,
-        patientRelation: patient.relation,
-        patientAbhaId: patient.abhaId,
-        code: code,
+      final id = await PrescriptionRepository.instance.insertUpload(
+        patient: patient,
         fileName: record.fileName,
         image: image,
-        storeCode: _uploadStoreCode(),
         doctor: record.doctor,
         duration: record.duration,
         customDays: record.customDays,
         recurringFrom: record.recurring?.from,
         recurringUntil: record.recurring?.until,
-        medicines: record.medicines,
       );
-      if (uuid != null) {
-        book.attachRemoteId(record.id, uuid);
+      if (id != null) {
+        book.attachRemoteId(record.id, id);
       }
     } catch (error, stack) {
-      debugPrint('prescription: could not save upload to database — $error');
+      debugPrint('prescription: could not save upload to the backend — $error');
       debugPrintStack(stackTrace: stack);
     }
-  }
-
-  /// The branch the script is filled at: the store on the account, else the
-  /// branch nearest the delivery address, else the top of the directory — the
-  /// same order the prescription checkout resolves its store in, so the
-  /// upload and the eventual order name the same branch.
-  static String _uploadStoreCode() {
-    final registered = RegistrationService.instance.profile?.store;
-    if (registered != null) {
-      return registered.id;
-    }
-    final pincode = AddressBook.instance.deliverTo?.pincode;
-    final nearby = pincode != null ? StoreDirectory.suggestFor(pincode) : null;
-    return (nearby ?? StoreDirectory.all.first).id;
   }
 }
 

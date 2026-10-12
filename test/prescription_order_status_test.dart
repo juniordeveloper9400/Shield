@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:shield/data/neon/prescription_repository.dart';
+import 'package:shield/data/backend/prescription_repository.dart';
 import 'package:shield/module/orders/purchase_service.dart';
 import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/prescription/prescription_record.dart';
@@ -87,25 +87,20 @@ void main() {
       }
     });
 
-    test('the Neon row columns become the link', () {
+    test('the backend\'s order block becomes the link', () {
       final link = PrescriptionRepository.linkedOrderFromRow({
-        'order_code': 'RX-ABC',
-        'order_status': 'DELIVERED',
-        'order_store_contacted_at': '2026-09-20T10:15:00.000Z',
-        'order_billed': 'true',
+        'code': 'RX-ABC',
+        'status': 'DELIVERED',
+        'storeContactedAt': '2026-09-20T10:15:00.000Z',
+        'billed': true,
       });
 
       expect(link?.code, 'RX-ABC');
       expect(link?.status, OrderStatus.delivered);
       expect(link?.storeContactedAt, isNotNull);
       expect(link?.billed, isTrue);
-      expect(
-        PrescriptionRepository.linkedOrderFromRow({
-          'order_code': null,
-          'order_status': null,
-        }),
-        isNull,
-      );
+      // No `order` block at all — a prescription that was never ordered.
+      expect(PrescriptionRepository.linkedOrderFromRow(null), isNull);
     });
 
     test('a refresh folds the order onto the record, and a later one moves it on', () {

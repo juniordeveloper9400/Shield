@@ -18,10 +18,11 @@ import 'backend_http.dart';
 /// approves it — that is where the `ACTIVATION`/`BONUS` ledger lines and
 /// the balance move — or rejects it with a note.
 ///
-/// [WalletRepository.recordSpend] (the wallet-side debit at checkout) has
-/// no equivalent here: checkout itself (`lib/data/neon/order_repository.dart`)
-/// is not migrated to the backend yet, so there is nothing server-side for
-/// that one write to call instead — see that method's own doc.
+/// The wallet-side debit at checkout (the old direct-Neon
+/// `WalletRepository.recordSpend`) has no equivalent here because it has
+/// no caller any more: standard-order checkout debits the wallet itself,
+/// atomically, inside `order.service.ts`'s own transaction — see
+/// `BackendOrderRepository.checkoutStandardOrder`'s doc.
 class BackendWalletRepository {
   BackendWalletRepository._({BackendHttp? http}) : _http = http ?? BackendHttp.instance;
 

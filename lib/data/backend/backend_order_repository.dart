@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../../dates.dart';
 import '../../module/cart/cart_service.dart';
 import '../../module/checkout/checkout_order.dart' show CheckoutFailedException;
@@ -7,7 +9,6 @@ import '../../module/checkout/fulfillment_type.dart';
 import '../../module/location/address_book.dart';
 import '../../module/orders/bill_invoice.dart';
 import '../../module/orders/purchase_service.dart';
-import '../neon/order_repository.dart' show LabBookingInput, OrderItem, OrderPrescription;
 import 'backend_address_repository.dart';
 import 'backend_http.dart';
 import 'care_repository.dart';
@@ -22,6 +23,97 @@ class OrderBillDetail {
   final BillInvoice? invoice;
 
   const OrderBillDetail({required this.invoice});
+}
+
+/// One lab package booked for a number of patients, as
+/// [BackendOrderRepository.saveLabBookings] sends it. The package fields
+/// are carried so a package the app knows but the backend has never seen
+/// can still be matched by name against a fresh catalogue read.
+@immutable
+class LabBookingInput {
+  final String name;
+  final int testCount;
+  final int profileCount;
+  final String rating;
+  final String booked;
+  final String reportIn;
+  final int unitPrice;
+  final int mrp;
+  final int patients;
+  final String forWhom;
+  final String ageRange;
+  final String preparation;
+  final String sample;
+  final String about;
+
+  const LabBookingInput({
+    required this.name,
+    this.testCount = 0,
+    this.profileCount = 0,
+    this.rating = '',
+    this.booked = '',
+    this.reportIn = '',
+    required this.unitPrice,
+    required this.mrp,
+    required this.patients,
+    this.forWhom = '',
+    this.ageRange = '',
+    this.preparation = '',
+    this.sample = '',
+    this.about = '',
+  });
+}
+
+/// One line item on a standard order, as
+/// [BackendOrderRepository.fetchItems] reads it back — enough for "Items in
+/// this order" to show the real product picture rather than naming it with
+/// no picture at all.
+@immutable
+class OrderItem {
+  final String name;
+  final String pack;
+  final int qty;
+  final int unitPrice;
+  final int mrp;
+
+  /// The product's own catalogue picture (a `data:` URI), or null when the
+  /// line carries no product or the product has since lost its picture.
+  final String? image;
+
+  const OrderItem({
+    required this.name,
+    required this.pack,
+    required this.qty,
+    required this.unitPrice,
+    required this.mrp,
+    required this.image,
+  });
+}
+
+/// One prescription submitted into an order, as
+/// [BackendOrderRepository.fetchPrescriptions] reads it back — just enough
+/// for [PrescriptionUploadedCard] to show the member's own uploaded scan
+/// rather than a generic icon standing in for it.
+@immutable
+class OrderPrescription {
+  final String code;
+
+  /// The first page of the member's own uploaded scan (a `data:` URI), or
+  /// null when this prescription was submitted with no photo — a script
+  /// phoned in, not an error case.
+  final String? image;
+  final String doctor;
+
+  /// An `app.prescription_status` value — `AWAITING_REVIEW` / `READ` /
+  /// `ORDERED`.
+  final String status;
+
+  const OrderPrescription({
+    required this.code,
+    required this.image,
+    required this.doctor,
+    required this.status,
+  });
 }
 
 /// Reads and places standard-order checkouts and lab bookings through
@@ -271,6 +363,80 @@ class BackendOrderRepository {
       rethrow;
     } catch (error) {
       BackendHttp.log('BackendOrderRepository.checkoutStandardOrder failed', error: error);
+      throw const CheckoutFailedException(
+        'Could not place your order — check your connection and try again.',
+      );
+    }
+  }
+
+  /// Submits one or more already-uploaded prescriptions for fulfilment —
+  /// `POST /v1/member/prescription-orders` (`PrescriptionService.
+  /// submitForOrder`). An unpriced order shell the pharmacist prices at the
+  /// counter, mirroring the old direct-Neon `OrderRepository.
+  /// savePrescriptionOrder` + `PrescriptionRepository.markOrdered` exactly:
+  /// the backend moves each prescription's own status to `ORDERED` in the
+  /// same transaction as the order, so there is nothing left to do
+  /// afterwards — no pricing or payment logic here either way, a
+  /// prescription is priced at the counter first.
+  ///
+  /// [prescriptionIds] are the backend's numeric prescription ids — the
+  /// same value `PrescriptionRepository.insertUpload` returned, carried on
+  /// `PrescriptionRecord.remoteId`. [address] resolves to a real
+  /// `addressId` the same way [checkoutStandardOrder] resolves one: the one
+  /// already on file, or a fresh write when it has never been synced.
+  ///
+  /// A *configured* backend that fails this throws
+  /// [CheckoutFailedException], same as [checkoutStandardOrder] and for the
+  /// same reason: a prescription order placed on this device but never
+  /// written is a script the pharmacist never sees. An *unconfigured*
+  /// backend (a test build) returns null instead.
+  Future<Purchase?> submitPrescriptionOrder({
+    required List<int> prescriptionIds,
+    Address? address,
+    FulfillmentType fulfillmentType = FulfillmentType.homeDelivery,
+  }) async {
+    if (!BackendHttp.isConfigured) {
+      return null;
+    }
+    if (prescriptionIds.isEmpty) {
+      throw const CheckoutFailedException('Nothing here to submit.');
+    }
+    try {
+      final addressId = address == null
+          ? null
+          : int.tryParse(address.remoteId ?? '') ??
+              int.tryParse(
+                await BackendAddressRepository.instance.upsert(
+                      label: address.label.name.toUpperCase(),
+                      house: address.house,
+                      area: address.area,
+                      landmark: address.landmark,
+                      pincode: address.pincode,
+                      firstName: address.firstName,
+                      lastName: address.lastName,
+                      phone: address.phone,
+                      patientId: address.patientId,
+                    ) ??
+                    '',
+              );
+
+      final createdOrder = await BackendHttp.instance.request(
+        'POST',
+        '/v1/member/prescription-orders',
+        body: {
+          'prescriptionIds': prescriptionIds,
+          if (addressId != null) 'addressId': addressId,
+          'fulfillmentType': fulfillmentType == FulfillmentType.storePickup
+              ? 'STORE_PICKUP'
+              : 'HOME_DELIVERY',
+        },
+      ) as Map<String, dynamic>;
+
+      return _toPurchase(createdOrder);
+    } on CheckoutFailedException {
+      rethrow;
+    } catch (error) {
+      BackendHttp.log('BackendOrderRepository.submitPrescriptionOrder failed', error: error);
       throw const CheckoutFailedException(
         'Could not place your order — check your connection and try again.',
       );
