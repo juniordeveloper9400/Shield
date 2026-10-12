@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../data/neon/neon_http.dart';
-import '../../data/neon/product_repository.dart';
+import '../../data/backend/backend_product_repository.dart';
 import '../home/product_showcase.dart';
 
 /// Where the catalogue load has got to.
@@ -30,7 +30,7 @@ enum CatalogueStatus {
 /// The customer app's single view of the storefront catalogue.
 ///
 /// Loads every `ACTIVE` product from Neon once per session (see
-/// [ProductRepository]) and keeps it in memory. The home rows, the category
+/// [BackendProductRepository]) and keeps it in memory. The home rows, the category
 /// listings, search and the product-detail "also bought" rail all read from
 /// here, so whatever a pharmacy admin adds in the console shows up everywhere
 /// in the app at once.
@@ -91,7 +91,7 @@ class CatalogueService extends ChangeNotifier {
     }
     _set(CatalogueStatus.loading, _all);
     try {
-      final products = await ProductRepository.instance.listActive();
+      final products = await BackendProductRepository.instance.listActive();
       if (products == null) {
         _set(CatalogueStatus.error, const []);
       } else {

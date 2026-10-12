@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../data/neon/product_repository.dart';
+import '../../data/backend/backend_product_repository.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import '../cart/cart_bar.dart';
@@ -42,9 +42,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   @override
   void initState() {
     super.initState();
-    final id = product.id;
-    if (id != null && id.isNotEmpty) {
-      ProductRepository.instance.detailFor(id).then((data) {
+    final backendId = product.backendId;
+    if (backendId != null) {
+      BackendProductRepository.instance.detailFor(backendId).then((data) {
         if (mounted && data != null) {
           setState(() => _content = data);
         }

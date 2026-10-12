@@ -301,6 +301,12 @@ class Product {
   /// `app.product.uuid`. Null for a hand-built fixture.
   final String? id;
 
+  /// `app.product.id` — the backend's own numeric id, what
+  /// `GET /v1/public/catalogue/products/:id` and the member cart's
+  /// `POST /v1/member/cart/lines` key on. Null for a hand-built fixture, or
+  /// a product read before this existed.
+  final int? backendId;
+
   /// Manufacturer / brand (`app.product.brand`). `ListingCatalogue.brandOf`
   /// falls back to the house brand when this is absent.
   final String? brand;
@@ -338,6 +344,7 @@ class Product {
     this.image,
     this.discountLabel,
     this.id,
+    this.backendId,
     this.brand,
     this.categorySlug,
     this.categoryTitle,

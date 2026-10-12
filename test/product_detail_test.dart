@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:shield/data/neon/product_repository.dart';
+import 'package:shield/data/backend/backend_product_repository.dart';
 import 'package:shield/module/cart/cart_bar.dart';
 import 'package:shield/module/cart/cart_control.dart';
 import 'package:shield/module/cart/cart_service.dart';
@@ -23,7 +23,7 @@ void main() {
   tearDown(() {
     CartService.instance.reset();
     resetFakeCatalogue();
-    ProductRepository.detailOverride = null;
+    BackendProductRepository.detailOverride = null;
   });
 
   const dolo = Product(
@@ -207,13 +207,14 @@ void main() {
       discountLabel: '20% OFF',
       icon: Icons.medication_outlined,
       id: 'rx-dolo-1',
+      backendId: 4201,
     );
 
     testWidgets('shows exactly the sections the admin filled in, and no others', (
       tester,
     ) async {
-      ProductRepository.detailOverride = (uuid) async {
-        expect(uuid, 'rx-dolo-1');
+      BackendProductRepository.detailOverride = (backendId) async {
+        expect(backendId, 4201);
         return adminContent;
       };
 
@@ -233,7 +234,7 @@ void main() {
     testWidgets('highlights are open by default, other sections collapsed', (
       tester,
     ) async {
-      ProductRepository.detailOverride = (_) async => adminContent;
+      BackendProductRepository.detailOverride = (_) async => adminContent;
 
       await pumpDetail(tester, idProduct);
 
@@ -244,7 +245,7 @@ void main() {
     testWidgets('a section reveals its body when its header is tapped', (
       tester,
     ) async {
-      ProductRepository.detailOverride = (_) async => adminContent;
+      BackendProductRepository.detailOverride = (_) async => adminContent;
 
       await pumpDetail(tester, idProduct);
 
@@ -258,7 +259,7 @@ void main() {
     });
 
     testWidgets('a FAQ row opens its answer', (tester) async {
-      ProductRepository.detailOverride = (_) async => adminContent;
+      BackendProductRepository.detailOverride = (_) async => adminContent;
 
       await pumpDetail(tester, idProduct);
 
@@ -274,7 +275,7 @@ void main() {
     testWidgets('a field left blank in a partial form still has no section', (
       tester,
     ) async {
-      ProductRepository.detailOverride = (_) async =>
+      BackendProductRepository.detailOverride = (_) async =>
           const ProductDetailData(highlights: ['Fast-acting']);
 
       await pumpDetail(tester, idProduct);
