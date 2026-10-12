@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart' show FaIcon;
 
-import 'package:shield/data/neon/care_repository.dart';
+import 'package:shield/data/backend/care_repository.dart';
 import 'package:shield/module/dietitian/dietitian.dart';
 import 'package:shield/module/dietitian/dietitian_screen.dart';
 import 'package:shield/phone.dart';

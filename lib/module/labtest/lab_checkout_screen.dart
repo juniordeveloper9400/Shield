@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../data/neon/order_repository.dart';
+import '../../data/backend/backend_order_repository.dart';
+import '../../data/neon/order_repository.dart' show LabBookingInput;
 import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
 import '../location/address_book.dart';
@@ -93,16 +94,17 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
     final patientCount = cart.patientCount;
     final payable = cart.payable;
 
-    // Same pattern the medicine checkout submits an order with: the write to
-    // Neon is best-effort (OrderRepository's own guard swallows a missing or
-    // unreachable database), so it is fired without blocking the member on
-    // it — the basket is cleared and the confirmation shown the moment the
-    // tap is handled, not once a network round trip happens to finish.
+    // Same pattern the medicine checkout submits an order with: the write
+    // through backend/api is best-effort (BackendOrderRepository's own
+    // guard swallows a missing or unreachable backend), so it is fired
+    // without blocking the member on it — the basket is cleared and the
+    // confirmation shown the moment the tap is handled, not once a network
+    // round trip happens to finish.
     unawaited(
-      OrderRepository.instance.saveLabBookings(
+      BackendOrderRepository.instance.saveLabBookings(
         phone: user.phone,
         name: user.name,
-        address: AddressBook.instance.deliverTo?.toDeliveryInput(),
+        address: AddressBook.instance.deliverTo,
         storeCode: cart.store?.id,
         bookings: bookings,
       ),

@@ -7,9 +7,10 @@ import '../../module/checkout/fulfillment_type.dart';
 import '../../module/location/address_book.dart';
 import '../../module/orders/bill_invoice.dart';
 import '../../module/orders/purchase_service.dart';
-import '../neon/order_repository.dart' show OrderItem, OrderPrescription;
+import '../neon/order_repository.dart' show LabBookingInput, OrderItem, OrderPrescription;
 import 'backend_address_repository.dart';
 import 'backend_http.dart';
+import 'care_repository.dart';
 
 /// One order's `app.bill` row, as [BackendOrderRepository.fetchBill] reads
 /// it back — the itemised invoice [order_bill_screen.dart] shows under
@@ -23,18 +24,18 @@ class OrderBillDetail {
   const OrderBillDetail({required this.invoice});
 }
 
-/// Reads and places standard-order checkouts through `backend/api`'s
-/// `/v1/member/{cart,orders}` routes (see `cart.service.ts`/`order.service.ts`),
-/// never a direct Neon connection.
+/// Reads and places standard-order checkouts and lab bookings through
+/// `backend/api`'s `/v1/member/{cart,orders,lab-bookings}` routes (see
+/// `cart.service.ts`/`order.service.ts`/`booking.service.ts`), never a
+/// direct Neon connection.
 ///
 /// [OrderRepository] (the direct-Neon class this doesn't fully replace) still
-/// files prescription-order checkouts and lab bookings — the former has no
-/// backend route at all yet, the latter is blocked on migrating the lab
-/// package catalogue off direct Neon first; see that class's own doc.
-/// [listForMember]/[fetchBill]/[fetchPrescriptions]/[fetchItems] read the
-/// exact same `app."order"` rows regardless of which path wrote them —
-/// there is one production database behind both — so reading through this
-/// class was always safe independently of [checkoutStandardOrder] existing.
+/// files prescription-order checkouts — there is no backend route for that
+/// at all yet; see that class's own doc. [listForMember]/[fetchBill]/
+/// [fetchPrescriptions]/[fetchItems] read the exact same `app."order"` rows
+/// regardless of which path wrote them — there is one production database
+/// behind both — so reading through this class was always safe
+/// independently of [checkoutStandardOrder]/[saveLabBookings] existing.
 ///
 /// Checkout here is fundamentally different in shape from the old direct-
 /// Neon version: the backend has its own server-side cart, priced from live
@@ -287,6 +288,128 @@ class BackendOrderRepository {
     String hex(int start, int end) =>
         bytes.sublist(start, end).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
     return '${hex(0, 4)}-${hex(4, 6)}-${hex(6, 8)}-${hex(8, 10)}-${hex(10, 16)}';
+  }
+
+  /// `code` (a `ShieldStore.id`) → the backend's numeric `shield_store.id`
+  /// — resolved once against `/v1/public/care/lab-stores` and cached, the
+  /// same pattern [_paymentMethodIdFor] uses. Only branches open for lab
+  /// collection are in that list, so a branch that doesn't offer it (or
+  /// one this app's bundled `ShieldStore` directory names but the backend
+  /// doesn't recognise) simply resolves to null — [saveLabBookings] then
+  /// omits `storeId` and the backend falls back to the member's own home
+  /// branch, same as root's direct-Neon write already did.
+  Map<String, int>? _labStoreIdCache;
+
+  Future<int?> _labStoreIdFor(String code) async {
+    final cached = _labStoreIdCache;
+    if (cached != null) {
+      return cached[code];
+    }
+    try {
+      final rows = await BackendHttp.instance.request(
+        'GET',
+        '/v1/public/care/lab-stores',
+        auth: false,
+      ) as List<dynamic>;
+      final map = <String, int>{};
+      for (final row in rows.cast<Map<String, dynamic>>()) {
+        final rowCode = row['code']?.toString();
+        final id = row['id'];
+        if (rowCode != null && id != null) {
+          map[rowCode] = (id as num).toInt();
+        }
+      }
+      _labStoreIdCache = map;
+      return map[code];
+    } catch (error) {
+      BackendHttp.log('BackendOrderRepository._labStoreIdFor failed', error: error);
+      return null;
+    }
+  }
+
+  /// Places every booking in the lab cart — one `POST /v1/member/
+  /// lab-bookings` call per package (see `booking.service.ts`'s
+  /// `bookLabTest`). [phone]/[name] are accepted for parity with the
+  /// direct-Neon `OrderRepository.saveLabBookings` signature (so
+  /// `lab_checkout_screen.dart`'s call site needs no changes beyond its
+  /// import) but unused — the backend resolves identity from the session.
+  ///
+  /// The backend expects a real `labPackageId`, which [LabBookingInput]
+  /// doesn't carry (root's direct-Neon write upserts `app.lab_package` by
+  /// slug in the same transaction instead) — resolved here by matching
+  /// [LabBookingInput.name] against a fresh [CareRepository.
+  /// fetchLabPackages] read. [storeCode] is similarly a [ShieldStore.id],
+  /// resolved to the backend's numeric id by [_labStoreIdFor].
+  ///
+  /// The backend's booking schema also wants a named `patients` array (a
+  /// patient id, or a plain name) — the on-screen flow only ever collects a
+  /// headcount per package ([LabBookingInput.patients]), so this
+  /// synthesizes placeholder names ("Patient 1", "Patient 2", …) for that
+  /// count, matching root's own booking UX exactly rather than the
+  /// stricter shape the backend was also built to accept.
+  ///
+  /// Best-effort, the same contract as every write in this class except
+  /// [checkoutStandardOrder]: a booking that fails to resolve or submit is
+  /// logged and skipped rather than failing the rest of the basket — a lab
+  /// booking is a request the lab confirms by phone, not money moving, so
+  /// there is nothing here as failure-sensitive as a placed order.
+  Future<void> saveLabBookings({
+    String? phone,
+    String? name,
+    required List<LabBookingInput> bookings,
+    Address? address,
+    String? storeCode,
+  }) async {
+    if (!BackendHttp.isConfigured || bookings.isEmpty) {
+      return;
+    }
+    final addressId = address == null
+        ? null
+        : int.tryParse(address.remoteId ?? '') ??
+            int.tryParse(
+              await BackendAddressRepository.instance.upsert(
+                    label: address.label.name.toUpperCase(),
+                    house: address.house,
+                    area: address.area,
+                    landmark: address.landmark,
+                    pincode: address.pincode,
+                    firstName: address.firstName,
+                    lastName: address.lastName,
+                    phone: address.phone,
+                    patientId: address.patientId,
+                  ) ??
+                  '',
+            );
+    final storeId = storeCode == null ? null : await _labStoreIdFor(storeCode);
+    final packages = await CareRepository.instance.fetchLabPackages() ?? const [];
+    for (final booking in bookings) {
+      final package = packages.where((p) => p.name == booking.name).firstOrNull;
+      if (package == null) {
+        BackendHttp.log(
+          'BackendOrderRepository.saveLabBookings: no backend package matches "${booking.name}" — skipped',
+        );
+        continue;
+      }
+      try {
+        await BackendHttp.instance.request(
+          'POST',
+          '/v1/member/lab-bookings',
+          body: {
+            'labPackageId': int.parse(package.id),
+            'patients': [
+              for (var i = 1; i <= booking.patients; i++) {'name': 'Patient $i'},
+            ],
+            if (addressId != null) 'addressId': addressId,
+            if (storeId != null) 'storeId': storeId,
+          },
+        );
+      } catch (error) {
+        BackendHttp.log(
+          'BackendOrderRepository.saveLabBookings failed for "${booking.name}"',
+          error: error,
+        );
+      }
+    }
   }
 
   /// The store's itemised invoice for one of the member's own orders —
