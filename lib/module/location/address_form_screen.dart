@@ -118,12 +118,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
     }
     unawaited(
       AddressRepository.instance
-          .upsert(
-            uuid: saved.remoteId,
-            memberPhone: account.phone,
-            memberName: account.name,
-            address: saved,
-          )
+          .upsert(uuid: saved.remoteId, address: saved)
           .then((uuid) {
             if (uuid != null && uuid != saved.remoteId) {
               AddressBook.instance.attachRemoteId(saved.id, uuid);

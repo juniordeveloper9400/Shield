@@ -13,9 +13,8 @@ import 'backend_http.dart';
 /// (the class `AddressBook` actually calls) needs full CRUD to keep its
 /// existing edit/soft-delete behavior, not just create-and-list.
 ///
-/// `lib/data/neon/address_repository.dart` tries this first and falls back
-/// to its own direct-Neon path when the backend is unavailable, there is no
-/// session yet, or the call fails.
+/// `lib/data/neon/address_repository.dart` is a thin pass-through to this
+/// now — no direct-Neon fallback any more.
 ///
 /// Every method is best-effort: with an unconfigured or unsigned-in
 /// backend, writes no-op and reads return null. Saving an address must

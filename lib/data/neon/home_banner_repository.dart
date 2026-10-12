@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 
 import '../backend/backend_home_banner_repository.dart';
-import 'neon_http.dart';
 
 /// One row of `app.home_banner` — a slide of the home hero carousel, exactly
 /// as the admin console left it (device image upload, base64 in [image]).
@@ -43,67 +42,26 @@ class HomeBannerModel {
 /// filtered to `placement` (migration 0069), maintained from the admin
 /// console (`shieldweb`). `'home'` is the original hero carousel; `'lab'` is
 /// the Lab section's own, added alongside it — same table, same shape,
-/// different strip.
+/// different strip. Through `backend/api` (`BackendHomeBannerRepository`)
+/// now, never a direct Neon connection — that path, and the compiled-in
+/// database credential it depended on, is gone (see `docs/security.md`
+/// and `backend/docs/migration-plan.md`'s Phase 5).
 ///
-/// Tries `backend/api` first (`BackendHomeBannerRepository`) and falls back
-/// to the direct-Neon read below only when the backend is unavailable or
-/// returns nothing — both read the identical table, this is a resilience
-/// fallback during the migration off the compiled-in Neon credential, not
-/// two independently maintained copies.
-///
-/// Read-only and best-effort like the other Neon repositories: a missing
-/// `DATABASE_URL` or a network failure returns an empty list rather than
-/// throwing, so [HomeHeroBanner] falls back to the bundled default banner
-/// (on the `'home'` placement only — see its own `showBundledDefault`)
-/// instead of showing an error where a promotion belongs.
+/// Read-only and best-effort: an unconfigured backend or a network failure
+/// returns an empty list rather than throwing, so [HomeHeroBanner] falls
+/// back to the bundled default banner (on the `'home'` placement only —
+/// see its own `showBundledDefault`) instead of showing an error where a
+/// promotion belongs.
 class HomeBannerRepository {
   const HomeBannerRepository._();
 
   static const HomeBannerRepository instance = HomeBannerRepository._();
 
-  bool get isAvailable =>
-      BackendHomeBannerRepository.instance.isAvailable || NeonHttp.isConfigured;
+  bool get isAvailable => BackendHomeBannerRepository.instance.isAvailable;
 
   /// Every banner the admin has switched on for [placement], in display
   /// order. Rows with no image (should not happen — the console requires
   /// one) are dropped rather than shown as a blank slide.
-  Future<List<HomeBannerModel>> listActive({String placement = 'home'}) async {
-    final backend = BackendHomeBannerRepository.instance;
-    if (backend.isAvailable) {
-      final banners = await backend.listActive(placement: placement);
-      if (banners.isNotEmpty) {
-        return banners;
-      }
-      // Empty could mean "the admin published nothing" (a real answer,
-      // trust it) or "the request itself failed" — BackendHomeBannerRepository
-      // swallows both into the same empty list (matching this class's own
-      // no-throw contract), so unlike every other repository in this
-      // migration there is no way to tell them apart here and fall back
-      // only on the second. Falling through to Neon either way is safe:
-      // if the admin really published nothing, Neon answers the same empty
-      // list right back.
-    }
-
-    if (!NeonHttp.isConfigured) {
-      return const [];
-    }
-    try {
-      final rows = await NeonHttp.instance.query(
-        r'''
-        SELECT id, title, subtitle, image, cta, target, sort
-        FROM app.home_banner
-        WHERE is_active AND placement = $1
-        ORDER BY sort, id
-      ''',
-        [placement],
-      );
-      return rows
-          .map(HomeBannerModel.fromRow)
-          .where((banner) => banner.image.isNotEmpty)
-          .toList(growable: false);
-    } catch (error) {
-      NeonHttp.log('HomeBannerRepository.listActive failed', error: error);
-      return const [];
-    }
-  }
+  Future<List<HomeBannerModel>> listActive({String placement = 'home'}) =>
+      BackendHomeBannerRepository.instance.listActive(placement: placement);
 }

@@ -18,8 +18,8 @@ import 'backend_http.dart';
 /// …) other repositories in this migration needed a separate mapper for.
 ///
 /// `lib/data/neon/home_banner_repository.dart` (the class `HomeHeroBanner`
-/// actually calls) tries this first and falls back to its own direct-Neon
-/// path when the backend is unavailable or this fails.
+/// actually calls) is a thin pass-through to this now — no direct-Neon
+/// fallback any more.
 ///
 /// Read-only and best-effort like the other backend repositories: an
 /// unconfigured backend or a network failure returns an empty list rather

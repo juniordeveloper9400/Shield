@@ -324,12 +324,7 @@ class _PatientFormSheetState extends State<PatientFormSheet> {
                 ? address
                 : address.copyWith(patientId: 'remote-$patientUuid');
             return AddressRepository.instance
-                .upsert(
-                  uuid: address.remoteId,
-                  memberPhone: account.phone,
-                  memberName: account.name,
-                  address: withPatient,
-                )
+                .upsert(uuid: address.remoteId, address: withPatient)
                 .then((addressUuid) {
                   if (addressUuid != null && addressUuid != address.remoteId) {
                     AddressBook.instance.attachRemoteId(
