@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../module/account/account_screen.dart';
 import '../module/appointment/clinics_screen.dart';
+import '../data/backend/backend_order_repository.dart';
 import '../data/neon/address_repository.dart';
-import '../data/neon/order_repository.dart';
 import '../data/neon/patient_repository.dart';
 import '../module/auth/auth_service.dart';
 import '../module/health/health_section.dart';
@@ -67,7 +67,7 @@ class _AppShellState extends State<AppShell> {
       // placed itself this session. A transient failure returns null and
       // leaves the in-memory list (built up from this session's own
       // checkouts, if any) untouched rather than blanking it.
-      OrderRepository.instance.listForMember(phone).then((remote) {
+      BackendOrderRepository.instance.listForMember().then((remote) {
         if (remote != null && mounted) {
           PurchaseService.instance.replaceRemote(remote);
         }

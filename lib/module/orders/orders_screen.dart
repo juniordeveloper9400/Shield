@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../data/neon/order_repository.dart';
+import '../../data/backend/backend_order_repository.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import 'order_bill_screen.dart';
@@ -328,13 +328,15 @@ class _OrderThumbnailState extends State<_OrderThumbnail> {
   }
 
   Future<void> _load() async {
+    final backendId = widget.order.backendId;
+    if (backendId == null) return;
     if (widget.order.kind == OrderKind.prescription) {
       final rows =
-          await OrderRepository.instance.fetchPrescriptions(widget.order.id);
+          await BackendOrderRepository.instance.fetchPrescriptions(backendId);
       if (!mounted || rows == null) return;
       _apply(images: rows.map((r) => r.image).toList(), total: rows.length);
     } else {
-      final rows = await OrderRepository.instance.fetchItems(widget.order.id);
+      final rows = await BackendOrderRepository.instance.fetchItems(backendId);
       if (!mounted || rows == null) return;
       _apply(images: rows.map((r) => r.image).toList(), total: rows.length);
     }

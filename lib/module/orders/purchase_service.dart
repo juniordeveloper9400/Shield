@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../data/neon/order_repository.dart';
+import '../../data/backend/backend_order_repository.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
@@ -105,6 +105,12 @@ enum OrderPaymentStatus { pending, paid }
 @immutable
 class Purchase {
   final String id;
+
+  /// The backend's own numeric id — what `GET/POST /v1/member/orders/:id/…`
+  /// routes key on, since the app only ever carries [id] (the order's
+  /// printed code). Null for a purchase that predates the migration off
+  /// direct Neon.
+  final int? backendId;
   final String placedOn;
   final int itemCount;
 
@@ -179,6 +185,7 @@ class Purchase {
 
   const Purchase({
     required this.id,
+    this.backendId,
     required this.placedOn,
     required this.itemCount,
     required this.mrpTotal,
@@ -228,6 +235,7 @@ class Purchase {
     DateTime? convertedToBillAt,
   }) => Purchase(
     id: id,
+    backendId: backendId,
     placedOn: placedOn,
     itemCount: itemCount,
     mrpTotal: mrpTotal,
@@ -429,7 +437,7 @@ class PurchaseService extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      final remote = await OrderRepository.instance.listForMember(phone);
+      final remote = await BackendOrderRepository.instance.listForMember();
       if (remote != null) {
         _purchases
           ..clear()
@@ -607,7 +615,7 @@ class PurchaseService extends ChangeNotifier {
   /// math and the orders list against something shaped like real use.
   ///
   /// Not used by the app itself: a signed-in member's real order book comes
-  /// from `OrderRepository.listForMember` via [replaceRemote] (see
+  /// from `BackendOrderRepository.listForMember` via [replaceRemote] (see
   /// `AppShell.initState`), and a fresh install with nothing recorded yet
   /// shows an empty list, not this. Call it explicitly from a test's own
   /// setup rather than reaching for it through [clear] — nothing here does

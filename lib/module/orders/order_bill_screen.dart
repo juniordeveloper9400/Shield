@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../data/neon/order_repository.dart';
+import '../../data/backend/backend_order_repository.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
@@ -24,8 +24,8 @@ import 'purchase_service.dart';
 ///    list loads); and
 ///  * the itemised **invoice** — every item with its quantity, price and
 ///    amount, the date, the store and customer, and the totals. That is read
-///    fresh each time the screen opens (`OrderRepository.fetchInvoice`), so a
-///    bill the counter has just edited shows its latest items.
+///    fresh each time the screen opens (`BackendOrderRepository.fetchBill`),
+///    so a bill the counter has just edited shows its latest items.
 ///
 /// A bill the store priced line by line has no picture, and one that was only
 /// a picture has no itemised lines; each shows whichever it has.
@@ -56,14 +56,13 @@ class _OrderBillScreenState extends State<OrderBillScreen> {
     BillInvoice? invoice;
     try {
       final loader = widget.invoiceLoader;
-      final phone = AuthService.instance.currentUser.value?.phone;
+      final backendId = widget.order.backendId;
       if (loader != null) {
         invoice = await loader(widget.order);
-      } else if (phone != null) {
-        invoice = await OrderRepository.instance.fetchInvoice(
-          phone: phone,
-          orderCode: widget.order.id,
-        );
+      } else if (backendId != null) {
+        invoice =
+            (await BackendOrderRepository.instance.fetchBill(backendId))
+                ?.invoice;
       }
     } catch (_) {
       // Fall through to the invoice worked out from the order itself.

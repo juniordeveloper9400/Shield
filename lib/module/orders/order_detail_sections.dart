@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../data/backend/backend_order_repository.dart';
 import '../../data/neon/order_repository.dart';
 import '../../dates.dart';
 import '../../money.dart';
@@ -197,7 +198,7 @@ Widget _linkButton({
 
 /// The "prescription uploaded" thumbnail, shown for a prescription order.
 ///
-/// Fetches the real scan the member uploaded (`OrderRepository.
+/// Fetches the real scan the member uploaded (`BackendOrderRepository.
 /// fetchPrescriptions`) rather than the generic document icon this used to
 /// show unconditionally with no data behind it at all: the "View" button
 /// used to just pop a toast saying "Opening your prescription" and open
@@ -224,8 +225,10 @@ class _PrescriptionUploadedCardState extends State<PrescriptionUploadedCard> {
   }
 
   Future<void> _load() async {
+    final backendId = widget.order.backendId;
+    if (backendId == null) return;
     final rows =
-        await OrderRepository.instance.fetchPrescriptions(widget.order.id);
+        await BackendOrderRepository.instance.fetchPrescriptions(backendId);
     if (mounted && rows != null) {
       setState(() => _prescriptions = rows);
     }
@@ -345,7 +348,7 @@ class _PrescriptionUploadedCardState extends State<PrescriptionUploadedCard> {
 /// "Items in this order" — a standard order's own lines, each with the real
 /// product picture rather than only its name.
 ///
-/// Fetches `OrderRepository.fetchItems` the same lazy, per-order way
+/// Fetches `BackendOrderRepository.fetchItems` the same lazy, per-order way
 /// [PrescriptionUploadedCard] fetches its own scan: nothing here is carried
 /// on the orders list, which stays cheap. Best-effort: while loading, or
 /// when the fetch fails, the card simply does not show — never an error in
@@ -369,7 +372,9 @@ class _OrderItemsCardState extends State<OrderItemsCard> {
   }
 
   Future<void> _load() async {
-    final rows = await OrderRepository.instance.fetchItems(widget.order.id);
+    final backendId = widget.order.backendId;
+    if (backendId == null) return;
+    final rows = await BackendOrderRepository.instance.fetchItems(backendId);
     if (mounted && rows != null) {
       setState(() => _items = rows);
     }

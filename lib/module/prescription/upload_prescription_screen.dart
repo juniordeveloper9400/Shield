@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../data/backend/backend_order_repository.dart';
 import '../../data/neon/neon_http.dart';
-import '../../data/neon/order_repository.dart';
 import '../../data/neon/prescription_repository.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
@@ -114,7 +114,7 @@ class _UploadPrescriptionScreenState extends State<UploadPrescriptionScreen> {
     if (phone == null) {
       return;
     }
-    final orders = await OrderRepository.instance.listForMember(phone);
+    final orders = await BackendOrderRepository.instance.listForMember();
     if (orders != null && mounted) {
       PurchaseService.instance.replaceRemote(orders);
     }
