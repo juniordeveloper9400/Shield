@@ -431,66 +431,6 @@ class OrderRepository {
     });
   }
 
-  /// Settles a priced-but-unpaid order (a prescription bill, most often) off
-  /// the member's wallet: debits the wallet and posts the `SPEND` ledger line
-  /// via [WalletRepository.recordSpend], then flips this order's own
-  /// `payment_status` and, when it carries one, its `app.bill.status` too.
-  ///
-  /// [orderCode] rather than a database id — the app only ever carries the
-  /// order's own code ([Purchase.id]), so the row is found by it the same way
-  /// [_upsertOrderShell] does. Returns false, writing nothing further, when
-  /// the order cannot be found or the wallet debit itself is refused.
-  Future<bool> markOrderPaidByWallet({
-    required String orderCode,
-    required int amount,
-    required String memberPhone,
-  }) async {
-    if (!NeonHttp.isConfigured) {
-      return false;
-    }
-    try {
-      final found = await NeonHttp.instance.query(
-        'SELECT id FROM app."order" WHERE code = \$1 LIMIT 1',
-        [orderCode],
-      );
-      final orderId = _rowId(found);
-      if (orderId == null) {
-        return false;
-      }
-
-      final debited = await WalletRepository.instance.recordSpend(
-        memberPhone: memberPhone,
-        amount: amount,
-        label: 'Order $orderCode',
-        orderId: orderId,
-      );
-      if (!debited) {
-        return false;
-      }
-
-      await NeonHttp.instance.query(
-        '''
-          UPDATE app."order"
-          SET payment_status = 'PAID'::app.order_payment_status, paid_at = now()
-          WHERE id = \$1
-        ''',
-        [orderId],
-      );
-      await NeonHttp.instance.query(
-        '''
-          UPDATE app.bill
-          SET status = 'PAID'::app.order_payment_status, paid_at = now()
-          WHERE order_id = \$1
-        ''',
-        [orderId],
-      );
-      return true;
-    } catch (error) {
-      NeonHttp.log('OrderRepository.markOrderPaidByWallet failed', error: error);
-      return false;
-    }
-  }
-
   // --- shared helpers ------------------------------------------------------
 
   // Nothing reads `app.order_track_step` back — `OrderTrack` derives the

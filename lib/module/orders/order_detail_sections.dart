@@ -13,7 +13,6 @@ import '../../widgets/social_glyphs.dart';
 import '../auth/auth_service.dart';
 import '../checkout/fulfillment_type.dart';
 import '../location/address_book.dart';
-import '../wallet/wallet_service.dart';
 import 'purchase_service.dart';
 
 /// The blocks that sit under the tracker graph on `OrderTrackScreen` — where
@@ -1065,9 +1064,18 @@ class PayBillButton extends StatelessWidget {
 // Pay now
 // ---------------------------------------------------------------------------
 
-/// The bottom sheet a prescription's "Pay now" opens: the priced bill, then
-/// Wallet or Cash. Wallet debits the balance instantly and marks the order —
-/// and its bill — paid; Cash just tells the member how it is settled instead.
+/// The bottom sheet a prescription's "Pay now" opens: the priced bill, and
+/// how it is settled.
+///
+/// Wallet used to be offered here too, debiting the balance instantly and
+/// marking the order paid straight from this screen — removed along with
+/// `OrderRepository.markOrderPaidByWallet`, since `backend/api` dropped the
+/// matching route on security grounds: bill collection off a member's
+/// wallet now only happens at the counter, gated on an OTP the member reads
+/// out at hand-off (see `member-commerce.controller.ts`'s own doc). Letting
+/// this screen mark a bill "paid" on nothing but a local balance debit,
+/// with no server write behind it any more, would have shown the member a
+/// payment that never happened and staff a bill no different from unpaid.
 class _PayBillSheet extends StatefulWidget {
   final Purchase order;
 
@@ -1089,58 +1097,7 @@ class _PayBillSheet extends StatefulWidget {
 }
 
 class _PayBillSheetState extends State<_PayBillSheet> {
-  bool _busy = false;
-
   int get _amount => widget.order.billAmount ?? 0;
-
-  Future<void> _payWithWallet() async {
-    final user = AuthService.instance.currentUser.value;
-    final wallet = WalletService.instance;
-    if (_amount <= 0 || user == null) {
-      return;
-    }
-    if (!wallet.isActivated || wallet.balance < _amount) {
-      _toast(context, 'Not enough wallet balance to pay this bill.');
-      return;
-    }
-
-    setState(() => _busy = true);
-    final spent = wallet.spendBalance(
-      amount: _amount,
-      label: 'Order ${widget.order.id}',
-    );
-    if (!spent) {
-      if (mounted) {
-        setState(() => _busy = false);
-        _toast(context, 'Wallet payment failed. Please try again.');
-      }
-      return;
-    }
-
-    // Best-effort write-through, same contract as every other order write —
-    // the local wallet debit above and the optimistic update below are what
-    // the member actually sees; this is what keeps the server in step.
-    unawaited(
-      OrderRepository.instance.markOrderPaidByWallet(
-        orderCode: widget.order.id,
-        amount: _amount,
-        memberPhone: user.phone,
-      ),
-    );
-
-    PurchaseService.instance.updateOne(
-      widget.order.copyWith(
-        paymentStatus: OrderPaymentStatus.paid,
-        billStatus: OrderPaymentStatus.paid,
-      ),
-    );
-
-    if (mounted) {
-      setState(() => _busy = false);
-      _toast(context, 'Paid from your wallet.');
-      Navigator.of(context).pop();
-    }
-  }
 
   void _payWithCash() {
     _toast(context, 'Pay the delivery person, or at the store, when it arrives.');
@@ -1173,21 +1130,11 @@ class _PayBillSheetState extends State<_PayBillSheet> {
             Text('Order ${widget.order.id}', style: _mutedStyle),
             const SizedBox(height: 16),
             _PayOptionTile(
-              icon: Icons.account_balance_wallet_outlined,
-              title: 'Wallet balance',
-              subtitle: WalletService.instance.isActivated
-                  ? '₹${formatRupees(WalletService.instance.balance)} available'
-                  : 'Activate your wallet first',
-              busy: _busy,
-              onTap: _busy ? null : _payWithWallet,
-            ),
-            const SizedBox(height: 10),
-            _PayOptionTile(
               icon: Icons.payments_outlined,
               title: 'Cash',
               subtitle: 'Pay the delivery person, or at the store on pickup',
               busy: false,
-              onTap: _busy ? null : _payWithCash,
+              onTap: _payWithCash,
             ),
           ],
         ),
