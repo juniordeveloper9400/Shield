@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../dates.dart';
-import '../../data/neon/lab_booking_repository.dart';
+import '../../data/backend/lab_booking_repository.dart';
 import '../../money.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
