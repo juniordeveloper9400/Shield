@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/data/backend/care_repository.dart';
 import 'package:shield/module/account/account_screen.dart';
 import 'package:shield/module/auth/auth_service.dart';
 import 'package:shield/module/location/address_book.dart';
 import 'package:shield/module/location/address_form_screen.dart';
-import 'package:shield/module/location/location_sheet.dart';
 import 'package:shield/module/location/manage_addresses_screen.dart';
-import 'package:shield/screens/app_shell.dart';
+import 'package:shield/module/labtest/lab_test_screen.dart';
 
 void main() {
   setUp(AddressBook.instance.reset);
@@ -206,10 +206,20 @@ void main() {
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
 
-      await tester.pumpWidget(const MaterialApp(home: AppShell()));
+      CareRepository.labPackagesOverride = () async => const [];
+      CareRepository.labCategoriesOverride = () async => const [];
+      addTearDown(() {
+        CareRepository.labPackagesOverride = null;
+        CareRepository.labCategoriesOverride = null;
+      });
+
+      // The home header's own location chip was removed — the Lab landing
+      // screen's "Collect sample from" row is one of the surfaces that
+      // still opens the sheet.
+      await tester.pumpWidget(const MaterialApp(home: LabTestScreen()));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text(LocationSheet.describe('400079')));
+      await tester.tap(find.text('Select location'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Manage addresses'));
       await tester.pumpAndSettle();
@@ -303,52 +313,57 @@ void main() {
       expect(AddressBook.instance.locationLabel, '400079, Mumbai');
     });
 
-    testWidgets('saving an address updates the home header', (tester) async {
-      tester.view.physicalSize = const Size(400, 1600);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.reset);
+    testWidgets(
+      'saving an address from the location sheet starts delivering there',
+      (tester) async {
+        tester.view.physicalSize = const Size(400, 1600);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
 
-      await tester.pumpWidget(const MaterialApp(home: AppShell()));
-      await tester.pumpAndSettle();
+        CareRepository.labPackagesOverride = () async => const [];
+        CareRepository.labCategoriesOverride = () async => const [];
+        addTearDown(() {
+          CareRepository.labPackagesOverride = null;
+          CareRepository.labCategoriesOverride = null;
+        });
 
-      expect(find.text('400079, Mumbai'), findsOneWidget);
+        await tester.pumpWidget(const MaterialApp(home: LabTestScreen()));
+        await tester.pumpAndSettle();
 
-      // Location sheet → Manage addresses → Add address → fill in → Save.
-      await tester.tap(find.text('400079, Mumbai'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Manage addresses'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Add address'));
-      await tester.pumpAndSettle();
+        // Location sheet → Manage addresses → Add address → fill in → Save.
+        await tester.tap(find.text('Select location'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Manage addresses'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Add address'));
+        await tester.pumpAndSettle();
 
-      await fillHint(tester, 'Pincode', '682001');
-      await fillHint(tester, 'House no / Floor / Building', '12B');
-      await fillHint(tester, 'Area / Locality', 'Marine Drive');
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'First name'),
-        'Althaf',
-      );
-      await tester.enterText(
-        find.widgetWithText(TextFormField, 'Mobile Number'),
-        '9895357101',
-      );
-      await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
+        await fillHint(tester, 'Pincode', '682001');
+        await fillHint(tester, 'House no / Floor / Building', '12B');
+        await fillHint(tester, 'Area / Locality', 'Marine Drive');
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'First name'),
+          'Althaf',
+        );
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Mobile Number'),
+          '9895357101',
+        );
+        await tester.tap(find.text('Save'));
+        await tester.pumpAndSettle();
 
-      // Saving lands back on "Saved Addresses", not straight on home — the
-      // new entry shows there as the one being delivered to.
-      expect(find.byType(AddressFormScreen), findsNothing);
-      expect(find.byType(ManageAddressesScreen), findsOneWidget);
-      expect(find.text('12B, Marine Drive, 682001'), findsOneWidget);
-      expect(find.text('Delivering here'), findsOneWidget);
+        // Saving lands back on "Saved Addresses", not straight on the Lab
+        // screen — the new entry shows there as the one being delivered to.
+        expect(find.byType(AddressFormScreen), findsNothing);
+        expect(find.byType(ManageAddressesScreen), findsOneWidget);
+        expect(find.text('12B, Marine Drive, 682001'), findsOneWidget);
+        expect(find.text('Delivering here'), findsOneWidget);
 
-      // Back out to home, showing the pincode and place that were just saved.
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-
-      expect(find.text('682001, Marine Drive'), findsOneWidget);
-      expect(find.text('400079, Mumbai'), findsNothing);
-    });
+        // AddressBook itself — not tied to any one screen's own display —
+        // reflects the new address as the one being delivered to.
+        expect(AddressBook.instance.locationLabel, '682001, Marine Drive');
+      },
+    );
   });
 
   group('manage addresses', () {

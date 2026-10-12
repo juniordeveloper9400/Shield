@@ -1,23 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:shield/module/location/address_book.dart';
+import 'package:shield/data/backend/care_repository.dart';
 import 'package:shield/module/location/location_sheet.dart';
-import 'package:shield/screens/app_shell.dart';
+import 'package:shield/module/labtest/lab_test_screen.dart';
 
+/// [LocationSheet]'s own behaviour — validation, known-city labels, closing
+/// without changing anything — exercised through the Lab landing screen's
+/// "Collect sample from" row, one of the surfaces that still opens it (the
+/// home header's own location chip was removed; see the home_header history
+/// for why).
 void main() {
-  // The delivery location now lives in a singleton rather than in the header's
-  // own state, so a test that changes it would otherwise carry that change
-  // into the next one.
-  setUp(AddressBook.instance.reset);
-  tearDown(AddressBook.instance.reset);
+  tearDown(() {
+    CareRepository.labPackagesOverride = null;
+    CareRepository.labCategoriesOverride = null;
+  });
 
-  Future<void> pumpShell(WidgetTester tester) async {
+  Future<void> pumpScreen(WidgetTester tester) async {
     tester.view.physicalSize = const Size(400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(const MaterialApp(home: AppShell()));
+    CareRepository.labPackagesOverride = () async => const [];
+    CareRepository.labCategoriesOverride = () async => const [];
+
+    await tester.pumpWidget(const MaterialApp(home: LabTestScreen()));
     await tester.pumpAndSettle();
   }
 
@@ -34,7 +41,7 @@ void main() {
   );
 
   Future<void> openSheet(WidgetTester tester) async {
-    await tester.tap(find.text('400079, Mumbai'));
+    await tester.tap(find.text('Select location'));
     await tester.pumpAndSettle();
   }
 
@@ -45,7 +52,7 @@ void main() {
   });
 
   testWidgets('tapping the location opens the sheet', (tester) async {
-    await pumpShell(tester);
+    await pumpScreen(tester);
     expect(find.text('Choose your location'), findsNothing);
 
     await openSheet(tester);
@@ -53,14 +60,14 @@ void main() {
     expect(find.text('Choose your location'), findsOneWidget);
     expect(find.text('Use current location'), findsOneWidget);
     expect(find.text('Manage addresses'), findsOneWidget);
-    // Pre-filled with the pincode currently in use.
-    expect(find.widgetWithText(TextField, '400079'), findsOneWidget);
+    // Nothing chosen yet on this screen, so the field starts blank.
+    expect(tester.widget<TextField>(sheetField()).controller?.text, '');
   });
 
   testWidgets('close button dismisses without changing the location', (
     tester,
   ) async {
-    await pumpShell(tester);
+    await pumpScreen(tester);
     await openSheet(tester);
 
     // Scoped to the sheet: the registration strip above the bottom bar
@@ -74,11 +81,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Choose your location'), findsNothing);
-    expect(find.text('400079, Mumbai'), findsOneWidget);
+    expect(find.text('Select location'), findsOneWidget);
   });
 
-  testWidgets('a valid pincode updates the header', (tester) async {
-    await pumpShell(tester);
+  testWidgets('a valid pincode updates the row', (tester) async {
+    await pumpScreen(tester);
     await openSheet(tester);
 
     await tester.enterText(sheetField(), '682001');
@@ -87,11 +94,11 @@ void main() {
 
     expect(find.text('Choose your location'), findsNothing);
     expect(find.text('682001, Kochi'), findsOneWidget);
-    expect(find.text('400079, Mumbai'), findsNothing);
+    expect(find.text('Select location'), findsNothing);
   });
 
   testWidgets('an unknown pincode shows without a city', (tester) async {
-    await pumpShell(tester);
+    await pumpScreen(tester);
     await openSheet(tester);
 
     await tester.enterText(sheetField(), '123456');
@@ -104,7 +111,7 @@ void main() {
   testWidgets('a short pincode is rejected and the sheet stays open', (
     tester,
   ) async {
-    await pumpShell(tester);
+    await pumpScreen(tester);
     await openSheet(tester);
 
     await tester.enterText(sheetField(), '4000');
