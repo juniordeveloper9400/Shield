@@ -13,6 +13,13 @@ class CartLine {
   String? image;
   int qty;
 
+  /// `Product.backendId` — the backend's own numeric id, carried through
+  /// from [CartControl] so checkout can resolve this line to a real
+  /// product when it syncs the basket into the backend's own cart. Null
+  /// for a prescription medicine (never a catalogue product) or a line
+  /// added before the catalogue migrated off direct Neon.
+  int? productId;
+
   CartLine({
     required this.name,
     required this.pack,
@@ -20,6 +27,7 @@ class CartLine {
     double? mrp,
     this.image,
     this.qty = 1,
+    this.productId,
   }) : mrp = mrp ?? price;
 
   double get lineTotal => price * qty;
@@ -84,6 +92,7 @@ class CartService extends ChangeNotifier {
     double? mrp,
     String? image,
     int qty = 1,
+    int? productId,
   }) {
     if (qty <= 0) {
       return;
@@ -91,8 +100,10 @@ class CartService extends ChangeNotifier {
     final existing = _lines.indexWhere((line) => line.name == name);
     if (existing >= 0) {
       _lines[existing].qty += qty;
-      // Fill in the picture if the line was first added without one.
+      // Fill in the picture, and the backend id, if the line was first
+      // added without one.
       _lines[existing].image ??= image;
+      _lines[existing].productId ??= productId;
     } else {
       _lines.add(
         CartLine(
@@ -102,6 +113,7 @@ class CartService extends ChangeNotifier {
           mrp: mrp,
           image: image,
           qty: qty,
+          productId: productId,
         ),
       );
     }

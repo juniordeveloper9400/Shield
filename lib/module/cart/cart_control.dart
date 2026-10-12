@@ -20,6 +20,12 @@ class CartControl extends StatelessWidget {
   /// shows the same picture as the tile.
   final String? image;
 
+  /// `Product.backendId` — carried straight through to the cart line so
+  /// checkout can resolve this line to a real product when it syncs the
+  /// basket into the backend's own cart. Null for a hand-built fixture, or
+  /// a product read before the catalogue migrated off direct Neon.
+  final int? productId;
+
   const CartControl({
     super.key,
     required this.name,
@@ -27,6 +33,7 @@ class CartControl extends StatelessWidget {
     required this.price,
     required this.mrp,
     this.image,
+    this.productId,
   });
 
   // Fixtures carry formatted prices, so strip the grouping separator.
@@ -54,6 +61,7 @@ class CartControl extends StatelessWidget {
                 price: _price,
                 mrp: _mrp,
                 image: image,
+                productId: productId,
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.brandBlue,
