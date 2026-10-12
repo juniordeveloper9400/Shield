@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../data/neon/persona_repository.dart';
+import '../../data/backend/backend_persona_repository.dart';
+import '../../data/neon/persona_repository.dart' show PersonaSnapshot;
 import 'auth_service.dart';
 
 /// Where the persona check has got to for the signed-in member.
@@ -35,8 +36,8 @@ enum PersonaStatus {
 /// been converted the app stops showing them the shop and points them at the
 /// web app instead (see `RootScreen` → `PersonaWebOnlyScreen`).
 ///
-/// The check is one best-effort read of [PersonaRepository] per sign-in. It
-/// **fails open**: a missing `DATABASE_URL`, a slow network or any error
+/// The check is one best-effort read of [BackendPersonaRepository] per
+/// sign-in. It **fails open**: an unconfigured backend, a slow network or any error
 /// resolves to [PersonaStatus.member], because a transient blip must never
 /// lock a real member out of the app.
 class PersonaGate extends ChangeNotifier {
@@ -184,7 +185,7 @@ class PersonaGate extends ChangeNotifier {
     var snapshot = PersonaSnapshot.none;
     try {
       snapshot =
-          await PersonaRepository.instance.loadFor(phone).timeout(_deadline);
+          await BackendPersonaRepository.instance.loadFor(phone).timeout(_deadline);
     } catch (error) {
       // Fail open — a real member must not be shut out by a network blip.
       debugPrint('PersonaGate: check failed, treating as member — $error');
