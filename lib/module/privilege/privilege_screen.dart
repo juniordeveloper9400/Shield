@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../data/neon/wallet_repository.dart';
+import '../../data/backend/backend_wallet_repository.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/image_data_url.dart';
 import '../auth/auth_flow.dart';
@@ -171,10 +171,10 @@ class _PrivilegeScreenState extends State<PrivilegeScreen> {
                 store: StoreDirectory.byId(receipt.storeId),
                 on: submittedAt,
               );
-              // The durable copy on Neon. Best-effort — a build with no
-              // DATABASE_URL, or an unreachable database, must not stop the
+              // The durable copy, through backend/api. Best-effort — an
+              // unconfigured or unreachable backend must not stop the
               // submission. AuthFlow.guard above has ensured someone is signed
-              // in. Awaited only to pin the row's uuid onto the pending card.
+              // in. Awaited only to pin the row's id onto the pending card.
               final user = AuthService.instance.currentUser.value;
               if (user != null) {
                 // Shrunk the same way a prescription script or a product
@@ -182,13 +182,10 @@ class _PrivilegeScreenState extends State<PrivilegeScreen> {
                 final receiptImage = receipt.imageBytes == null
                     ? null
                     : await compressImageDataUrl(receipt.imageBytes!);
-                final uuid =
-                    await WalletRepository.instance.submitCardForApproval(
-                  memberPhone: user.phone,
-                  memberName: user.name,
+                final uuid = await BackendWalletRepository.instance
+                    .submitCardForApproval(
                   tierKind: load.tier.kind,
                   amount: load.amount,
-                  bonus: load.bonus,
                   cardNumber: load.cardNumber,
                   storeCode: receipt.storeId,
                   receiptReference: receipt.bankReference,

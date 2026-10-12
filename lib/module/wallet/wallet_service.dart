@@ -3,7 +3,8 @@ import 'wallet_allowance.dart';
 
 import 'package:flutter/foundation.dart';
 
-import '../../data/neon/wallet_repository.dart';
+import '../../data/backend/backend_wallet_repository.dart';
+import '../../data/neon/wallet_repository.dart' show RemoteWallet, RemoteWalletCard, RemoteWalletEntry;
 import '../../dates.dart';
 import '../../money.dart';
 import '../privilege/privilege_tier.dart';
@@ -539,9 +540,9 @@ class WalletService extends ChangeNotifier {
   /// checkout that might have touched the wallet.
   Future<void> refreshFromDatabase(String memberPhone) async {
     final results = await Future.wait([
-      WalletRepository.instance.fetchCards(memberPhone: memberPhone),
-      WalletRepository.instance.fetchWallet(memberPhone: memberPhone),
-      WalletRepository.instance.fetchEntries(memberPhone: memberPhone),
+      BackendWalletRepository.instance.fetchCards(memberPhone: memberPhone),
+      BackendWalletRepository.instance.fetchWallet(memberPhone: memberPhone),
+      BackendWalletRepository.instance.fetchEntries(memberPhone: memberPhone),
     ]);
     final remote = results[0] as List<RemoteWalletCard>?;
     if (remote != null) {

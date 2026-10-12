@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:shield/data/backend/backend_wallet_repository.dart';
 import 'package:shield/data/neon/wallet_repository.dart';
+import 'package:shield/module/privilege/privilege_tier.dart';
 import 'package:shield/module/wallet/wallet_service.dart';
 
 /// The wallet's balance and "Transaction history" are read back from the real
@@ -160,5 +162,15 @@ void main() {
       entry(label: 'Order SHD-100519', amount: -300),
     ]);
     expect(wallet.balance, 300);
+  });
+
+  test('BackendWalletRepository.submitCardForApproval no-ops and returns null unconfigured', () async {
+    final result = await BackendWalletRepository.instance.submitCardForApproval(
+      tierKind: PrivilegeCardKind.silver,
+      amount: 10000,
+      cardNumber: '9010 8801 0010 4821',
+      storeCode: 'SHD-MEL',
+    );
+    expect(result, isNull);
   });
 }
