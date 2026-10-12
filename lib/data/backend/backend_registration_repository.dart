@@ -9,12 +9,8 @@ import 'backend_http.dart';
 /// Requires a live backend session ([BackendHttp.isSignedIn]) — both routes
 /// are member-authenticated, unlike the pre-OTP `phoneExists` route.
 /// `lib/module/registration/member_repository.dart` (the class
-/// `RegistrationService` actually calls) tries this first and falls back to
-/// its own direct-Neon path when there is no backend session yet (a fresh
-/// sign-in whose bridge hasn't finished) or this throws — the same
-/// resilience-fallback shape every repository this migration has touched
-/// so far uses, not a second, independent copy of the data: both paths
-/// write the identical `app.users` row.
+/// `RegistrationService` actually calls) is a thin pass-through to this —
+/// there is no direct-Neon fallback any more (see that file's own doc).
 ///
 /// Ported from `shield agent_invester/lib/data/backend/registration_repository.dart`,
 /// trimmed to what `Registration`'s simpler, non-nullable-throwing contract
@@ -40,8 +36,7 @@ class BackendRegistrationRepository {
   bool get isAvailable => _http.isEnabled && _http.isSignedIn;
 
   /// Saves [registration]. Throws on any failure (network, refused,
-  /// unauthenticated) — the wrapper's job to catch and fall back to Neon,
-  /// not this method's.
+  /// unauthenticated) — the caller's job to catch, not this method's.
   Future<void> upsertRegistration(Registration registration) async {
     await _http.request(
       'PATCH',
@@ -67,10 +62,11 @@ class BackendRegistrationRepository {
   /// Reads the signed-in member's registration back. Returns null when the
   /// backend cleanly says "not registered yet" or the profile is missing a
   /// field the form requires (mirrors
-  /// `lib/module/registration/member_repository.dart`'s own Neon
-  /// `fetchByPhone` contract exactly) — throws, rather than returning null,
-  /// on a request failure, so the wrapper can tell "confirmed not
-  /// registered" (trust it) apart from "could not ask" (fall back to Neon).
+  /// `lib/module/registration/member_repository.dart`'s own `fetchByPhone`
+  /// contract exactly) — throws, rather than returning null, on a request
+  /// failure, so the wrapper can tell "confirmed not registered" (trust it)
+  /// apart from "could not ask" (the wrapper reports not-registered either
+  /// way, but the distinction is here to use if a caller ever needs it).
   Future<Registration?> fetchByPhone(String phone) async {
     final me = await _http.request('GET', '/v1/member/me') as Map<String, dynamic>;
     if (me['registrationCompletedAt'] == null) {
@@ -80,8 +76,7 @@ class BackendRegistrationRepository {
     final storeCode = (me['homeStoreCode'] as String?)?.trim();
     final dob = me['dob'] as String?;
     // Both are required by the form; either missing means the row is not
-    // a usable registration, not something worth surfacing as one — same
-    // rule the Neon path applies.
+    // a usable registration, not something worth surfacing as one.
     if (storeCode == null || storeCode.isEmpty || dob == null) {
       return null;
     }

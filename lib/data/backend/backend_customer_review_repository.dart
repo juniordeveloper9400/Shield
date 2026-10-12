@@ -8,10 +8,9 @@ import 'backend_http.dart';
 /// `listActiveReviewVideos`.
 ///
 /// Ported from `shield agent_invester/lib/data/backend/customer_review_repository.dart`.
-/// `lib/data/neon/customer_review_repository.dart` (the class
-/// `CustomerReviewsService` actually calls) tries this first and falls back
-/// to its own direct-Neon path when the backend is unavailable or this
-/// fails.
+/// `CustomerReviewsService` calls this directly now — no direct-Neon
+/// fallback any more (`lib/data/neon/customer_review_repository.dart` is
+/// gone; see `docs/security.md`).
 ///
 /// Best-effort: with an unconfigured backend or the network down,
 /// [listActive] returns `null` so the caller can tell "could not load" from

@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 
 import '../../module/agent/agent_model.dart' show AgentLevel;
 import '../backend/backend_agent_geo_repository.dart';
-import 'neon_http.dart';
 
 /// One row of `app.agent_geo_node` — a single slot on the agent hierarchy
 /// shape ("My Team"): a region, a state, a district, an assembly segment, an
@@ -73,83 +72,28 @@ class GeoNode {
   }
 }
 
-/// Reads the agent geographic hierarchy.
+/// Reads the agent geographic hierarchy, through `backend/api`
+/// (`BackendAgentGeoRepository`, `GET /v1/public/geo/tree`) — never a
+/// direct Neon connection. This used to also hold a direct-Neon fallback
+/// for when the backend call failed; that path is gone now, along with the
+/// compiled-in database credential it depended on (see `docs/security.md`
+/// and `backend/docs/migration-plan.md`'s Phase 5).
 ///
-/// Tries `backend/api` first (`BackendAgentGeoRepository`, `GET
-/// /v1/public/geo/tree`) and falls back to the direct-Neon read below only
-/// when the backend is unavailable or the call fails — both read the
-/// identical tables, this is a resilience fallback during the migration
-/// off the compiled-in Neon credential, not two independently maintained
-/// copies.
-///
-/// The Neon shape is one table per tier — `app.region` / `app.state` /
-/// `app.district` / `app.assembly` / `app.lsgd` / `app.ward` (migration
-/// 0014), linked child → parent by UUID foreign keys. This flattens all six
-/// into the `(id, parent_id, level, name, code, sort)` rows [GeoNode.fromRow]
-/// expects, so a region's `parent_id` is null and every deeper tier points at
-/// the row above it.
-///
-/// Read-only and best-effort like the other Neon repositories: a missing
-/// `DATABASE_URL`, a network failure, or empty tables return null, and the
-/// caller ([AgentGeo]) is left with an empty hierarchy rather than anything
-/// bundled.
+/// [GeoNode.fromRow] still parses the same flattened
+/// `(id, parent_id, level, name, code, sort)` shape — [BackendAgentGeoRepository]
+/// maps the backend's own response onto it, so this app's one `GeoNode`
+/// type and `AgentGeo`'s tree-building logic didn't have to change at all.
 class AgentGeoRepository {
   const AgentGeoRepository._();
 
   static const AgentGeoRepository instance = AgentGeoRepository._();
 
-  bool get isAvailable =>
-      BackendAgentGeoRepository.instance.isAvailable || NeonHttp.isConfigured;
+  bool get isAvailable => BackendAgentGeoRepository.instance.isAvailable;
 
-  /// Every geo node, ordered so a parent always precedes deeper tiers, or null
-  /// when neither the backend nor Neon could answer, or the tables are empty.
-  ///
-  /// A transport / SQL failure from the Neon fallback is **rethrown**, not
-  /// swallowed — matching this method's pre-existing contract — but only
-  /// once the backend attempt has already been tried and itself failed; the
-  /// caller ([AgentGeo._load]) records the reason so "My Team" can show why
-  /// the tree is empty instead of silently rendering nothing.
-  Future<List<GeoNode>?> fetchAll() async {
-    final backend = BackendAgentGeoRepository.instance;
-    if (backend.isAvailable) {
-      try {
-        final nodes = await backend.fetchAll();
-        if (nodes != null) {
-          return nodes;
-        }
-      } catch (error) {
-        NeonHttp.log('AgentGeoRepository.fetchAll: backend failed, falling back to Neon', error: error);
-      }
-    }
-
-    if (!NeonHttp.isConfigured) {
-      return null;
-    }
-    final rows = await NeonHttp.instance.query(r'''
-        SELECT id::text, NULL::text AS parent_id, 'region' AS level,
-               name, code, '' AS type, sort, 1 AS tier
-        FROM app.region
-        UNION ALL
-        SELECT id::text, region_id::text, 'state', name, code, '' AS type, sort, 2
-        FROM app.state
-        UNION ALL
-        SELECT id::text, state_id::text, 'district', name, code, '' AS type, sort, 3
-        FROM app.district
-        UNION ALL
-        SELECT id::text, district_id::text, 'assembly', name, code, '' AS type, sort, 4
-        FROM app.assembly
-        UNION ALL
-        SELECT id::text, assembly_id::text, 'lsgd', name, code, COALESCE(type::text, '') AS type, sort, 5
-        FROM app.lsgd
-        UNION ALL
-        SELECT id::text, lsgd_id::text, 'ward', name, code, '' AS type, sort, 6
-        FROM app.ward
-        ORDER BY tier, sort, name
-      ''');
-    final nodes = rows
-        .map(GeoNode.fromRow)
-        .whereType<GeoNode>()
-        .toList(growable: false);
-    return nodes.isEmpty ? null : nodes;
-  }
+  /// Every geo node, ordered so a parent always precedes deeper tiers, or
+  /// null when the backend couldn't answer, or the tables are empty.
+  /// Rethrows on failure so the caller ([AgentGeo._load]) can record the
+  /// reason and show why the tree is empty instead of silently rendering
+  /// nothing.
+  Future<List<GeoNode>?> fetchAll() => BackendAgentGeoRepository.instance.fetchAll();
 }

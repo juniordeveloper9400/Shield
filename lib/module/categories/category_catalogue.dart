@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../data/neon/category_repository.dart';
+import '../../data/backend/backend_category_repository.dart';
 import '../../theme/app_colors.dart';
 
 /// One browsable sub-category — the unit both the home strip and the
@@ -85,7 +85,7 @@ class CategoryCatalogue {
       image: 'assets/categories/bundle_personalcare_tab.png',
       // Used to point at assets/banners/skincare_banner.jpg, which is no
       // longer bundled — the admin console publishes this banner now (see
-      // CategoryRepository / the "Category banners" page in shieldweb).
+      // BackendCategoryRepository / the "Category banners" page in shieldweb).
       panelTint: AppColors.panelGreen,
       items: [
         SubCategory(
@@ -366,7 +366,7 @@ class CategoryCatalog extends ChangeNotifier {
 
   Future<void> _load() async {
     try {
-      final groups = await CategoryRepository.instance.fetchAll();
+      final groups = await BackendCategoryRepository.instance.fetchAll();
       if (groups != null && groups.isNotEmpty) {
         _live = groups;
         _fromDatabase = true;

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../../data/neon/customer_review_repository.dart';
-import '../../data/neon/neon_http.dart';
+import '../../data/backend/backend_customer_review_repository.dart';
+import '../../data/backend/backend_http.dart';
 import 'customer_reviews.dart';
 
 /// Where the customer-video load has got to.
@@ -25,7 +25,7 @@ enum CustomerReviewsStatus {
 /// "What our customers have to say" — the reel's single source of clips.
 ///
 /// Loads every active row from `app.customer_review_video` with a short-lived cache
-/// (see [CustomerReviewRepository]) and keeps it in memory. [items] is
+/// (see [BackendCustomerReviewRepository]) and keeps it in memory. [items] is
 /// that list minus any row the in-app player cannot stream (a leftover
 /// YouTube link, a bundled asset path that no longer ships) — there is no
 /// bundled fallback, so the reel is simply absent until the admin uploads a
@@ -41,7 +41,7 @@ class CustomerReviewsService extends ChangeNotifier {
   List<CustomerReviewItem> _admin = const [];
 
   /// Whether a load would actually reach the database.
-  bool get isConfigured => CustomerReviewRepository.instance.isAvailable;
+  bool get isConfigured => BackendCustomerReviewRepository.instance.isAvailable;
 
   bool get isLoading => _status == CustomerReviewsStatus.loading;
 
@@ -87,7 +87,7 @@ class CustomerReviewsService extends ChangeNotifier {
     _status = CustomerReviewsStatus.loading;
     notifyListeners();
     try {
-      final clips = await (_testLoader ?? CustomerReviewRepository.instance.listActive)();
+      final clips = await (_testLoader ?? BackendCustomerReviewRepository.instance.listActive)();
       if (clips == null) {
         _set(CustomerReviewsStatus.error, _admin);
       } else {
@@ -100,7 +100,7 @@ class CustomerReviewsService extends ChangeNotifier {
         );
       }
     } catch (error) {
-      NeonHttp.log('CustomerReviewsService load failed', error: error);
+      BackendHttp.log('CustomerReviewsService load failed', error: error);
       _set(CustomerReviewsStatus.error, _admin);
     } finally {
       _inFlight = null;

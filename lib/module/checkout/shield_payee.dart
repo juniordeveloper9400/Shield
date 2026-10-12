@@ -1,4 +1,3 @@
-import '../../data/backend/backend_store_repository.dart';
 import '../../data/neon/store_repository.dart';
 import '../registration/shield_store.dart';
 
@@ -155,10 +154,10 @@ abstract final class ShieldPayees {
     return _byStore[store.id] ?? [melatturPrimary];
   }
 
-  /// [forStore]'s live refinement: fetches [store]'s actual bank details —
-  /// backend first, then direct-Neon — and returns the account to show once
-  /// one of them answers, or null when neither could (so the caller keeps
-  /// showing whatever [forStore] already returned instantly).
+  /// [forStore]'s live refinement: fetches [store]'s actual bank details
+  /// from the backend (`StoreRepository.fetchBankDetails`) and returns the
+  /// account to show once it answers, or null when it couldn't (so the
+  /// caller keeps showing whatever [forStore] already returned instantly).
   ///
   /// Exists because `StoreCatalog`'s branch list stopped carrying bank
   /// fields once it started preferring `backend/api` (a public bulk
@@ -170,12 +169,7 @@ abstract final class ShieldPayees {
   /// [forStore], never in place of it — see `checkout_screen.dart`'s own
   /// `_refreshLiveBankAccount`.
   static Future<StoreBankAccount?> liveAccountFor(ShieldStore store) async {
-    Map<String, String>? details;
-    final backend = BackendStoreRepository.instance;
-    if (backend.canFetchBankDetails) {
-      details = await backend.fetchBankDetails(store.id);
-    }
-    details ??= await StoreRepository.instance.fetchBankDetails(store.id);
+    final details = await StoreRepository.instance.fetchBankDetails(store.id);
     if (details == null) {
       return null;
     }

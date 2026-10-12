@@ -14,10 +14,10 @@ void main() {
   );
 
   group('ShieldPayees.liveAccountFor', () {
-    test('is null under `flutter test`, where neither backend nor Neon is configured', () async {
-      // Both BackendHttp and NeonHttp report unconfigured under test — see
-      // their own `_underTest` guards — so this must fail open (null),
-      // never throw, matching every other best-effort read in this app.
+    test('is null under `flutter test`, where the backend is not configured', () async {
+      // BackendHttp reports unconfigured under test — see its own
+      // `_underTest` guard — so this must fail open (null), never throw,
+      // matching every other best-effort read in this app.
       expect(await ShieldPayees.liveAccountFor(store), isNull);
     });
 

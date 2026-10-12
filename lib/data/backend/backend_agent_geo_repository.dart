@@ -15,11 +15,11 @@ import 'backend_http.dart';
 /// [GeoNode] for a field nothing reads).
 ///
 /// `lib/data/neon/agent_geo_repository.dart` (the class `AgentGeo` actually
-/// calls) tries this first and falls back to its own direct-Neon path when
-/// the backend is unavailable or this fails — including on a transport
-/// failure, which (like the Neon path) is deliberately **not** swallowed
-/// here: the caller ([AgentGeo._load]) records the reason so "My Team" can
-/// show why the tree is empty instead of silently rendering nothing.
+/// calls) is a thin pass-through to this now — no direct-Neon fallback any
+/// more (see that file's own doc). A transport failure is deliberately
+/// **not** swallowed here: the caller ([AgentGeo._load]) records the
+/// reason so "My Team" can show why the tree is empty instead of silently
+/// rendering nothing.
 class BackendAgentGeoRepository {
   BackendAgentGeoRepository._({BackendHttp? http}) : _http = http ?? BackendHttp.instance;
 
