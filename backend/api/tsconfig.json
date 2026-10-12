@@ -16,7 +16,8 @@
     "declaration": false,
     "sourceMap": true,
     "outDir": "dist",
-    "baseUrl": "."
+    "baseUrl": ".",
+    "types": ["node", "jest"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }
