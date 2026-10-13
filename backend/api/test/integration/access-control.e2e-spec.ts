@@ -414,6 +414,171 @@ describe('Access control / cross-tenant probes (e2e)', () => {
     });
   });
 
+  describe('Deliveries page scope', () => {
+    let deliveryXId: number;
+    let deliveryYId: number;
+    let deliveryXToken: string;
+    let deliveryOrderXId: number;
+
+    beforeAll(async () => {
+      const [dx] = await db
+        .insert(adminUser)
+        .values({
+          loginId: 'delivery-x@example.com',
+          name: 'Delivery X',
+          passwordHash: await hash('correct-horse-battery-staple', 4),
+          role: 'DELIVERY',
+          storeId: storeXId,
+        })
+        .returning();
+      deliveryXId = dx.id;
+      deliveryXToken = (
+        await request(app.getHttpServer())
+          .post('/v1/staff/auth/session')
+          .send({ loginId: 'delivery-x@example.com', password: 'correct-horse-battery-staple' })
+          .expect(200)
+      ).body.accessToken;
+
+      const [dy] = await db
+        .insert(adminUser)
+        .values({
+          loginId: 'delivery-y@example.com',
+          name: 'Delivery Y',
+          passwordHash: await hash('correct-horse-battery-staple', 4),
+          role: 'DELIVERY',
+          storeId: storeYId,
+        })
+        .returning();
+      deliveryYId = dy.id;
+
+      const [created] = await db
+        .insert(order)
+        .values({
+          memberId: memberAId,
+          code: 'ORD-DELIVERY-X-1',
+          status: 'PROCESSING',
+          fulfillmentType: 'HOME_DELIVERY',
+          itemCount: 1,
+          mrpTotal: '250',
+          paidTotal: '250',
+          storeId: storeXId,
+          placedOn: new Date().toISOString().slice(0, 10),
+        })
+        .returning();
+      deliveryOrderXId = created.id;
+    });
+
+    it("lists only one store's own delivery boys when storeCode is given", async () => {
+      const res = await request(app.getHttpServer())
+        .get('/v1/staff/delivery-boys')
+        .query({ storeCode: 'SHD-X' })
+        .set('Authorization', `Bearer ${pharmacyXToken}`)
+        .expect(200);
+      expect(res.body.map((d: { id: number }) => d.id)).toEqual([deliveryXId]);
+    });
+
+    it("a delivery login cannot claim store Y's order by substituting its id", async () => {
+      const [otherStoreOrder] = await db
+        .insert(order)
+        .values({
+          memberId: memberAId,
+          code: 'ORD-DELIVERY-Y-1',
+          status: 'PROCESSING',
+          fulfillmentType: 'HOME_DELIVERY',
+          itemCount: 1,
+          mrpTotal: '100',
+          paidTotal: '100',
+          storeId: storeYId,
+          placedOn: new Date().toISOString().slice(0, 10),
+        })
+        .returning();
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${otherStoreOrder.id}/delivery-boy`)
+        .set('Authorization', `Bearer ${deliveryXToken}`)
+        .send({ deliveryBoyId: deliveryXId })
+        .expect(404);
+    });
+
+    it('a delivery login may claim an order for itself, but not hand it to someone else', async () => {
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${deliveryOrderXId}/delivery-boy`)
+        .set('Authorization', `Bearer ${deliveryXToken}`)
+        .send({ deliveryBoyId: deliveryYId })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${deliveryOrderXId}/delivery-boy`)
+        .set('Authorization', `Bearer ${deliveryXToken}`)
+        .send({ deliveryBoyId: deliveryXId })
+        .expect(200);
+
+      const [row] = await db.select().from(order).where(eq(order.id, deliveryOrderXId));
+      expect(row.deliveryBoyId).toBe(deliveryXId);
+    });
+
+    it("shows up in the claiming delivery boy's own queue, scoped to the session not a client id", async () => {
+      const mine = await request(app.getHttpServer())
+        .get('/v1/staff/deliveries/assigned-to-me')
+        .set('Authorization', `Bearer ${deliveryXToken}`)
+        .expect(200);
+      expect(mine.body.map((o: { id: number }) => o.id)).toContain(deliveryOrderXId);
+      expect(mine.body[0].address).toBeDefined();
+      expect(mine.body[0].items).toBeInstanceOf(Array);
+    });
+
+    it('marks a cash order collected, settling its bill too', async () => {
+      await request(app.getHttpServer())
+        .put(`/v1/staff/orders/${deliveryOrderXId}/bill`)
+        .set('Authorization', `Bearer ${pharmacyXToken}`)
+        .send({ image: 'data:image/png;base64,x' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/orders/${deliveryOrderXId}/cash-collected`)
+        .set('Authorization', `Bearer ${deliveryXToken}`)
+        .expect(200);
+
+      const [row] = await db.select().from(order).where(eq(order.id, deliveryOrderXId));
+      expect(row.paymentStatus).toBe('PAID');
+      const [billRow] = await db.select().from(bill).where(eq(bill.orderId, deliveryOrderXId));
+      expect(billRow.status).toBe('PAID');
+    });
+
+    it("store Y staff reading the available-for-delivery queue by store code never sees store X's orders", async () => {
+      const [unclaimed] = await db
+        .insert(order)
+        .values({
+          memberId: memberAId,
+          code: 'ORD-DELIVERY-X-2',
+          status: 'PROCESSING',
+          fulfillmentType: 'HOME_DELIVERY',
+          itemCount: 1,
+          mrpTotal: '100',
+          paidTotal: '100',
+          storeId: storeXId,
+          placedOn: new Date().toISOString().slice(0, 10),
+        })
+        .returning();
+
+      const asY = await request(app.getHttpServer())
+        .get('/v1/staff/deliveries/available')
+        .query({ storeCode: 'SHD-Y' })
+        .set('Authorization', `Bearer ${pharmacyYToken}`)
+        .expect(200);
+      expect(asY.body.map((o: { id: number }) => o.id)).not.toContain(unclaimed.id);
+
+      const asX = await request(app.getHttpServer())
+        .get('/v1/staff/deliveries/available')
+        .query({ storeCode: 'SHD-X' })
+        .set('Authorization', `Bearer ${pharmacyXToken}`)
+        .expect(200);
+      expect(asX.body.map((o: { id: number }) => o.id)).toContain(unclaimed.id);
+      // Already claimed (and collected) in the earlier test, so it's off the queue now.
+      expect(asX.body.map((o: { id: number }) => o.id)).not.toContain(deliveryOrderXId);
+    });
+  });
+
   // ---------------------------------------------------------------------
   // 5. Wallet-card review: role boundary (company-wide by design, not
   //    store-scoped — PHARMACY/LAB must still be refused entirely)

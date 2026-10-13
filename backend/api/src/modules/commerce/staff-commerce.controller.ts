@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, NotFoundException, Param, ParseIntPipe, Patch, Put, Query } from '@nestjs/common';
 import { OrderService } from './order.service';
 import { StaffOrderBoardService } from './staff-order-board.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireRole, RequireStaff } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
+  assignDeliveryBoySchema,
   setFulfilmentStatusSchema,
   receiveBillPaymentSchema,
   reviewOrderSchema,
@@ -12,6 +13,7 @@ import {
   sendInvoiceSchema,
   sendPictureSchema,
   updateOrderStatusSchema,
+  type AssignDeliveryBoyDto,
   type ReceiveBillPaymentDto,
   type ReviewOrderDto,
   type SendBillDto,
@@ -56,6 +58,43 @@ export class StaffCommerceController {
     @Body(new ZodValidationPipe(setFulfilmentStatusSchema)) dto: SetFulfilmentStatusDto,
   ) {
     return this.orders.setFulfilmentStatus(user.role!, user.storeId ?? null, id, dto.status);
+  }
+
+  // ---- Delivery (console: Deliveries page) -------------------------------
+  // Same four roles 'deliveries' is gated to in shieldweb/src/config/permissions.ts.
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY', 'DELIVERY')
+  @Get('delivery-boys')
+  listDeliveryBoys(@Query('storeCode') storeCode?: string) {
+    return this.orders.listDeliveryBoys(storeCode);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY', 'DELIVERY')
+  @Patch('orders/:id/delivery-boy')
+  assignDeliveryBoy(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(assignDeliveryBoySchema)) dto: AssignDeliveryBoyDto,
+  ) {
+    return this.orders.assignDeliveryBoy(user.role!, user.storeId ?? null, Number(user.subjectId), id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY', 'DELIVERY')
+  @Patch('orders/:id/cash-collected')
+  markCashCollected(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    return this.orders.markCashCollected(user.role!, user.storeId ?? null, id);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY', 'DELIVERY')
+  @Get('deliveries/available')
+  listAvailableForDelivery(@Query('storeCode') storeCode: string) {
+    return this.orders.listAvailableForDelivery(storeCode);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY', 'DELIVERY')
+  @Get('deliveries/assigned-to-me')
+  listAssignedToMe(@CurrentUser() user: RequestSubject) {
+    return this.orders.listAssignedToMe(Number(user.subjectId));
   }
 
   @Get('orders')

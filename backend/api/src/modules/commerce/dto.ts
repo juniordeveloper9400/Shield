@@ -153,3 +153,6 @@ export type ReviewOrderDto = z.infer<typeof reviewOrderSchema>;
 export type SendInvoiceDto = z.infer<typeof sendInvoiceSchema>;
 export type SendPictureDto = z.infer<typeof sendPictureSchema>;
 export type SetFulfilmentStatusDto = z.infer<typeof setFulfilmentStatusSchema>;
+
+export const assignDeliveryBoySchema = z.object({ deliveryBoyId: z.number().int().positive().nullable() });
+export type AssignDeliveryBoyDto = z.infer<typeof assignDeliveryBoySchema>;

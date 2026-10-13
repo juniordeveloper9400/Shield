@@ -3,6 +3,7 @@ import { and, desc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-or
 import { randomBytes, randomUUID } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
+  adminUser,
   bill,
   billLine,
   cartLine,
@@ -33,6 +34,7 @@ import { CartService } from './cart.service';
 import { assertLegalTransition, type OrderStatus } from './order-status';
 import { cancelOrderForMember } from './member-withdrawal';
 import type {
+  AssignDeliveryBoyDto,
   CheckoutDto,
   ReceiveBillPaymentDto,
   ReviewOrderDto,
@@ -1195,5 +1197,146 @@ export class OrderService {
     await this.getOwnedByStaffOrThrow(orderId, role, storeId);
     await this.db.update(order).set({ status, updatedAt: new Date() }).where(eq(order.id, orderId));
     return { ok: true as const };
+  }
+
+  // ---- Delivery (console: Deliveries page) --------------------------------
+
+  /** DELIVERY-role staff at one branch (or every branch when [storeCode] is
+   *  omitted — a Super Admin/Admin's assignment picker, which isn't store-
+   *  bound). Who a cash order can be handed to. */
+  async listDeliveryBoys(storeCode?: string) {
+    const conditions = [eq(adminUser.role, 'DELIVERY' as AdminRole), eq(adminUser.isActive, true)];
+    const rows = await this.db
+      .select({ id: adminUser.id, name: adminUser.name, storeCode: shieldStore.code })
+      .from(adminUser)
+      .innerJoin(shieldStore, eq(shieldStore.id, adminUser.storeId))
+      .where(storeCode ? and(...conditions, eq(shieldStore.code, storeCode)) : and(...conditions))
+      .orderBy(adminUser.name);
+    return rows;
+  }
+
+  /**
+   * Assigns (or clears, passing null) which delivery boy carries a cash
+   * order — store-scoped like every other order write here. A caller who is
+   * themselves DELIVERY may only claim it for themselves or release it
+   * (null), never hand it to a different delivery boy — closes a gap the
+   * old direct-SQL version left open (any DELIVERY login could pass any
+   * deliveryBoyId at all).
+   */
+  async assignDeliveryBoy(
+    role: AdminRole,
+    storeId: number | null,
+    callerId: number,
+    orderId: number,
+    dto: AssignDeliveryBoyDto,
+  ) {
+    await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    if (role === 'DELIVERY' && dto.deliveryBoyId !== null && dto.deliveryBoyId !== callerId) {
+      throw new ForbiddenException({
+        error: { code: 'FORBIDDEN', message: 'A delivery login may only claim an order for itself' },
+      });
+    }
+    await this.db.update(order).set({ deliveryBoyId: dto.deliveryBoyId, updatedAt: new Date() }).where(eq(order.id, orderId));
+    return { ok: true as const };
+  }
+
+  /**
+   * Marks a cash order's payment as collected — by the delivery boy on
+   * handoff, or by store staff at pickup. Also settles the linked bill, if
+   * one exists, so a priced prescription invoice shows paid the same moment
+   * the order does.
+   */
+  async markCashCollected(role: AdminRole, storeId: number | null, orderId: number) {
+    await this.getOwnedByStaffOrThrow(orderId, role, storeId);
+    const now = new Date();
+    await this.db.update(order).set({ paymentStatus: 'PAID', paidAt: now, updatedAt: now }).where(eq(order.id, orderId));
+    await this.db.update(bill).set({ status: 'PAID', paidAt: now, updatedAt: now }).where(eq(bill.orderId, orderId));
+    return { ok: true as const };
+  }
+
+  /**
+   * Home-delivery orders at [storeCode] not yet claimed by anyone — what a
+   * delivery boy sees to pick up. Every unclaimed order that needs a
+   * physical hand-off, wallet-paid or still cash-pending alike: a wallet-
+   * paid order has nothing left to collect, but it still has to physically
+   * reach the member, so it belongs in this queue too. Store-pickup orders
+   * never appear here — there is no delivery to assign. Excludes anything
+   * already delivered/cancelled.
+   */
+  async listAvailableForDelivery(storeCode: string) {
+    return this.deliveryOrders(
+      and(
+        eq(shieldStore.code, storeCode),
+        eq(order.fulfillmentType, 'HOME_DELIVERY'),
+        isNull(order.deliveryBoyId),
+        sql`${order.status} NOT IN ('DELIVERED', 'CANCELLED')`,
+      ),
+    );
+  }
+
+  /** This delivery boy's own claimed orders, in progress or newly settled —
+   *  [callerId] always comes from the session, never a client-supplied id,
+   *  so one delivery login can never read another's queue. */
+  async listAssignedToMe(callerId: number) {
+    return this.deliveryOrders(
+      and(
+        eq(order.deliveryBoyId, callerId),
+        eq(order.fulfillmentType, 'HOME_DELIVERY'),
+        sql`${order.status} NOT IN ('DELIVERED', 'CANCELLED')`,
+      ),
+    );
+  }
+
+  private async deliveryOrders(condition: ReturnType<typeof and>) {
+    const rows = await this.db
+      .select({
+        id: order.id,
+        code: order.code,
+        memberName: users.name,
+        memberPhone: users.phone,
+        status: order.status,
+        fulfillmentType: order.fulfillmentType,
+        paymentStatus: order.paymentStatus,
+        paidTotal: order.paidTotal,
+        mrpTotal: order.mrpTotal,
+        itemCount: order.itemCount,
+        storeCode: shieldStore.code,
+        storeName: shieldStore.name,
+        deliveryBoyId: order.deliveryBoyId,
+        placedAt: order.placedAt,
+        house: memberAddress.house,
+        area: memberAddress.area,
+        landmark: memberAddress.landmark,
+        city: memberAddress.city,
+        pincode: memberAddress.pincode,
+      })
+      .from(order)
+      .innerJoin(users, eq(users.id, order.memberId))
+      .leftJoin(shieldStore, eq(shieldStore.id, order.storeId))
+      .leftJoin(memberAddress, eq(memberAddress.id, order.deliveryAddressId))
+      .where(condition)
+      .orderBy(order.placedAt);
+    if (rows.length === 0) return [];
+
+    const ids = rows.map((r) => r.id);
+    const lineRows = await this.db
+      .select({ orderId: orderLine.orderId, name: orderLine.name, pack: orderLine.pack, qty: orderLine.qty })
+      .from(orderLine)
+      .where(inArray(orderLine.orderId, ids));
+    const byOrder = new Map<number, { name: string; pack: string; qty: number }[]>();
+    for (const line of lineRows) {
+      const bucket = byOrder.get(line.orderId) ?? [];
+      bucket.push({ name: line.name, pack: line.pack, qty: line.qty });
+      byOrder.set(line.orderId, bucket);
+    }
+
+    return rows.map((r) => {
+      const addressParts = [r.house, r.area, r.landmark, r.city, r.pincode].map((p) => (p ?? '').trim()).filter(Boolean);
+      return {
+        ...r,
+        address: addressParts.join(', '),
+        items: byOrder.get(r.id) ?? [],
+      };
+    });
   }
 }
