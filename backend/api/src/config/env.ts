@@ -56,7 +56,13 @@ const envSchema = z
     // confirm a widget access-token server-side before anything trusts it.
     // Optional in dev/test the same way Firebase is; required in production
     // below, since the staff-side wallet-collection OTP depends on it.
-    MSG91_AUTH_KEY: z.string().optional(),
+    // .trim() — a stray leading/trailing newline or space pasted into
+    // Vercel's env var UI (easy to do from a terminal/file copy) would
+    // otherwise pass the `!value` "is this configured" check untouched
+    // while still producing a malformed request MSG91 just rejects
+    // outright as "Invalid request", with nothing in that response to
+    // point at whitespace as the cause.
+    MSG91_AUTH_KEY: z.string().trim().optional(),
     // The same widgetId/tokenAuth pair shieldweb's own VITE_MSG91_WIDGET_ID/
     // VITE_MSG91_TOKEN_AUTH use (or a separate widget, if a dedicated
     // throttle bucket for the agent app is wanted) — see
@@ -64,8 +70,8 @@ const envSchema = z
     // everywhere for now: this backs a newly-added flow (agent-registration
     // phone verification) that still needs its first live confirmation
     // before it's load-bearing enough to fail a production boot over.
-    MSG91_WIDGET_ID: z.string().optional(),
-    MSG91_WIDGET_TOKEN_AUTH: z.string().optional(),
+    MSG91_WIDGET_ID: z.string().trim().optional(),
+    MSG91_WIDGET_TOKEN_AUTH: z.string().trim().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.NODE_ENV === 'production') {
