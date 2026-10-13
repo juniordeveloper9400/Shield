@@ -8,11 +8,10 @@ import 'backend_http.dart';
 /// `POST /v1/member/rewards/redeem` (see `rewards.service.ts`).
 ///
 /// Crediting points has no member-facing endpoint at all — the backend
-/// credits the registration bonus automatically, inside the transaction
-/// that completes registration (`PATCH /v1/member/me`) — see
-/// `RewardsService`'s own doc for why order points still go through the
-/// direct-Neon [RewardTxn]-sharing `legacy.RewardsRepository.credit`
-/// instead of a backend call that does not exist yet.
+/// credits both the registration bonus (inside `PATCH /v1/member/me`) and
+/// order points (inside `order.service.ts`'s own checkout transaction)
+/// automatically; see `RewardsService`'s own doc for why nothing here needs
+/// to trigger a credit itself any more.
 ///
 /// Best-effort, like the other backend repositories: an unconfigured
 /// backend or the network down makes reads return `null` (not `0`) and

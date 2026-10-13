@@ -5,21 +5,28 @@
 - Flutter SDK compatible with Dart `^3.10.0`
 - Android SDK and a configured emulator or device
 - Node.js 20+ and npm for `shieldweb`
-- Dart access to the Neon database for backend tools
+- A running `backend/api` instance (local or deployed) for member writes
 - Firebase CLI and FlutterFire CLI when changing Firebase configuration
 
 ## Root environment
 
-Copy `.env.example` to `.env` and fill in the Neon connection string. Keep `.env` git-ignored.
-
-The Windows build path avoids passing a Neon URL containing `&` through `flutter.bat`. Generate the ignored Dart secret before running builds that need member writes:
+The app talks to `backend/api` over plain HTTPS — no database credential of
+any kind is compiled into it. Copy `.env.example` to `.env` and set
+`BACKEND_API_BASE_URL` to your `backend/api` instance, then:
 
 ```powershell
-dart run tool/gen_neon_secret.dart
 flutter pub get
+flutter run --dart-define-from-file=.env
 ```
 
-Check connectivity without changing data:
+A build started without `BACKEND_API_BASE_URL` leaves every member write a
+silent no-op (`BackendHttp.isConfigured` is `false`), logged once at launch
+rather than crashing.
+
+`backend/api`'s own database is still a Neon Postgres instance, but that
+credential lives only in `backend/api`'s own `.env`, never in this app. To
+verify connectivity to that database directly (a `backend/api` ops task, not
+something this app needs):
 
 ```powershell
 dart run tool/neon_ping.dart
@@ -59,9 +66,8 @@ Open the Vite URL shown by the command, normally `http://localhost:5173`.
 ## First setup order
 
 1. Install Flutter dependencies.
-2. Configure `.env` and generate the Neon secret.
-3. Verify Neon connectivity.
-4. Verify Firebase Android configuration.
-5. Run the Flutter tests and app.
-6. Install and typecheck the admin console separately.
-7. Apply or seed database schema only after reviewing [Database](database.md).
+2. Configure `.env` with `BACKEND_API_BASE_URL`.
+3. Verify Firebase Android configuration.
+4. Run the Flutter tests and app.
+5. Install and typecheck the admin console separately.
+6. Apply or seed database schema only after reviewing [Database](database.md).

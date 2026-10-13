@@ -10,10 +10,7 @@ import 'backend_http.dart';
 /// own tests and any caller still on that flow, though `auth_service.dart`'s
 /// member login no longer is.
 ///
-/// This is additive alongside the existing phone-keyed Neon writes
-/// (`MemberRepository.instance.upsertOnSignIn`) — see `auth_service.dart`'s
-/// `_afterSignIn`. Nothing about the pre-existing sign-in path is removed;
-/// a backend outage here degrades to "backend-only screens don't load"
+/// A backend outage here degrades to "backend-only screens don't load"
 /// rather than blocking sign-in entirely.
 ///
 /// Ported from `shield agent_invester/lib/data/backend/backend_session.dart`
@@ -42,7 +39,7 @@ class BackendSession {
   /// with [name], which creates or backfills the row and returns tokens
   /// directly. Never throws: a backend outage or a stale token just leaves
   /// the caller signed out of the backend (backend-only screens will show
-  /// their empty/unavailable state), matching every Neon repository's
+  /// their empty/unavailable state), matching every repository's own
   /// best-effort contract.
   Future<bool> signInWithFirebaseToken(
     String idToken, {
@@ -94,8 +91,7 @@ class BackendSession {
   }
 
   /// Restores a session from a refresh token persisted on an earlier run —
-  /// call once at app launch, alongside `MemberRepository`'s own
-  /// phone-based `restoreSession`. Returns whether a session was actually
+  /// call once at app launch. Returns whether a session was actually
   /// restored, so a caller can fall back to re-bridging from a fresh
   /// Firebase token when there was no persisted one to restore (a member
   /// who has never successfully reached backend/api before — see

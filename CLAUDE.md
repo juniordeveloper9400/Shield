@@ -10,7 +10,7 @@ Before editing:
 
 Safety requirements:
 
-- Never expose or commit `.env`, Neon credentials, generated `lib/data/neon/neon_secret.dart`, Firebase service-account keys, passwords, or keystores.
+- Never expose or commit `.env`, Neon credentials, Firebase service-account keys, passwords, or keystores.
 - Treat the current admin-console credentials and browser `localStorage` session as a development/internal implementation, not production authentication.
 - Ask for confirmation before destructive database commands such as schema recreation or wipes.
 

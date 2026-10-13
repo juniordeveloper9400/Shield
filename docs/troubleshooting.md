@@ -1,8 +1,8 @@
 # Troubleshooting
 
-## Neon writes do nothing
+## Member writes do nothing
 
-Run `dart run tool/gen_neon_secret.dart` after changing `.env`. On Windows, do not rely on a raw `--dart-define` for a connection string containing `&`; the build wrapper generates the ignored Dart secret instead. Check the launch log for the Neon configured/endpoint status.
+The app has no database credential of its own — every write goes through `backend/api`. Confirm `BACKEND_API_BASE_URL` was set at build time and the backend is reachable; check the launch log for the connected/unreachable status it logs once at startup (`BackendHttp.isConfigured`).
 
 ## OTP sign-in reports "not configured" / "unavailable"
 

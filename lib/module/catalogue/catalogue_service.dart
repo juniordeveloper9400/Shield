@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import '../../data/neon/neon_http.dart';
+import '../../data/backend/backend_http.dart';
 import '../../data/backend/backend_product_repository.dart';
 import '../home/product_showcase.dart';
 
@@ -29,7 +29,7 @@ enum CatalogueStatus {
 
 /// The customer app's single view of the storefront catalogue.
 ///
-/// Loads every `ACTIVE` product from Neon once per session (see
+/// Loads every `ACTIVE` product from backend/api once per session (see
 /// [BackendProductRepository]) and keeps it in memory. The home rows, the category
 /// listings, search and the product-detail "also bought" rail all read from
 /// here, so whatever a pharmacy admin adds in the console shows up everywhere
@@ -51,8 +51,8 @@ class CatalogueService extends ChangeNotifier {
   /// Every active product, newest first.
   List<Product> get all => _all;
 
-  /// Whether a load would actually reach the database.
-  bool get isConfigured => NeonHttp.isConfigured;
+  /// Whether a load would actually reach the backend.
+  bool get isConfigured => BackendHttp.isConfigured;
 
   bool get isLoading => _status == CatalogueStatus.loading;
   bool get hasProducts => _all.isNotEmpty;
@@ -84,7 +84,7 @@ class CatalogueService extends ChangeNotifier {
   }
 
   Future<void> _load() async {
-    if (!NeonHttp.isConfigured) {
+    if (!BackendHttp.isConfigured) {
       _set(CatalogueStatus.error, const []);
       _inFlight = null;
       return;
@@ -101,7 +101,7 @@ class CatalogueService extends ChangeNotifier {
         );
       }
     } catch (error) {
-      NeonHttp.log('CatalogueService load failed', error: error);
+      BackendHttp.log('CatalogueService load failed', error: error);
       _set(CatalogueStatus.error, const []);
     } finally {
       _inFlight = null;

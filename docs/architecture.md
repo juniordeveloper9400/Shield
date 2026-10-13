@@ -31,12 +31,13 @@ The root Flutter app and `shieldweb` are separate applications but share the Neo
 - `lib/module/prescription/`: prescription upload and prescription checkout.
 - `lib/module/labtest/`, `appointment/`, `dietitian/`, `patients/`: care services.
 - `lib/module/wallet/`, `rewards/`, `refer/`, `investment/`, `agent/`: account and partner features.
-- `lib/data/neon/`: database clients and repositories.
+- `lib/data/backend/`: `backend/api` client and repositories — every live data path.
+- `lib/data/neon/`: thin pass-through repositories kept for their existing call sites; none of them hold a database credential or make a direct connection any more.
 - `lib/screens/`, `lib/widgets/`, `lib/theme/`: composition and shared UI.
 
 ## Data paths
 
-Member sign-in and registration writes use `NeonHttp` over HTTPS. Other repository operations use `NeonDatabase` and the PostgreSQL socket. The generated `lib/data/neon/neon_secret.dart` supplies the connection value for local builds and is git-ignored.
+Every read and write goes through `backend/api` over plain HTTPS (`BackendHttp`, `lib/data/backend/backend_http.dart`) — no database credential of any kind is compiled into this app.
 
 The admin console uses `@neondatabase/serverless` directly from the browser. This is an internal implementation with a significant production security limitation; see [Security](security.md).
 

@@ -6,19 +6,18 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../neon/_flutter_test_env.dart'
-    if (dart.library.io) '../neon/_flutter_test_env_io.dart';
+import '../_flutter_test_env.dart'
+    if (dart.library.io) '../_flutter_test_env_io.dart';
 
 /// Talks to `backend/api` over plain HTTPS — no credential of any kind is
-/// compiled into this client, unlike [NeonHttp] (`lib/data/neon/neon_http.dart`),
-/// which ships the Neon database password. Session state (a short-lived
-/// access token, a longer-lived refresh token) is issued by the backend at
-/// sign-in, not baked in at build time.
+/// compiled into this client; the Neon database password this app used to
+/// ship directly is gone. Session state (a short-lived access token, a
+/// longer-lived refresh token) is issued by the backend at sign-in, not
+/// baked in at build time.
 ///
-/// Shape deliberately mirrors `NeonHttp`: private singleton constructor,
-/// an `isConfigured` guard, a `--dart-define` base URL, and a
-/// `dart:developer`-based [log] so log lines survive a release build. See
-/// that file's own doc comment for why `dart:developer` over `debugPrint`.
+/// Private singleton constructor, an `isConfigured` guard, a `--dart-define`
+/// base URL, and a `dart:developer`-based [log] so log lines survive a
+/// release build.
 ///
 /// Ported from `shield agent_invester/lib/data/backend/backend_http.dart`
 /// (that app's own working, already-shipped bridge to the same backend) —
@@ -33,7 +32,7 @@ class BackendHttp {
   /// actual protocol logic (401-retry, error parsing) can run against a
   /// [http.testing.MockClient] under `flutter test` — which
   /// [isConfigured] otherwise always reports false under, by design (see
-  /// `NeonHttp._underTest`'s doc). Does not affect [instance] or the static
+  /// [_underTest]'s doc). Does not affect [instance] or the static
   /// [isConfigured] every repository's own `isAvailable`/`_run` checks.
   @visibleForTesting
   BackendHttp.test({required http.Client client})
@@ -50,11 +49,19 @@ class BackendHttp {
   /// ```
   static const String _baseUrl = String.fromEnvironment('BACKEND_API_BASE_URL');
 
-  /// `true` when `flutter test` is running — see `NeonHttp._underTest`'s doc
-  /// for why this guard exists.
+  /// `true` when `flutter test` is running — without this guard, every
+  /// repository's `isAvailable`/`_run` check would fire real traffic at
+  /// the backend during a test run.
   static final bool _underTest = isUnderFlutterTest;
 
   static bool get isConfigured => _baseUrl.isNotEmpty && !_underTest;
+
+  /// [_baseUrl] itself, for a diagnostic line on screen when [isConfigured]
+  /// is false — not a secret (see this class's own doc: the URL is public),
+  /// and the whole point is to make "which build is this, really" provable
+  /// from a screenshot instead of guessed at from a build log on a
+  /// different machine. Empty string when nothing was compiled in.
+  static String get configuredBaseUrlForDiagnostics => _baseUrl;
 
   /// Non-null only on a [BackendHttp.test] instance — overrides
   /// [isConfigured] for that instance alone.

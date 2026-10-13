@@ -343,11 +343,9 @@ class LinkedOrder {
       },
       storeContactedAt: DateTime.tryParse((storeContactedAt ?? '').toString()),
       reviewedAt: DateTime.tryParse((reviewedAt ?? '').toString()),
-      // NeonHttp's `/sql` endpoint hands every value back as text (see its
-      // own `Neon-Raw-Text-Output` header), so a SQL boolean arrives as
-      // `'t'`/`'true'`, never the real `bool` a plain JSON API would give —
-      // the same defensive read `agent_repository.dart`'s own `active` field
-      // already needs.
+      // Defensive: some rows still arrive as SQL-flavored text (`'t'`/`'true'`)
+      // rather than a real JSON `bool` — the same defensive read
+      // `agent_repository.dart`'s own `active` field already needs.
       billed: billed == true ||
           const ['true', 't', '1'].contains(
             billed?.toString().trim().toLowerCase(),

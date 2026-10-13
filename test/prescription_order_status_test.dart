@@ -64,7 +64,7 @@ void main() {
       expect(LinkedOrder.fromTokens(code: '  ', status: 'PROCESSING'), isNull);
     });
 
-    test('reads the stage signals too, however NeonHttp\'s text mode spells '
+    test('reads the stage signals too, however SQL-flavored text spells '
         'a boolean', () {
       final notContacted = LinkedOrder.fromTokens(
         code: 'A',

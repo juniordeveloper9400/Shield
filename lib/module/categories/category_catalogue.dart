@@ -76,7 +76,7 @@ class CategoryCatalogue {
 
   /// The bundled fallback: the categories Sahakar 360 shipped with. Shown until
   /// (and if) the database copy loads, and the only list `flutter test` ever
-  /// sees (`NeonHttp.isConfigured` is false under test).
+  /// sees (`BackendHttp.isConfigured` is false under test).
   static const List<CategoryGroup> _seed = [
     CategoryGroup(
       title: 'Personal Care',

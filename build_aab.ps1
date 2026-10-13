@@ -1,20 +1,13 @@
-# Builds the release Android App Bundle (.aab, for the Play Store) with the
-# Neon connection string compiled in.
-#
-#   powershell -ExecutionPolicy Bypass -File build_aab.ps1
-#
-# Same build as build_apk.ps1 (read that file's own comments for why the
-# Neon connection string and SENTRY_DSN are each passed the way they are) —
-# this just asks flutter for an app bundle instead of an APK, since that is
-# what the Play Store wants for a new release.
+# Builds the release Android App Bundle (.aab, for the Play Store). No
+# database credential is compiled in — see build_apk.ps1's own comments for
+# how BACKEND_API_BASE_URL and SENTRY_DSN are passed; this just asks
+# flutter for an app bundle instead of an APK, since that is what the Play
+# Store wants for a new release.
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 $BackendApiBaseUrl = 'https://shieldbackend.vercel.app'
-
-Write-Host 'Generating lib/data/neon/neon_secret.dart from .env ...' -ForegroundColor Cyan
-dart run tool/gen_neon_secret.dart
 
 $SentryDsn = ''
 if (Test-Path '.env') {

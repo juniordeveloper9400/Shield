@@ -10,12 +10,12 @@ import 'package:shield/module/orders/purchase_service.dart';
 /// real prescription scan (not a generic icon and a toast) on a
 /// prescription order's tracker.
 ///
-/// None of these can reach Neon under `flutter test` (`NeonHttp.isConfigured`
-/// is false in this environment by design — no `DATABASE_URL` is compiled
-/// in). What is asserted here is that every one of these widgets tolerates
-/// that: the surrounding card renders in full and nothing crashes or hangs
-/// waiting on a fetch that was never going to land — not the picture itself,
-/// which needs a live database.
+/// None of these can reach the backend under `flutter test`
+/// (`BackendHttp.isConfigured` is false in this environment by design — no
+/// `BACKEND_API_BASE_URL` is compiled in). What is asserted here is that
+/// every one of these widgets tolerates that: the surrounding card renders
+/// in full and nothing crashes or hangs waiting on a fetch that was never
+/// going to land — not the picture itself, which needs a live backend.
 void main() {
   final service = PurchaseService.instance;
 

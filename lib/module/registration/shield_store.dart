@@ -70,52 +70,9 @@ class ShieldStore {
     this.offersLabCollection = true,
   });
 
-  /// Builds a store from an `app.shield_store` row (the Neon `/sql` endpoint
-  /// hands every value back as text), or null when a required field is missing.
-  /// The `code` is the app-facing id — see [id].
-  static ShieldStore? fromRow(Map<String, dynamic> row) {
-    String str(Object? v) => (v ?? '').toString().trim();
-    double? coord(Object? v) {
-      final text = str(v);
-      return text.isEmpty ? null : double.tryParse(text);
-    }
-
-    final code = str(row['code']);
-    final name = str(row['name']);
-    if (code.isEmpty || name.isEmpty) {
-      return null;
-    }
-    return ShieldStore(
-      id: code,
-      name: name,
-      area: str(row['area']),
-      city: str(row['city']),
-      state: str(row['state']),
-      pincode: str(row['pincode']),
-      phone: str(row['phone']),
-      hours: str(row['hours']).isEmpty
-          ? '8:00 AM – 10:00 PM'
-          : str(row['hours']),
-      latitude: coord(row['latitude']),
-      longitude: coord(row['longitude']),
-      mapsUrl: str(row['maps_url']),
-      bankAccountName: str(row['bank_account_name']),
-      bankAccountNumber: str(row['bank_account_number']),
-      bankIfsc: str(row['bank_ifsc']),
-      bankName: str(row['bank_name']),
-      offersLabCollection: row['offers_lab_collection'] == null
-          ? true
-          : const {
-              'true',
-              't',
-              '1',
-            }.contains(str(row['offers_lab_collection']).toLowerCase()),
-    );
-  }
-
   /// Builds a store from `backend/api`'s `GET /v1/public/catalogue/stores`
-  /// JSON (camelCase, unlike [fromRow]'s Neon SQL row). Bank fields are
-  /// deliberately left at their blank defaults — that public list never
+  /// JSON. Bank fields are deliberately left at their blank defaults —
+  /// that public list never
   /// carries them (see `catalogue.service.ts`'s own doc on `listStores`,
   /// which used to leak every branch's account details this way); a
   /// specific branch's live bank details come from [ShieldPayees.liveAccountFor]
@@ -180,7 +137,7 @@ class ShieldStore {
 /// The published outlets, and the rule for picking the nearest one.
 ///
 /// [all] is the live list: the ten [_seed] branches until [StoreCatalog] has
-/// pulled `app.shield_store` from Neon, then whatever the admin console has
+/// pulled `app.shield_store` from backend/api, then whatever the admin console has
 /// published. Everything else — [byId], [nearest], [nearestTo], [suggestFor],
 /// [closestTo] — reads [all], so an admin-added branch flows through with no
 /// other change.
@@ -193,7 +150,7 @@ class StoreDirectory {
 
   /// The bundled fallback: the branches Sahakar 360 shipped with, in listing order.
   /// Shown until (and if) the database copy loads, and the only list `flutter
-  /// test` ever sees (`NeonHttp.isConfigured` is false under test).
+  /// test` ever sees (`BackendHttp.isConfigured` is false under test).
   ///
   /// All but Alanallur are in Malappuram; the pincode is the district's, so
   /// [nearest] ranks the whole list off a member's own code without any
@@ -426,7 +383,7 @@ class StoreCatalog extends ChangeNotifier {
   /// failure. Lets a screen tell "still loading" from "loaded, nothing there".
   bool get hasAttempted => _attempted;
 
-  /// Loads the branch list from Neon once (best-effort). Safe to call from
+  /// Loads the branch list from backend/api once (best-effort). Safe to call from
   /// every screen's `initState`; only the first call does work unless [force].
   Future<void> ensureLoaded({bool force = false}) {
     if (force) {

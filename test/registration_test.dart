@@ -220,42 +220,6 @@ void main() {
       expect(km, isNotNull);
       expect(km!, greaterThan(0));
     });
-
-    test('ShieldStore.fromRow maps an app.shield_store text row', () {
-      final store = ShieldStore.fromRow(<String, dynamic>{
-        'code': 'SHD-XYZ',
-        'name': 'Sahakar 360 Pharmacy Somewhere',
-        'area': 'Somewhere',
-        'city': 'Malappuram',
-        'state': 'Kerala',
-        'pincode': '676123',
-        'latitude': '10.5',
-        'longitude': '76.2',
-        'maps_url': 'https://maps.app.goo.gl/x',
-        'bank_account_number': '9876 5432',
-      });
-      expect(store, isNotNull);
-      expect(store!.id, 'SHD-XYZ');
-      expect(store.latitude, 10.5);
-      expect(store.hasLocation, isTrue);
-      expect(store.hours, '8:00 AM – 10:00 PM'); // default when blank
-      expect(store.bankAccountNumber, '9876 5432');
-
-      // A blank coordinate stays null rather than becoming 0.
-      final noCoords = ShieldStore.fromRow(<String, dynamic>{
-        'code': 'SHD-NC',
-        'name': 'No Coords',
-        'latitude': '',
-        'longitude': null,
-      });
-      expect(noCoords!.hasLocation, isFalse);
-
-      // A row with no code is rejected.
-      expect(
-        ShieldStore.fromRow(<String, dynamic>{'name': 'Nameless'}),
-        isNull,
-      );
-    });
   });
 
   group('the registration service', () {

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 import 'data/backend/backend_http.dart';
-import 'data/neon/neon_http.dart';
 import 'module/auth/auth_service.dart';
 import 'module/auth/persona_gate.dart';
 import 'module/agent/agent_geo.dart';
@@ -24,7 +23,7 @@ Future<void> main() async {
   // Crash and error reporting. Safe to call unconditionally — the SDK's own
   // documented behavior is to stay disabled when `dsn` is empty, the same
   // "no-op until configured" contract every other optional integration in
-  // this app already follows (NeonHttp). Build with
+  // this app already follows (BackendHttp). Build with
   // --dart-define=SENTRY_DSN=... (or via --dart-define-from-file=.env) to
   // turn it on; see docs/sentry.md.
   await SentryFlutter.init((options) {
@@ -107,18 +106,21 @@ Future<void> main() async {
   // above, not loaded here — see InvestorService's own doc.
 
   // One line at launch — via dart:developer so it survives a release build —
-  // saying whether the Neon write-through is live. A build started without
-  // --dart-define-from-file=.env leaves every member write a silent no-op, and
-  // that used to look like data that just never saved.
-  if (!NeonHttp.isConfigured) {
-    NeonHttp.log('DATABASE_URL not set at build time — sign-in / registration '
-        'will not be saved. Build with --dart-define-from-file=.env');
+  // saying whether backend/api is live. A build started without
+  // --dart-define-from-file=.env (or BACKEND_API_BASE_URL) leaves every
+  // member write a silent no-op, and that used to look like data that just
+  // never saved.
+  if (!BackendHttp.isConfigured) {
+    BackendHttp.log(
+      'BACKEND_API_BASE_URL not set at build time — sign-in / registration '
+      'will not be saved. Build with --dart-define-from-file=.env',
+    );
   } else {
-    NeonHttp.instance.ping().then(
-          (_) => NeonHttp.log('connected — sign-in / registration will save'),
-          onError: (Object e) =>
-              NeonHttp.log('endpoint unreachable — writes will be dropped',
-                  error: e),
+    BackendHttp.instance.request('GET', '/readyz', auth: false).then(
+          (_) => BackendHttp.log('connected — sign-in / registration will save'),
+          onError: (Object e) => BackendHttp.log(
+              'endpoint unreachable — writes will be dropped',
+              error: e),
         );
   }
 

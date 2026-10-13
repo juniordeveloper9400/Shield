@@ -3,15 +3,12 @@ import 'package:flutter/foundation.dart';
 import 'backend_http.dart';
 
 /// Backend-mediated identity operations that the compiled-in Neon
-/// credential used to answer directly — see
-/// `lib/data/neon/member_repository.dart`'s own doc for the path this is
-/// replacing, method by method, as each gets a safe backend equivalent.
+/// credential used to answer directly, before that path was removed.
 ///
-/// Every method here follows that same best-effort contract: a missing
+/// Every method here follows a best-effort contract: a missing
 /// `BACKEND_API_BASE_URL` or an unreachable backend never throws out to the
 /// caller, it degrades to "answer unknown" (`null`) or "did nothing"
-/// (`false`), exactly like `NeonHttp`-backed repositories already do for a
-/// missing `DATABASE_URL`.
+/// (`false`).
 class BackendMemberRepository {
   BackendMemberRepository._({BackendHttp? http}) : _http = http ?? BackendHttp.instance;
 
@@ -107,9 +104,8 @@ class BackendMemberRepository {
   /// `identity.service.ts`'s `deleteAccount` for exactly what gets cleared
   /// (soft-deleted, personal fields wiped, every live session revoked).
   /// Requires a live backend session ([BackendHttp.isSignedIn]); returns
-  /// `false` without throwing when there is none — `AuthService.deleteAccount`
-  /// falls back to the Neon-direct delete in that case rather than leaving
-  /// the member stuck on a request that can never succeed.
+  /// `false` without throwing when there is none, so a caller can surface
+  /// that rather than retrying a request that can never succeed.
   Future<bool> deleteAccount() async {
     if (!_http.isSignedIn) {
       return false;

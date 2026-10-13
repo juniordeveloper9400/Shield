@@ -2,13 +2,9 @@
 
 ## Neon
 
-The backend uses Neon Postgres. The root `.env` contains `DATABASE_URL` and is git-ignored. The app schema tools use the connection string directly. `tool/gen_neon_secret.dart` generates the ignored Flutter source used by local builds.
+The backend uses Neon Postgres. The root `.env` contains `DATABASE_URL` and is git-ignored. The `backend/db/` schema tools (below) use that connection string directly — these are server-side dev/ops tools, run with `dart run`, never shipped in a client build.
 
-The connection paths are intentionally split:
-
-- `NeonHttp` uses HTTPS for member sign-in and registration writes.
-- `NeonDatabase` uses a PostgreSQL socket for the remaining native repository operations.
-- The admin console uses `@neondatabase/serverless` over HTTPS from the browser.
+The root Flutter app (this repo) has no database credential compiled in at all; every data path goes through `backend/api` over plain HTTPS (`BackendHttp`). The admin console (`shieldweb`) still uses `@neondatabase/serverless` over HTTPS directly from the browser — see [Security](security.md) for why that remains a risk.
 
 ## Schemas
 

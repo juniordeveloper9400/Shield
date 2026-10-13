@@ -2,7 +2,7 @@
 
 ## Android APK
 
-Generate the local Neon secret and build the release APK with:
+Build the release APK with:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build_apk.ps1
@@ -14,36 +14,30 @@ The script also compiles in Sentry's DSN from `.env`'s `SENTRY_DSN` line, if one
 
 ## Flutter web
 
-**Generate the Neon secret before building, the same as the APK does.** `NeonHttp` (`lib/data/neon/neon_http.dart`) reads its connection string from the compiled-in `kNeonDatabaseUrl` const in `lib/data/neon/neon_secret.dart` — never from `--dart-define` (that path is deliberately unused; see `tool/gen_neon_secret.dart`'s own doc comment on why). That file is git-ignored, so a clean checkout — including a hosting provider's build server — has none, and `flutter build web` still succeeds: it falls back to the empty-string stub, `NeonHttp.isConfigured` is `false`, and every Neon-backed read or write (sign-in/registration check, a member's own referral code shown as their Member ID, agent/investor detection for the Account screen and home feed) fails silently. The build looks identical to a working one; nothing errors, the UI just never gets data. Generate the real file first:
+No database credential is compiled in — every data path goes through
+`backend/api` over plain HTTPS. Pass `BACKEND_API_BASE_URL` (the deployed
+`shield_backend` URL — public, not a secret) so the build can actually
+reach it:
 
 ```powershell
-dart run tool/gen_neon_secret.dart   # needs DATABASE_URL in a .env at the repo root
-flutter build web
+flutter build web --dart-define=BACKEND_API_BASE_URL=https://shieldbackend.vercel.app
 ```
 
-On a CI/hosting provider (Vercel or otherwise) that starts from a clean checkout, the build command must write that `.env` from a provider-set secret (never commit `DATABASE_URL` or `neon_secret.dart` itself) before running the generator, e.g.:
-
-```bash
-echo "DATABASE_URL=$DATABASE_URL" > .env && dart run tool/gen_neon_secret.dart && flutter build web
-```
+Leaving it out builds successfully but leaves `BackendHttp.isConfigured`
+false at runtime: sign-in, registration, the catalogue, and every other
+member-facing read or write fails silently rather than erroring — the
+build looks identical to a working one; nothing errors, the UI just never
+gets data.
 
 The web output is generated under `build/web`. Verify Firebase options and platform support before treating web auth or database behavior as production-ready.
 
 To also compile in Sentry (crash and error reporting), add its DSN:
 
 ```powershell
-flutter build web --dart-define=SENTRY_DSN=<your DSN>
-```
-
-or `--dart-define-from-file=.env` with `SENTRY_DSN=` set there. Leaving it out just ships with Sentry disabled. See [Sentry](sentry.md).
-
-Pass `BACKEND_API_BASE_URL` (the deployed `shield_backend` URL — public, not a secret) so the app can mint a backend-issued session alongside its existing Neon sign-in:
-
-```powershell
 flutter build web --dart-define=BACKEND_API_BASE_URL=https://shieldbackend.vercel.app --dart-define=SENTRY_DSN=<your DSN>
 ```
 
-Leaving it out just leaves `BackendHttp.isConfigured` false at runtime — currently a no-op either way, since no screen reads from `backend/api` yet (foundation-only slice; see the root-app off-direct-Neon migration notes).
+or `--dart-define-from-file=.env` with `BACKEND_API_BASE_URL=`/`SENTRY_DSN=` set there. Leaving `SENTRY_DSN` out just ships with Sentry disabled. See [Sentry](sentry.md).
 
 ## Admin console hosting
 
@@ -64,8 +58,8 @@ Set the required Vite environment values in the hosting provider and redeploy af
 
 - Run `flutter analyze`, `flutter test -j 2`, `npm run typecheck`, and `npm run build`.
 - Verify Firebase configuration and release-key fingerprints.
-- Verify Neon endpoint reachability and schema compatibility.
+- Verify `backend/api` and its Neon database are reachable and schema-compatible.
 - Replace browser-bundled admin credentials with server-side auth and authorization.
 - Move browser-direct database access behind a server API.
 - Confirm backup and rollback procedures.
-- Do not ship `.env`, generated Neon secret source, service-account files, passwords, or debug signing keys.
+- Do not ship `.env`, service-account files, passwords, or debug signing keys.
