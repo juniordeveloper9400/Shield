@@ -114,6 +114,17 @@ export class OtpService {
       return { ok: false, reason: 'OTP sending is not configured on the server yet.' };
     }
 
+    // TEMPORARY diagnostic (2026-10-13) — MSG91 has started rejecting this
+    // exact request shape outright ({"message":"Invalid request",...})
+    // after it was confirmed working on 2026-10-09/10, with no code change
+    // in between. Logs only lengths/shape, never the secret values
+    // themselves, to rule out a credential that's present but malformed
+    // (wrong length, stray character) without exposing it. Remove once
+    // sendOtp is confirmed working again.
+    this.logger.log(
+      `MSG91 sendOtp diagnostic: widgetId.length=${widgetId.length}, tokenAuth.length=${tokenAuth.length}, identifier=${toMsg91Identifier(phone)}`,
+    );
+
     let body: unknown;
     try {
       const res = await fetch(SEND_OTP_URL, {
@@ -127,6 +138,7 @@ export class OtpService {
       });
       body = await res.json().catch(() => null);
       this.logger.log(`MSG91 sendOtp response: ${JSON.stringify(body)}`);
+      this.logger.log(`MSG91 sendOtp HTTP status: ${res.status}`);
       if (!res.ok || isFailureShape(body)) {
         return { ok: false, reason: 'Could not send the code. Try again in a moment.' };
       }
