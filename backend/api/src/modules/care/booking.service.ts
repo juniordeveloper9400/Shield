@@ -15,6 +15,7 @@ import {
   labBookingPatient,
   labBookingReport,
   labPackage,
+  memberAddress,
   patient,
   postingRule,
   shieldStore,
@@ -28,10 +29,12 @@ import type { AdminRole } from '../auth/session.types';
 import { availablePlanAllowance, toIsoDate } from '../wallet/wallet-month';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
 import type {
+  AddLabReportPagesDto,
   BookAppointmentDto,
   BookLabTestDto,
   SendLabBillDto,
   UpdateAppointmentStatusDto,
+  UpdateLabBookingDetailsDto,
   UpdateLabBookingStatusDto,
 } from './dto';
 
@@ -192,12 +195,98 @@ export class BookingService {
   async listLabBookingsForStaff(role: AdminRole, storeId: number | null) {
     const unscoped = role === 'SUPERADMIN' || role === 'ADMIN' || role === 'LAB';
     if (!unscoped && storeId == null) return [];
-    return this.db
-      .select({ ...getTableColumns(labBooking), storeCode: shieldStore.code, storeName: shieldStore.name })
+
+    const rows = await this.db
+      .select({
+        ...getTableColumns(labBooking),
+        memberName: users.name,
+        memberPhone: users.phone,
+        packageName: labPackage.name,
+        storeCode: shieldStore.code,
+        storeName: shieldStore.name,
+        addressPhone: memberAddress.phone,
+        house: memberAddress.house,
+        area: memberAddress.area,
+        landmark: memberAddress.landmark,
+        city: memberAddress.city,
+        state: memberAddress.state,
+        pincode: memberAddress.pincode,
+        billImage: labBill.image,
+        billAmount: labBill.amount,
+        billDiscount: labBill.discountAmount,
+        billStatus: labBill.status,
+        billWalletCollected: labBill.walletCollected,
+        billCashCollected: labBill.cashCollected,
+      })
       .from(labBooking)
+      .leftJoin(users, eq(users.id, labBooking.memberId))
+      .leftJoin(labPackage, eq(labPackage.id, labBooking.labPackageId))
       .leftJoin(shieldStore, eq(shieldStore.id, labBooking.storeId))
+      .leftJoin(memberAddress, eq(memberAddress.id, labBooking.addressId))
+      .leftJoin(labBill, eq(labBill.labBookingId, labBooking.id))
       .where(unscoped ? undefined : eq(labBooking.storeId, storeId!))
       .orderBy(desc(labBooking.createdAt));
+    if (rows.length === 0) return [];
+
+    const ids = rows.map((r) => r.id);
+
+    // name/age fallback computed here rather than in SQL (coalesce/nullif/
+    // trim over the raw columns) — simpler, and avoids pg-mem's very
+    // limited native-function set in tests; the real Postgres difference
+    // this replaces was cosmetic (whitespace-only names), not a behavior
+    // this needs SQL for.
+    const patientRows = await this.db
+      .select({
+        labBookingId: labBookingPatient.labBookingId,
+        ownName: labBookingPatient.name,
+        ownAge: labBookingPatient.age,
+        patientName: patient.name,
+        patientDob: patient.dob,
+      })
+      .from(labBookingPatient)
+      .leftJoin(patient, eq(patient.id, labBookingPatient.patientId))
+      .where(inArray(labBookingPatient.labBookingId, ids))
+      .orderBy(asc(labBookingPatient.id));
+    const ageFromDob = (dob: string | null) => {
+      if (!dob) return null;
+      const diff = Date.now() - new Date(dob).getTime();
+      return Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
+    };
+    const patientsByBooking = new Map<number, { name: string; age: number | null }[]>();
+    for (const p of patientRows) {
+      const bucket = patientsByBooking.get(p.labBookingId) ?? [];
+      bucket.push({
+        name: p.ownName?.trim() || p.patientName || 'Patient',
+        age: p.ownAge ?? ageFromDob(p.patientDob),
+      });
+      patientsByBooking.set(p.labBookingId, bucket);
+    }
+
+    const reportCounts = await this.db
+      .select({ labBookingId: labBookingReport.labBookingId, n: sql<number>`count(*)::int` })
+      .from(labBookingReport)
+      .where(inArray(labBookingReport.labBookingId, ids))
+      .groupBy(labBookingReport.labBookingId);
+    const reportCountByBooking = new Map(reportCounts.map((r) => [r.labBookingId, r.n]));
+
+    return rows.map((r) => {
+      const { house, area, landmark, city, state, pincode, ...rest } = r;
+      return {
+        ...rest,
+        code: `LB-${String(r.id).padStart(4, '0')}`,
+        address: [house, area, landmark, city, state, pincode].map((p) => (p ?? '').trim()).filter(Boolean).join(', '),
+        patients: patientsByBooking.get(r.id) ?? [],
+        reportPages: reportCountByBooking.get(r.id) ?? 0,
+        // No app.lab_bill row yet (bill not sent) left-joins to all-null —
+        // reads the same as a freshly-sent, unpaid bill rather than a
+        // separate "no bill at all" state the console doesn't distinguish.
+        billStatus: r.billStatus ?? 'PENDING',
+        billAmount: r.billAmount ?? '0',
+        billDiscount: r.billDiscount ?? '0',
+        billWalletCollected: r.billWalletCollected ?? '0',
+        billCashCollected: r.billCashCollected ?? '0',
+      };
+    });
   }
 
   /** Public — the branch picker a member sees before confirming a lab booking. */
@@ -224,6 +313,91 @@ export class BookingService {
 
     const [updated] = await this.db.update(labBooking).set({ status: dto.status }).where(eq(labBooking.id, id)).returning();
     return updated;
+  }
+
+  /** The booking's own member's wallet balance, read-only — same shape as
+   *  the order-side equivalent, joined through `app.lab_booking` instead.
+   *  Lets the bill panel show what collecting would actually draw before
+   *  committing to anything. */
+  async getWalletBalanceForLabBooking(role: AdminRole, storeId: number | null, bookingId: number) {
+    const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    const [row] = await this.db.select({ balance: wallet.balance }).from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
+    return { balance: Number(row?.balance ?? 0) };
+  }
+
+  /**
+   * The lab's edit of a booking: when it is scheduled for and the note shown
+   * to the member. A blank date clears the schedule. Cancelled bookings, and
+   * dates on a finished (Report ready) one, are left alone.
+   */
+  async updateLabBookingDetails(role: AdminRole, storeId: number | null, bookingId: number, dto: UpdateLabBookingDetailsDto) {
+    const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    if (found.status === 'CANCELLED') return found;
+    await this.db
+      .update(labBooking)
+      .set({
+        note: dto.note,
+        scheduledFor: found.status === 'REPORT_READY' ? found.scheduledFor : dto.scheduledFor ? new Date(dto.scheduledFor) : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(labBooking.id, bookingId));
+  }
+
+  /** The pages of one booking's report, in order. */
+  async listLabReportPages(role: AdminRole, storeId: number | null, bookingId: number) {
+    await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    return this.db
+      .select({ id: labBookingReport.id, name: labBookingReport.name, image: labBookingReport.image })
+      .from(labBookingReport)
+      .where(eq(labBookingReport.labBookingId, bookingId))
+      .orderBy(asc(labBookingReport.sort), asc(labBookingReport.id));
+  }
+
+  /** Attaches [dto.pages] (already resized to JPEG data URIs) after the ones
+   *  already there, and stamps when the report was last touched. */
+  async addLabReportPages(role: AdminRole, storeId: number | null, bookingId: number, dto: AddLabReportPagesDto) {
+    await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    const [last] = await this.db
+      .select({ sort: labBookingReport.sort })
+      .from(labBookingReport)
+      .where(eq(labBookingReport.labBookingId, bookingId))
+      .orderBy(desc(labBookingReport.sort))
+      .limit(1);
+    let sort = (last?.sort ?? -1) + 1;
+    for (const page of dto.pages) {
+      await this.db.insert(labBookingReport).values({ labBookingId: bookingId, name: page.name, image: page.image, sort: sort++ });
+    }
+    await this.db.update(labBooking).set({ reportUploadedAt: new Date(), updatedAt: new Date() }).where(eq(labBooking.id, bookingId));
+  }
+
+  /** Removes one report page. A booking already marked Report ready keeps
+   *  its last page — refused rather than leaving the member with a "ready"
+   *  report that is empty. */
+  async removeLabReportPage(role: AdminRole, storeId: number | null, bookingId: number, pageId: number) {
+    const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    const [{ n }] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(labBookingReport)
+      .where(eq(labBookingReport.labBookingId, bookingId));
+    if (found.status === 'CANCELLED' || (found.status === 'REPORT_READY' && n <= 1)) {
+      throw new ConflictException({
+        error: { code: 'CONFLICT', message: 'That page could not be removed — a Report ready booking keeps at least one page.' },
+      });
+    }
+    const [deleted] = await this.db
+      .delete(labBookingReport)
+      .where(and(eq(labBookingReport.id, pageId), eq(labBookingReport.labBookingId, bookingId)))
+      .returning();
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Report page not found' } });
+
+    const [remaining] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(labBookingReport)
+      .where(eq(labBookingReport.labBookingId, bookingId));
+    await this.db
+      .update(labBooking)
+      .set({ reportUploadedAt: remaining.n > 0 ? new Date() : null, updatedAt: new Date() })
+      .where(eq(labBooking.id, bookingId));
   }
 
   /**

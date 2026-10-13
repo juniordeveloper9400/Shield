@@ -63,6 +63,15 @@ export const updateLabCategorySchema = createLabCategorySchema;
 export const setLabCategoryActiveSchema = z.object({ isActive: z.boolean() });
 export const setLabCategorySortSchema = z.object({ sort: z.number().int() });
 
+export const updateLabBookingDetailsSchema = z.object({
+  scheduledFor: z.string().datetime().nullable(),
+  note: z.string().default(''),
+});
+
+export const addLabReportPagesSchema = z.object({
+  pages: z.array(z.object({ name: z.string().default(''), image: z.string().min(1) })).min(1),
+});
+
 export type BookLabTestDto = z.infer<typeof bookLabTestSchema>;
 export type UpdateLabBookingStatusDto = z.infer<typeof updateLabBookingStatusSchema>;
 export type SendLabBillDto = z.infer<typeof sendLabBillSchema>;
@@ -72,3 +81,5 @@ export type CreateLabCategoryDto = z.infer<typeof createLabCategorySchema>;
 export type UpdateLabCategoryDto = z.infer<typeof updateLabCategorySchema>;
 export type SetLabCategoryActiveDto = z.infer<typeof setLabCategoryActiveSchema>;
 export type SetLabCategorySortDto = z.infer<typeof setLabCategorySortSchema>;
+export type UpdateLabBookingDetailsDto = z.infer<typeof updateLabBookingDetailsSchema>;
+export type AddLabReportPagesDto = z.infer<typeof addLabReportPagesSchema>;

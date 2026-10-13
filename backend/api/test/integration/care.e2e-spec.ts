@@ -18,6 +18,7 @@ import {
   dietitian,
   labBill,
   labBooking,
+  labBookingPatient,
   labBookingReport,
   labCategory,
   labPackage,
@@ -506,6 +507,116 @@ describe('Care Services (e2e)', () => {
       .get('/v1/staff/lab-bookings')
       .set('Authorization', `Bearer ${pharmacyToken}`)
       .expect(403);
+  });
+
+  describe('console lab-booking detail (its own fresh fixture — labBookingId above is mutated by nearly every test before this point)', () => {
+    let freshBookingId: number;
+
+    beforeAll(async () => {
+      const [created] = await db
+        .insert(labBooking)
+        .values({
+          memberId,
+          labPackageId,
+          storeId: labStoreId,
+          patientsCount: 2,
+          unitPrice: '999',
+          totalPrice: '1998',
+          status: 'REQUESTED',
+        })
+        .returning();
+      freshBookingId = created.id;
+      await db.insert(labBookingPatient).values([
+        { labBookingId: freshBookingId, patientId: ownedPatientId },
+        { labBookingId: freshBookingId, name: 'Grandma', age: 70 },
+      ]);
+    });
+
+    it('carries the member, package, patients (owned and free-text) and bill info, not just the raw columns', async () => {
+      const list = await request(app.getHttpServer())
+        .get('/v1/staff/lab-bookings')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+
+      const row = list.body.find((b: { id: number }) => b.id === freshBookingId);
+      expect(row).toBeDefined();
+      expect(row.code).toBe(`LB-${String(freshBookingId).padStart(4, '0')}`);
+      expect(row.memberName).toBeTruthy();
+      expect(row.memberPhone).toBeTruthy();
+      expect(row.packageName).toBeTruthy();
+      expect(row.reportPages).toBe(0);
+      expect(row.billStatus).toBe('PENDING');
+      expect(row.patients).toHaveLength(2);
+      const grandma = row.patients.find((p: { name: string }) => p.name === 'Grandma');
+      expect(grandma.age).toBe(70);
+    });
+
+    it("reads the booking member's wallet balance", async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/v1/staff/lab-bookings/${freshBookingId}/wallet-balance`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(typeof res.body.balance).toBe('number');
+    });
+
+    it('updates the schedule and note, but leaves them alone once Report ready', async () => {
+      const when = new Date(Date.now() + 86400000).toISOString();
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/details`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ scheduledFor: when, note: 'Call before arriving' })
+        .expect(200);
+
+      const after = await request(app.getHttpServer())
+        .get('/v1/staff/lab-bookings')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      const row = after.body.find((b: { id: number }) => b.id === freshBookingId);
+      expect(row.note).toBe('Call before arriving');
+    });
+
+    it('refuses Report ready until a page is attached, then accepts one page at a time and keeps the last on a finished booking', async () => {
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/status`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ status: 'CONFIRMED' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/status`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ status: 'SAMPLE_COLLECTED' })
+        .expect(200);
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/status`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ status: 'REPORT_READY' })
+        .expect(409);
+
+      await request(app.getHttpServer())
+        .post(`/v1/staff/lab-bookings/${freshBookingId}/report-pages`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ pages: [{ name: 'Page 1', image: 'data:image/jpeg;base64,aaaa' }] })
+        .expect(201);
+
+      const pages = await request(app.getHttpServer())
+        .get(`/v1/staff/lab-bookings/${freshBookingId}/report-pages`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(pages.body).toHaveLength(1);
+      const pageId = pages.body[0].id;
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/status`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ status: 'REPORT_READY' })
+        .expect(200);
+
+      // The only page on a Report ready booking can't be removed.
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/lab-bookings/${freshBookingId}/report-pages/${pageId}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(409);
+    });
   });
 
   it('auto-populates fee from the dietitian record for a DIETITIAN appointment', async () => {
