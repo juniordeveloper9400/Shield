@@ -19,6 +19,13 @@ export function createTestDb() {
     returns: DataType.integer,
     implementation: (value: Buffer) => value.length,
   });
+  mem.public.registerFunction({
+    name: 'lpad',
+    args: [DataType.text, DataType.integer, DataType.text],
+    returns: DataType.text,
+    implementation: (value: string, length: number, fill: string) =>
+      value.length >= length ? value : (fill.repeat(Math.ceil((length - value.length) / fill.length)) + value).slice(-length),
+  });
 
   mem.public.none(`
     CREATE SCHEMA app;
