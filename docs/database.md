@@ -1,5 +1,33 @@
 # Database and Backend
 
+## Permanent admin deletion (migration 0089)
+
+Installing `backend/db/migrations/0089_permanent_member_delete.sql` defines
+the purge function; the migration itself deletes no user data. Invoking
+`app.permanently_delete_member(member_id, staff_session_uuid)` permanently
+removes that member's owned records and linked ledger history. There is no
+undo after commit; reporting totals change. The function checks a live
+Admin/Super Admin session and runs atomically. Test on a restored database
+before rollout. No live deletion was performed during implementation.
+
+Ownership is collected from `member_id`, `user_id`, inviter/invitee fields,
+and phone-owned agent requests or detached personas. FK cascade/restrict
+dependants and journal source links are collected before deletion. Nullable
+edges among doomed rows are cleared to break cycles; shared SET NULL edges
+are detached. Primary records owned by a different member, including
+financial rows in a different member's wallet, are excluded from the purge.
+Nullable surviving references are detached; a required surviving reference
+cancels the entire deletion rather than erasing another member's record.
+Backend member sessions and their dependants
+are removed. Tables lacking ownership columns/FKs/source links cannot be
+inferred as member data; add explicit ownership for any future such tables.
+
+The function is SECURITY INVOKER and PUBLIC execution is revoked. The
+backend database role must own the function, or receive EXECUTE explicitly
+from the migration operator. Deploy the backend route and admin console
+alongside the migration. The console's existing bundled database credential
+remains a separate security limitation documented in `security.md`.
+
 ## Neon
 
 The backend uses Neon Postgres. The root `.env` contains `DATABASE_URL` and is git-ignored. The `backend/db/` schema tools (below) use that connection string directly — these are server-side dev/ops tools, run with `dart run`, never shipped in a client build.

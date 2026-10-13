@@ -4,6 +4,10 @@ import 'package:shield/module/refer/invite_link.dart';
 
 void main() {
   group('inviteCodeFrom', () {
+    test('an encoded Play campaign preserves the inviter ID', () {
+      expect(inviteCodeFrom('ref=SAHAKAR-8580&utm_source=invite'), 'SAHAKAR-8580');
+      expect(inviteCodeFrom('referrer=ref%3DSAHAKAR-8580'), 'SAHAKAR-8580');
+    });
     test('a bare code is the code', () {
       expect(inviteCodeFrom('SAHAKAR-8580'), 'SAHAKAR-8580');
       expect(inviteCodeFrom('  sahakar-8580 '), 'SAHAKAR-8580');
@@ -36,7 +40,7 @@ void main() {
       expect(link.host, 'play.google.com');
       expect(link.path, '/store/apps/details');
       expect(link.queryParameters['id'], appPackageId);
-      expect(link.queryParameters['referrer'], 'SAHAKAR-8580');
+      expect(Uri.splitQueryString(link.queryParameters['referrer']!)['ref'], 'SAHAKAR-8580');
     });
 
     test('the code it carries reads back out the same way the install does', () {

@@ -1,5 +1,5 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, isNull } from 'drizzle-orm';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { adminUser, memberAddress, patient, rewardPointTransaction, shieldStore, users } from '../../db/schema';
 import { AuthService } from '../auth/auth.service';
@@ -20,6 +20,29 @@ export class IdentityService {
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly auth: AuthService,
   ) {}
+
+  /** Migration 0089 performs the complete purge as one database transaction.
+   *  Missing migration or a dependent-table failure leaves all data intact. */
+  async permanentlyDeleteMember(memberId: number, staffSessionId: string): Promise<void> {
+    try {
+      const result = await this.db.execute<{ deleted: boolean }>(
+        sql`SELECT app.permanently_delete_member(${memberId}::bigint, ${staffSessionId}::uuid) AS deleted`,
+      );
+      if (!result.rows[0]?.deleted) {
+        throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Member not found' } });
+      }
+    } catch (error) {
+      const dbError = error as { code?: string; cause?: { code?: string } };
+      const code = dbError?.code ?? dbError?.cause?.code;
+      if (code === '23503') {
+        throw new ConflictException({ error: { code: 'SHARED_MEMBER_RECORD', message: 'Deletion was cancelled because another member has a required link to these records. No data was deleted.' } });
+      }
+      if (code === '42501') {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Only an active Admin or Super Admin may permanently delete members.' } });
+      }
+      throw error;
+    }
+  }
 
   async getMemberProfile(memberId: number) {
     const [member] = await this.db
@@ -188,11 +211,8 @@ export class IdentityService {
    * `lib/data/neon/member_repository.dart`'s `deleteAccount` exactly, the
    * Neon-direct version of this same operation it replaces.
    *
-   * Deliberately more than the admin console's own user delete
-   * (`shieldweb/src/api/users.ts`), which only stamps `deletedAt` — an
-   * admin revoking access may need the full record intact (a suspension, a
-   * dispute), where a member's own delete is a privacy request the fields
-   * themselves should not survive.
+   * This member self-delete remains a redacted soft delete. Permanent admin
+   * deletion is a separate endpoint/migration and does not use this method.
    *
    * Also revokes every live session for this member — see the module's own
    * doc on why `AuthModule` is imported here.

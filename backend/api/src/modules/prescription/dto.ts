@@ -86,6 +86,39 @@ export const submitPrescriptionOrderSchema = z.object({
   fulfillmentType: z.enum(['HOME_DELIVERY', 'STORE_PICKUP']).optional(),
 });
 
+export const saveIntakeSchema = z.object({
+  medicines: z
+    .array(
+      z.object({
+        name: z.string().default(''),
+        pack: z.string().default(''),
+        intake: z.string().default(''),
+        totalUnits: z.number().default(0),
+        routeTime: z.string().default(''),
+        status: z.string().default('available'),
+      }),
+    )
+    .default([]),
+});
+
+export const updatePrescriptionDetailsSchema = z.object({
+  doctor: z.string().default(''),
+  durationToken: z.string().default(''),
+  customDays: z.number().default(0),
+});
+
+export const updatePrescriptionBranchSchema = z.object({ storeId: z.number().int().positive().nullable() });
+export const updatePrescriptionPatientSchema = z.object({ patientId: z.number().int().positive() });
+export const updatePrescriptionFulfillmentSchema = z.object({ fulfillmentType: z.enum(['HOME_DELIVERY', 'STORE_PICKUP']) });
+export const createOrderForPrescriptionSchema = z.object({ fulfillmentType: z.enum(['HOME_DELIVERY', 'STORE_PICKUP']) });
+
+export type SaveIntakeDto = z.infer<typeof saveIntakeSchema>;
+export type UpdatePrescriptionDetailsDto = z.infer<typeof updatePrescriptionDetailsSchema>;
+export type UpdatePrescriptionBranchDto = z.infer<typeof updatePrescriptionBranchSchema>;
+export type UpdatePrescriptionPatientDto = z.infer<typeof updatePrescriptionPatientSchema>;
+export type UpdatePrescriptionFulfillmentDto = z.infer<typeof updatePrescriptionFulfillmentSchema>;
+export type CreateOrderForPrescriptionDto = z.infer<typeof createOrderForPrescriptionSchema>;
+
 export type UploadPrescriptionDto = z.infer<typeof uploadPrescriptionSchema>;
 export type AddMedicineLineDto = z.infer<typeof addMedicineLineSchema>;
 export type UpdateMedicineStatusDto = z.infer<typeof updateMedicineStatusSchema>;

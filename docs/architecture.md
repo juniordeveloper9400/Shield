@@ -1,5 +1,16 @@
 # Architecture
 
+## Play Store invites
+
+The root app's invite shares now point to the Sahakar 360 Play Store listing
+on both Android and web. The encoded Play `referrer` contains `ref=<invite ID>`;
+the shared message also prints the inviter ID for manual entry. Android reads
+the Play install referrer and the first registration pre-fills Referral ID.
+Legacy bare invite codes and older web `?ref=` links remain readable.
+This hand-off requires installation through the shared Play link; direct APK
+installation and users who already installed the app need manual code entry.
+Publish the updated app and web build for the new sharing behavior to be live.
+
 ## Repository boundaries
 
 ```text

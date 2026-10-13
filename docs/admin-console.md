@@ -4,6 +4,26 @@
 
 ## Routes
 
+### Permanent user deletion
+
+Admin and Super Admin's **Delete user** now calls the authenticated backend
+`DELETE /v1/staff/users/:id` instead of directly soft-deleting a Neon row.
+Migration `0089_permanent_member_delete.sql` must be installed first.
+The function rechecks the caller's live staff session and role, locks the
+member and removes owned data, dependent records, member sessions, refresh
+tokens and source-linked journal entries in one database transaction.
+If any step fails, everything rolls back. An absent member returns 404.
+
+This is irreversible: old profile, wallet, plans, orders, prescriptions,
+patients, referral links and owned agent/investor records are removed, and
+financial reports change. Shared stores, geography and other users remain;
+other agents' parent links to the deleted agent are detached. It does not
+reverse money already credited to another user's wallet or bank account.
+The same phone may then sign up through verified OTP with a new member ID,
+unregistered profile and no old wallet. Existing access/refresh sessions
+cannot be used to access the deleted account. This does not retroactively
+purge users soft-deleted by older versions or change member self-deletion.
+
 ### Ledger and account explanations
 
 Ledger shows posted account movements for the selected calendar month,

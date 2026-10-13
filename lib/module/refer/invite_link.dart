@@ -13,15 +13,11 @@ const String appPackageId = 'com.zabnix.sahakar360';
 /// to the app on its first launch after install ([InstallReferrer]), so the
 /// registration form fills in the Referral ID without the friend typing it.
 ///
-/// On the web the same code travels as `?ref=` on the address the app is served
-/// from, read back the same way on the first load.
+/// Web shares also point to Play, rather than creating another web-app link.
 Uri inviteLinkFor(String code) {
-  if (kIsWeb) {
-    return Uri.base.replace(path: '/', queryParameters: {'ref': code});
-  }
   return Uri.https('play.google.com', '/store/apps/details', {
     'id': appPackageId,
-    'referrer': code,
+    'referrer': Uri(queryParameters: {'ref': code.trim().toUpperCase()}).query,
   });
 }
 
@@ -41,8 +37,7 @@ String? inviteCodeFrom(String? raw) {
     for (final key in const ['referrer', 'ref', 'referral', 'code']) {
       final value = params[key]?.trim();
       if (value != null && value.isNotEmpty) {
-        candidate = value;
-        break;
+        return inviteCodeFrom(value);
       }
     }
   } else {

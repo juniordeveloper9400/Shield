@@ -12,7 +12,7 @@ import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { eq } from 'drizzle-orm';
-import { adminUser, order, patient, shieldStore, users } from '../../src/db/schema';
+import { adminUser, bill, order, patient, prescription, prescriptionImage, prescriptionMedicine, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -475,6 +475,261 @@ describe('Prescription (e2e)', () => {
       expect(ordered?.order?.code).toMatch(/^RX-/);
       // Other prescriptions in this file were uploaded but never ordered.
       expect(list.some((r) => r.id !== prescriptionId && r.order === null)).toBe(true);
+    });
+  });
+
+  describe('console detail (its own fresh fixture — prescriptionId above is mutated by earlier tests)', () => {
+    let storeAId: number;
+    let freshRxId: number;
+    let deliveryBoyToken: string;
+
+    beforeAll(async () => {
+      [storeAId] = (await db.select({ id: shieldStore.id }).from(shieldStore).where(eq(shieldStore.code, 'SHD-RXA'))).map((r) => r.id);
+      const [member] = await db.select({ id: users.id }).from(users).where(eq(users.phone, '9000000002'));
+
+      const [created] = await db
+        .insert(prescription)
+        .values({ memberId: member.id, patientId, storeId: null, code: 'RX-CONSOLE-TEST', fileName: 'script.jpg' })
+        .returning();
+      freshRxId = created.id;
+      await db.insert(prescriptionImage).values([
+        { prescriptionId: freshRxId, sort: 0, image: PNG_DATA_URI },
+        { prescriptionId: freshRxId, sort: 1, image: PNG_DATA_URI },
+      ]);
+
+      await db.insert(adminUser).values({
+        loginId: 'rx-delivery@example.com',
+        name: 'Delivery',
+        passwordHash: await hash('correct-horse-battery-staple', 4),
+        role: 'DELIVERY',
+        storeId: storeAId,
+      });
+      deliveryBoyToken = (
+        await request(app.getHttpServer())
+          .post('/v1/staff/auth/session')
+          .send({ loginId: 'rx-delivery@example.com', password: 'correct-horse-battery-staple' })
+          .expect(200)
+      ).body.accessToken;
+    });
+
+    it("rejects a role that isn't SUPERADMIN/ADMIN/PHARMACY — prescriptions isn't in DELIVERY's module list", async () => {
+      await request(app.getHttpServer())
+        .get('/v1/staff/prescriptions')
+        .set('Authorization', `Bearer ${deliveryBoyToken}`)
+        .expect(403);
+    });
+
+    it("a store's own staff sees a never-pinned prescription through the member's home-store fallback, not just the admin role", async () => {
+      const list = await request(app.getHttpServer())
+        .get('/v1/staff/prescriptions')
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      const row = list.body.find((r: { id: number }) => r.id === freshRxId);
+      expect(row).toBeDefined();
+      expect(row.storeCode).toBe('SHD-RXA'); // resolved via the member's own home store
+
+      // Store B's own staff never sees it — the fallback resolves to A, not B.
+      const otherList = await request(app.getHttpServer())
+        .get('/v1/staff/prescriptions')
+        .set('Authorization', `Bearer ${storeBStaffToken}`)
+        .expect(200);
+      expect(otherList.body.map((r: { id: number }) => r.id)).not.toContain(freshRxId);
+    });
+
+    it('replaces the intake card wholesale, moves to READ, and drops blank rows', async () => {
+      await request(app.getHttpServer())
+        .post(`/v1/staff/prescriptions/${freshRxId}/intake`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({
+          medicines: [
+            { name: 'Paracetamol', pack: '10 tabs', intake: '1-0-1', totalUnits: 20, routeTime: 'After food', status: 'available' },
+            { name: '  ', intake: '1-1-1' }, // blank — dropped
+          ],
+        })
+        .expect(201);
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/staff/prescriptions/${freshRxId}`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(detail.body.status).toBe('READ');
+      expect(detail.body.medicines).toHaveLength(1);
+      expect(detail.body.medicines[0]).toEqual(
+        expect.objectContaining({ name: 'Paracetamol', doseMorning: 1, doseAfternoon: 0, doseNight: 1, totalUnits: 20 }),
+      );
+    });
+
+    it('"back to awaiting" is a legal reverse transition from READ — the console relies on this to undo a review', async () => {
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/status`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ status: 'AWAITING_REVIEW' })
+        .expect(200);
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/staff/prescriptions/${freshRxId}`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(detail.body.status).toBe('AWAITING_REVIEW');
+    });
+
+    it('updates the doctor/duration details, refusing an unknown duration token', async () => {
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/details`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ doctor: 'Dr. Rao', durationToken: 'one_month', customDays: 0 })
+        .expect(200);
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/staff/prescriptions/${freshRxId}`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(detail.body.doctor).toBe('Dr. Rao');
+      expect(detail.body.duration).toBe('ONE_MONTH');
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/details`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ doctor: 'Dr. Rao', durationToken: 'not-a-real-duration', customDays: 0 })
+        .expect(403);
+    });
+
+    it('pins the branch directly, overriding the fallback chain', async () => {
+      const [storeB] = await db.select({ id: shieldStore.id }).from(shieldStore).where(eq(shieldStore.code, 'SHD-RXB'));
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/branch`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ storeId: storeB.id })
+        .expect(200);
+
+      // Store A can no longer reach it — it's pinned to B now.
+      await request(app.getHttpServer())
+        .get(`/v1/staff/prescriptions/${freshRxId}`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(404);
+      const asB = await request(app.getHttpServer())
+        .get(`/v1/staff/prescriptions/${freshRxId}`)
+        .set('Authorization', `Bearer ${storeBStaffToken}`)
+        .expect(200);
+      expect(asB.body.storeCode).toBe('SHD-RXB');
+
+      // Clear the pin back to the fallback chain for the rest of this block.
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/branch`)
+        .set('Authorization', `Bearer ${storeBStaffToken}`)
+        .send({ storeId: null })
+        .expect(200);
+    });
+
+    it('rotates the legacy image (no prescription_image rows) under a legacy-<id> id', async () => {
+      const [legacyRx] = await db
+        .insert(prescription)
+        .values({ memberId: (await db.select({ id: users.id }).from(users).where(eq(users.phone, '9000000002')))[0].id, patientId, code: 'RX-LEGACY-TEST', image: PNG_DATA_URI, imageRotation: 0 })
+        .returning();
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/staff/prescriptions/${legacyRx.id}`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(detail.body.images).toHaveLength(1);
+      expect(detail.body.images[0].id).toBe(`legacy-${legacyRx.id}`);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${legacyRx.id}/images/legacy-${legacyRx.id}/rotation`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ rotation: 180 })
+        .expect(200);
+
+      const [row] = await db.select({ imageRotation: prescription.imageRotation }).from(prescription).where(eq(prescription.id, legacyRx.id));
+      expect(row.imageRotation).toBe(180);
+    });
+
+    it('re-points the prescription at a different patient of the same member, refusing one that belongs to someone else', async () => {
+      const [member] = await db.select({ id: users.id }).from(users).where(eq(users.phone, '9000000002'));
+      const [ownPatient] = await db.insert(patient).values({ memberId: member.id, name: 'Spouse', dob: '1992-02-02', relation: 'SPOUSE' }).returning();
+
+      const [otherMember] = await db.insert(users).values({ phone: '9000000099', name: 'Someone Else', firebaseUid: 'member-rx-other' }).returning();
+      const [otherPatient] = await db.insert(patient).values({ memberId: otherMember.id, name: 'Not Mine', dob: '1990-01-01', relation: 'SELF' }).returning();
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/patient`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ patientId: otherPatient.id })
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/patient`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ patientId: ownPatient.id })
+        .expect(200);
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/staff/prescriptions/${freshRxId}`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(detail.body.patientName).toBe('Spouse');
+    });
+
+    it('admin-recovery: creates an order for a prescription that somehow has none, then bills against its intake', async () => {
+      const created = await request(app.getHttpServer())
+        .post(`/v1/staff/prescriptions/${freshRxId}/order`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ fulfillmentType: 'STORE_PICKUP' })
+        .expect(201);
+      const orderId = created.body.id;
+
+      const medicines = await request(app.getHttpServer())
+        .get(`/v1/staff/orders/${orderId}/prescription-medicines`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+      expect(medicines.body).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Paracetamol' })]));
+
+      // Store B has no claim on this order's prescription.
+      await request(app.getHttpServer())
+        .get(`/v1/staff/orders/${orderId}/prescription-medicines`)
+        .set('Authorization', `Bearer ${storeBStaffToken}`)
+        .expect(404);
+    });
+
+    it('changes fulfilment only while the order is still processing', async () => {
+      const createdOrder = await request(app.getHttpServer())
+        .post(`/v1/staff/prescriptions/${freshRxId}/order`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ fulfillmentType: 'STORE_PICKUP' })
+        .expect(201);
+      const orderId = createdOrder.body.id;
+
+      const whileProcessing = await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/fulfillment`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ fulfillmentType: 'HOME_DELIVERY' })
+        .expect(200);
+      expect(whileProcessing.body).toBe(true);
+      const [afterChange] = await db.select({ fulfillmentType: order.fulfillmentType }).from(order).where(eq(order.id, orderId));
+      expect(afterChange.fulfillmentType).toBe('HOME_DELIVERY');
+
+      await db.update(order).set({ status: 'DELIVERED' }).where(eq(order.id, orderId));
+      const afterDelivered = await request(app.getHttpServer())
+        .patch(`/v1/staff/prescriptions/${freshRxId}/fulfillment`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .send({ fulfillmentType: 'STORE_PICKUP' })
+        .expect(200);
+      expect(afterDelivered.body).toBe(false); // already delivered — nothing left to change
+    });
+
+    it('deletes without touching its order, unlike the member-facing delete', async () => {
+      const [toDelete] = await db
+        .insert(prescription)
+        .values({ memberId: (await db.select({ id: users.id }).from(users).where(eq(users.phone, '9000000002')))[0].id, patientId, code: 'RX-DELETE-TEST' })
+        .returning();
+
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/prescriptions/${toDelete.id}`)
+        .set('Authorization', `Bearer ${storeAStaffToken}`)
+        .expect(200);
+
+      const [row] = await db.select({ deletedAt: prescription.deletedAt }).from(prescription).where(eq(prescription.id, toDelete.id));
+      expect(row.deletedAt).not.toBeNull();
     });
   });
 });
