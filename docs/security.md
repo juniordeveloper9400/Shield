@@ -12,11 +12,11 @@ Firebase client configuration is not equivalent to a service-account secret. Nev
 
 ## Current high-risk limitations
 
-Checked against the code on 2026-10-05. Earlier versions of this page described the static admin credential list, which has since been removed.
+Checked against the code on 2026-10-13. Earlier versions of this page described the static admin credential list, which has since been removed.
 
 1. **Admin login is real, but the session is held in the browser.** Staff sign in through `backend/api` (`/v1/staff/auth/*`) with bcrypt-hashed passwords and rotating refresh tokens. The refresh token is kept in `localStorage` (`shieldweb/src/context/AuthContext.tsx`), so any script running in the console's page could read it. Moving it to an HttpOnly cookie is still open.
 2. **The console still holds the full-privilege database credential.** `shieldweb/src/lib/db.ts` reads `VITE_DATABASE_URL`, which Vite inlines into the public bundle, and 14 API modules still run SQL from the browser. Order writes, the order board and the fulfilment status now go through `backend/api`; the remaining modules have not moved. Until they do, anyone who can read the bundle has direct database access.
-3. **Member and agent apps.** The member APK (this repo's root Flutter app) no longer compiles in a database connection — every data path goes through `backend/api` over plain HTTPS as of 2026-10-13. The `shield agent_invester` app's web build still passes `DATABASE_URL` into its bundle through `vercel-build.sh`; that one is scheduled for removal in the client migration (`backend/docs/migration-plan.md`).
+3. **Member and agent apps — resolved.** Neither Flutter app compiles in a database credential any more. The member APK (this repo's root Flutter app) was fixed 2026-10-13 — every data path goes through `backend/api` over plain HTTPS. The separate `shield agent_invester` app (its own repo) was fixed earlier, independently — see its own commit `99b631f`; its `vercel-build.sh` no longer passes `DATABASE_URL`.
 4. **Release signing.** The root app and the agent/investor app both sign release builds with the upload key from `android/key.properties` (git-ignored). The debug key is used only when that file is missing, which should never happen for a release.
 5. **Money paths.** A wallet-paid order is marked paid only after the wallet debit succeeds; a refused debit cancels the order. Wallet card approval and national agent approval are guarded against concurrent double-credit. Agent withdrawal approval was already guarded in the database function `app.review_agent_withdrawal`.
 
