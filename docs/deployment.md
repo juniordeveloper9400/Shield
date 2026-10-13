@@ -8,7 +8,27 @@ Build the release APK with:
 powershell -ExecutionPolicy Bypass -File build_apk.ps1
 ```
 
-The output is `build/app/outputs/flutter-apk/app-release.apk`. The current script notes that release signing uses the debug key. This is a release blocker: configure a protected production keystore, register its Firebase SHA-1 and SHA-256 fingerprints, and keep signing credentials out of git before distribution.
+The output is `build/app/outputs/flutter-apk/app-release.apk`. The app uses
+the upload signing key from git-ignored `android/key.properties` when
+configured; Gradle currently falls back to the debug key when it is absent.
+Use the upload key for distributable releases and keep it out of git.
+
+Build the Play Store bundle with `powershell -ExecutionPolicy Bypass -File
+build_aab.ps1`; output is `build/app/outputs/bundle/release/app-release.aab`.
+Both scripts pass the backend URL and MSG91 widget settings, fail on a
+nonzero Flutter exit code, and inspect compiled Dart output for the required
+settings and native widget bridge. Use a version code greater than the last
+Play upload. Version 1.0.3+17 includes the Android OTP bridge retry/timeout
+fixes. Version 1.0.4+18 additionally supplies Android production defaults
+when ordinary Flutter builds omit dart-defines. Explicit defines override
+those defaults; web builds still require explicit configuration.
+Existing installations need the new APK or a published Play update;
+they do not pick up Dart fixes from a web deployment.
+
+An APK already copied to the desktop is not refreshed by building again.
+Keep the new APK and AAB in a separate artifact folder before another build
+script runs `flutter clean`. Test SMS delivery, resend and verified sign-in
+on Android before uploading the AAB to Play Console.
 
 The script also compiles in Sentry's DSN from `.env`'s `SENTRY_DSN` line, if one is set — see [Sentry](sentry.md). Leaving it blank just builds with Sentry disabled.
 

@@ -106,31 +106,28 @@ enum OtpError {
   unknown,
 }
 
-/// On web, MSG91's JS widget; everywhere else, the backend-direct calls
-/// that currently cannot send a code at all — see [AuthService]'s own doc.
-MemberOtpTransport _defaultTransport() => kIsWeb ? WidgetMemberOtpTransport() : BackendMemberOtpTransport();
+/// [WidgetMemberOtpTransport] on every platform now — see its own doc, and
+/// `msg91_widget_otp.dart`'s, on why: confirmed live (2026-10-13) that
+/// MSG91's Widget product has no real server-to-server "send" at all (a
+/// bare REST call with a known-good widgetId/tokenAuth gets HTTP 403 from
+/// MSG91, while the identical credential works fine through the widget's
+/// own JS) — so [BackendMemberOtpTransport] is never actually usable for
+/// sending/verifying a code and is kept only as a [useTransport] fallback
+/// shape, not wired in here.
+MemberOtpTransport _defaultTransport() => WidgetMemberOtpTransport();
 
 /// Phone-number sign-in for the member session.
 ///
 /// The flow is two calls — [requestOtp] sends the SMS, [verifyOtp] checks the
 /// code — and the same [currentUser] notifier every screen already listens
 /// to. The work behind those two calls is delegated to a
-/// [MemberOtpTransport], chosen by [_defaultTransport]: on web,
-/// [WidgetMemberOtpTransport] (MSG91's JS widget, run in the page — see
-/// `msg91_widget_otp.dart`); everywhere else, [BackendMemberOtpTransport]
-/// (`backend/api`'s `/v1/member/auth/otp/*`) — which currently cannot
-/// actually send a code at all, since MSG91's Widget product turned out to
-/// have no real server-to-server "send" (see
-/// `backend/api/src/modules/otp/otp.service.ts`'s own doc). Native builds
-/// need a WebView-hosted widget to fix that; not yet built. Member sign-in
-/// no longer touches Firebase at all, on any platform. Tests inject an
-/// in-memory fake with [useTransport] before driving the flow.
-///
-/// Because the backend is now the *only* way a code is sent or checked
-/// (unlike the old Firebase+Neon-direct path, which worked even if
-/// `backend/api` was unreachable), sign-in now hard-depends on
-/// `BACKEND_API_BASE_URL` being configured and the backend being reachable —
-/// see `BackendHttp.isConfigured`'s own doc on what happens when it is not.
+/// [MemberOtpTransport]: [_defaultTransport] always picks
+/// [WidgetMemberOtpTransport] — MSG91's JS widget, run directly in the page
+/// on web (`msg91_widget_otp_web.dart`) or in an invisible headless WebView
+/// everywhere else (`msg91_widget_otp_native.dart`) — see
+/// `msg91_widget_otp.dart`'s own doc. Member sign-in no longer touches
+/// Firebase at all, on any platform. Tests inject an in-memory fake with
+/// [useTransport] before driving the flow.
 class AuthService {
   AuthService._();
 
@@ -516,6 +513,12 @@ abstract class MemberOtpTransport {
 /// session in the same call — this adopts it into [BackendSession]
 /// directly, there is no separate exchange step the way the old
 /// Firebase-ID-token bridge needed.
+///
+/// NOT [_defaultTransport] any more — confirmed live (2026-10-13) that the
+/// endpoint this calls (`otp.service.ts`'s `sendMsg91Otp`/`verifyMsg91Otp`)
+/// gets HTTP 403 from MSG91 on every call, credential included; MSG91's
+/// Widget product has no real server-to-server send. Kept for whatever
+/// future flow genuinely is server-mediated, not deleted outright.
 class BackendMemberOtpTransport implements MemberOtpTransport {
   BackendMemberOtpTransport({BackendHttp? http}) : _http = http ?? BackendHttp.instance;
 
@@ -604,9 +607,10 @@ class BackendMemberOtpTransport implements MemberOtpTransport {
   }
 }
 
-/// Runs MSG91's own JS widget (web only — see `msg91_widget_otp.dart`'s own
-/// doc on the native gap) to send/verify the code, then has the backend
-/// confirm the resulting access-token server-side
+/// Runs MSG91's own JS widget — in the page itself on web, in an invisible
+/// headless WebView everywhere else (see `msg91_widget_otp.dart`'s own
+/// doc) — to send/verify the code, then has the backend confirm the
+/// resulting access-token server-side
 /// (`/v1/member/auth/widget/verify`/`/widget/register`) before treating it
 /// as a real sign-in — the token alone, client-side, proves nothing. Used
 /// instead of [BackendMemberOtpTransport] because MSG91's Widget product
@@ -615,9 +619,17 @@ class BackendMemberOtpTransport implements MemberOtpTransport {
 /// `sendMsg91Otp`/`verifyMsg91Otp` (what [BackendMemberOtpTransport] calls)
 /// turned out not to be a supported flow at all.
 class WidgetMemberOtpTransport implements MemberOtpTransport {
-  WidgetMemberOtpTransport({BackendHttp? http}) : _http = http ?? BackendHttp.instance;
+  WidgetMemberOtpTransport({
+    BackendHttp? http,
+    Future<void> Function(String)? sendOtp,
+    Future<String> Function(String)? verifyOtp,
+  }) : _http = http ?? BackendHttp.instance,
+       _sendOtp = sendOtp ?? widget_otp.sendWidgetOtp,
+       _verifyOtp = verifyOtp ?? widget_otp.verifyWidgetOtp;
 
   final BackendHttp _http;
+  final Future<void> Function(String) _sendOtp;
+  final Future<String> Function(String) _verifyOtp;
 
   /// MSG91 identifiers are plain digits, country-code-prefixed, no `+`.
   String _identifierFor(String phone) => '91$phone';
@@ -625,14 +637,17 @@ class WidgetMemberOtpTransport implements MemberOtpTransport {
   @override
   Future<MemberOtpOutcome> sendCode(String phone) async {
     try {
-      await widget_otp.sendWidgetOtp(_identifierFor(phone));
+      await _sendOtp(_identifierFor(phone));
       return const MemberOtpOutcome.success();
+    } on TimeoutException {
+      return const MemberOtpOutcome.failed(OtpError.timeout);
     } on UnsupportedError catch (error) {
       BackendHttp.log('AuthService.requestOtp (widget) failed', error: error);
       return const MemberOtpOutcome.failed(OtpError.unavailable);
     } catch (error) {
       BackendHttp.log('AuthService.requestOtp (widget) failed', error: error);
-      return MemberOtpOutcome.failed(OtpError.unknown, error is StateError ? error.message : null);
+      final missingConfig = error is StateError && error.message.toString().contains('not configured');
+      return MemberOtpOutcome.failed(missingConfig ? OtpError.configError : OtpError.unknown, error is StateError ? error.message : null);
     }
   }
 
@@ -640,7 +655,9 @@ class WidgetMemberOtpTransport implements MemberOtpTransport {
   Future<MemberOtpOutcome> confirmCode(String phone, String code, {String? name}) async {
     final String accessToken;
     try {
-      accessToken = await widget_otp.verifyWidgetOtp(code);
+      accessToken = await _verifyOtp(code);
+    } on TimeoutException {
+      return const MemberOtpOutcome.failed(OtpError.timeout);
     } on UnsupportedError catch (error) {
       BackendHttp.log('AuthService.verifyOtp (widget) failed', error: error);
       return const MemberOtpOutcome.failed(OtpError.unavailable);

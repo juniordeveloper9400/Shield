@@ -631,6 +631,15 @@ export function createTestDb() {
       is_active boolean NOT NULL DEFAULT true
     );
 
+    -- No Drizzle mirror yet (that module hasn't moved off direct SQL) — just
+    -- enough columns for CareService.deleteLabCategory's own "is this
+    -- category still in use" count, added when that method first needed it.
+    CREATE TABLE app.lab_test (
+      id bigserial PRIMARY KEY,
+      name text NOT NULL,
+      category_id bigint REFERENCES app.lab_category(id) ON DELETE SET NULL
+    );
+
     CREATE TABLE app.lab_package (
       id bigserial PRIMARY KEY,
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),

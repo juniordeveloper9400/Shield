@@ -579,4 +579,110 @@ describe('Care Services (e2e)', () => {
       .send({ status: 'CANCELLED' })
       .expect(409);
   });
+
+  describe('console lab category management (SUPERADMIN/ADMIN/LAB only)', () => {
+    let technicianToken: string;
+
+    beforeAll(async () => {
+      await db.insert(adminUser).values({
+        loginId: 'lab-tech-categories@example.com',
+        name: 'Lab Tech',
+        passwordHash: await hash('correct-horse-battery-staple', 4),
+        role: 'LAB_TECHNICIAN',
+        storeId: labStoreId,
+      });
+      technicianToken = (
+        await request(app.getHttpServer())
+          .post('/v1/staff/auth/session')
+          .send({ loginId: 'lab-tech-categories@example.com', password: 'correct-horse-battery-staple' })
+          .expect(200)
+      ).body.accessToken;
+    });
+
+    it('rejects LAB_TECHNICIAN — a technician works their own branch, not the catalogue', async () => {
+      await request(app.getHttpServer())
+        .get('/v1/staff/lab-categories')
+        .set('Authorization', `Bearer ${technicianToken}`)
+        .expect(403);
+    });
+
+    it("lists every category active or not, each carrying its live test count (primary and extra-category)", async () => {
+      const res = await request(app.getHttpServer())
+        .get('/v1/staff/lab-categories')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+
+      const first = res.body.find((c: { id: number }) => c.id === labCategoryId);
+      expect(first).toBeDefined();
+      expect(first.testCount).toBeGreaterThan(0);
+    });
+
+    it('refuses a duplicate name case-insensitively, without a 500', async () => {
+      const [existing] = await db.select().from(labCategory).where(eq(labCategory.id, labCategoryId));
+      const res = await request(app.getHttpServer())
+        .post('/v1/staff/lab-categories')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: existing.name.toUpperCase() })
+        .expect(201);
+      expect(res.body).toEqual({ category: null });
+    });
+
+    it('creates, renames, re-sorts, deactivates and deletes a category with nothing filed under it', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/lab-categories')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Console Test Category' })
+        .expect(201);
+      const id = created.body.category.id;
+
+      const renamed = await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-categories/${id}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Renamed Category' })
+        .expect(200);
+      expect(renamed.body.category.name).toBe('Renamed Category');
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-categories/${id}/sort`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ sort: 9 })
+        .expect(200);
+      const deactivated = await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-categories/${id}/active`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ isActive: false })
+        .expect(200);
+      expect(deactivated.body.isActive).toBe(false);
+      expect(deactivated.body.sort).toBe(9);
+
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/lab-categories/${id}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      const afterDelete = await db.select().from(labCategory).where(eq(labCategory.id, id));
+      expect(afterDelete).toEqual([]);
+    });
+
+    it('refuses to delete a category still carrying a package', async () => {
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/lab-categories/${labCategoryId}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(400);
+      // Still there, untouched.
+      const [stillThere] = await db.select().from(labCategory).where(eq(labCategory.id, labCategoryId));
+      expect(stillThere).toBeDefined();
+    });
+
+    it('404s updating, sorting, activating or deleting a category that does not exist', async () => {
+      await request(app.getHttpServer())
+        .patch('/v1/staff/lab-categories/999999/active')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ isActive: false })
+        .expect(404);
+      await request(app.getHttpServer())
+        .delete('/v1/staff/lab-categories/999999')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(404);
+    });
+  });
 });

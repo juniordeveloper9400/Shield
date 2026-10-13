@@ -17,12 +17,24 @@
 # call ever made. Update this the moment the backend is ever redeployed to
 # a different domain.
 #
+# MSG91_WIDGET_ID/MSG91_WIDGET_TOKEN_AUTH are ALSO required now — confirmed
+# live (2026-10-13) that MSG91's Widget product has no real
+# server-to-server "send" at all (a bare REST call with a known-good
+# credential gets HTTP 403 from MSG91), so sign-in now runs the actual JS
+# widget everywhere, in an invisible headless WebView on native
+# (lib/module/auth/msg91_widget_otp_native.dart) the same way the web
+# build already ran it in the page. These two are public, not secrets — the
+# `tokenAuth` is MSG91's own browser-safe, scoped, throttled token made
+# specifically to travel in client code, same reasoning the web build's own
+# vercel-build.sh already documents. A blank value here means OTP sending
+# throws "OTP sending is not configured in this build" instead.
+#
 # Always starts with `flutter clean`. Confirmed live on this machine
 # (2026-10-13): a plain `flutter build apk` after an earlier build can
-# silently keep the previous build's compiled Dart code — including a
-# different (or absent) BACKEND_API_BASE_URL — without any error, warning,
+# silently keep the previous build's compiled Dart code — including
+# different (or absent) --dart-define values — without any error, warning,
 # or non-zero exit code. Verified by unzipping the resulting APK and
-# grepping libapp.so for the URL string directly: present after a clean
+# grepping libapp.so for the values directly: present after a clean
 # build, absent after a same-cache rebuild with the exact same command.
 # `flutter clean` costs a few minutes of rebuild time; a build that quietly
 # ships the wrong backend (or none) costs a lot more than that to even
@@ -32,6 +44,8 @@ $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 $BackendApiBaseUrl = 'https://shieldbackend.vercel.app'
+$Msg91WidgetId = '366a696a446a343235393238'
+$Msg91TokenAuth = '579930TU1QZriuNLU6ac9d73bP1'
 
 $SentryDsn = ''
 if (Test-Path '.env') {
@@ -43,18 +57,24 @@ if (Test-Path '.env') {
 
 Write-Host 'Cleaning previous build output (required — see this script''s own comment on why) ...' -ForegroundColor Cyan
 flutter clean
+if ($LASTEXITCODE -ne 0) { throw 'Flutter clean failed; no release was produced.' }
 
 Write-Host 'Building release APK (one build at a time — close any other flutter build/run) ...' -ForegroundColor Cyan
-flutter build apk --release --dart-define=BACKEND_API_BASE_URL=$BackendApiBaseUrl --dart-define=SENTRY_DSN=$SentryDsn
+flutter build apk --release `
+  --dart-define=BACKEND_API_BASE_URL=$BackendApiBaseUrl `
+  --dart-define=MSG91_WIDGET_ID=$Msg91WidgetId `
+  --dart-define=MSG91_WIDGET_TOKEN_AUTH=$Msg91TokenAuth `
+  --dart-define=SENTRY_DSN=$SentryDsn
+if ($LASTEXITCODE -ne 0) { throw 'APK build failed; do not distribute older output.' }
 
 $ApkPath = 'build\app\outputs\flutter-apk\app-release.apk'
 
-# Self-check: confirm BACKEND_API_BASE_URL actually made it into the
+# Self-check: confirm the required values actually made it into the
 # compiled code, rather than trusting that `flutter build` exiting 0 means
-# it did (see this script's own comment above on why that trust already
+# they did (see this script's own comment above on why that trust already
 # failed once). Unzips the APK into a throwaway temp folder and greps the
-# compiled Dart snapshot (libapp.so) for the literal URL string.
-Write-Host 'Verifying the backend URL actually made it into the build ...' -ForegroundColor Cyan
+# compiled Dart snapshot (libapp.so) for the literal strings.
+Write-Host 'Verifying the required values actually made it into the build ...' -ForegroundColor Cyan
 $CheckDir = Join-Path $env:TEMP "shield-apk-check-$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $CheckDir -Force | Out-Null
 try {
@@ -62,33 +82,40 @@ try {
     Copy-Item $ApkPath $ZipCopy
     Expand-Archive -Path $ZipCopy -DestinationPath $CheckDir -Force
     $LibApp = Get-ChildItem -Path $CheckDir -Recurse -Filter 'libapp.so' | Select-Object -First 1
-    $Found = $false
+    $Text = ''
     if ($LibApp) {
         $Bytes = [System.IO.File]::ReadAllBytes($LibApp.FullName)
         # ISO-8859-1, not Encoding.Latin1 — the latter is a .NET 5+-only
         # static property and is $null under Windows PowerShell 5.1's
         # .NET Framework runtime (confirmed: silently null, not an error,
         # until .GetString() throws). Either way it's purely a byte-safe
-        # 1:1 decode for finding an ASCII URL substring in binary data —
-        # not an attempt to read the file's real encoding.
+        # 1:1 decode for finding an ASCII substring in binary data — not
+        # an attempt to read the file's real encoding.
         $Text = [System.Text.Encoding]::GetEncoding('ISO-8859-1').GetString($Bytes)
-        $Found = $Text.Contains($BackendApiBaseUrl)
     }
-    if (-not $Found) {
+    $Missing = @()
+    if (-not $Text.Contains($BackendApiBaseUrl)) { $Missing += 'BACKEND_API_BASE_URL' }
+    if (-not $Text.Contains($Msg91WidgetId)) { $Missing += 'MSG91_WIDGET_ID' }
+    if (-not $Text.Contains($Msg91TokenAuth)) { $Missing += 'MSG91_WIDGET_TOKEN_AUTH' }
+    if (-not $Text.Contains('sahakarOtpReady')) { $Missing += 'Android MSG91 widget bridge' }
+    if (-not $Text.Contains('var booted = false;')) { $Missing += 'updated Android OTP startup' }
+    if ($Missing.Count -gt 0) {
         Write-Host ''
-        Write-Host "BUILD VERIFICATION FAILED: $BackendApiBaseUrl was not found in the compiled" -ForegroundColor Red
-        Write-Host 'app. Installing this APK will reproduce "Verification is unavailable on' -ForegroundColor Red
-        Write-Host 'this device right now." Do not distribute this build.' -ForegroundColor Red
+        Write-Host "BUILD VERIFICATION FAILED: missing from the compiled app: $($Missing -join ', ')" -ForegroundColor Red
+        Write-Host 'Installing this APK will reproduce a broken sign-in screen. Do not' -ForegroundColor Red
+        Write-Host 'distribute this build.' -ForegroundColor Red
         exit 1
     }
-    Write-Host 'Confirmed: the backend URL is present in the compiled app.' -ForegroundColor Green
+    Write-Host 'Confirmed: all required values are present in the compiled app.' -ForegroundColor Green
 } finally {
-    Remove-Item -Path $CheckDir -Recurse -Force -ErrorAction SilentlyContinue
+    $ResolvedCheckDir = [System.IO.Path]::GetFullPath($CheckDir)
+    $TempRoot = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd('\') + '\'
+    if ($ResolvedCheckDir.StartsWith($TempRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Remove-Item -LiteralPath $ResolvedCheckDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Write-Host ''
 Write-Host "Done: $ApkPath" -ForegroundColor Green
-Write-Host 'Uninstall the app on the phone first, then install this. "Get OTP" on'
-Write-Host 'the sign-in screen must actually text a code — "Verification is'
-Write-Host 'unavailable on this device right now" means BACKEND_API_BASE_URL'
-Write-Host 'above is wrong or the backend is unreachable, not a code problem.'
+Write-Host 'Install this new release over the older app when its signing key matches.'
+Write-Host 'Verify Get OTP, resend and sign-in on a real Android device before publishing.'

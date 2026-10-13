@@ -88,12 +88,14 @@ class AgentPhoneVerifier {
   }
 }
 
-/// On web, MSG91's JS widget; everywhere else, the backend-direct calls
-/// that currently cannot send a code at all — see
+/// [WidgetAgentOtpTransport] on every platform now — see
 /// `auth_service.dart`'s `_defaultTransport` for the member-login
-/// equivalent of this same split and why.
-AgentOtpTransport _defaultAgentOtpTransport() =>
-    kIsWeb ? WidgetAgentOtpTransport() : BackendAgentOtpTransport();
+/// equivalent of this same change and why: confirmed live (2026-10-13)
+/// that MSG91's Widget product has no real server-to-server "send" at all,
+/// so [BackendAgentOtpTransport] (what `/v1/agent/otp/send-msg91` calls
+/// into, the exact same `otp.service.ts` method) is never actually usable
+/// either, despite once appearing to work.
+AgentOtpTransport _defaultAgentOtpTransport() => WidgetAgentOtpTransport();
 
 /// A send or confirm attempt's outcome: null [failure] on success, otherwise
 /// the [OtpError] category plus the raw-ish [diagnostic] line to show

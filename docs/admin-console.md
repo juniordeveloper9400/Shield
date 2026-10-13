@@ -4,6 +4,40 @@
 
 ## Routes
 
+### Ledger and account explanations
+
+Ledger shows posted account movements for the selected calendar month,
+not current cash in hand or cumulative wallet liabilities. Account names
+include short explanations; net movements display an absolute amount and
+Debit/Credit side. A debit to member wallet liability reduces the amount
+owed to members; a credit increases it. Credit revenue is not a loss.
+The account rules retain their Provisional badges pending accountant review.
+
+Admin and Super Admin can open the store-wise monthly report in Ledger.
+It shows each selected store and Head Office separately, applying the
+month and account-type filters. Download CSV exports those same rows with
+store names/codes, explanations, debit and credit movements, net movement
+side and review status. Shared Head Office accounts are not allocated to
+individual branches by this report. Filtering to one account type may show
+unequal debit and credit totals; it is not a complete trial balance.
+
+Accounts uses short bracket explanations for collections, completed
+payouts, net money flow and unused wallet balances. Its money-in total
+includes approved Health Pass wallet funding, so it is not a sales-profit
+figure. No accounting posting rules change with these display/report changes.
+
+### Branch users
+
+Pharmacy Admins (store admins) can open **Users** as a read-only list of
+members whose `app.users.home_store_id` matches their assigned branch.
+Search, persona filters and counts cover that branch only. Accounts with no
+branch assigned see no users. User-detail URLs redirect store admins to the
+list; persona conversion and deletion remain available to Admin and Super
+Admin through the detail page. Those roles continue to see users from every
+branch. The list query filters by branch before returning records, with an
+additional display filter. This remains a browser-to-Neon query, not
+server-enforced authorization; see [Security](security.md).
+
 The current console includes login, dashboard, stores, products, orders, prescriptions, activations, lab orders, lab tests, appointments, users, user details, admins, agent approvals, deliveries, and no-access views. Parameterized routes include activation, user/member detail, and agent approval detail pages.
 
 ### Deliveries
@@ -120,7 +154,14 @@ the **Validate** button.
 
 ### Reserved — the company's money from Health Pass activations
 
-**Reserved** (`/commission-reserve`, Super Admin only) is the company's own share of Health Pass plans. It is a ledger (`app.commission_reserve_entry`) that never touches a member's or an agent's wallet, and is not shown anywhere in the apps. Approving an activation (Health Pass plan approvals → Approve, i.e. `app.approve_wallet_card_activation`) writes at most one row for that card, told apart by `source` — the two are two **separate, mutually exclusive commission structures**, never both on the same card (migration `0060_separate_member_and_agent_commission.sql`, rewriting migration `0053`'s original "8% on every activation" rule):
+Admin and Super Admin can view all stores or select one store in Reserved.
+The selection applies to totals, the store summary and individual entries.
+Each entry shows its activation's store name and code; entries with no
+recorded store appear under Unassigned. This identifies the branch linked
+to the activation (`wallet_card.store_id`), not confirmation of a bank
+receipt or transfer to that store.
+
+**Reserved** (`/commission-reserve`, Admin and Super Admin across all stores; Pharmacy Admin for their own branch) is the company's own share of Health Pass plans. It is a ledger (`app.commission_reserve_entry`) that never touches a member's or an agent's wallet, and is not shown anywhere in the apps. Approving an activation (Health Pass plan approvals → Approve, i.e. `app.approve_wallet_card_activation`) writes at most one row for that card, told apart by `source` — the two are two **separate, mutually exclusive commission structures**, never both on the same card (migration `0060_separate_member_and_agent_commission.sql`, rewriting migration `0053`'s original "8% on every activation" rule):
 
 | Source | Amount | When |
 | --- | --- | --- |

@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
@@ -11,6 +11,7 @@ import {
   labProfile,
 } from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
+import type { CreateLabCategoryDto, UpdateLabCategoryDto } from './dto';
 
 const TTL = 300; // near-static reference data, same tier as catalogue's TTL.LONG
 
@@ -153,5 +154,108 @@ export class CareService {
     return this.cache.getOrSet('care:dietitians', TTL, () =>
       this.db.select().from(dietitian).where(eq(dietitian.isActive, true)).orderBy(asc(dietitian.sort)),
     );
+  }
+
+  // ---- Lab categories (console: Lab Tests → Categories tab) --------------
+  // Active or not, unlike listLabCategories above (members only ever see the
+  // active ones) — and, unlike that method, no cache: an admin editing this
+  // list needs to see their own write reflected immediately, and it's a
+  // low-traffic console screen, not a per-request member read.
+
+  async listLabCategoriesForStaff() {
+    const categories = await this.db.select().from(labCategory).orderBy(asc(labCategory.sort), asc(labCategory.name));
+    if (categories.length === 0) return [];
+
+    const primaryCounts = await this.db
+      .select({ categoryId: labPackage.categoryId, testCount: sql<number>`count(*)::int` })
+      .from(labPackage)
+      .where(eq(labPackage.isActive, true))
+      .groupBy(labPackage.categoryId);
+    const extraCounts = await this.db
+      .select({ categoryId: labPackageExtraCategory.categoryId, testCount: sql<number>`count(*)::int` })
+      .from(labPackageExtraCategory)
+      .innerJoin(labPackage, eq(labPackage.id, labPackageExtraCategory.packageId))
+      .where(eq(labPackage.isActive, true))
+      .groupBy(labPackageExtraCategory.categoryId);
+
+    const countByCategory = new Map<number | null, number>();
+    for (const row of [...primaryCounts, ...extraCounts]) {
+      countByCategory.set(row.categoryId, (countByCategory.get(row.categoryId) ?? 0) + row.testCount);
+    }
+    return categories.map((category) => ({ ...category, testCount: countByCategory.get(category.id) ?? 0 }));
+  }
+
+  /** Null when [dto]'s name is already taken (case-insensitively — the
+   *  column has a `lower(name)` unique index, migration 0055). */
+  async createLabCategory(dto: CreateLabCategoryDto) {
+    const [existing] = await this.db.execute<{ id: number }>(
+      sql`select id from app.lab_category where lower(name) = lower(${dto.name}) limit 1`,
+    ).then((r) => r.rows);
+    if (existing) return { category: null };
+
+    try {
+      const [created] = await this.db.insert(labCategory).values(dto).returning();
+      return { category: created };
+    } catch {
+      return { category: null };
+    }
+  }
+
+  /** Same null-on-duplicate-name contract as {@link createLabCategory}. */
+  async updateLabCategory(id: number, dto: UpdateLabCategoryDto) {
+    const [existing] = await this.db.execute<{ id: number }>(
+      sql`select id from app.lab_category where lower(name) = lower(${dto.name}) and id <> ${id} limit 1`,
+    ).then((r) => r.rows);
+    if (existing) return { category: null };
+
+    try {
+      const [updated] = await this.db.update(labCategory).set(dto).where(eq(labCategory.id, id)).returning();
+      if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab category not found' } });
+      return { category: updated };
+    } catch (err) {
+      if (err instanceof NotFoundException) throw err;
+      return { category: null };
+    }
+  }
+
+  async setLabCategoryActive(id: number, isActive: boolean) {
+    const [updated] = await this.db.update(labCategory).set({ isActive }).where(eq(labCategory.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab category not found' } });
+    return updated;
+  }
+
+  async setLabCategorySort(id: number, sort: number) {
+    const [updated] = await this.db.update(labCategory).set({ sort }).where(eq(labCategory.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab category not found' } });
+    return updated;
+  }
+
+  /** Refused (400, with a plain-English reason) while a test or a package
+   *  still carries this category — `category_id` is `ON DELETE SET NULL` on
+   *  both, so the database itself would not block this; the console still
+   *  asks the admin to clear it deliberately rather than silently
+   *  uncategorising everything under it. `lab_test` has no Drizzle mirror
+   *  yet (that module hasn't moved off direct SQL), hence the raw count. */
+  async deleteLabCategory(id: number) {
+    const [category] = await this.db.select().from(labCategory).where(eq(labCategory.id, id)).limit(1);
+    if (!category) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab category not found' } });
+
+    const [{ n }] = await this.db
+      .execute<{ n: number }>(
+        sql`select (
+          (select count(*) from app.lab_test where category_id = ${id}) +
+          (select count(*) from app.lab_package where category_id = ${id})
+        )::int as n`,
+      )
+      .then((r) => r.rows);
+    if (n > 0) {
+      throw new BadRequestException({
+        error: {
+          code: 'CATEGORY_IN_USE',
+          message: `"${category.name}" is still set on ${n} test${n === 1 ? '' : 's'}/package${n === 1 ? '' : 's'} — change their category before deleting it.`,
+        },
+      });
+    }
+    await this.db.delete(labCategory).where(eq(labCategory.id, id));
   }
 }

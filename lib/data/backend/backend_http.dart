@@ -5,6 +5,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../module/auth/mobile_build_config.dart';
 
 import '../_flutter_test_env.dart'
     if (dart.library.io) '../_flutter_test_env_io.dart';
@@ -47,7 +48,9 @@ class BackendHttp {
   /// ```
   /// flutter run --dart-define=BACKEND_API_BASE_URL=https://...
   /// ```
-  static const String _baseUrl = String.fromEnvironment('BACKEND_API_BASE_URL');
+  static const String _baseUrl = kIsWeb
+      ? String.fromEnvironment('BACKEND_API_BASE_URL')
+      : MobileBuildConfig.backendUrl;
 
   /// `true` when `flutter test` is running — without this guard, every
   /// repository's `isAvailable`/`_run` check would fire real traffic at

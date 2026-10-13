@@ -6,7 +6,23 @@ The app has no database credential of its own — every write goes through `back
 
 ## OTP sign-in reports "not configured" / "unavailable"
 
-Member sign-in and agent registration's phone check both run through `backend/api`'s MSG91-backed endpoints now, not Firebase. "Not configured" means `MSG91_WIDGET_ID`/`MSG91_WIDGET_TOKEN_AUTH` are unset on the backend; "unavailable" means the app couldn't reach the backend at all — confirm `BACKEND_API_BASE_URL` was set at build time (`--dart-define=BACKEND_API_BASE_URL=...`) and the backend is actually reachable. See `backend/api/src/modules/otp/otp.service.ts`.
+Current builds use the MSG91 widget on both web and Android, with server
+validation of the resulting token. A build missing `MSG91_WIDGET_ID` or
+`MSG91_WIDGET_TOKEN_AUTH` cannot send SMS. A build missing
+`BACKEND_API_BASE_URL` cannot complete sign-in. Rebuild using the release
+scripts, rather than distributing an older desktop APK. These settings are
+compiled into the app; changing server settings cannot repair an already
+installed app that lacks them. Version 1.0.4+18 adds Android defaults for the
+public backend/widget configuration, fixing builds made without defines.
+Install this new release; earlier APKs retain their original configuration.
+
+Android startup waits for the WebView JavaScript bridge, retries failed
+initialization and times out loading after 20 seconds. Send/verify callbacks
+time out after 30 seconds; retry after restoring connectivity. The widget
+script requires access to `verify.msg91.com` and `control.msg91.com`.
+If provider settings change, check CAPTCHA and mobile integration against
+the working web configuration. Test SMS delivery, resend and token-backed
+sign-in on an actual Android device before publishing a new Play release.
 
 ## Admin console is empty
 

@@ -34,7 +34,28 @@ dart run tool/neon_ping.dart
 
 ## OTP verification
 
-Member sign-in and agent-registration's phone check both run through `backend/api`'s MSG91-backed `/v1/*/auth/otp/*` endpoints (see `backend/api/src/modules/otp/`) — no Firebase setup is needed in this app any more. Set `MSG91_WIDGET_ID`/`MSG91_WIDGET_TOKEN_AUTH` in `backend/api`'s own env (see its `.env.example`) for OTP sending to actually work; left unset, the endpoints report themselves unconfigured instead of crashing.
+Member sign-in and agent-registration's phone check use MSG91's widget:
+the browser page on web and a headless Android WebView on native. Build with
+`MSG91_WIDGET_ID`, `MSG91_WIDGET_TOKEN_AUTH` and `BACKEND_API_BASE_URL`.
+Android now defaults to the existing production backend and scoped public
+widget settings in `lib/module/auth/mobile_build_config.dart`, so a normal
+`flutter build apk --release` or app-bundle build includes OTP configuration
+even without defines. Defines still override the defaults. Web configuration
+continues to require explicit build settings.
+Use `build_apk.ps1` / `build_aab.ps1` for Android releases; both pass the
+required settings and check the compiled output. The widget sends/verifies
+the SMS; the backend validates its resulting access token before issuing
+the member session (`/v1/member/auth/widget/verify` or `/widget/register`)
+or confirming the agent phone (`/v1/agent/otp/verify-widget`). Keep server
+MSG91 credentials in backend environment settings, never in the client.
+Firebase phone auth is not used for this member sign-in flow.
+
+The current shared widget uses web mode with CAPTCHA disabled (checked
+2026-10-13). Android embeds that same web widget. Do not switch this shared
+widget to Mobile Integration without checking the web flow: MSG91 documents
+that mobile mode is incompatible with the web widget. A future switch to
+MSG91's mobile SDK needs a separately configured mobile widget. See
+[MSG91 integration guidance](https://msg91.com/help/sendotp/how-to-integrate-the-new-login-with-otp-widget).
 
 ## Run the Flutter app
 

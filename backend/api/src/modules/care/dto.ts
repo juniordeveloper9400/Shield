@@ -52,8 +52,23 @@ export const updateAppointmentStatusSchema = z.object({
   status: z.enum(['REQUESTED', 'CONFIRMED', 'COMPLETED', 'CANCELLED']),
 });
 
+export const createLabCategorySchema = z.object({
+  name: z.string().min(1),
+  image: z.string().default(''),
+  sort: z.number().int().default(0),
+  isActive: z.boolean().default(true),
+});
+
+export const updateLabCategorySchema = createLabCategorySchema;
+export const setLabCategoryActiveSchema = z.object({ isActive: z.boolean() });
+export const setLabCategorySortSchema = z.object({ sort: z.number().int() });
+
 export type BookLabTestDto = z.infer<typeof bookLabTestSchema>;
 export type UpdateLabBookingStatusDto = z.infer<typeof updateLabBookingStatusSchema>;
 export type SendLabBillDto = z.infer<typeof sendLabBillSchema>;
 export type BookAppointmentDto = z.infer<typeof bookAppointmentSchema>;
 export type UpdateAppointmentStatusDto = z.infer<typeof updateAppointmentStatusSchema>;
+export type CreateLabCategoryDto = z.infer<typeof createLabCategorySchema>;
+export type UpdateLabCategoryDto = z.infer<typeof updateLabCategorySchema>;
+export type SetLabCategoryActiveDto = z.infer<typeof setLabCategoryActiveSchema>;
+export type SetLabCategorySortDto = z.infer<typeof setLabCategorySortSchema>;
