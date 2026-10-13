@@ -28,12 +28,14 @@ import type {
   CreateProductDto,
   CreateReviewVideoDto,
   CreateStoreDto,
+  CreateSubcategoryDto,
   ListProductsQuery,
   UpdateBannerDto,
   UpdateCategoryDto,
   UpdateProductDto,
   UpdateReviewVideoDto,
   UpdateStoreDto,
+  UpdateSubcategoryDto,
 } from './dto';
 import { ReviewVideoMediaService, reviewVideoMediaIdFromUrl } from './review-video-media.service';
 
@@ -303,10 +305,38 @@ export class CatalogueService {
     );
   }
 
+  /** Every category, active or not, with its subcategories nested — the
+   *  console's own Categories page, which shows everything; [listCategories]
+   *  above (and the public route it backs) only ever returns the active
+   *  ones. */
+  async listCategoryGroupsForStaff() {
+    const categories = await this.db.select().from(productCategory).orderBy(asc(productCategory.sort), asc(productCategory.id));
+    const subcategories = await this.db
+      .select()
+      .from(productSubcategory)
+      .orderBy(asc(productSubcategory.sort), asc(productSubcategory.id));
+    const byCategory = new Map<number, typeof subcategories>();
+    for (const sub of subcategories) {
+      const list = byCategory.get(sub.categoryId) ?? [];
+      list.push(sub);
+      byCategory.set(sub.categoryId, list);
+    }
+    return categories.map((c) => ({ ...c, subcategories: byCategory.get(c.id) ?? [] }));
+  }
+
   async createCategory(dto: CreateCategoryDto) {
-    const [created] = await this.db.insert(productCategory).values(dto).returning();
-    await this.cache.invalidate('catalogue:categories');
-    return created;
+    // Same pre-check-then-catch shape as createStore's own slug-equivalent
+    // (its `code`) — see that method's own doc for why both are needed.
+    const [existing] = await this.db.select({ id: productCategory.id }).from(productCategory).where(eq(productCategory.slug, dto.slug)).limit(1);
+    if (existing) return { category: null };
+
+    try {
+      const [created] = await this.db.insert(productCategory).values(dto).returning();
+      await this.cache.invalidate('catalogue:categories');
+      return { category: created };
+    } catch {
+      return { category: null };
+    }
   }
 
   async updateCategory(id: number, dto: UpdateCategoryDto) {
@@ -318,6 +348,41 @@ export class CatalogueService {
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Category not found' } });
     await this.cache.invalidate('catalogue:categories', 'catalogue:subcategories:*');
     return updated;
+  }
+
+  async setCategoryActive(id: number, isActive: boolean) {
+    const [updated] = await this.db.update(productCategory).set({ isActive }).where(eq(productCategory.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Category not found' } });
+    await this.cache.invalidate('catalogue:categories');
+    return updated;
+  }
+
+  async setCategorySort(id: number, sort: number) {
+    const [updated] = await this.db.update(productCategory).set({ sort }).where(eq(productCategory.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Category not found' } });
+    await this.cache.invalidate('catalogue:categories');
+    return updated;
+  }
+
+  async createSubcategory(categoryId: number, dto: CreateSubcategoryDto) {
+    const [created] = await this.db.insert(productSubcategory).values({ ...dto, categoryId }).returning();
+    await this.cache.invalidate(`catalogue:subcategories:${categoryId}`);
+    return created;
+  }
+
+  async updateSubcategory(id: number, dto: UpdateSubcategoryDto) {
+    const [updated] = await this.db.update(productSubcategory).set(dto).where(eq(productSubcategory.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Subcategory not found' } });
+    await this.cache.invalidate(`catalogue:subcategories:${updated.categoryId}`);
+    return updated;
+  }
+
+  /** `app.product.subcategory_id` is `ON DELETE SET NULL` — a product filed
+   *  under this subcategory is cleared, not blocked, by its removal. */
+  async deleteSubcategory(id: number) {
+    const [deleted] = await this.db.delete(productSubcategory).where(eq(productSubcategory.id, id)).returning();
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Subcategory not found' } });
+    await this.cache.invalidate(`catalogue:subcategories:${deleted.categoryId}`);
   }
 
   // ---- Products ---------------------------------------------------------

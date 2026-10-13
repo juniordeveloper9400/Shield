@@ -20,7 +20,23 @@ export const createCategorySchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateCategorySchema = createCategorySchema.partial();
+// Slug is immutable once created (shieldweb's own UPDATE never touches it
+// either) — omitted here rather than merely optional, so a caller can't
+// change it by mistake.
+export const updateCategorySchema = createCategorySchema.omit({ slug: true }).partial();
+
+export const setCategoryActiveSchema = z.object({ isActive: z.boolean() });
+export const setCategorySortSchema = z.object({ sort: z.number().int() });
+
+export const createSubcategorySchema = z.object({
+  label: z.string().min(1),
+  iconName: z.string().default(''),
+  image: z.string().default(''),
+  offer: z.string().default(''),
+  sort: z.number().int().default(0),
+});
+
+export const updateSubcategorySchema = createSubcategorySchema;
 
 export const createBannerSchema = z.object({
   // Free text, matching app.home_banner.placement itself (migration 0069's
@@ -138,3 +154,7 @@ export type CreateBannerDto = z.infer<typeof createBannerSchema>;
 export type UpdateBannerDto = z.infer<typeof updateBannerSchema>;
 export type SetBannerSortDto = z.infer<typeof setBannerSortSchema>;
 export type SetBannerActiveDto = z.infer<typeof setBannerActiveSchema>;
+export type SetCategoryActiveDto = z.infer<typeof setCategoryActiveSchema>;
+export type SetCategorySortDto = z.infer<typeof setCategorySortSchema>;
+export type CreateSubcategoryDto = z.infer<typeof createSubcategorySchema>;
+export type UpdateSubcategoryDto = z.infer<typeof updateSubcategorySchema>;

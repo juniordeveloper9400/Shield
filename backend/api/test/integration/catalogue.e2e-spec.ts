@@ -19,6 +19,7 @@ import {
   paymentMethod,
   product,
   productCategory,
+  productSubcategory,
   shieldStore,
 } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
@@ -164,9 +165,12 @@ describe('Catalogue (e2e)', () => {
     // Prime the categories cache.
     await request(app.getHttpServer()).get('/v1/public/catalogue/categories').expect(200);
 
+    // Categories & banners share one permission module key ('banners') —
+    // SUPERADMIN/ADMIN only, not the PHARMACY staffAccessToken used
+    // elsewhere in this file.
     await request(app.getHttpServer())
       .post('/v1/staff/catalogue/categories')
-      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
       .send({ slug: 'prescription', title: 'Prescription medicines', tabLabel: 'Rx' })
       .expect(201);
 
@@ -349,6 +353,126 @@ describe('Catalogue (e2e)', () => {
         .expect(404);
       await request(app.getHttpServer())
         .delete('/v1/staff/catalogue/banners/999999')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(404);
+    });
+  });
+
+  describe('console category & subcategory management (SUPERADMIN/ADMIN only)', () => {
+    it('rejects a PHARMACY login', async () => {
+      await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/categories')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(403);
+    });
+
+    it('lists every category active or not, each with its subcategories nested', async () => {
+      const [cat] = await db
+        .insert(productCategory)
+        .values({ slug: 'console-cat-test', title: 'Console Cat', tabLabel: 'CC', isActive: false, sort: 0 })
+        .returning();
+      await db.insert(productSubcategory).values({ categoryId: cat.id, label: 'Sub A', sort: 1 });
+      await db.insert(productSubcategory).values({ categoryId: cat.id, label: 'Sub B', sort: 0 });
+
+      const res = await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/categories')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+
+      const group = res.body.find((g: { slug: string }) => g.slug === 'console-cat-test');
+      expect(group.isActive).toBe(false); // shows up despite being inactive
+      expect(group.subcategories.map((s: { label: string }) => s.label)).toEqual(['Sub B', 'Sub A']);
+    });
+
+    it('refuses a duplicate slug, without a 500', async () => {
+      await db.insert(productCategory).values({ slug: 'dup-slug-test', title: 'First', tabLabel: 'F' });
+
+      const res = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/categories')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ slug: 'dup-slug-test', title: 'Second', tabLabel: 'S' })
+        .expect(201);
+      expect(res.body).toEqual({ category: null });
+    });
+
+    it("updating a category never changes its slug, even if one is sent", async () => {
+      const [cat] = await db
+        .insert(productCategory)
+        .values({ slug: 'immutable-slug-test', title: 'Before', tabLabel: 'B' })
+        .returning();
+
+      const res = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/categories/${cat.id}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ slug: 'hijacked-slug', title: 'After', tabLabel: 'A' })
+        .expect(200);
+
+      expect(res.body.slug).toBe('immutable-slug-test');
+      expect(res.body.title).toBe('After');
+    });
+
+    it('sets active and sort independently of a full update', async () => {
+      const [cat] = await db
+        .insert(productCategory)
+        .values({ slug: 'active-sort-test', title: 'T', tabLabel: 'T', isActive: true, sort: 0 })
+        .returning();
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/categories/${cat.id}/active`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ isActive: false })
+        .expect(200);
+      const sorted = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/categories/${cat.id}/sort`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ sort: 7 })
+        .expect(200);
+
+      expect(sorted.body.isActive).toBe(false); // the earlier deactivation stuck
+      expect(sorted.body.sort).toBe(7);
+    });
+
+    it('creates, updates and deletes a subcategory, clearing any product filed under it', async () => {
+      const [cat] = await db
+        .insert(productCategory)
+        .values({ slug: 'subcat-crud-test', title: 'T', tabLabel: 'T' })
+        .returning();
+
+      const created = await request(app.getHttpServer())
+        .post(`/v1/staff/catalogue/categories/${cat.id}/subcategories`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ label: 'New sub' })
+        .expect(201);
+      const subId = created.body.id;
+
+      const [filedProduct] = await db
+        .insert(product)
+        .values({ name: 'Filed under sub', categoryId: cat.id, subcategoryId: subId, price: '10', mrp: '10' })
+        .returning();
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/subcategories/${subId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ label: 'Renamed sub' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/catalogue/subcategories/${subId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+
+      const [afterDelete] = await db.select().from(product).where(eq(product.id, filedProduct.id));
+      expect(afterDelete.subcategoryId).toBeNull();
+    });
+
+    it('404s updating or deleting a subcategory that does not exist', async () => {
+      await request(app.getHttpServer())
+        .patch('/v1/staff/catalogue/subcategories/999999')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ label: 'x' })
+        .expect(404);
+      await request(app.getHttpServer())
+        .delete('/v1/staff/catalogue/subcategories/999999')
         .set('Authorization', `Bearer ${superAdminToken}`)
         .expect(404);
     });

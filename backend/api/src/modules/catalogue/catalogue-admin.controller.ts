@@ -10,9 +10,12 @@ import {
   createReviewVideoSchema,
   createReviewVideoMediaSchema,
   createStoreSchema,
+  createSubcategorySchema,
   reviewVideoChunkSchema,
   setBannerActiveSchema,
   setBannerSortSchema,
+  setCategoryActiveSchema,
+  setCategorySortSchema,
   setStoreActiveSchema,
   setStoreOffersLabSchema,
   updateBannerSchema,
@@ -20,21 +23,26 @@ import {
   updateProductSchema,
   updateReviewVideoSchema,
   updateStoreSchema,
+  updateSubcategorySchema,
   type CreateBannerDto,
   type CreateCategoryDto,
   type CreateProductDto,
   type CreateReviewVideoDto,
   type CreateReviewVideoMediaDto,
   type CreateStoreDto,
+  type CreateSubcategoryDto,
   type ReviewVideoChunkDto,
   type SetBannerActiveDto,
   type SetBannerSortDto,
+  type SetCategoryActiveDto,
+  type SetCategorySortDto,
   type SetStoreActiveDto,
   type SetStoreOffersLabDto,
   type UpdateBannerDto,
   type UpdateCategoryDto,
   type UpdateProductDto,
   type UpdateReviewVideoDto,
+  type UpdateSubcategoryDto,
   type UpdateStoreDto,
 } from './dto';
 
@@ -96,17 +104,72 @@ export class CatalogueAdminController {
     return this.catalogue.setStoreOffersLab(id, dto.offersLabCollection);
   }
 
+  // ---- Categories & subcategories --------------------------------------
+  // 'banners' is the permission module key that gates this whole page in
+  // shieldweb (Categories & banners share one screen) — only SUPERADMIN/
+  // ADMIN have it, same restriction as the home/lab banner routes above.
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Get('categories')
+  listCategoryGroupsForStaff() {
+    return this.catalogue.listCategoryGroupsForStaff();
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
   @Post('categories')
   createCategory(@Body(new ZodValidationPipe(createCategorySchema)) dto: CreateCategoryDto) {
     return this.catalogue.createCategory(dto);
   }
 
+  @RequireRole('SUPERADMIN', 'ADMIN')
   @Patch('categories/:id')
   updateCategory(
     @Param('id', ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateCategorySchema)) dto: UpdateCategoryDto,
   ) {
     return this.catalogue.updateCategory(id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Patch('categories/:id/active')
+  setCategoryActive(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(setCategoryActiveSchema)) dto: SetCategoryActiveDto,
+  ) {
+    return this.catalogue.setCategoryActive(id, dto.isActive);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Patch('categories/:id/sort')
+  setCategorySort(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(setCategorySortSchema)) dto: SetCategorySortDto,
+  ) {
+    return this.catalogue.setCategorySort(id, dto.sort);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Post('categories/:id/subcategories')
+  createSubcategory(
+    @Param('id', ParseIntPipe) categoryId: number,
+    @Body(new ZodValidationPipe(createSubcategorySchema)) dto: CreateSubcategoryDto,
+  ) {
+    return this.catalogue.createSubcategory(categoryId, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Patch('subcategories/:id')
+  updateSubcategory(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateSubcategorySchema)) dto: UpdateSubcategoryDto,
+  ) {
+    return this.catalogue.updateSubcategory(id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Delete('subcategories/:id')
+  deleteSubcategory(@Param('id', ParseIntPipe) id: number) {
+    return this.catalogue.deleteSubcategory(id);
   }
 
   @Post('products')
