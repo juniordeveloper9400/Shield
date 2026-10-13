@@ -1,7 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
-import '../../data/neon/agent_customer_repository.dart';
-import '../../data/neon/agent_repository.dart';
+import '../../data/backend/agent_customer_repository.dart';
+import '../../data/backend/agent_repository.dart';
 import '../../money.dart';
 import '../auth/auth_service.dart';
 import '../wallet/wallet_service.dart';
@@ -104,50 +106,52 @@ class AgentService extends ChangeNotifier {
 
   Future<void> _loadFromServer() async {
     try {
+      // Scoped to the caller's own subtree — null for a member who isn't
+      // an approved agent at all, in which case there is nothing further
+      // to load either (no team, no pending recruits, no customers).
       final remote = await AgentRepository.instance.fetchAll();
-      if (remote != null && remote.isNotEmpty) {
-        // Skip any row that is the seed root's own database counterpart —
-        // written the first time a registration under it needed one to
-        // parent under (see `_resolveDbId`) — so the national persona never
-        // shows twice.
-        final seedPhones = _agents.map((a) => a.phone).toSet();
-        final fresh =
-            remote.where((a) => !seedPhones.contains(a.phone)).toList();
-        if (fresh.isNotEmpty) {
-          _agents.addAll(fresh);
-          // Every fetched row already has a real database id — cache it so a
-          // registration under one of them resolves its parent id
-          // immediately rather than treating it as still-unpersisted.
-          for (final agent in fresh) {
-            final dbId = int.tryParse(agent.id.replaceFirst('db-', ''));
-            if (dbId != null) {
-              _dbId[agent.id] = Future.value(dbId);
-            }
+      if (remote == null || remote.isEmpty) {
+        return;
+      }
+      // Skip any row that is the seed root's own database counterpart —
+      // the real national agent, if the caller's chain reaches them — so
+      // the seed persona never shows twice.
+      final seedPhones = _agents.map((a) => a.phone).toSet();
+      final fresh = remote.where((a) => !seedPhones.contains(a.phone)).toList();
+      if (fresh.isNotEmpty) {
+        _agents.addAll(fresh);
+        // Every fetched row already has a real database id — cache it so a
+        // registration under one of them resolves its parent id
+        // immediately rather than treating it as still-unpersisted.
+        for (final agent in fresh) {
+          final dbId = int.tryParse(agent.id.replaceFirst('db-', ''));
+          if (dbId != null) {
+            _dbId[agent.id] = Future.value(dbId);
           }
         }
       }
+      // Each fetched row's `personalSales`/`earned`/`redeemed` are already
+      // the real, backend-maintained figures — no client-side recompute
+      // needed the way the old direct-Neon read required.
 
-      // Real direct-sale customers, on top of the seed demo set — an agent
-      // id minted from a database row (`db-<id>`) never collides with a seed
-      // literal (`nat-001`), so this only ever adds to the roster, never
-      // replaces the seed national persona's own demo sales.
-      final realCustomers = await AgentCustomerRepository.instance.fetchAll();
-      if (realCustomers != null && realCustomers.isNotEmpty) {
-        _customers.addAll(realCustomers);
-        // Every real agent's own personal-sales figure — driving the team
-        // rollup and the roster table — comes from what they have actually
-        // sold, not `app.agent.personal_sales` (nothing ever writes to that
-        // column), so it is recomputed here from the customers just loaded.
-        final volumeByAgent = <String, int>{};
-        for (final customer in realCustomers) {
-          volumeByAgent[customer.agentId] =
-              (volumeByAgent[customer.agentId] ?? 0) + customer.totalAmount;
-        }
-        for (final entry in volumeByAgent.entries) {
-          final index = _agents.indexWhere((a) => a.id == entry.key);
-          if (index >= 0) {
-            _agents[index] = _agents[index].withPersonalSales(entry.value);
-          }
+      // Recruits waiting on admin approval, directly under the caller —
+      // folded in as locked, zero-figure cards so a pending registration
+      // shows up rather than simply vanishing until approved.
+      final pending = await AgentRepository.instance.fetchPendingRequests();
+      if (pending != null && pending.isNotEmpty) {
+        _agents.addAll(pending);
+      }
+
+      // The signed-in agent's own direct-sale customers — scoped to them
+      // alone; another agent's own customers are not this session's to
+      // see (`AgentCustomerRepository.fetchMine`'s own doc).
+      final self = agentForPhone(AuthService.instance.currentUser.value?.phone);
+      if (self != null) {
+        final mine = await AgentCustomerRepository.instance.fetchMine(
+          agentDbId: self.id,
+        );
+        if (mine != null && mine.isNotEmpty) {
+          _customers.addAll(mine);
         }
       }
 
@@ -437,6 +441,9 @@ class AgentService extends ChangeNotifier {
     if (byId(parent.id) == null) {
       return 'That parent agent no longer exists';
     }
+    if (parent.isPending) {
+      return '${parent.name} is still awaiting approval and cannot recruit yet.';
+    }
     if (level.index <= parent.level.index) {
       return '${level.label} is not below ${parent.level.label}';
     }
@@ -497,7 +504,6 @@ class AgentService extends ChangeNotifier {
       phone: phone.trim(),
       agentCode: _mintCode(level),
       level: level,
-      active: active,
       parentId: parent.id,
       area: headArea,
       areaId: slot?.id,
@@ -514,20 +520,25 @@ class AgentService extends ChangeNotifier {
       // The profile photo is captured here at registration and nowhere
       // else — the agent's own detail screen only ever shows it.
       photoBytes: photoBytes,
-      // Approved on the spot — registering someone is the recruiter's own
-      // decision, made with a live OTP check already behind it, so there
-      // is nothing further to gate them on. [Agent]'s own default already
-      // reads this way; spelled out here so it stays true on purpose.
-      approvalStatus: AgentApprovalStatus.approved,
+      // Off and pending until an admin reviews the KYC and confirms the
+      // level/position in the console — [active] (the caller's own arg)
+      // only takes effect once approved. This used to be approved on the
+      // spot, trusting the recruiter's own decision (backed by a live OTP
+      // check) with nothing further to gate on; the backend's own
+      // approval queue enforces real invariants client-side registration
+      // cannot (at most one national agent, ever; every non-national
+      // agent occupying a real geo slot) that a straight-to-APPROVED
+      // write was letting through unchecked — see `AgentRepository
+      // .insertAgentRequest`'s own doc.
+      active: false,
+      approvalStatus: AgentApprovalStatus.pending,
     );
     _agents.add(newAgent);
-    // Kicked off (and cached under the new agent's own id) immediately,
-    // before the insert has necessarily finished — so a sub-agent
-    // registered under `newAgent` moments later, even before this one
-    // lands, awaits this exact write rather than treating it as never
-    // going to happen. Never awaited itself: the UI already has its
-    // answer (`null` — success) by the time this settles either way.
-    _dbId[newAgent.id] = _persistNew(newAgent, parent);
+    // Fire-and-forget the `app.agent_request` write. Not cached under the
+    // new agent's own id: a pending recruit cannot itself be a parent
+    // (guarded above), and once admin approves them they come back from
+    // the next [ensureLoaded] with a real `db-<id>` anyway.
+    unawaited(_persistNew(newAgent, parent));
     notifyListeners();
     return null;
   }
@@ -565,35 +576,36 @@ class AgentService extends ChangeNotifier {
   }
 
   /// The database row id for [agent] — resolving (and caching, via [_dbId])
-  /// it the first time anything needs it. The seed national persona has no
-  /// row of its own until the first registration under it asks for one
-  /// ([AgentRepository.ensureNationalRow]); every other agent already has
+  /// it the first time anything needs it. Every non-seed agent already has
   /// one cached — a fetched row from [_loadFromServer], or its own
   /// [_persistNew] future kicked off at the moment it was registered.
+  ///
+  /// The seed national persona is a local UI placeholder only — it has no
+  /// row of its own, and nothing here creates one any more. Filing a
+  /// request under it submits `parentAgentId: null`; the admin console
+  /// resolves the real parent on approval regardless of what the client
+  /// sent (see [_persistNew]'s doc). This used to insert an already-
+  /// `APPROVED` `app.agent` row directly for exactly this case, with no
+  /// "only one national agent" guard — the recorded cause of more than one
+  /// live NATIONAL row in production. That path is retired, not ported.
   Future<int?> _dbIdFor(Agent agent) {
-    return _dbId[agent.id] ??= agent.id == AgentDirectory.national.id
-        ? AgentRepository.instance.ensureNationalRow(
-            phone: agent.phone,
-            name: agent.name,
-            code: agent.agentCode,
-          )
-        : Future.value(null);
+    return _dbId[agent.id] ??= Future.value(null);
   }
 
-  /// Writes [agent] to `app.agent` under [parent]'s database row, resolving
-  /// (and, for the seed root, creating) that row first. Best-effort: a
-  /// missing `DATABASE_URL`, a network blip, or the parent's own write never
-  /// landing all just leave [agent] real in this session and absent from the
-  /// database — never surfaced to the UI, which already has its answer.
+  /// Files [agent] as an `app.agent_request` under [parent] for the admin
+  /// console to approve — this never writes `app.agent` directly any
+  /// more. Best-effort: an unconfigured backend or a network blip just
+  /// leaves the request in this session's roster (as a pending card) and
+  /// absent from the database.
+  ///
+  /// The parent's own database id is passed through when known, but a
+  /// null one is fine — the admin confirms the real parent on approval
+  /// anyway.
   Future<int?> _persistNew(Agent agent, Agent parent) async {
     final parentDbId = await _dbIdFor(parent);
-    if (parentDbId == null) {
-      return null;
-    }
-    return AgentRepository.instance.insertAgent(
+    return AgentRepository.instance.insertAgentRequest(
       parentDbId: parentDbId,
       level: agent.level,
-      code: agent.agentCode,
       name: agent.name,
       phone: agent.phone,
       area: agent.area,

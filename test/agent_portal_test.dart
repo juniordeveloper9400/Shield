@@ -58,6 +58,12 @@ void main() {
 
   /// Registers a valid agent under [parent]. Returns the error string (null on
   /// success).
+  ///
+  /// [autoApprove] immediately approves the new agent (default) so every
+  /// call site that only cares about tree/org-shape mechanics — not the
+  /// approval queue itself — can keep recruiting straight under the
+  /// result the way the old instant-approve behavior let it. The handful
+  /// of tests that exercise the pending state itself pass `false`.
   String? register(
     Agent parent, {
     AgentLevel? level,
@@ -72,9 +78,10 @@ void main() {
     String? state,
     String? district,
     String? assembly,
+    bool autoApprove = true,
   }) {
     final atLevel = level ?? service.allowedChildLevels(parent).first;
-    return service.registerAgent(
+    final error = service.registerAgent(
       parent: parent,
       level: atLevel,
       firstName: first,
@@ -101,6 +108,14 @@ void main() {
         },
       ),
     );
+    if (error == null && autoApprove) {
+      final added =
+          service.childrenOf(parent.id).where((a) => a.phone == phone).lastOrNull;
+      if (added != null) {
+        service.setApproval(added, AgentApprovalStatus.approved);
+      }
+    }
+    return error;
   }
 
   /// Drives the registration form all the way through from wherever it has
@@ -473,6 +488,11 @@ void main() {
         parent = service.childrenOf(parent.id).single;
         expect(parent.level, level);
         expect(parent.area, area);
+        // Approved so the next link in the chain can recruit under it —
+        // a still-pending agent cannot (see "recruiting under a
+        // still-pending parent is refused").
+        service.setApproval(parent, AgentApprovalStatus.approved);
+        parent = service.byId(parent.id)!;
       }
       expect(service.openPositionsUnder(parent), 0);
     });
@@ -626,11 +646,16 @@ void main() {
   });
 
   group('registering an agent', () {
-    test('a valid submission lands under its parent, KYC and all', () {
-      register(national); // seeds a region to register under
+    test('a valid submission lands under its parent, pending admin review', () {
+      register(national); // seeds a region to register under, auto-approved
       final region = service.childrenOf(national.id).first;
 
-      final error = register(region, first: 'Sanju', last: 'Pillai');
+      final error = register(
+        region,
+        first: 'Sanju',
+        last: 'Pillai',
+        autoApprove: false,
+      );
       expect(error, isNull);
 
       final added = service
@@ -647,8 +672,19 @@ void main() {
       // The first state ever minted on a fresh roster.
       expect(added.agentCode, 'SHD-STE-001');
       expect(added.earned, 0);
-      // Approved on the spot — nothing left to clear before they can work.
-      expect(added.approvalStatus, AgentApprovalStatus.approved);
+      // Pending admin review — not approved on the spot any more, see
+      // AgentRepository.insertAgentRequest's own doc.
+      expect(added.approvalStatus, AgentApprovalStatus.pending);
+    });
+
+    test('recruiting under a still-pending parent is refused', () {
+      register(national, autoApprove: false);
+      final region = service.childrenOf(national.id).first;
+      expect(region.isPending, isTrue);
+
+      final error = register(region, first: 'Sanju', last: 'Pillai');
+      expect(error, contains('awaiting approval'));
+      expect(service.childrenOf(region.id), isEmpty);
     });
 
     test('the level must sit below the parent', () {
@@ -695,14 +731,20 @@ void main() {
       expect(pending.earned, national.earned);
     });
 
-    test('registering leaves an agent approved immediately, nothing to clear', () {
-      register(national, first: 'Priya', last: 'Menon');
+    test('registering leaves an agent pending, not approved — admin review decides', () {
+      register(national, first: 'Priya', last: 'Menon', autoApprove: false);
       final added = service
           .childrenOf(national.id)
           .firstWhere((a) => a.name == 'Priya Menon');
 
-      expect(added.approvalStatus, AgentApprovalStatus.approved);
-      expect(service.earnedFor(added), added.earned);
+      // The backend's own approval queue — not this client — is what
+      // enforces the real invariants (at most one national agent, every
+      // non-national agent in a real geo slot) a straight-to-approved
+      // write let through unchecked. See AgentRepository
+      // .insertAgentRequest's own doc.
+      expect(added.approvalStatus, AgentApprovalStatus.pending);
+      expect(added.active, isFalse);
+      expect(service.earnedFor(added), 0);
     });
 
     test('setApproval still works as a raw mechanism, even unreached from the UI', () {
