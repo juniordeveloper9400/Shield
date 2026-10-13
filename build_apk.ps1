@@ -14,11 +14,13 @@
 #
 # BACKEND_API_BASE_URL is public, not a secret — shield_backend's own
 # deployed URL, hardcoded here the same way the agent app's own
-# build_apk.ps1 does. Foundation only so far (see the root-app migration
-# plan): this build now mints a backend session alongside the existing
-# Neon sign-in, but no screen reads from backend/api yet, so a wrong/blank
-# value here has no visible effect yet — update it when the backend is
-# ever redeployed to a different domain, ahead of that mattering.
+# build_apk.ps1 does. NOT optional any more: member sign-in now runs
+# entirely through backend/api's MSG91-backed /v1/member/auth/otp/*
+# (see AuthService's own doc) — a blank or stale value here means
+# BackendHttp.isEnabled is false on the built APK and every sign-in
+# attempt fails immediately with "Verification is unavailable on this
+# device right now," with no network call ever made. Update this the
+# moment the backend is ever redeployed to a different domain.
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
@@ -41,5 +43,7 @@ flutter build apk --release --dart-define=BACKEND_API_BASE_URL=$BackendApiBaseUr
 
 Write-Host ''
 Write-Host 'Done: build/app/outputs/flutter-apk/app-release.apk' -ForegroundColor Green
-Write-Host 'Uninstall the app on the phone first, then install this. The login'
-Write-Host 'screen must show a green "Database connected" line.'
+Write-Host 'Uninstall the app on the phone first, then install this. "Get OTP" on'
+Write-Host 'the sign-in screen must actually text a code — "Verification is'
+Write-Host 'unavailable on this device right now" means BACKEND_API_BASE_URL'
+Write-Host 'above is wrong or the backend is unreachable, not a code problem.'
