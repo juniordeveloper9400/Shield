@@ -23,11 +23,13 @@ import {
 } from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
 import type {
+  CreateBannerDto,
   CreateCategoryDto,
   CreateProductDto,
   CreateReviewVideoDto,
   CreateStoreDto,
   ListProductsQuery,
+  UpdateBannerDto,
   UpdateCategoryDto,
   UpdateProductDto,
   UpdateReviewVideoDto,
@@ -397,6 +399,60 @@ export class CatalogueService {
         .where(and(eq(homeBanner.isActive, true), eq(homeBanner.placement, placement)))
         .orderBy(asc(homeBanner.sort)),
     );
+  }
+
+  /** Every banner on one placement's strip, active or not — the console's
+   *  own Banners page, which shows everything, not just what members see. */
+  async listBannersForStaff(placement: string = 'home') {
+    return this.db
+      .select()
+      .from(homeBanner)
+      .where(eq(homeBanner.placement, placement))
+      .orderBy(asc(homeBanner.sort), asc(homeBanner.id));
+  }
+
+  async createBanner(dto: CreateBannerDto) {
+    const { sort, ...rest } = dto;
+    let resolvedSort = sort;
+    if (resolvedSort === undefined) {
+      const [last] = await this.db
+        .select({ sort: homeBanner.sort })
+        .from(homeBanner)
+        .where(eq(homeBanner.placement, dto.placement))
+        .orderBy(desc(homeBanner.sort))
+        .limit(1);
+      resolvedSort = (last?.sort ?? -1) + 1;
+    }
+    const [created] = await this.db.insert(homeBanner).values({ ...rest, sort: resolvedSort }).returning();
+    await this.cache.invalidate(`catalogue:banners:${dto.placement}`);
+    return created;
+  }
+
+  async updateBanner(id: number, dto: UpdateBannerDto) {
+    const [updated] = await this.db.update(homeBanner).set(dto).where(eq(homeBanner.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Banner not found' } });
+    await this.cache.invalidate(`catalogue:banners:${updated.placement}`);
+    return updated;
+  }
+
+  async setBannerSort(id: number, sort: number) {
+    const [updated] = await this.db.update(homeBanner).set({ sort }).where(eq(homeBanner.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Banner not found' } });
+    await this.cache.invalidate(`catalogue:banners:${updated.placement}`);
+    return updated;
+  }
+
+  async setBannerActive(id: number, isActive: boolean) {
+    const [updated] = await this.db.update(homeBanner).set({ isActive }).where(eq(homeBanner.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Banner not found' } });
+    await this.cache.invalidate(`catalogue:banners:${updated.placement}`);
+    return updated;
+  }
+
+  async deleteBanner(id: number) {
+    const [deleted] = await this.db.delete(homeBanner).where(eq(homeBanner.id, id)).returning();
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Banner not found' } });
+    await this.cache.invalidate(`catalogue:banners:${deleted.placement}`);
   }
 
   async listPromos() {

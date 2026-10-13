@@ -32,6 +32,7 @@ describe('Catalogue (e2e)', () => {
   let categoryId: number;
   let productId: number;
   let staffAccessToken: string;
+  let superAdminToken: string;
 
   beforeAll(async () => {
     db = createTestDb();
@@ -73,6 +74,18 @@ describe('Catalogue (e2e)', () => {
       .send({ loginId: 'pharmacist@example.com', password: 'correct-horse-battery-staple' })
       .expect(200);
     staffAccessToken = login.body.accessToken;
+
+    await db.insert(adminUser).values({
+      loginId: 'superadmin@example.com',
+      name: 'Test Super Admin',
+      passwordHash: await hash('correct-horse-battery-staple', 4),
+      role: 'SUPERADMIN',
+    });
+    const superAdminLogin = await request(app.getHttpServer())
+      .post('/v1/staff/auth/session')
+      .send({ loginId: 'superadmin@example.com', password: 'correct-horse-battery-staple' })
+      .expect(200);
+    superAdminToken = superAdminLogin.body.accessToken;
   });
 
   afterAll(async () => {
@@ -246,6 +259,98 @@ describe('Catalogue (e2e)', () => {
         .query({ placement: 'lab' })
         .expect(200);
       expect(lab.body.map((b: { title: string }) => b.title)).not.toContain('Hidden lab banner');
+    });
+  });
+
+  describe('console banner management (SUPERADMIN/ADMIN only)', () => {
+    it('rejects a PHARMACY login — banners is not in that role\'s module list', async () => {
+      await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/banners')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/banners')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ title: 'Nope' })
+        .expect(403);
+    });
+
+    it('lists every banner on a placement, active and inactive, in sort order', async () => {
+      await db.insert(homeBanner).values({ title: 'Console A', image: 'a.jpg', isActive: true, sort: 1, placement: 'console-test' });
+      await db.insert(homeBanner).values({ title: 'Console B (off)', image: 'b.jpg', isActive: false, sort: 0, placement: 'console-test' });
+
+      const res = await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/banners')
+        .query({ placement: 'console-test' })
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+
+      expect(res.body.map((b: { title: string }) => b.title)).toEqual(['Console B (off)', 'Console A']);
+    });
+
+    it('creates a banner, appending after the current last one on its placement when sort is omitted', async () => {
+      await db.insert(homeBanner).values({ title: 'Existing', image: 'x.jpg', sort: 4, placement: 'append-test' });
+
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/banners')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ placement: 'append-test', title: 'New one', image: 'new.jpg' })
+        .expect(201);
+
+      expect(created.body.sort).toBe(5);
+      expect(created.body.isActive).toBe(true); // schema default
+    });
+
+    it('updates, re-sorts, deactivates and deletes a banner', async () => {
+      const [created] = await db
+        .insert(homeBanner)
+        .values({ title: 'Original', image: 'o.jpg', sort: 0, placement: 'crud-test' })
+        .returning();
+
+      const updated = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/banners/${created.id}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ title: 'Renamed', subtitle: '', image: 'o.jpg', cta: '', target: '', isActive: true, sort: 0 })
+        .expect(200);
+      expect(updated.body.title).toBe('Renamed');
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/banners/${created.id}/sort`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ sort: 9 })
+        .expect(200);
+
+      const deactivated = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/banners/${created.id}/active`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ isActive: false })
+        .expect(200);
+      expect(deactivated.body.isActive).toBe(false);
+      expect(deactivated.body.sort).toBe(9); // the sort change above stuck
+
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/catalogue/banners/${created.id}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+
+      const afterDelete = await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/banners')
+        .query({ placement: 'crud-test' })
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(afterDelete.body).toEqual([]);
+    });
+
+    it('404s updating, sorting, activating or deleting a banner that does not exist', async () => {
+      await request(app.getHttpServer())
+        .patch('/v1/staff/catalogue/banners/999999')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ title: 'x', subtitle: '', image: '', cta: '', target: '', isActive: true, sort: 0 })
+        .expect(404);
+      await request(app.getHttpServer())
+        .delete('/v1/staff/catalogue/banners/999999')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(404);
     });
   });
 

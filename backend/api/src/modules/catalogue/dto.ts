@@ -22,6 +22,34 @@ export const createCategorySchema = z.object({
 
 export const updateCategorySchema = createCategorySchema.partial();
 
+export const createBannerSchema = z.object({
+  // Free text, matching app.home_banner.placement itself (migration 0069's
+  // own doc: "'home' ... unless the caller asks for another, e.g. 'lab'"
+  // — an open set, not a fixed enum at the DB level).
+  placement: z.string().min(1).default('home'),
+  title: z.string().default(''),
+  subtitle: z.string().default(''),
+  image: z.string().default(''),
+  cta: z.string().default(''),
+  target: z.string().default(''),
+  isActive: z.boolean().default(true),
+  /** Appended after the placement's current last banner when omitted. */
+  sort: z.number().int().optional(),
+});
+
+export const updateBannerSchema = z.object({
+  title: z.string(),
+  subtitle: z.string(),
+  image: z.string(),
+  cta: z.string(),
+  target: z.string(),
+  isActive: z.boolean(),
+  sort: z.number().int(),
+});
+
+export const setBannerSortSchema = z.object({ sort: z.number().int() });
+export const setBannerActiveSchema = z.object({ isActive: z.boolean() });
+
 export const createProductSchema = z.object({
   code: z.string().optional(),
   name: z.string().min(1),
@@ -106,3 +134,7 @@ export type CreateReviewVideoDto = z.infer<typeof createReviewVideoSchema>;
 export type UpdateReviewVideoDto = z.infer<typeof updateReviewVideoSchema>;
 export type CreateReviewVideoMediaDto = z.infer<typeof createReviewVideoMediaSchema>;
 export type ReviewVideoChunkDto = z.infer<typeof reviewVideoChunkSchema>;
+export type CreateBannerDto = z.infer<typeof createBannerSchema>;
+export type UpdateBannerDto = z.infer<typeof updateBannerSchema>;
+export type SetBannerSortDto = z.infer<typeof setBannerSortSchema>;
+export type SetBannerActiveDto = z.infer<typeof setBannerActiveSchema>;

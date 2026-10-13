@@ -1,29 +1,37 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { CatalogueService } from './catalogue.service';
 import { ReviewVideoMediaService } from './review-video-media.service';
 import { RequireRole, RequireStaff } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
+  createBannerSchema,
   createCategorySchema,
   createProductSchema,
   createReviewVideoSchema,
   createReviewVideoMediaSchema,
   createStoreSchema,
   reviewVideoChunkSchema,
+  setBannerActiveSchema,
+  setBannerSortSchema,
   setStoreActiveSchema,
   setStoreOffersLabSchema,
+  updateBannerSchema,
   updateCategorySchema,
   updateProductSchema,
   updateReviewVideoSchema,
   updateStoreSchema,
+  type CreateBannerDto,
   type CreateCategoryDto,
   type CreateProductDto,
   type CreateReviewVideoDto,
   type CreateReviewVideoMediaDto,
   type CreateStoreDto,
   type ReviewVideoChunkDto,
+  type SetBannerActiveDto,
+  type SetBannerSortDto,
   type SetStoreActiveDto,
   type SetStoreOffersLabDto,
+  type UpdateBannerDto,
   type UpdateCategoryDto,
   type UpdateProductDto,
   type UpdateReviewVideoDto,
@@ -112,6 +120,49 @@ export class CatalogueAdminController {
     @Body(new ZodValidationPipe(updateProductSchema)) dto: UpdateProductDto,
   ) {
     return this.catalogue.updateProduct(id, dto);
+  }
+
+  // ---- Banners --------------------------------------------------------
+  // 'banners' isn't in the pharmacy/lab/appointments module lists in
+  // shieldweb/src/config/permissions.ts either — only SUPERADMIN/ADMIN
+  // manage the home/lab hero strips, so restricted here too, overriding
+  // the controller's class-wide @RequireStaff() the same way review-videos
+  // does below.
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Get('banners')
+  listBannersForStaff(@Query('placement') placement?: string) {
+    return this.catalogue.listBannersForStaff(placement);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Post('banners')
+  createBanner(@Body(new ZodValidationPipe(createBannerSchema)) dto: CreateBannerDto) {
+    return this.catalogue.createBanner(dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Patch('banners/:id')
+  updateBanner(@Param('id', ParseIntPipe) id: number, @Body(new ZodValidationPipe(updateBannerSchema)) dto: UpdateBannerDto) {
+    return this.catalogue.updateBanner(id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Patch('banners/:id/sort')
+  setBannerSort(@Param('id', ParseIntPipe) id: number, @Body(new ZodValidationPipe(setBannerSortSchema)) dto: SetBannerSortDto) {
+    return this.catalogue.setBannerSort(id, dto.sort);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Patch('banners/:id/active')
+  setBannerActive(@Param('id', ParseIntPipe) id: number, @Body(new ZodValidationPipe(setBannerActiveSchema)) dto: SetBannerActiveDto) {
+    return this.catalogue.setBannerActive(id, dto.isActive);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Delete('banners/:id')
+  deleteBanner(@Param('id', ParseIntPipe) id: number) {
+    return this.catalogue.deleteBanner(id);
   }
 
   // 'customer_videos' isn't in the pharmacy/lab/appointments module lists
