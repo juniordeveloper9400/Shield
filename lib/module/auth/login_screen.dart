@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../data/backend/backend_http.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/labelled_field.dart';
 import 'auth_service.dart';
@@ -333,7 +334,16 @@ class _LoginScreenState extends State<LoginScreen> {
         return 'Verification timed out before the code was sent. '
             'Check your connection and tap Resend.${_diagnosticSuffix()}';
       case OtpError.unavailable:
-        return 'Verification is unavailable on this device right now.';
+        // This exact message only ever means one thing in a real build:
+        // BackendHttp.isConfigured was false, i.e. BACKEND_API_BASE_URL
+        // was empty at build time (see BackendHttp's own doc — nothing
+        // else sets OtpError.unavailable on a native build). Printing the
+        // compiled value (or "(none compiled in)") turns "is this really
+        // the build I think it is" from a guess into something a
+        // screenshot settles outright.
+        final compiled = BackendHttp.configuredBaseUrlForDiagnostics;
+        return 'Verification is unavailable on this device right now.\n'
+            '(backend URL compiled in: ${compiled.isEmpty ? "(none)" : compiled})';
       case OtpError.noPendingRequest:
       case OtpError.wrongOtp:
       case OtpError.codeExpired:
@@ -425,7 +435,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (failure == OtpError.unavailable) {
       setState(() {
         _busy = false;
-        _error = 'Verification is unavailable on this device right now.';
+        // Same diagnostic-bearing text _sendErrorText already prints for
+        // this exact failure — see its own doc on why it's provable from a
+        // screenshot rather than guessed at.
+        _error = _sendErrorText(OtpError.unavailable);
       });
       return;
     }

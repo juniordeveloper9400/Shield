@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../data/backend/backend_http.dart';
 import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/age_picker.dart';
@@ -583,13 +584,24 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
         return 'Verification timed out before the code was sent. '
             'Check your connection and tap Resend.${_diagnosticSuffix()}';
       case OtpError.unavailable:
-        return 'Verification is unavailable on this device right now.';
+        return _unavailableText();
       case OtpError.noPendingRequest:
       case OtpError.wrongOtp:
       case OtpError.codeExpired:
       case OtpError.unknown:
         return 'Could not send the code. Please try again.${_diagnosticSuffix()}';
     }
+  }
+
+  /// `OtpError.unavailable`'s text, shared by send and verify — this exact
+  /// message only ever means BACKEND_API_BASE_URL was empty at build time
+  /// (see BackendHttp's own doc). Printing the compiled value turns
+  /// "is this really the build I think it is" from a guess into something
+  /// a screenshot settles outright.
+  String _unavailableText() {
+    final compiled = BackendHttp.configuredBaseUrlForDiagnostics;
+    return 'Verification is unavailable on this device right now.\n'
+        '(backend URL compiled in: ${compiled.isEmpty ? "(none)" : compiled})';
   }
 
   /// Why a `confirmCode` call was rejected, as a line for the form.
@@ -608,7 +620,7 @@ class _AgentRegistrationScreenState extends State<AgentRegistrationScreen> {
       case OtpError.timeout:
         return 'The check timed out. Tap Resend and try again.';
       case OtpError.unavailable:
-        return 'Verification is unavailable on this device right now.';
+        return _unavailableText();
       case OtpError.configError:
       case OtpError.quotaExceeded:
       case OtpError.invalidName:
