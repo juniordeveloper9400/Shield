@@ -438,6 +438,16 @@ export class CatalogueService {
     return row.id;
   }
 
+  /** The discount badge the app/console show for a product (e.g. "17% off"),
+   *  always derived from price vs MRP — never admin-typed free text, so it
+   *  can never mismatch the real price. `null` when there's no real discount
+   *  (no MRP on file, or price at/above MRP). */
+  private static discountLabelFor(price: number, mrp: number): string | null {
+    if (mrp <= 0 || mrp <= price) return null;
+    const percent = Math.round(((mrp - price) / mrp) * 100);
+    return percent > 0 ? `${percent}% off` : null;
+  }
+
   /** Writes `app.product_detail` + `app.product_faq` for a product id —
    *  shared by createProduct and updateProduct, same upsert-then-replace
    *  shape shieldweb's own direct-SQL version used. */
@@ -546,7 +556,7 @@ export class CatalogueService {
         subcategoryId: dto.subcategoryId ? Number(dto.subcategoryId) : null,
         price: dto.price.toString(),
         mrp: dto.mrp.toString(),
-        discountLabel: dto.discountLabel,
+        discountLabel: CatalogueService.discountLabelFor(dto.price, dto.mrp),
         isPrescriptionOnly: dto.isPrescriptionOnly,
         status: dto.status === 'active' ? 'ACTIVE' : 'INACTIVE',
         stockQuantity: dto.stockQuantity.toString(),
@@ -590,12 +600,32 @@ export class CatalogueService {
 
   async updateProduct(id: number, dto: UpdateProductDto) {
     const { price, mrp, stockQuantity, categorySlug, subcategoryId, status, detail: _detail, extraImages: _extraImages, ...rest } = dto;
+
+    // The discount label is never trusted from the client — recompute it
+    // from price/mrp whenever either changes, merged against whatever the
+    // other one already is on record, so a one-field patch (e.g. just a
+    // stock update) never touches it and a price-only change still keeps it
+    // in sync (see createProduct's discountLabelFor call for the same rule).
+    let discountLabel: string | null | undefined;
+    if (price !== undefined || mrp !== undefined) {
+      const [current] = await this.db
+        .select({ price: product.price, mrp: product.mrp })
+        .from(product)
+        .where(eq(product.id, id))
+        .limit(1);
+      if (!current) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+      const nextPrice = price !== undefined ? price : Number(current.price);
+      const nextMrp = mrp !== undefined ? mrp : Number(current.mrp);
+      discountLabel = CatalogueService.discountLabelFor(nextPrice, nextMrp);
+    }
+
     const [updated] = await this.db
       .update(product)
       .set({
         ...rest,
         ...(price !== undefined ? { price: price.toString() } : {}),
         ...(mrp !== undefined ? { mrp: mrp.toString() } : {}),
+        ...(discountLabel !== undefined ? { discountLabel } : {}),
         ...(stockQuantity !== undefined ? { stockQuantity: stockQuantity.toString() } : {}),
         ...(categorySlug !== undefined ? { categoryId: await this.resolveCategoryId(categorySlug) } : {}),
         ...(subcategoryId !== undefined ? { subcategoryId: subcategoryId ? Number(subcategoryId) : null } : {}),

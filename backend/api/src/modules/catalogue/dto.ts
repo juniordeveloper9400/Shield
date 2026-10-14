@@ -105,6 +105,9 @@ const blankDetail = {
  * picks a category by slug, not id — resolved server-side, see
  * CatalogueService.resolveCategoryId). `subcategoryId` is `''` for
  * "unfiled", same convention `app.product_subcategory` itself uses.
+ * No `discountLabel` input: the discount shown to members is always derived
+ * from `price`/`mrp` server-side (see CatalogueService.discountLabelFor), so
+ * it can never drift from the real price.
  */
 export const createProductSchema = z.object({
   code: z.string().trim().default(''),
@@ -115,7 +118,6 @@ export const createProductSchema = z.object({
   subcategoryId: z.string().trim().default(''),
   price: z.number().nonnegative(),
   mrp: z.number().nonnegative(),
-  discountLabel: z.string().trim().default(''),
   isPrescriptionOnly: z.boolean().default(false),
   stockQuantity: z.number().nonnegative().default(0),
   status: z.enum(['active', 'inactive']).default('active'),
