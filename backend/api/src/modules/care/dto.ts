@@ -73,7 +73,23 @@ export const setLabCategorySortSchema = z.object({ sort: z.number().int() });
 export const updateLabBookingDetailsSchema = z.object({
   scheduledFor: z.string().datetime().nullable(),
   note: z.string().default(''),
+  /** Re-routes the booking to a different lab-eligible branch. Omitted
+   *  keeps whatever branch is already on record. */
+  storeId: z.number().int().positive().optional(),
+  /** A free-text override of the collection address shown for this booking
+   *  only — never writes back to the member's own saved address book. `''`
+   *  clears it back to the member's own address (BookingService.
+   *  updateLabBookingDetails's own doc). Omitted leaves it unchanged. */
+  address: z.string().max(500).optional(),
+  /** Replaces every patient on the booking wholesale — same shape
+   *  bookLabTestSchema's own patients array accepts. Recomputes
+   *  patientsCount/totalPrice from the new headcount, the same formula
+   *  booking creation uses, never an admin-typed number. Omitted leaves
+   *  the existing patients alone. */
+  patients: z.array(bookingPatientSchema).min(1).optional(),
 });
+
+export const assignLabStaffSchema = z.object({ staffId: z.number().int().positive().nullable() });
 
 export const addLabReportPagesSchema = z.object({
   pages: z.array(z.object({ name: z.string().default(''), image: z.string().min(1) })).min(1),
@@ -89,4 +105,5 @@ export type UpdateLabCategoryDto = z.infer<typeof updateLabCategorySchema>;
 export type SetLabCategoryActiveDto = z.infer<typeof setLabCategoryActiveSchema>;
 export type SetLabCategorySortDto = z.infer<typeof setLabCategorySortSchema>;
 export type UpdateLabBookingDetailsDto = z.infer<typeof updateLabBookingDetailsSchema>;
+export type AssignLabStaffDto = z.infer<typeof assignLabStaffSchema>;
 export type AddLabReportPagesDto = z.infer<typeof addLabReportPagesSchema>;

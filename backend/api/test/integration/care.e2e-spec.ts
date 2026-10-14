@@ -42,6 +42,7 @@ describe('Care Services (e2e)', () => {
   let memberAccessToken: string;
   let otherMemberAccessToken: string;
   let staffAccessToken: string;
+  let careStaffId: number;
   let labPackageId: number;
   let labCategoryId: number;
   let secondLabCategoryId: number;
@@ -130,12 +131,16 @@ describe('Care Services (e2e)', () => {
     // gated, see staff-booking.controller.ts) and appointments (still open
     // to any staff role) below — LAB can do both; APPOINTMENTS could only
     // ever do the latter.
-    await db.insert(adminUser).values({
-      loginId: 'care-staff@example.com',
-      name: 'Care Staff',
-      passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
-      role: 'LAB',
-    });
+    const [careStaff] = await db
+      .insert(adminUser)
+      .values({
+        loginId: 'care-staff@example.com',
+        name: 'Care Staff',
+        passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
+        role: 'LAB',
+      })
+      .returning();
+    careStaffId = careStaff.id;
 
     await db
       .insert(users)
@@ -269,6 +274,36 @@ describe('Care Services (e2e)', () => {
       .set('Authorization', `Bearer ${memberAccessToken}`)
       .expect(200);
     expect(detail.body.patients).toHaveLength(2);
+  });
+
+  it('refuses to confirm a home-collection booking until someone is assigned, lists lab staff, then confirms once assigned', async () => {
+    const refused = await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/status`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ status: 'CONFIRMED' })
+      .expect(409);
+    expect(refused.body.error.code).toBe('STAFF_REQUIRED');
+
+    // No LAB_TECHNICIAN fixtures exist yet at this point in the suite (they
+    // come later, in the console lab-booking detail block below) — just
+    // confirms the route itself works, empty or not.
+    const staffList = await request(app.getHttpServer())
+      .get('/v1/staff/lab-staff')
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+    expect(Array.isArray(staffList.body)).toBe(true);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/staff`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ staffId: careStaffId })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/status`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ status: 'CONFIRMED' })
+      .expect(200);
   });
 
   it('enforces the lab booking state machine — no skipping straight to REPORT_READY', async () => {
@@ -526,6 +561,38 @@ describe('Care Services (e2e)', () => {
       .get('/v1/staff/lab-bookings')
       .set('Authorization', `Bearer ${pharmacyToken}`)
       .expect(403);
+
+    // Lab staff listing is store-scoped by storeCode, same list the console's
+    // assignment picker reads — Tirur's technician shows under Tirur, not
+    // under Ponnani's own branch.
+    const staffAtTirur = await request(app.getHttpServer())
+      .get('/v1/staff/lab-staff?storeCode=SHD-TIR')
+      .set('Authorization', `Bearer ${tirurToken}`)
+      .expect(200);
+    expect(staffAtTirur.body).toEqual([
+      expect.objectContaining({ name: 'Tirur Lab Tech', storeCode: 'SHD-TIR' }),
+    ]);
+
+    // A LAB_TECHNICIAN login may claim a booking for itself…
+    const tirurTechId = staffAtTirur.body[0].id;
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/staff`)
+      .set('Authorization', `Bearer ${tirurToken}`)
+      .send({ staffId: tirurTechId })
+      .expect(200);
+
+    // …but never hand it to someone else, even another technician.
+    const staffAtPonnani = await request(app.getHttpServer())
+      .get('/v1/staff/lab-staff?storeCode=SHD-PON')
+      .set('Authorization', `Bearer ${tirurToken}`)
+      .expect(200);
+    const ponnaniTechId = staffAtPonnani.body[0].id;
+    const refused = await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/staff`)
+      .set('Authorization', `Bearer ${tirurToken}`)
+      .send({ staffId: ponnaniTechId })
+      .expect(403);
+    expect(refused.body.error.message).toContain('only claim a booking for itself');
   });
 
   describe('console lab-booking detail (its own fresh fixture — labBookingId above is mutated by nearly every test before this point)', () => {
@@ -594,7 +661,49 @@ describe('Care Services (e2e)', () => {
       expect(row.note).toBe('Call before arriving');
     });
 
+    it('edits the branch and patients, recomputing totalPrice from the new headcount — never an admin-typed number', async () => {
+      const [ponnani] = await db.select().from(shieldStore).where(eq(shieldStore.code, 'SHD-PON'));
+
+      const refused = await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/details`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ scheduledFor: null, note: '', storeId: nonLabStoreId })
+        .expect(400);
+      expect(refused.body.error.message).toContain('not open for lab');
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/details`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({
+          scheduledFor: null,
+          note: '',
+          storeId: ponnani.id,
+          address: 'Door no. 4, New Bus Stand Road, Ponnani',
+          patients: [{ name: 'Grandma', age: 70 }, { name: 'Walk-in companion', age: 40 }, { name: 'Third patient', age: 12 }],
+        })
+        .expect(200);
+
+      const after = await request(app.getHttpServer())
+        .get('/v1/staff/lab-bookings')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      const row = after.body.find((b: { id: number }) => b.id === freshBookingId);
+      expect(row.storeCode).toBe('SHD-PON');
+      expect(row.address).toBe('Door no. 4, New Bus Stand Road, Ponnani');
+      expect(row.patients).toHaveLength(3);
+      expect(row.patientsCount).toBe(3);
+      // Same unit price (₹999) × the new headcount of 3 — system-computed,
+      // not whatever an admin might type.
+      expect(Number(row.totalPrice)).toBe(2997);
+    });
+
     it('refuses Report ready until a page is attached, then accepts one page at a time and keeps the last on a finished booking', async () => {
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/staff`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ staffId: careStaffId })
+        .expect(200);
+
       await request(app.getHttpServer())
         .patch(`/v1/staff/lab-bookings/${freshBookingId}/status`)
         .set('Authorization', `Bearer ${staffAccessToken}`)

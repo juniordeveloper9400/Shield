@@ -1,8 +1,9 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, asc, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
+  adminUser,
   appointment,
   chartOfAccount,
   clinic,
@@ -30,6 +31,7 @@ import { availablePlanAllowance, toIsoDate } from '../wallet/wallet-month';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
 import type {
   AddLabReportPagesDto,
+  AssignLabStaffDto,
   BookAppointmentDto,
   BookLabTestDto,
   SendLabBillDto,
@@ -205,6 +207,7 @@ export class BookingService {
         packageName: labPackage.name,
         storeCode: shieldStore.code,
         storeName: shieldStore.name,
+        assignedStaffName: adminUser.name,
         addressPhone: memberAddress.phone,
         house: memberAddress.house,
         area: memberAddress.area,
@@ -223,6 +226,7 @@ export class BookingService {
       .leftJoin(users, eq(users.id, labBooking.memberId))
       .leftJoin(labPackage, eq(labPackage.id, labBooking.labPackageId))
       .leftJoin(shieldStore, eq(shieldStore.id, labBooking.storeId))
+      .leftJoin(adminUser, eq(adminUser.id, labBooking.assignedStaffId))
       .leftJoin(memberAddress, eq(memberAddress.id, labBooking.addressId))
       .leftJoin(labBill, eq(labBill.labBookingId, labBooking.id))
       .where(unscoped ? undefined : eq(labBooking.storeId, storeId!))
@@ -275,7 +279,12 @@ export class BookingService {
       return {
         ...rest,
         code: `LB-${String(r.id).padStart(4, '0')}`,
-        address: [house, area, landmark, city, state, pincode].map((p) => (p ?? '').trim()).filter(Boolean).join(', '),
+        // An admin's address override (see updateLabBookingDetails) always
+        // wins over the member's own saved address — that's the whole
+        // point of it.
+        address:
+          r.addressOverride?.trim() ||
+          [house, area, landmark, city, state, pincode].map((p) => (p ?? '').trim()).filter(Boolean).join(', '),
         patients: patientsByBooking.get(r.id) ?? [],
         reportPages: reportCountByBooking.get(r.id) ?? 0,
         // No app.lab_bill row yet (bill not sent) left-joins to all-null —
@@ -298,6 +307,15 @@ export class BookingService {
   async updateLabBookingStatus(role: AdminRole, storeId: number | null, id: number, dto: UpdateLabBookingStatusDto) {
     const found = await this.getLabBookingOwnedByStaffOrThrow(id, role, storeId);
     assertLegalLabBookingTransition(found.status as LabBookingStatus, dto.status);
+
+    // A home-collection booking needs someone assigned to actually go
+    // collect the sample before it can be confirmed — a store-visit one
+    // has nobody to send, so this never applies to it.
+    if (dto.status === 'CONFIRMED' && found.fulfillmentType === 'HOME_COLLECTION' && found.assignedStaffId == null) {
+      throw new ConflictException({
+        error: { code: 'STAFF_REQUIRED', message: 'Assign a staff member before confirming this home-collection booking' },
+      });
+    }
 
     // "Report ready" tells the member their report is waiting — it must be.
     if (dto.status === 'REPORT_READY' && found.status !== 'REPORT_READY') {
@@ -328,20 +346,92 @@ export class BookingService {
 
   /**
    * The lab's edit of a booking: when it is scheduled for and the note shown
-   * to the member. A blank date clears the schedule. Cancelled bookings, and
-   * dates on a finished (Report ready) one, are left alone.
+   * to the member, plus (since migration 0095) its branch, collection
+   * address and patients — the "operational" fields an admin can correct
+   * after the fact, never the ones the bill prices from directly (unit
+   * price itself stays whatever the package charged; only the headcount,
+   * and so totalPrice, can move, and only by editing patients). A blank
+   * date clears the schedule. Cancelled bookings, and dates on a finished
+   * (Report ready) one, are left alone.
    */
   async updateLabBookingDetails(role: AdminRole, storeId: number | null, bookingId: number, dto: UpdateLabBookingDetailsDto) {
     const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
     if (found.status === 'CANCELLED') return found;
-    await this.db
-      .update(labBooking)
-      .set({
-        note: dto.note,
-        scheduledFor: found.status === 'REPORT_READY' ? found.scheduledFor : dto.scheduledFor ? new Date(dto.scheduledFor) : null,
-        updatedAt: new Date(),
-      })
-      .where(eq(labBooking.id, bookingId));
+
+    let nextStoreId: number | undefined;
+    if (dto.storeId !== undefined) {
+      const labStores = await listLabStores(this.db);
+      if (!labStores.some((s) => s.id === dto.storeId)) {
+        throw new BadRequestException({ error: { code: 'BAD_REQUEST', message: 'That branch is not open for lab bookings.' } });
+      }
+      nextStoreId = dto.storeId;
+    }
+
+    await this.db.transaction(async (tx) => {
+      if (dto.patients) {
+        const ownedPatientIds = dto.patients.map((p) => p.patientId).filter((pid): pid is number => pid !== undefined);
+        if (ownedPatientIds.length > 0) {
+          const owned = await tx
+            .select({ id: patient.id })
+            .from(patient)
+            .where(and(inArray(patient.id, ownedPatientIds), eq(patient.memberId, found.memberId)));
+          if (owned.length !== new Set(ownedPatientIds).size) {
+            throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'One or more patients do not belong to this member' } });
+          }
+        }
+        await tx.delete(labBookingPatient).where(eq(labBookingPatient.labBookingId, bookingId));
+        await tx.insert(labBookingPatient).values(
+          dto.patients.map((p) => ({ labBookingId: bookingId, patientId: p.patientId, name: p.name, age: p.age })),
+        );
+      }
+
+      const patientsCount = dto.patients?.length;
+      await tx
+        .update(labBooking)
+        .set({
+          note: dto.note,
+          scheduledFor: found.status === 'REPORT_READY' ? found.scheduledFor : dto.scheduledFor ? new Date(dto.scheduledFor) : null,
+          ...(nextStoreId !== undefined ? { storeId: nextStoreId } : {}),
+          ...(dto.address !== undefined ? { addressOverride: dto.address.trim() || null } : {}),
+          ...(patientsCount !== undefined
+            ? { patientsCount, totalPrice: (Number(found.unitPrice) * patientsCount).toString() }
+            : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(labBooking.id, bookingId));
+    });
+  }
+
+  /** LAB_TECHNICIAN-role staff at one branch (or every branch when
+   *  [storeCode] is omitted — a Super Admin/Admin/Lab Admin's assignment
+   *  picker, which isn't store-bound) — who a home-collection booking's
+   *  sample can be assigned to. Same shape as commerce's listDeliveryBoys. */
+  async listLabStaff(storeCode?: string) {
+    const conditions = [eq(adminUser.role, 'LAB_TECHNICIAN' as AdminRole), eq(adminUser.isActive, true)];
+    return this.db
+      .select({ id: adminUser.id, name: adminUser.name, storeCode: shieldStore.code })
+      .from(adminUser)
+      .innerJoin(shieldStore, eq(shieldStore.id, adminUser.storeId))
+      .where(storeCode ? and(...conditions, eq(shieldStore.code, storeCode)) : and(...conditions))
+      .orderBy(adminUser.name);
+  }
+
+  /**
+   * Assigns (or clears, passing null) who collects a home-collection
+   * booking's sample — store-scoped like every other lab-booking write
+   * here. A LAB_TECHNICIAN caller may only claim it for themselves or
+   * release it, never hand it to someone else, the same restriction
+   * commerce's assignDeliveryBoy applies to a DELIVERY caller.
+   */
+  async assignLabStaff(role: AdminRole, storeId: number | null, callerId: number, bookingId: number, dto: AssignLabStaffDto) {
+    await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    if (role === 'LAB_TECHNICIAN' && dto.staffId !== null && dto.staffId !== callerId) {
+      throw new ForbiddenException({
+        error: { code: 'FORBIDDEN', message: 'A lab technician login may only claim a booking for itself' },
+      });
+    }
+    await this.db.update(labBooking).set({ assignedStaffId: dto.staffId, updatedAt: new Date() }).where(eq(labBooking.id, bookingId));
+    return { ok: true as const };
   }
 
   /** The pages of one booking's report, in order. */

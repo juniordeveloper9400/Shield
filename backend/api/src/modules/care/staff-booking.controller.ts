@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { BookingService } from './booking.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequireRole, RequireStaff } from '../../common/decorators/require-role.decorator';
@@ -6,11 +6,13 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { RequestSubject } from '../auth/session.types';
 import {
   addLabReportPagesSchema,
+  assignLabStaffSchema,
   sendLabBillSchema,
   updateAppointmentStatusSchema,
   updateLabBookingDetailsSchema,
   updateLabBookingStatusSchema,
   type AddLabReportPagesDto,
+  type AssignLabStaffDto,
   type SendLabBillDto,
   type UpdateAppointmentStatusDto,
   type UpdateLabBookingDetailsDto,
@@ -71,6 +73,22 @@ export class StaffBookingController {
     @Body(new ZodValidationPipe(updateLabBookingDetailsSchema)) dto: UpdateLabBookingDetailsDto,
   ) {
     return this.bookings.updateLabBookingDetails(user.role!, user.storeId ?? null, id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB', 'LAB_TECHNICIAN')
+  @Get('lab-staff')
+  listLabStaff(@Query('storeCode') storeCode?: string) {
+    return this.bookings.listLabStaff(storeCode);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB', 'LAB_TECHNICIAN')
+  @Patch('lab-bookings/:id/staff')
+  assignLabStaff(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(assignLabStaffSchema)) dto: AssignLabStaffDto,
+  ) {
+    return this.bookings.assignLabStaff(user.role!, user.storeId ?? null, Number(user.subjectId), id, dto);
   }
 
   @RequireRole('SUPERADMIN', 'ADMIN', 'LAB', 'LAB_TECHNICIAN')

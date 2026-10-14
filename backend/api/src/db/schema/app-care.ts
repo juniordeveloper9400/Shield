@@ -162,6 +162,15 @@ export const labBooking = appSchema.table('lab_booking', {
    *  `offersLabCollection`. Null for a booking made before this existed, or
    *  whose branch has since been removed. */
   storeId: bigint('store_id', { mode: 'number' }),
+  /** migration 0095 — who collects this booking's sample. Only meaningful
+   *  for a HOME_COLLECTION booking; see BookingService.updateLabBookingStatus's
+   *  own STAFF_REQUIRED gate. References app.admin_user(id). */
+  assignedStaffId: bigint('assigned_staff_id', { mode: 'number' }),
+  /** migration 0095 — an admin's free-text override of the collection
+   *  address for this booking only. Never written back to the member's own
+   *  saved `member_address` row; `''`/null falls back to that row's own
+   *  formatted address. */
+  addressOverride: text('address_override'),
   /** A line from the lab to the member (migration 0052). */
   note: text('note'),
   /** When the report was last attached (migration 0052). */

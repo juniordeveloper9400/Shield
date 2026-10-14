@@ -776,6 +776,8 @@ export function createTestDb() {
       scheduled_for timestamptz,
       address_id bigint REFERENCES app.member_address(id) ON DELETE SET NULL,
       store_id bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
+      assigned_staff_id bigint REFERENCES app.admin_user(id) ON DELETE SET NULL,
+      address_override text,
       note text,
       report_uploaded_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
