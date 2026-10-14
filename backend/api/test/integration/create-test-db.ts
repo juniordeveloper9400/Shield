@@ -246,6 +246,22 @@ export function createTestDb() {
       sort integer NOT NULL DEFAULT 0
     );
 
+    CREATE TABLE app.brand (
+      id bigserial PRIMARY KEY,
+      uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+      name text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX brand_name_lower_idx ON app.brand (lower(name));
+
+    CREATE TABLE app.product_image (
+      id bigserial PRIMARY KEY,
+      product_id bigint NOT NULL REFERENCES app.product(id) ON DELETE CASCADE,
+      image text NOT NULL,
+      sort integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE app.home_banner (
       id bigserial PRIMARY KEY,
       title text,

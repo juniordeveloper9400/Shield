@@ -124,6 +124,27 @@ export const productFaq = appSchema.table('product_faq', {
   sort: integer('sort').notNull().default(0),
 });
 
+// Migration 0085 — the Add/Edit Product form's Brand field, so the same
+// brand reads the same way twice instead of free text drifting ("Cetaphil"
+// vs "cetaphil"). `app.product.brand` itself stays free text, untouched by
+// renaming or deleting an entry here.
+export const brand = appSchema.table('brand', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  uuid: uuid('uuid').notNull().defaultRandom(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Migration 0086 — a product's full image gallery; index 0 is the primary,
+// mirrored onto app.product.image by whoever writes it.
+export const productImage = appSchema.table('product_image', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  productId: bigint('product_id', { mode: 'number' }).notNull(),
+  image: text('image').notNull(),
+  sort: integer('sort').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const homeBanner = appSchema.table('home_banner', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
   title: text('title'),

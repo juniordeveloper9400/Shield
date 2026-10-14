@@ -66,24 +66,81 @@ export const updateBannerSchema = z.object({
 export const setBannerSortSchema = z.object({ sort: z.number().int() });
 export const setBannerActiveSchema = z.object({ isActive: z.boolean() });
 
+const productFaqInputSchema = z.object({
+  question: z.string().default(''),
+  answer: z.string().default(''),
+});
+
+/** Matches shieldweb's `ProductDetailInput` field for field — the list
+ *  fields are one newline-separated textarea each on the console side,
+ *  split into `text[]` server-side (see CatalogueService.writeProductDetail). */
+const productDetailInputSchema = z.object({
+  form: z.string().default(''),
+  manufacturer: z.string().default(''),
+  description: z.string().default(''),
+  ingredients: z.string().default(''),
+  storage: z.string().default(''),
+  highlights: z.string().default(''),
+  benefits: z.string().default(''),
+  directions: z.string().default(''),
+  safety: z.string().default(''),
+  faqs: z.array(productFaqInputSchema).default([]),
+});
+
+const blankDetail = {
+  form: '',
+  manufacturer: '',
+  description: '',
+  ingredients: '',
+  storage: '',
+  highlights: '',
+  benefits: '',
+  directions: '',
+  safety: '',
+  faqs: [] as { question: string; answer: string }[],
+};
+
+/**
+ * Matches shieldweb's `NewProduct` shape field for field (console console
+ * picks a category by slug, not id — resolved server-side, see
+ * CatalogueService.resolveCategoryId). `subcategoryId` is `''` for
+ * "unfiled", same convention `app.product_subcategory` itself uses.
+ */
 export const createProductSchema = z.object({
-  code: z.string().optional(),
-  name: z.string().min(1),
-  pack: z.string().default(''),
-  brand: z.string().optional(),
-  categoryId: z.number().int().positive().optional(),
-  subcategoryId: z.number().int().positive().optional(),
+  code: z.string().trim().default(''),
+  name: z.string().trim().min(1),
+  pack: z.string().trim().default(''),
+  brand: z.string().trim().default(''),
+  categorySlug: z.string().trim().min(1),
+  subcategoryId: z.string().trim().default(''),
   price: z.number().nonnegative(),
   mrp: z.number().nonnegative(),
-  discountLabel: z.string().optional(),
-  iconName: z.string().optional(),
-  image: z.string().optional(),
+  discountLabel: z.string().trim().default(''),
   isPrescriptionOnly: z.boolean().default(false),
-  status: z.enum(['ACTIVE', 'INACTIVE']).default('ACTIVE'),
   stockQuantity: z.number().nonnegative().default(0),
+  status: z.enum(['active', 'inactive']).default('active'),
+  /** A resized JPEG data URI, or '' for no image. */
+  image: z.string().default(''),
+  /** Extra gallery images beyond the primary, written to `app.product_image`. */
+  extraImages: z.array(z.string()).default([]),
+  isPopular: z.boolean().default(false),
+  isDeal: z.boolean().default(false),
+  isOfferOfDay: z.boolean().default(false),
+  detail: productDetailInputSchema.default(blankDetail),
 });
 
 export const updateProductSchema = createProductSchema.partial();
+
+export const setProductStatusSchema = z.object({ status: z.enum(['active', 'inactive']) });
+
+export const updateProductSectionsSchema = z.object({
+  isPopular: z.boolean(),
+  isDeal: z.boolean(),
+  isOfferOfDay: z.boolean(),
+});
+
+export const createBrandSchema = z.object({ name: z.string().trim().min(1) });
+export const renameBrandSchema = z.object({ name: z.string().trim().min(1) });
 
 /** Shared by createStoreSchema/updateStoreSchema — matches shieldweb's
  *  `Store`/`NewStore` shape (shieldweb/src/types/index.ts) field for field,
@@ -146,6 +203,10 @@ export type CreateCategoryDto = z.infer<typeof createCategorySchema>;
 export type UpdateCategoryDto = z.infer<typeof updateCategorySchema>;
 export type CreateProductDto = z.infer<typeof createProductSchema>;
 export type UpdateProductDto = z.infer<typeof updateProductSchema>;
+export type SetProductStatusDto = z.infer<typeof setProductStatusSchema>;
+export type UpdateProductSectionsDto = z.infer<typeof updateProductSectionsSchema>;
+export type CreateBrandDto = z.infer<typeof createBrandSchema>;
+export type RenameBrandDto = z.infer<typeof renameBrandSchema>;
 export type CreateReviewVideoDto = z.infer<typeof createReviewVideoSchema>;
 export type UpdateReviewVideoDto = z.infer<typeof updateReviewVideoSchema>;
 export type CreateReviewVideoMediaDto = z.infer<typeof createReviewVideoMediaSchema>;

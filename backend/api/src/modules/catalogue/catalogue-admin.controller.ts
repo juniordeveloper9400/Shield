@@ -5,42 +5,50 @@ import { RequireRole, RequireStaff } from '../../common/decorators/require-role.
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   createBannerSchema,
+  createBrandSchema,
   createCategorySchema,
   createProductSchema,
   createReviewVideoSchema,
   createReviewVideoMediaSchema,
   createStoreSchema,
   createSubcategorySchema,
+  renameBrandSchema,
   reviewVideoChunkSchema,
   setBannerActiveSchema,
   setBannerSortSchema,
   setCategoryActiveSchema,
   setCategorySortSchema,
+  setProductStatusSchema,
   setStoreActiveSchema,
   setStoreOffersLabSchema,
   updateBannerSchema,
   updateCategorySchema,
   updateProductSchema,
+  updateProductSectionsSchema,
   updateReviewVideoSchema,
   updateStoreSchema,
   updateSubcategorySchema,
   type CreateBannerDto,
+  type CreateBrandDto,
   type CreateCategoryDto,
   type CreateProductDto,
   type CreateReviewVideoDto,
   type CreateReviewVideoMediaDto,
   type CreateStoreDto,
   type CreateSubcategoryDto,
+  type RenameBrandDto,
   type ReviewVideoChunkDto,
   type SetBannerActiveDto,
   type SetBannerSortDto,
   type SetCategoryActiveDto,
   type SetCategorySortDto,
+  type SetProductStatusDto,
   type SetStoreActiveDto,
   type SetStoreOffersLabDto,
   type UpdateBannerDto,
   type UpdateCategoryDto,
   type UpdateProductDto,
+  type UpdateProductSectionsDto,
   type UpdateReviewVideoDto,
   type UpdateSubcategoryDto,
   type UpdateStoreDto,
@@ -172,17 +180,100 @@ export class CatalogueAdminController {
     return this.catalogue.deleteSubcategory(id);
   }
 
+  // ---- Products ---------------------------------------------------------
+  // 'products' in shieldweb/src/config/permissions.ts is superadmin/admin/
+  // pharmacy only — restricted here too, overriding the controller's
+  // class-wide @RequireStaff().
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Get('products')
+  listProductsForStaff() {
+    return this.catalogue.listProductsForStaff();
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Get('products/:id/detail')
+  getProductDetailForStaff(@Param('id', ParseIntPipe) id: number) {
+    return this.catalogue.getProductDetailForStaff(id);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
   @Post('products')
   createProduct(@Body(new ZodValidationPipe(createProductSchema)) dto: CreateProductDto) {
     return this.catalogue.createProduct(dto);
   }
 
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
   @Patch('products/:id')
   updateProduct(
     @Param('id', ParseIntPipe) id: number,
     @Body(new ZodValidationPipe(updateProductSchema)) dto: UpdateProductDto,
   ) {
     return this.catalogue.updateProduct(id, dto);
+  }
+
+  /** The console's own "Edit" page — core fields plus detail/FAQs/gallery,
+   *  always together, unlike the plain partial PATCH above. */
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Put('products/:id')
+  updateProductFull(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(createProductSchema)) dto: CreateProductDto,
+  ) {
+    return this.catalogue.updateProductFull(id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Delete('products/:id')
+  deleteProduct(@Param('id', ParseIntPipe) id: number) {
+    return this.catalogue.deleteProductForStaff(id);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Patch('products/:id/status')
+  setProductStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(setProductStatusSchema)) dto: SetProductStatusDto,
+  ) {
+    return this.catalogue.setProductStatus(id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Patch('products/:id/sections')
+  updateProductSections(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateProductSectionsSchema)) dto: UpdateProductSectionsDto,
+  ) {
+    return this.catalogue.updateProductSections(id, dto);
+  }
+
+  // ---- Brands -------------------------------------------------------------
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Get('brands')
+  listBrands() {
+    return this.catalogue.listBrands();
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Post('brands')
+  createBrand(@Body(new ZodValidationPipe(createBrandSchema)) dto: CreateBrandDto) {
+    return this.catalogue.createBrand(dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Patch('brands/:id')
+  renameBrand(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(renameBrandSchema)) dto: RenameBrandDto,
+  ) {
+    return this.catalogue.renameBrand(id, dto);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'PHARMACY')
+  @Delete('brands/:id')
+  deleteBrand(@Param('id', ParseIntPipe) id: number) {
+    return this.catalogue.deleteBrand(id);
   }
 
   // ---- Banners --------------------------------------------------------

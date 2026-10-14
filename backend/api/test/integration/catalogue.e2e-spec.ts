@@ -706,4 +706,200 @@ describe('Catalogue (e2e)', () => {
         .expect(404);
     });
   });
+
+  describe('staff product management (its own fresh fixture — the seeded productId above is shared and heavily reused elsewhere)', () => {
+    let staffCategoryId: number;
+
+    beforeAll(async () => {
+      const [cat] = await db
+        .insert(productCategory)
+        .values({ slug: 'wellness', title: 'Wellness', tabLabel: 'Wellness' })
+        .returning();
+      staffCategoryId = cat.id;
+    });
+
+    it('lists every product for staff regardless of status, with category/subcategory names joined in', async () => {
+      const [sub] = await db
+        .insert(productSubcategory)
+        .values({ categoryId: staffCategoryId, label: 'Vitamins' })
+        .returning();
+      const [inactive] = await db
+        .insert(product)
+        .values({ name: 'Discontinued Syrup', categoryId: staffCategoryId, subcategoryId: sub.id, status: 'INACTIVE' })
+        .returning();
+
+      const res = await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+
+      expect(res.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: inactive.id,
+            status: 'INACTIVE',
+            categorySlug: 'wellness',
+            subcategoryLabel: 'Vitamins',
+          }),
+        ]),
+      );
+    });
+
+    it('creates a product by category slug, with its detail page, FAQs and image gallery in one call', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({
+          name: 'Vitamin D3 Drops',
+          categorySlug: 'wellness',
+          price: 199,
+          mrp: 249,
+          image: 'data:image/png;base64,primary',
+          extraImages: ['data:image/png;base64,extra1'],
+          detail: {
+            description: 'Daily vitamin D supplement.',
+            highlights: 'Boosts immunity\nSupports bone health',
+            faqs: [{ question: 'How much per day?', answer: 'One drop daily.' }],
+          },
+        })
+        .expect(201);
+      expect(created.body.status).toBe('ACTIVE');
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/staff/catalogue/products/${created.body.id}/detail`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(detail.body).toMatchObject({
+        description: 'Daily vitamin D supplement.',
+        highlights: 'Boosts immunity\nSupports bone health',
+        hasDetail: true,
+        faqs: [{ question: 'How much per day?', answer: 'One drop daily.' }],
+        extraImages: ['data:image/png;base64,extra1'],
+      });
+    });
+
+    it('rejects an unknown category slug', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Mystery Item', categorySlug: 'no-such-category', price: 10, mrp: 10 })
+        .expect(400);
+    });
+
+    it('rewrites a product in full via PUT — core fields, detail and gallery all replaced together', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Zinc Tablets', categorySlug: 'wellness', price: 50, mrp: 60, detail: { description: 'Original.' } })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .put(`/v1/staff/catalogue/products/${created.body.id}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({
+          name: 'Zinc Tablets (50mg)',
+          categorySlug: 'wellness',
+          price: 55,
+          mrp: 65,
+          detail: { description: 'Replaced.' },
+        })
+        .expect(200);
+
+      const detail = await request(app.getHttpServer())
+        .get(`/v1/staff/catalogue/products/${created.body.id}/detail`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(detail.body.description).toBe('Replaced.');
+    });
+
+    it('sets a product inactive, then flips its home-feed sections', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Omega 3 Capsules', categorySlug: 'wellness', price: 300, mrp: 350 })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/products/${created.body.id}/status`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ status: 'inactive' })
+        .expect(200);
+
+      const sections = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/products/${created.body.id}/sections`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ isPopular: true, isDeal: true, isOfferOfDay: false })
+        .expect(200);
+      expect(sections.body).toMatchObject({ status: 'INACTIVE', isPopular: true, isDeal: true, isOfferOfDay: false });
+    });
+
+    it('deletes a product, cascading its detail/FAQ/gallery rows with it', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Throwaway Item', categorySlug: 'wellness', price: 1, mrp: 1 })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/catalogue/products/${created.body.id}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get(`/v1/staff/catalogue/products/${created.body.id}/detail`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(404);
+    });
+
+    it('registers a brand case-insensitively (no duplicate on a second, differently-cased name), renames and deletes it', async () => {
+      const first = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/brands')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Cetaphil' })
+        .expect(201);
+
+      const second = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/brands')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'cetaphil' })
+        .expect(201);
+      expect(second.body.id).toBe(first.body.id);
+
+      const renamed = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/brands/${first.body.id}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Cetaphil Dermatology' })
+        .expect(200);
+      expect(renamed.body.name).toBe('Cetaphil Dermatology');
+
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/catalogue/brands/${first.body.id}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+
+      const list = await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/brands')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(list.body).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: first.body.id })]));
+    });
+
+    it('rejects a LAB role from managing products — not in its module list', async () => {
+      await db.insert(adminUser).values({
+        loginId: 'lab-products-check@example.com',
+        name: 'Lab Staff',
+        passwordHash: await hash('correct-horse-battery-staple', 4),
+        role: 'LAB',
+      });
+      const login = await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ loginId: 'lab-products-check@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .expect(403);
+    });
+  });
 });

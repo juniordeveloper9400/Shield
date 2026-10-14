@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   Logger,
@@ -7,6 +8,7 @@ import {
 import { and, asc, desc, eq, gt, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
+  brand,
   customerReviewVideo,
   homeBanner,
   membershipTier,
@@ -16,6 +18,7 @@ import {
   productCategory,
   productDetail,
   productFaq,
+  productImage,
   productSubcategory,
   promo,
   shieldStore,
@@ -24,15 +27,19 @@ import {
 import { CacheService } from '../../cache/cache.service';
 import type {
   CreateBannerDto,
+  CreateBrandDto,
   CreateCategoryDto,
   CreateProductDto,
   CreateReviewVideoDto,
   CreateStoreDto,
   CreateSubcategoryDto,
   ListProductsQuery,
+  RenameBrandDto,
+  SetProductStatusDto,
   UpdateBannerDto,
   UpdateCategoryDto,
   UpdateProductDto,
+  UpdateProductSectionsDto,
   UpdateReviewVideoDto,
   UpdateStoreDto,
   UpdateSubcategoryDto,
@@ -422,17 +429,167 @@ export class CatalogueService {
     });
   }
 
+/** `app.product.category_id` by slug — the console picks a category by
+   *  slug (the same value its dropdowns are keyed on), not the bigint id
+   *  only the DB knows. */
+  private async resolveCategoryId(slug: string): Promise<number> {
+    const [row] = await this.db.select({ id: productCategory.id }).from(productCategory).where(eq(productCategory.slug, slug)).limit(1);
+    if (!row) throw new BadRequestException({ error: { code: 'BAD_REQUEST', message: `Unknown category "${slug}"` } });
+    return row.id;
+  }
+
+  /** Writes `app.product_detail` + `app.product_faq` for a product id —
+   *  shared by createProduct and updateProduct, same upsert-then-replace
+   *  shape shieldweb's own direct-SQL version used. */
+  private async writeProductDetail(productId: number, d: CreateProductDto['detail']): Promise<void> {
+    const lines = (value: string) => value.split('\n').map((line) => line.trim()).filter(Boolean);
+    await this.db
+      .insert(productDetail)
+      .values({
+        productId,
+        form: d.form.trim(),
+        manufacturer: d.manufacturer.trim(),
+        description: d.description.trim(),
+        ingredients: d.ingredients.trim(),
+        storage: d.storage.trim(),
+        highlights: lines(d.highlights),
+        benefits: lines(d.benefits),
+        directions: lines(d.directions),
+        safety: lines(d.safety),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: productDetail.productId,
+        set: {
+          form: d.form.trim(),
+          manufacturer: d.manufacturer.trim(),
+          description: d.description.trim(),
+          ingredients: d.ingredients.trim(),
+          storage: d.storage.trim(),
+          highlights: lines(d.highlights),
+          benefits: lines(d.benefits),
+          directions: lines(d.directions),
+          safety: lines(d.safety),
+          updatedAt: new Date(),
+        },
+      });
+
+    await this.db.delete(productFaq).where(eq(productFaq.productId, productId));
+    const faqs = d.faqs.filter((f) => f.question.trim() && f.answer.trim());
+    if (faqs.length > 0) {
+      await this.db
+        .insert(productFaq)
+        .values(faqs.map((f, i) => ({ productId, question: f.question.trim(), answer: f.answer.trim(), sort: i })));
+    }
+  }
+
+  /** Replaces a product's whole image gallery — index 0 is the primary,
+   *  mirrored onto `app.product.image` by the caller. */
+  private async writeProductImages(productId: number, images: string[]): Promise<void> {
+    await this.db.delete(productImage).where(eq(productImage.productId, productId));
+    if (images.length > 0) {
+      await this.db.insert(productImage).values(images.map((image, i) => ({ productId, image, sort: i })));
+    }
+  }
+
+  // ---- Products: staff ----------------------------------------------------
+  // Everything below is the console's own catalogue management — every
+  // product regardless of status, plus the detail/gallery/brand writes
+  // [listProducts]/[getProduct] above (member-facing, cached, ACTIVE-only)
+  // never needed.
+
+  /** Every product, any status, for the console's own table — joined with
+   *  its category/subcategory names the way the old direct-SQL version's
+   *  own LEFT JOINs did. Not cached: an admin editing a row expects to see
+   *  the edit reflected immediately, not after TTL.SHORT. */
+  async listProductsForStaff() {
+    const rows = await this.db
+      .select({
+        id: product.id,
+        code: product.code,
+        name: product.name,
+        pack: product.pack,
+        brand: product.brand,
+        categorySlug: productCategory.slug,
+        categoryTitle: productCategory.title,
+        subcategoryId: productSubcategory.id,
+        subcategoryLabel: productSubcategory.label,
+        price: product.price,
+        mrp: product.mrp,
+        discountLabel: product.discountLabel,
+        isPrescriptionOnly: product.isPrescriptionOnly,
+        status: product.status,
+        stockQuantity: product.stockQuantity,
+        image: product.image,
+        isPopular: product.isPopular,
+        isDeal: product.isDeal,
+        isOfferOfDay: product.isOfferOfDay,
+        createdAt: product.createdAt,
+      })
+      .from(product)
+      .leftJoin(productCategory, eq(productCategory.id, product.categoryId))
+      .leftJoin(productSubcategory, eq(productSubcategory.id, product.subcategoryId))
+      .orderBy(asc(product.name));
+    return rows;
+  }
+
   async createProduct(dto: CreateProductDto) {
+    const categoryId = await this.resolveCategoryId(dto.categorySlug);
     const [created] = await this.db
       .insert(product)
-      .values({ ...dto, price: dto.price.toString(), mrp: dto.mrp.toString(), stockQuantity: dto.stockQuantity.toString() })
+      .values({
+        code: dto.code || null,
+        name: dto.name,
+        pack: dto.pack,
+        brand: dto.brand || null,
+        categoryId,
+        subcategoryId: dto.subcategoryId ? Number(dto.subcategoryId) : null,
+        price: dto.price.toString(),
+        mrp: dto.mrp.toString(),
+        discountLabel: dto.discountLabel,
+        isPrescriptionOnly: dto.isPrescriptionOnly,
+        status: dto.status === 'active' ? 'ACTIVE' : 'INACTIVE',
+        stockQuantity: dto.stockQuantity.toString(),
+        image: dto.image || null,
+        isPopular: dto.isPopular,
+        isDeal: dto.isDeal,
+        isOfferOfDay: dto.isOfferOfDay,
+      })
       .returning();
+
+    // Best-effort, same as shieldweb's own direct-SQL version: a failure
+    // here should not lose the product row that was just created.
+    try {
+      await this.writeProductDetail(created.id, dto.detail);
+    } catch (err) {
+      this.logger.error(`Product ${created.id} created, but its detail page failed to save`, err as Error);
+    }
+    const gallery = [dto.image, ...dto.extraImages].filter((img) => img.trim());
+    if (gallery.length > 0) {
+      try {
+        await this.writeProductImages(created.id, gallery);
+      } catch (err) {
+        this.logger.error(`Product ${created.id} created, but its image gallery failed to save`, err as Error);
+      }
+    }
+
     await this.cache.invalidate('catalogue:products:*');
     return created;
   }
 
+  /** Rewrites every admin-editable field of a product — core fields plus
+   *  the detail page and FAQs, always together (the console's own "Edit"
+   *  page always submits both), unlike [updateProduct]'s narrower partial
+   *  patch. */
+  async updateProductFull(id: number, dto: CreateProductDto) {
+    await this.updateProduct(id, dto);
+    await this.writeProductDetail(id, dto.detail);
+    const gallery = [dto.image, ...dto.extraImages].filter((img) => img.trim());
+    await this.writeProductImages(id, gallery);
+  }
+
   async updateProduct(id: number, dto: UpdateProductDto) {
-    const { price, mrp, stockQuantity, ...rest } = dto;
+    const { price, mrp, stockQuantity, categorySlug, subcategoryId, status, detail: _detail, extraImages: _extraImages, ...rest } = dto;
     const [updated] = await this.db
       .update(product)
       .set({
@@ -440,12 +597,112 @@ export class CatalogueService {
         ...(price !== undefined ? { price: price.toString() } : {}),
         ...(mrp !== undefined ? { mrp: mrp.toString() } : {}),
         ...(stockQuantity !== undefined ? { stockQuantity: stockQuantity.toString() } : {}),
+        ...(categorySlug !== undefined ? { categoryId: await this.resolveCategoryId(categorySlug) } : {}),
+        ...(subcategoryId !== undefined ? { subcategoryId: subcategoryId ? Number(subcategoryId) : null } : {}),
+        ...(status !== undefined ? { status: status === 'active' ? 'ACTIVE' : 'INACTIVE' } : {}),
       })
       .where(eq(product.id, id))
       .returning();
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
     await this.cache.invalidate('catalogue:products:*', `catalogue:product:${id}`);
     return updated;
+  }
+
+  /** The detail-page content for a product, with every list field joined
+   *  back into one newline-separated block for the console's own textarea
+   *  fields — shieldweb's own `getProductDetail` shape. */
+  async getProductDetailForStaff(id: number) {
+    const [row] = await this.db.select().from(product).where(eq(product.id, id)).limit(1);
+    if (!row) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+    const [detail] = await this.db.select().from(productDetail).where(eq(productDetail.productId, id)).limit(1);
+    const faqs = await this.db.select().from(productFaq).where(eq(productFaq.productId, id)).orderBy(asc(productFaq.sort));
+    const images = await this.db.select().from(productImage).where(eq(productImage.productId, id)).orderBy(asc(productImage.sort));
+    const hasDetail = detail != null && (Boolean(detail.form) || Boolean(detail.manufacturer) || Boolean(detail.description) || faqs.length > 0);
+    return {
+      form: detail?.form ?? '',
+      manufacturer: detail?.manufacturer ?? '',
+      description: detail?.description ?? '',
+      ingredients: detail?.ingredients ?? '',
+      storage: detail?.storage ?? '',
+      highlights: (detail?.highlights ?? []).join('\n'),
+      benefits: (detail?.benefits ?? []).join('\n'),
+      directions: (detail?.directions ?? []).join('\n'),
+      safety: (detail?.safety ?? []).join('\n'),
+      faqs: faqs.map((f) => ({ question: f.question, answer: f.answer })),
+      hasDetail,
+      // Index 0 of the gallery is always the primary image (mirrored onto
+      // app.product.image already) — "extra" means everything past it.
+      extraImages: images.slice(1).map((i) => i.image),
+    };
+  }
+
+  /** Removes a product from the catalogue. Order lines keep their text
+   *  copy (`order_line.product_id` is `ON DELETE SET NULL`); the detail
+   *  page, FAQs and gallery all cascade with it. */
+  async deleteProductForStaff(id: number) {
+    const [deleted] = await this.db.delete(product).where(eq(product.id, id)).returning();
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+    await this.cache.invalidate('catalogue:products:*', `catalogue:product:${id}`);
+  }
+
+  async setProductStatus(id: number, dto: SetProductStatusDto) {
+    const [updated] = await this.db
+      .update(product)
+      .set({ status: dto.status === 'active' ? 'ACTIVE' : 'INACTIVE' })
+      .where(eq(product.id, id))
+      .returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+    await this.cache.invalidate('catalogue:products:*', `catalogue:product:${id}`);
+    return updated;
+  }
+
+  /** Which home-feed rows a product appears in — Popular Items, Deals You
+   *  Love, Offer of the Day. The app picks the change up on its next
+   *  catalogue load. */
+  async updateProductSections(id: number, dto: UpdateProductSectionsDto) {
+    const [updated] = await this.db.update(product).set(dto).where(eq(product.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+    await this.cache.invalidate('catalogue:products:*', `catalogue:product:${id}`);
+    return updated;
+  }
+
+  // ---- Brands -------------------------------------------------------------
+  // The Add/Edit Product form's Brand field picks from this instead of free
+  // text, so the same brand reads the same way twice. `app.product.brand`
+  // itself stays free text either way — renaming/deleting an entry here
+  // never touches products already saved with that brand.
+
+  async listBrands() {
+    return this.db.select().from(brand).orderBy(asc(brand.name));
+  }
+
+  /** Registers a new brand, or returns the existing one — matched
+   *  case-insensitively, so "Cetaphil" typed twice is one brand, not two.
+   *  Same pre-check-then-catch shape as createCategory's own slug
+   *  equivalent, for the same race-safety reason. */
+  async createBrand(dto: CreateBrandDto) {
+    const trimmed = dto.name.trim();
+    const [existing] = await this.db.select().from(brand).where(sql`lower(${brand.name}) = lower(${trimmed})`).limit(1);
+    if (existing) return existing;
+    try {
+      const [created] = await this.db.insert(brand).values({ name: trimmed }).returning();
+      return created;
+    } catch {
+      const [raceWinner] = await this.db.select().from(brand).where(sql`lower(${brand.name}) = lower(${trimmed})`).limit(1);
+      if (raceWinner) return raceWinner;
+      throw new BadRequestException({ error: { code: 'BAD_REQUEST', message: 'Could not create this brand.' } });
+    }
+  }
+
+  async renameBrand(id: number, dto: RenameBrandDto) {
+    const [updated] = await this.db.update(brand).set({ name: dto.name.trim() }).where(eq(brand.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Brand not found' } });
+    return updated;
+  }
+
+  /** Removes a brand from the list. Products keep their brand text as-is. */
+  async deleteBrand(id: number) {
+    await this.db.delete(brand).where(eq(brand.id, id));
   }
 
   // ---- Content: banners, promos ------------------------------------------
