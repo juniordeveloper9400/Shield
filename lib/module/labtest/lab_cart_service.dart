@@ -84,6 +84,20 @@ class LabCartService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The member's preferred date for collection/visit, from the checkout's
+  /// "Preferred date" row — optional. The lab can still set or change it
+  /// from the admin console's own Schedule section regardless.
+  DateTime? _scheduledFor;
+
+  DateTime? get scheduledFor => _scheduledFor;
+
+  /// Records (or clears, passing null) the member's own pick from the
+  /// checkout's "Preferred date" row.
+  void chooseScheduledFor(DateTime? date) {
+    _scheduledFor = date;
+    notifyListeners();
+  }
+
   List<LabBooking> get bookings => List.unmodifiable(_bookings);
 
   bool get isEmpty => _bookings.isEmpty;
@@ -161,6 +175,7 @@ class LabCartService extends ChangeNotifier {
     _bookings.clear();
     _chosenStoreId = null;
     _fulfillmentType = LabFulfillmentType.homeCollection;
+    _scheduledFor = null;
     notifyListeners();
   }
 

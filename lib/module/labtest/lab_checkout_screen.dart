@@ -111,6 +111,7 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
         address: needsAddress ? AddressBook.instance.deliverTo : null,
         storeCode: cart.store?.id,
         fulfillmentType: cart.fulfillmentType,
+        scheduledFor: cart.scheduledFor,
         bookings: bookings,
       ),
     );
@@ -178,6 +179,8 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
                 const SizedBox(height: 12),
               ],
               LabBranchRow(),
+              const SizedBox(height: 12),
+              const LabScheduleRow(),
               const SizedBox(height: 12),
               LabBillCard(),
               const SizedBox(height: 12),

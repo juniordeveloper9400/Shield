@@ -216,6 +216,22 @@ void main() {
         null,
       );
     });
+
+    test('a preferred date is unset by default, settable and clearable, and reset on clear()', () {
+      expect(LabCartService.instance.scheduledFor, null);
+
+      final date = DateTime(2026, 11, 3);
+      LabCartService.instance.chooseScheduledFor(date);
+      expect(LabCartService.instance.scheduledFor, date);
+
+      LabCartService.instance.chooseScheduledFor(null);
+      expect(LabCartService.instance.scheduledFor, null);
+
+      LabCartService.instance.chooseScheduledFor(date);
+      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.clear();
+      expect(LabCartService.instance.scheduledFor, null);
+    });
   });
 
   group('the patient sheet', () {

@@ -527,6 +527,7 @@ class BackendOrderRepository {
     Address? address,
     String? storeCode,
     LabFulfillmentType fulfillmentType = LabFulfillmentType.homeCollection,
+    DateTime? scheduledFor,
   }) async {
     if (!BackendHttp.isConfigured || bookings.isEmpty) {
       return;
@@ -570,6 +571,7 @@ class BackendOrderRepository {
             if (addressId != null) 'addressId': addressId,
             if (storeId != null) 'storeId': storeId,
             'fulfillmentType': fulfillmentType.apiValue,
+            if (scheduledFor != null) 'scheduledFor': scheduledFor.toUtc().toIso8601String(),
           },
         );
       } catch (error) {

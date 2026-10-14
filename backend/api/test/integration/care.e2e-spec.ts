@@ -349,6 +349,23 @@ describe('Care Services (e2e)', () => {
     expect(row.fulfillmentType).toBe('STORE_VISIT');
   });
 
+  it('a member-chosen preferred date reaches the staff list — the admin console then shows it pre-filled, not blank', async () => {
+    const preferred = new Date(Date.now() + 5 * 86400000).toISOString();
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/lab-bookings')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ labPackageId, patients: [{ name: 'Someone' }], scheduledFor: preferred })
+      .expect(201);
+    expect(new Date(res.body.scheduledFor).toISOString()).toBe(preferred);
+
+    const staffList = await request(app.getHttpServer())
+      .get('/v1/staff/lab-bookings')
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+    const row = staffList.body.find((b: { id: number }) => b.id === res.body.id);
+    expect(new Date(row.scheduledFor).toISOString()).toBe(preferred);
+  });
+
   it('books into a branch the member chose, refusing one not open for lab', async () => {
     const refused = await request(app.getHttpServer())
       .post('/v1/member/lab-bookings')
