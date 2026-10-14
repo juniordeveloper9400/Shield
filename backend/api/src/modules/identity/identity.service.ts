@@ -376,8 +376,10 @@ export class IdentityService {
         lastLoginAt: users.lastLoginAt,
         homeStoreCode: shieldStore.code,
         homeStoreName: shieldStore.name,
+        agentId: agent.id,
         agentCode: agent.code,
         agentLevel: agent.level,
+        investorId: investor.id,
         investorCode: investor.code,
       })
       .from(users)
@@ -400,8 +402,10 @@ export class IdentityService {
         lastLoginAt: users.lastLoginAt,
         homeStoreCode: shieldStore.code,
         homeStoreName: shieldStore.name,
+        agentId: agent.id,
         agentCode: agent.code,
         agentLevel: agent.level,
+        investorId: investor.id,
         investorCode: investor.code,
       })
       .from(users)

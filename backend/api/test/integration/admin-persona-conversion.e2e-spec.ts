@@ -326,16 +326,22 @@ describe('Admin persona conversion (e2e)', () => {
       .expect(200);
     expect(list.body).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ id: plainMember.id, agentCode: null }),
+        expect.objectContaining({ id: plainMember.id, agentCode: null, agentId: null }),
         expect.objectContaining({ id: agentMember.id, agentLevel: 'DISTRICT' }),
       ]),
     );
+    const listed = list.body.find((u: { id: number }) => u.id === agentMember.id);
+    // app.agent.id (the ledger's own subject_id for this person) — distinct
+    // from the member id above; LedgerPage's own per-person picker reads
+    // this to tell an agent's accounts apart from their member account.
+    expect(listed.agentId).toBeGreaterThan(0);
 
     const single = await request(app.getHttpServer())
       .get(`/v1/staff/users/${agentMember.id}`)
       .set('Authorization', `Bearer ${superAdminToken}`)
       .expect(200);
     expect(single.body.agentLevel).toBe('DISTRICT');
+    expect(single.body.agentId).toBe(listed.agentId);
   });
 
   it('returns the full member detail — profile fields, patients and addresses', async () => {
