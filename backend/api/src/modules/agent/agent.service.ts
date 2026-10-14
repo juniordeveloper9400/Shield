@@ -23,12 +23,15 @@ import { assertApprovalOtp } from './withdrawal-otp';
 import type { AgentLevel } from './session-types';
 import type {
   AdminConvertToAgentDto,
+  ApproveAgentRequestDto,
   LinkCustomerDto,
   MoveEarningsToWalletDto,
   RejectAgentRequestDto,
   RequestWithdrawalDto,
   ResolveWithdrawalDto,
+  SetAgentActiveDto,
   SubmitAgentRequestDto,
+  UpdateAgentPositionDto,
 } from './dto';
 
 type GeoLevel = Exclude<AgentLevel, 'NATIONAL'>;
@@ -118,8 +121,27 @@ export class AgentService {
 
   // ---- Staff: approval queue ------------------------------------------------
 
+  /** Every row, joined with whichever parent agent the recruit/recruiter
+   *  suggested — shieldweb's own `PendingAgent.parentCode`/`parentName`,
+   *  shown on both the queue list and the detail/approve screen. */
+  private pendingRequestsQuery() {
+    const parent = alias(agent, 'parent_agent');
+    return this.db
+      .select({ ...getTableColumns(agentRequest), parentCode: parent.code, parentName: parent.name })
+      .from(agentRequest)
+      .leftJoin(parent, eq(parent.id, agentRequest.parentAgentId));
+  }
+
   async listPendingRequests() {
-    return this.db.select().from(agentRequest).where(eq(agentRequest.status, 'PENDING')).orderBy(agentRequest.createdAt);
+    return this.pendingRequestsQuery().where(eq(agentRequest.status, 'PENDING')).orderBy(agentRequest.createdAt);
+  }
+
+  async getPendingRequest(requestId: number) {
+    const [found] = await this.pendingRequestsQuery()
+      .where(and(eq(agentRequest.id, requestId), eq(agentRequest.status, 'PENDING')))
+      .limit(1);
+    if (!found) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Agent request not found' } });
+    return found;
   }
 
   /**
@@ -128,8 +150,16 @@ export class AgentService {
    * codebase, the two invariants that are currently violated in production:
    *   1. at most one APPROVED agent at level NATIONAL, ever.
    *   2. every non-NATIONAL agent occupies a real geo slot for its level.
+   *
+   * [overrides], when given, let the reviewer confirm a *different*
+   * level/parent/position than what the recruit originally requested — the
+   * console's own approval screen offers exactly this, most often to place
+   * someone correctly when the recruiter picked the wrong tier. Each field
+   * left undefined falls back to the request's own stored value; every
+   * invariant above is checked against the final, possibly-overridden
+   * values, never the request's original ones.
    */
-  async approveRequest(requestId: number) {
+  async approveRequest(requestId: number, overrides?: ApproveAgentRequestDto) {
     return this.db.transaction(async (tx) => {
       const [req] = await tx.select().from(agentRequest).where(eq(agentRequest.id, requestId)).limit(1);
       if (!req) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Agent request not found' } });
@@ -170,41 +200,55 @@ export class AgentService {
       }
       const memberId = member.id;
 
-      if (req.requestedLevel === 'NATIONAL') {
+      const level = overrides?.level ?? req.requestedLevel;
+      const area = overrides?.area ?? req.requestedArea;
+      // areaId is the one field the console only sends when the level
+      // actually changed from what was requested — omitted (undefined)
+      // falls back to the request's own requestedAreaId.
+      const areaId = overrides?.areaId ?? req.requestedAreaId;
+
+      if (level === 'NATIONAL') {
         await this.assertNationalSlotAvailable(tx);
       } else {
-        if (req.requestedLevel === 'REGION') {
+        if (level === 'REGION') {
           await this.assertRegionSlotAvailable(tx);
         }
-        if (!req.requestedAreaId) {
-          throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'requestedAreaId is required for this level' } });
+        if (!areaId) {
+          throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'areaId is required for this level' } });
         }
-        const validSlot = await this.geoSlotExists(tx, req.requestedLevel as GeoLevel, req.requestedAreaId);
+        const validSlot = await this.geoSlotExists(tx, level as GeoLevel, areaId);
         if (!validSlot) {
           throw new ForbiddenException({
-            error: {
-              code: 'FORBIDDEN',
-              message: `requestedAreaId does not resolve to a real ${req.requestedLevel} slot`,
-            },
+            error: { code: 'FORBIDDEN', message: `areaId does not resolve to a real ${level} slot` },
           });
         }
         // A named slot holds exactly one approved agent — the same rule the
         // admin console's own direct-conversion action (adminConvertToAgent
         // below) enforces; this path used to skip it entirely.
-        await this.assertAreaSlotFree(tx, req.requestedAreaId);
+        await this.assertAreaSlotFree(tx, areaId);
       }
+
+      // An admin who leaves "Parent agent" at "(top of tree)" — sent as
+      // null, same convention adminConvertToAgent uses — almost always
+      // means "I haven't thought about it", not "this agent truly reports
+      // to nobody": derive the geographically correct one instead of
+      // taking that as a deliberate choice. An explicit pick always wins.
+      const parentId = overrides?.parentId ?? (await this.deriveParentAgentId(tx, level, areaId));
+
+      const code =
+        (await this.agentCodeForSlot(tx, level, areaId, memberId)) ?? `SHD-${level.slice(0, 3)}-${Date.now().toString(36).toUpperCase()}`;
 
       const [createdAgent] = await tx
         .insert(agent)
         .values({
           memberId,
-          code: `SHD-${req.requestedLevel.slice(0, 3)}-${Date.now().toString(36).toUpperCase()}`,
+          code,
           name: req.name,
           phone: req.phone,
-          level: req.requestedLevel,
-          parentId: req.parentAgentId,
-          area: req.requestedArea,
-          areaId: req.requestedAreaId,
+          level,
+          parentId,
+          area,
+          areaId,
           firstName: req.firstName,
           middleName: req.middleName,
           lastName: req.lastName,
@@ -226,15 +270,15 @@ export class AgentService {
         .set({ status: 'APPROVED', agentId: createdAgent.id, reviewedAt: new Date() })
         .where(eq(agentRequest.id, requestId));
 
-      if (req.requestedLevel === 'NATIONAL') {
+      if (level === 'NATIONAL') {
         // The one national agent heads all six regions.
         await tx.update(region).set({ nationalAgentId: createdAgent.id });
-      } else if (req.requestedAreaId) {
+      } else {
         // Denormalized mirror of area_id onto the geo row itself — see
         // resyncGeoSlotAgent's own doc. This used to only run from the
         // admin console's direct-conversion path; an approved request
         // needs it just as much.
-        await this.resyncGeoSlotAgent(tx, req.requestedLevel as GeoLevel, req.requestedAreaId);
+        await this.resyncGeoSlotAgent(tx, level as GeoLevel, areaId);
       }
 
       return createdAgent;
@@ -253,6 +297,90 @@ export class AgentService {
       .set({ status: 'REJECTED', reviewerNote: dto.note, reviewedAt: new Date() })
       .where(eq(agentRequest.id, requestId))
       .returning();
+    return updated;
+  }
+
+  // ---- Staff: the live roster ("All agents") -------------------------------
+  // Distinct from the approval queue above: these are agents actually
+  // working today, not requests waiting to be decided. Editing one
+  // re-assigns their level/parent/position with the same rules approving a
+  // request enforces; "removing" one switches them off (active: false)
+  // rather than deleting the row outright — which would either orphan
+  // their downline (parent_id is ON DELETE SET NULL) or fail against
+  // whatever customer/withdrawal history references them.
+
+  private approvedAgentsQuery() {
+    const parent = alias(agent, 'parent_agent');
+    return this.db
+      .select({ ...getTableColumns(agent), parentCode: parent.code, parentName: parent.name })
+      .from(agent)
+      .leftJoin(parent, eq(parent.id, agent.parentId));
+  }
+
+  async listApprovedAgents() {
+    return this.approvedAgentsQuery().where(eq(agent.approvalStatus, 'APPROVED')).orderBy(agent.level, agent.code);
+  }
+
+  async getApprovedAgent(id: number) {
+    const [found] = await this.approvedAgentsQuery().where(and(eq(agent.id, id), eq(agent.approvalStatus, 'APPROVED'))).limit(1);
+    if (!found) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Agent not found' } });
+    return found;
+  }
+
+  /**
+   * Re-assigns an already-approved agent's level, parent, and named slot —
+   * the same rules as approving a request (one national, six regions, one
+   * agent per slot), with this agent's own current row excluded from every
+   * check so confirming their existing position again never refuses
+   * itself. Resyncs both the slot they're leaving and the one they're
+   * joining, so neither geo table's own `agent_id` mirror is left stale.
+   */
+  async updateAgentPosition(id: number, dto: UpdateAgentPositionDto) {
+    return this.db.transaction(async (tx) => {
+      const [before] = await tx.select().from(agent).where(eq(agent.id, id)).limit(1);
+      if (!before) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Agent not found' } });
+
+      const areaId = dto.areaId ?? null;
+      if (dto.level === 'NATIONAL') {
+        await this.assertNationalSlotAvailable(tx, id);
+      } else {
+        if (dto.level === 'REGION') {
+          await this.assertRegionSlotAvailable(tx, id);
+        }
+        if (areaId) {
+          await this.assertAreaSlotFree(tx, areaId, id);
+        }
+      }
+
+      // Same reasoning as approveRequest / adminConvertToAgent: an unset
+      // parent defaults to the geographically correct one, not "top of tree".
+      const parentId = dto.parentId ?? (await this.deriveParentAgentId(tx, dto.level, areaId));
+
+      const [updated] = await tx
+        .update(agent)
+        .set({ level: dto.level, parentId, area: dto.area, areaId, updatedAt: new Date() })
+        .where(eq(agent.id, id))
+        .returning();
+
+      if (before.areaId && before.areaId !== areaId) {
+        await this.resyncGeoSlotAgent(tx, before.level as GeoLevel, before.areaId);
+      }
+      if (dto.level === 'NATIONAL') {
+        // Rare but real: an agent moved up to NATIONAL now heads every region.
+        await tx.update(region).set({ nationalAgentId: updated.id });
+      } else {
+        await this.resyncGeoSlotAgent(tx, dto.level as GeoLevel, areaId);
+      }
+
+      return updated;
+    });
+  }
+
+  /** Switches an agent on or off. See this section's own doc for why this,
+   *  not a delete, is what "remove" means here. */
+  async setAgentActive(id: number, dto: SetAgentActiveDto) {
+    const [updated] = await this.db.update(agent).set({ active: dto.active, updatedAt: new Date() }).where(eq(agent.id, id)).returning();
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Agent not found' } });
     return updated;
   }
 
@@ -293,17 +421,20 @@ export class AgentService {
   // both must respect the exact same three rules, so they call the same
   // three checks rather than keeping two copies to drift apart.
 
-  private async assertNationalSlotAvailable(tx: Database): Promise<void> {
+  /** [excludeAgentId], when given, lets an existing agent's own row re-save
+   *  its current position (or get moved elsewhere) without the invariant
+   *  check refusing them for already occupying the very slot they hold —
+   *  only updateAgentPosition needs this; a fresh approval/conversion never
+   *  has a row of its own yet to exclude. */
+  private async assertNationalSlotAvailable(tx: Database, excludeAgentId?: number): Promise<void> {
     // Two approvals racing each other both read 'no national agent yet' and
     // both insert one. A transaction-scoped advisory lock serialises the
     // check-and-insert. The unique index is deliberately not used here: two
     // NATIONAL rows already exist in production, so it could not be created.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext('national-agent-approval'))`);
-    const [existingNational] = await tx
-      .select({ id: agent.id })
-      .from(agent)
-      .where(and(eq(agent.level, 'NATIONAL'), eq(agent.approvalStatus, 'APPROVED')))
-      .limit(1);
+    const conditions = [eq(agent.level, 'NATIONAL'), eq(agent.approvalStatus, 'APPROVED')];
+    if (excludeAgentId !== undefined) conditions.push(ne(agent.id, excludeAgentId));
+    const [existingNational] = await tx.select({ id: agent.id }).from(agent).where(and(...conditions)).limit(1);
     if (existingNational) {
       throw new ConflictException({
         error: { code: 'CONFLICT', message: 'A national agent already exists — only one is allowed' },
@@ -311,11 +442,10 @@ export class AgentService {
     }
   }
 
-  private async assertRegionSlotAvailable(tx: Database): Promise<void> {
-    const [row] = await tx
-      .select({ count: sql<number>`count(*)::int` })
-      .from(agent)
-      .where(and(eq(agent.level, 'REGION'), eq(agent.approvalStatus, 'APPROVED')));
+  private async assertRegionSlotAvailable(tx: Database, excludeAgentId?: number): Promise<void> {
+    const conditions = [eq(agent.level, 'REGION'), eq(agent.approvalStatus, 'APPROVED')];
+    if (excludeAgentId !== undefined) conditions.push(ne(agent.id, excludeAgentId));
+    const [row] = await tx.select({ count: sql<number>`count(*)::int` }).from(agent).where(and(...conditions));
     if ((row?.count ?? 0) >= 6) {
       throw new ConflictException({
         error: { code: 'CONFLICT', message: 'All six regions already have an agent — no more region agents can be added' },
@@ -325,12 +455,10 @@ export class AgentService {
 
   /** A named slot holds exactly one approved agent — refuse a second one
    *  into a slot an approved agent already occupies. */
-  private async assertAreaSlotFree(tx: Database, areaId: string): Promise<void> {
-    const [dup] = await tx
-      .select({ id: agent.id })
-      .from(agent)
-      .where(and(eq(agent.areaId, areaId), eq(agent.approvalStatus, 'APPROVED')))
-      .limit(1);
+  private async assertAreaSlotFree(tx: Database, areaId: string, excludeAgentId?: number): Promise<void> {
+    const conditions = [eq(agent.areaId, areaId), eq(agent.approvalStatus, 'APPROVED')];
+    if (excludeAgentId !== undefined) conditions.push(ne(agent.id, excludeAgentId));
+    const [dup] = await tx.select({ id: agent.id }).from(agent).where(and(...conditions)).limit(1);
     if (dup) {
       throw new ConflictException({
         error: { code: 'CONFLICT', message: 'That position is already held by another agent' },

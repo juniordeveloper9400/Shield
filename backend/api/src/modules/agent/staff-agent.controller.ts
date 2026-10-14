@@ -1,14 +1,20 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { RequestSubject } from '../auth/session.types';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
+  approveAgentRequestSchema,
   rejectAgentRequestSchema,
   resolveWithdrawalSchema,
+  setAgentActiveSchema,
+  updateAgentPositionSchema,
+  type ApproveAgentRequestDto,
   type RejectAgentRequestDto,
   type ResolveWithdrawalDto,
+  type SetAgentActiveDto,
+  type UpdateAgentPositionDto,
 } from './dto';
 
 /**
@@ -28,6 +34,11 @@ export class StaffAgentController {
     return this.agents.listPendingRequests();
   }
 
+  @Get('agent-requests/:id')
+  getPending(@Param('id', ParseIntPipe) id: number) {
+    return this.agents.getPendingRequest(id);
+  }
+
   /** Approved agents only, for the "parent" picker on both the
    *  agent_request KYC form and the Users page's direct-convert form. */
   @Get('agent-options')
@@ -36,13 +47,41 @@ export class StaffAgentController {
   }
 
   @Post('agent-requests/:id/approve')
-  approve(@Param('id', ParseIntPipe) id: number) {
-    return this.agents.approveRequest(id);
+  approve(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(approveAgentRequestSchema)) dto: ApproveAgentRequestDto,
+  ) {
+    return this.agents.approveRequest(id, dto);
   }
 
   @Post('agent-requests/:id/reject')
   reject(@Param('id', ParseIntPipe) id: number, @Body(new ZodValidationPipe(rejectAgentRequestSchema)) dto: RejectAgentRequestDto) {
     return this.agents.rejectRequest(id, dto);
+  }
+
+  // ---- The live roster ("All agents") ------------------------------------
+
+  @Get('agents')
+  listApproved() {
+    return this.agents.listApprovedAgents();
+  }
+
+  @Get('agents/:id')
+  getApproved(@Param('id', ParseIntPipe) id: number) {
+    return this.agents.getApprovedAgent(id);
+  }
+
+  @Patch('agents/:id/position')
+  updatePosition(
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(updateAgentPositionSchema)) dto: UpdateAgentPositionDto,
+  ) {
+    return this.agents.updateAgentPosition(id, dto);
+  }
+
+  @Patch('agents/:id/active')
+  setActive(@Param('id', ParseIntPipe) id: number, @Body(new ZodValidationPipe(setAgentActiveSchema)) dto: SetAgentActiveDto) {
+    return this.agents.setAgentActive(id, dto);
   }
 
   @Get('agent-withdrawals')

@@ -85,6 +85,41 @@ export const adminConvertToAgentSchema = z
     path: ['areaId'],
   });
 
+/**
+ * The approval screen's own confirm — same level/parent/position shape as
+ * adminConvertToAgentSchema, but every field optional: the reviewer may
+ * confirm the request exactly as filed (send nothing here) or override
+ * any of them (most often the level/position, when the recruiter picked
+ * the wrong tier). See AgentService.approveRequest.
+ */
+export const approveAgentRequestSchema = z.object({
+  level: z.enum(['NATIONAL', 'REGION', 'STATE', 'DISTRICT', 'ASSEMBLY', 'LSGD', 'WARD']).optional(),
+  parentId: z.number().int().positive().nullable().optional(),
+  area: z.string().trim().optional(),
+  areaId: z.string().uuid().optional(),
+});
+
+/**
+ * The "All agents" roster's own edit — re-assigns an already-approved
+ * agent's level/parent/position under the exact same invariants approving
+ * a request enforces, this agent's own current row excluded from each
+ * check (confirming their existing position again must never refuse
+ * itself). See AgentService.updateAgentPosition.
+ */
+export const updateAgentPositionSchema = z
+  .object({
+    level: z.enum(['NATIONAL', 'REGION', 'STATE', 'DISTRICT', 'ASSEMBLY', 'LSGD', 'WARD']),
+    parentId: z.number().int().positive().nullable().optional(),
+    area: z.string().trim().default(''),
+    areaId: z.string().uuid().nullable().optional(),
+  })
+  .refine((v) => v.level === 'NATIONAL' || !!v.areaId, {
+    message: 'areaId is required for every level except NATIONAL',
+    path: ['areaId'],
+  });
+
+export const setAgentActiveSchema = z.object({ active: z.boolean() });
+
 export type SubmitAgentRequestDto = z.infer<typeof submitAgentRequestSchema>;
 export type RejectAgentRequestDto = z.infer<typeof rejectAgentRequestSchema>;
 export type LinkCustomerDto = z.infer<typeof linkCustomerSchema>;
@@ -92,3 +127,6 @@ export type RequestWithdrawalDto = z.infer<typeof requestWithdrawalSchema>;
 export type ResolveWithdrawalDto = z.infer<typeof resolveWithdrawalSchema>;
 export type MoveEarningsToWalletDto = z.infer<typeof moveEarningsToWalletSchema>;
 export type AdminConvertToAgentDto = z.infer<typeof adminConvertToAgentSchema>;
+export type ApproveAgentRequestDto = z.infer<typeof approveAgentRequestSchema>;
+export type UpdateAgentPositionDto = z.infer<typeof updateAgentPositionSchema>;
+export type SetAgentActiveDto = z.infer<typeof setAgentActiveSchema>;

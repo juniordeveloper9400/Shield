@@ -533,6 +533,217 @@ describe('Agent & Geography (e2e)', () => {
     );
   });
 
+  describe('approval overrides and the live roster ("All agents") — its own fresh geo fixtures', () => {
+    async function freshDistrict() {
+      const [r] = await db.insert(region).values({ id: randomUUID(), name: `R-${randomUUID()}` }).returning();
+      const [s] = await db.insert(state).values({ id: randomUUID(), regionId: r.id, name: `S-${randomUUID()}` }).returning();
+      const [d] = await db.insert(district).values({ id: randomUUID(), stateId: s.id, name: `D-${randomUUID()}` }).returning();
+      return d;
+    }
+
+    // Straight through directMemberToken, not a real sign-in — this
+    // describe block alone would otherwise add enough POST /v1/member/
+    // auth/session calls to tip this file's shared throttle bucket into a
+    // 429 (see directMemberToken's own doc).
+    async function registeredMemberToken(phone: string, name: string) {
+      const [member] = await db.insert(users).values({ phone, name, registrationCompletedAt: new Date() }).returning();
+      return directMemberToken(member.id);
+    }
+
+    it('approves a request at a different level/position than requested, not the one originally filed', async () => {
+      const originalDistrict = await freshDistrict();
+      const overrideDistrict = await freshDistrict();
+      const token = await registeredMemberToken('9100000020', 'Override Candidate');
+      const submit = await request(app.getHttpServer())
+        .post('/v1/agent/requests')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ requestedLevel: 'DISTRICT', requestedArea: 'Original District', requestedAreaId: originalDistrict.id })
+        .expect(201);
+
+      const approve = await request(app.getHttpServer())
+        .post(`/v1/staff/agent-requests/${submit.body.id}/approve`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ area: 'Override District', areaId: overrideDistrict.id })
+        .expect(201);
+      // level omitted from the override — falls back to what was requested.
+      expect(approve.body.level).toBe('DISTRICT');
+      expect(approve.body.areaId).toBe(overrideDistrict.id);
+
+      const [districtRow] = await db.select().from(district).where(eq(district.id, overrideDistrict.id));
+      expect(districtRow.agentId).toBe(approve.body.id);
+      const [originalRow] = await db.select().from(district).where(eq(district.id, originalDistrict.id));
+      expect(originalRow.agentId).toBeNull(); // never actually held — the override replaced it before insert
+    });
+
+    it('derives the parent from geography when parentId is explicitly null in the override', async () => {
+      const [r] = await db.insert(region).values({ id: randomUUID(), name: `R-${randomUUID()}` }).returning();
+      const regionMember = await registeredMemberToken('9100000021', 'Region Head');
+      const regionSubmit = await request(app.getHttpServer())
+        .post('/v1/agent/requests')
+        .set('Authorization', `Bearer ${regionMember}`)
+        .send({ requestedLevel: 'REGION', requestedArea: 'A Region', requestedAreaId: r.id })
+        .expect(201);
+      const regionApprove = await request(app.getHttpServer())
+        .post(`/v1/staff/agent-requests/${regionSubmit.body.id}/approve`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(201);
+
+      const [s] = await db.insert(state).values({ id: randomUUID(), regionId: r.id, name: `S-${randomUUID()}` }).returning();
+      const stateMember = await registeredMemberToken('9100000022', 'State Head');
+      const stateSubmit = await request(app.getHttpServer())
+        .post('/v1/agent/requests')
+        .set('Authorization', `Bearer ${stateMember}`)
+        .send({ requestedLevel: 'STATE', requestedArea: 'A State', requestedAreaId: s.id, parentAgentId: regionApprove.body.id })
+        .expect(201);
+      // parentId: null in the override means "derive it", not "clear it" —
+      // same convention adminConvertToAgent uses — so this must NOT end up
+      // reporting to nobody despite the request's own suggested parent.
+      const stateApprove = await request(app.getHttpServer())
+        .post(`/v1/staff/agent-requests/${stateSubmit.body.id}/approve`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ parentId: null })
+        .expect(201);
+      expect(stateApprove.body.parentId).toBe(regionApprove.body.id);
+    });
+
+    it('reads a pending request back with its parent agent name/code joined in', async () => {
+      const token = await registeredMemberToken('9100000023', 'Readback Candidate');
+      const fresh = await freshDistrict();
+      const submit = await request(app.getHttpServer())
+        .post('/v1/agent/requests')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ requestedLevel: 'DISTRICT', requestedArea: 'Readback District', requestedAreaId: fresh.id, parentAgentId: nationalAgentId })
+        .expect(201);
+
+      const got = await request(app.getHttpServer())
+        .get(`/v1/staff/agent-requests/${submit.body.id}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(got.body.name).toBe('Readback Candidate');
+      expect(got.body.parentCode).toBeTruthy();
+
+      await request(app.getHttpServer())
+        .get('/v1/staff/agent-requests/999999')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(404);
+    });
+
+    it('lists the live roster, each row carrying its parent code/name, and reads one back by id', async () => {
+      const list = await request(app.getHttpServer())
+        .get('/v1/staff/agents')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(list.body).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: wardAgentId, parentId: nationalAgentId, parentCode: expect.any(String) })]),
+      );
+
+      const single = await request(app.getHttpServer())
+        .get(`/v1/staff/agents/${wardAgentId}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(single.body.id).toBe(wardAgentId);
+
+      await request(app.getHttpServer())
+        .get('/v1/staff/agents/999999')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(404);
+    });
+
+    it('moves an approved agent to a new slot, resyncing both the old and new geo rows, and refuses a slot already held', async () => {
+      const districtA = await freshDistrict();
+      const districtB = await freshDistrict();
+      const token = await registeredMemberToken('9100000024', 'Mover Candidate');
+      const submit = await request(app.getHttpServer())
+        .post('/v1/agent/requests')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ requestedLevel: 'DISTRICT', requestedArea: 'District A', requestedAreaId: districtA.id })
+        .expect(201);
+      const approve = await request(app.getHttpServer())
+        .post(`/v1/staff/agent-requests/${submit.body.id}/approve`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(201);
+      const agentId = approve.body.id;
+
+      const moved = await request(app.getHttpServer())
+        .patch(`/v1/staff/agents/${agentId}/position`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ level: 'DISTRICT', area: 'District B', areaId: districtB.id })
+        .expect(200);
+      expect(moved.body.areaId).toBe(districtB.id);
+
+      const [oldRow] = await db.select().from(district).where(eq(district.id, districtA.id));
+      expect(oldRow.agentId).toBeNull();
+      const [newRow] = await db.select().from(district).where(eq(district.id, districtB.id));
+      expect(newRow.agentId).toBe(agentId);
+
+      // Re-confirming the same position again must not refuse itself.
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/agents/${agentId}/position`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ level: 'DISTRICT', area: 'District B', areaId: districtB.id })
+        .expect(200);
+
+      // A second, different agent cannot then move into the slot this one
+      // still holds.
+      const districtC = await freshDistrict();
+      const otherToken = await registeredMemberToken('9100000025', 'Challenger');
+      const otherSubmit = await request(app.getHttpServer())
+        .post('/v1/agent/requests')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({ requestedLevel: 'DISTRICT', requestedArea: 'District C', requestedAreaId: districtC.id })
+        .expect(201);
+      const otherApprove = await request(app.getHttpServer())
+        .post(`/v1/staff/agent-requests/${otherSubmit.body.id}/approve`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(201);
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/agents/${otherApprove.body.id}/position`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ level: 'DISTRICT', area: 'District B', areaId: districtB.id })
+        .expect(409);
+    });
+
+    it('switches an agent active on and off', async () => {
+      const toggled = await request(app.getHttpServer())
+        .patch(`/v1/staff/agents/${wardAgentId}/active`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ active: false })
+        .expect(200);
+      expect(toggled.body.active).toBe(false);
+
+      const restored = await request(app.getHttpServer())
+        .patch(`/v1/staff/agents/${wardAgentId}/active`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ active: true })
+        .expect(200);
+      expect(restored.body.active).toBe(true);
+
+      await request(app.getHttpServer())
+        .patch('/v1/staff/agents/999999/active')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ active: true })
+        .expect(404);
+    });
+
+    it('rejects a PHARMACY role from reading or managing the live roster', async () => {
+      await db.insert(adminUser).values({
+        loginId: 'pharmacy-roster-check@example.com',
+        name: 'Pharmacy Staff',
+        passwordHash: await hash('correct-horse-battery-staple', 4),
+        role: 'PHARMACY',
+      });
+      const login = await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ loginId: 'pharmacy-roster-check@example.com', password: 'correct-horse-battery-staple' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .get('/v1/staff/agents')
+        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .expect(403);
+    });
+  });
+
   // Migration 0059 moved the actual request/resolve logic into two Postgres
   // functions (app.request_agent_withdrawal / app.review_agent_withdrawal —
   // atomic per-agent locking, the ₹3,000 minimum, and the identity/earnings/
