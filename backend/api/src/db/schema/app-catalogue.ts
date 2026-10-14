@@ -98,6 +98,13 @@ export const product = appSchema.table('product', {
   isPopular: boolean('is_popular').notNull().default(false),
   isDeal: boolean('is_deal').notNull().default(false),
   isOfferOfDay: boolean('is_offer_of_day').notNull().default(false),
+  // migration 0093: an optional expiry per home-feed row. Past this moment
+  // the product stops appearing in that section on its own — no cron job,
+  // see CatalogueService.withEffectiveSections — the flag itself is left
+  // alone so the console can still see/edit what was set.
+  popularUntil: timestamp('popular_until', { withTimezone: true }),
+  dealUntil: timestamp('deal_until', { withTimezone: true }),
+  offerOfDayUntil: timestamp('offer_of_day_until', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

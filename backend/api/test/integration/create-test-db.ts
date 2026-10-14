@@ -241,6 +241,9 @@ export function createTestDb() {
       is_popular boolean NOT NULL DEFAULT false,
       is_deal boolean NOT NULL DEFAULT false,
       is_offer_of_day boolean NOT NULL DEFAULT false,
+      popular_until timestamptz,
+      deal_until timestamptz,
+      offer_of_day_until timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );

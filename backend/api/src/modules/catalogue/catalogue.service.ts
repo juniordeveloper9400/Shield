@@ -396,7 +396,7 @@ export class CatalogueService {
 
   async listProducts(query: ListProductsQuery) {
     const key = `catalogue:products:${query.categoryId ?? 'all'}:${query.subcategoryId ?? 'all'}:${query.cursor ?? 'start'}:${query.limit}`;
-    return this.cache.getOrSet(key, TTL.SHORT, async () => {
+    const page = await this.cache.getOrSet(key, TTL.SHORT, async () => {
       const conditions = [eq(product.status, 'ACTIVE')];
       if (query.categoryId) conditions.push(eq(product.categoryId, query.categoryId));
       if (query.subcategoryId) conditions.push(eq(product.subcategoryId, query.subcategoryId));
@@ -411,10 +411,14 @@ export class CatalogueService {
 
       return { items: rows, nextCursor: rows.length === query.limit ? rows[rows.length - 1].id : null };
     });
+    // Expiry is evaluated here, after the cache, not baked into the cached
+    // value — a row cached before its "until" passed still reads correctly
+    // once that moment arrives, with no write needed to invalidate it.
+    return { ...page, items: page.items.map((row) => this.withEffectiveSections(row)) };
   }
 
   async getProduct(id: number) {
-    return this.cache.getOrSet(`catalogue:product:${id}`, TTL.LONG, async () => {
+    const result = await this.cache.getOrSet(`catalogue:product:${id}`, TTL.LONG, async () => {
       const [row] = await this.db.select().from(product).where(eq(product.id, id)).limit(1);
       if (!row) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
 
@@ -427,6 +431,7 @@ export class CatalogueService {
 
       return { ...row, detail: detail ?? null, faqs };
     });
+    return { ...this.withEffectiveSections(result), detail: result.detail, faqs: result.faqs };
   }
 
 /** `app.product.category_id` by slug — the console picks a category by
@@ -436,6 +441,30 @@ export class CatalogueService {
     const [row] = await this.db.select({ id: productCategory.id }).from(productCategory).where(eq(productCategory.slug, slug)).limit(1);
     if (!row) throw new BadRequestException({ error: { code: 'BAD_REQUEST', message: `Unknown category "${slug}"` } });
     return row.id;
+  }
+
+  /** Clips a product's home-feed flags to their expiry — the row the member
+   *  app/webapp actually see. The raw flag is never touched here (the
+   *  console still shows and can re-use it), only what's returned to a
+   *  member-facing read. */
+  private withEffectiveSections<
+    T extends {
+      isPopular: boolean;
+      isDeal: boolean;
+      isOfferOfDay: boolean;
+      popularUntil: Date | null;
+      dealUntil: Date | null;
+      offerOfDayUntil: Date | null;
+    },
+  >(row: T): T {
+    const now = Date.now();
+    const notExpired = (flag: boolean, until: Date | null) => flag && (until == null || until.getTime() > now);
+    return {
+      ...row,
+      isPopular: notExpired(row.isPopular, row.popularUntil),
+      isDeal: notExpired(row.isDeal, row.dealUntil),
+      isOfferOfDay: notExpired(row.isOfferOfDay, row.offerOfDayUntil),
+    };
   }
 
   /** The discount badge the app/console show for a product (e.g. "17% off"),
@@ -534,6 +563,9 @@ export class CatalogueService {
         isPopular: product.isPopular,
         isDeal: product.isDeal,
         isOfferOfDay: product.isOfferOfDay,
+        popularUntil: product.popularUntil,
+        dealUntil: product.dealUntil,
+        offerOfDayUntil: product.offerOfDayUntil,
         createdAt: product.createdAt,
       })
       .from(product)
@@ -690,7 +722,26 @@ export class CatalogueService {
    *  Love, Offer of the Day. The app picks the change up on its next
    *  catalogue load. */
   async updateProductSections(id: number, dto: UpdateProductSectionsDto) {
-    const [updated] = await this.db.update(product).set(dto).where(eq(product.id, id)).returning();
+    // A flag going false clears its own expiry — nothing should be left on
+    // record that could resurface if the flag is flipped back on later
+    // without the caller thinking to set a fresh "until". A flag staying/
+    // going true keeps whatever expiry was already there unless the caller
+    // explicitly passes one (including `null`, for "no expiry").
+    const sets: Record<string, unknown> = {
+      isPopular: dto.isPopular,
+      isDeal: dto.isDeal,
+      isOfferOfDay: dto.isOfferOfDay,
+    };
+    const untilFor = (active: boolean, until: string | null | undefined) =>
+      !active ? null : until === undefined ? undefined : until === null ? null : new Date(until);
+    const popularUntil = untilFor(dto.isPopular, dto.popularUntil);
+    const dealUntil = untilFor(dto.isDeal, dto.dealUntil);
+    const offerOfDayUntil = untilFor(dto.isOfferOfDay, dto.offerOfDayUntil);
+    if (popularUntil !== undefined) sets.popularUntil = popularUntil;
+    if (dealUntil !== undefined) sets.dealUntil = dealUntil;
+    if (offerOfDayUntil !== undefined) sets.offerOfDayUntil = offerOfDayUntil;
+
+    const [updated] = await this.db.update(product).set(sets).where(eq(product.id, id)).returning();
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
     await this.cache.invalidate('catalogue:products:*', `catalogue:product:${id}`);
     return updated;

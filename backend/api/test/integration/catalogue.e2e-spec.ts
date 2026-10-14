@@ -833,6 +833,76 @@ describe('Catalogue (e2e)', () => {
       expect(sections.body).toMatchObject({ status: 'INACTIVE', isPopular: true, isDeal: true, isOfferOfDay: false });
     });
 
+    it('a home-feed section set with a future "until" still shows for members', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Multivitamin Tablets', categorySlug: 'wellness', price: 220, mrp: 260 })
+        .expect(201);
+      const futureIso = new Date(Date.now() + 60_000).toISOString();
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/products/${created.body.id}/sections`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ isPopular: true, isDeal: false, isOfferOfDay: false, popularUntil: futureIso })
+        .expect(200);
+
+      const member = await request(app.getHttpServer())
+        .get(`/v1/public/catalogue/products/${created.body.id}`)
+        .expect(200);
+      expect(member.body.isPopular).toBe(true);
+    });
+
+    it('a home-feed section set with a past "until" no longer shows for members, though the console still sees the raw flag', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Electrolyte Powder', categorySlug: 'wellness', price: 90, mrp: 110 })
+        .expect(201);
+      const pastIso = new Date(Date.now() - 60_000).toISOString();
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/products/${created.body.id}/sections`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ isPopular: true, isDeal: false, isOfferOfDay: false, popularUntil: pastIso })
+        .expect(200);
+
+      const member = await request(app.getHttpServer())
+        .get(`/v1/public/catalogue/products/${created.body.id}`)
+        .expect(200);
+      expect(member.body.isPopular).toBe(false);
+
+      const staffList = await request(app.getHttpServer())
+        .get('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      const staffRow = staffList.body.find((p: { id: number }) => p.id === created.body.id);
+      expect(staffRow.isPopular).toBe(true);
+      expect(staffRow.popularUntil).toBeTruthy();
+    });
+
+    it('turning a section off clears its "until" so turning it back on later starts fresh', async () => {
+      const created = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/products')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ name: 'Herbal Tea Bags', categorySlug: 'wellness', price: 150, mrp: 180 })
+        .expect(201);
+      const futureIso = new Date(Date.now() + 60_000).toISOString();
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/products/${created.body.id}/sections`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ isPopular: true, isDeal: false, isOfferOfDay: false, popularUntil: futureIso })
+        .expect(200);
+
+      const turnedOff = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/products/${created.body.id}/sections`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ isPopular: false, isDeal: false, isOfferOfDay: false })
+        .expect(200);
+      expect(turnedOff.body.popularUntil).toBeNull();
+    });
+
     it('deletes a product, cascading its detail/FAQ/gallery rows with it', async () => {
       const created = await request(app.getHttpServer())
         .post('/v1/staff/catalogue/products')

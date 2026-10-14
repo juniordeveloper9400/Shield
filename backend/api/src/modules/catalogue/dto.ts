@@ -135,10 +135,17 @@ export const updateProductSchema = createProductSchema.partial();
 
 export const setProductStatusSchema = z.object({ status: z.enum(['active', 'inactive']) });
 
+/** An "until" is only meaningful while its own flag is true — see
+ *  CatalogueService.updateProductSections, which clears it the moment the
+ *  flag goes false rather than trusting the caller to. `null` means "set,
+ *  no expiry"; omitted leaves whatever expiry is already on record alone. */
 export const updateProductSectionsSchema = z.object({
   isPopular: z.boolean(),
   isDeal: z.boolean(),
   isOfferOfDay: z.boolean(),
+  popularUntil: z.string().datetime().nullable().optional(),
+  dealUntil: z.string().datetime().nullable().optional(),
+  offerOfDayUntil: z.string().datetime().nullable().optional(),
 });
 
 export const createBrandSchema = z.object({ name: z.string().trim().min(1) });
