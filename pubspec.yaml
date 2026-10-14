@@ -1,7 +1,7 @@
 name: shield
 description: Sahakar 360.
 publish_to: 'none'
-version: 1.0.4+20
+version: 1.0.5+21
 
 environment:
   sdk: ^3.10.0
