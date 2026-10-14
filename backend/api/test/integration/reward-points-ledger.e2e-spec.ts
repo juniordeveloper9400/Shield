@@ -50,7 +50,7 @@ describe('Reward points posting (e2e)', () => {
   }
 
   it('posts an award: Dr reward points expense / Cr reward points liability', async () => {
-    await postRewardPointsIssued(db, { rewardPointTransactionId: 1, points: 500, reason: 'registration bonus' });
+    await postRewardPointsIssued(db, { rewardPointTransactionId: 1, memberId: 42, points: 500, reason: 'registration bonus' });
 
     const lines = await linesFor('1');
     expect(lines).toHaveLength(2);
@@ -59,7 +59,7 @@ describe('Reward points posting (e2e)', () => {
   });
 
   it('posts a redemption: Dr reward points liability / Cr member wallet liability', async () => {
-    await postRewardPointsRedeemed(db, { rewardPointTransactionId: 2, points: 1000 });
+    await postRewardPointsRedeemed(db, { rewardPointTransactionId: 2, memberId: 42, points: 1000 });
 
     const lines = await linesFor('2');
     expect(lines).toHaveLength(2);
@@ -68,8 +68,8 @@ describe('Reward points posting (e2e)', () => {
   });
 
   it('posts nothing for zero or negative points, without throwing', async () => {
-    await postRewardPointsIssued(db, { rewardPointTransactionId: 3, points: 0, reason: 'nothing' });
-    await postRewardPointsRedeemed(db, { rewardPointTransactionId: 4, points: -1 });
+    await postRewardPointsIssued(db, { rewardPointTransactionId: 3, memberId: 42, points: 0, reason: 'nothing' });
+    await postRewardPointsRedeemed(db, { rewardPointTransactionId: 4, memberId: 42, points: -1 });
 
     expect(await linesFor('3')).toHaveLength(0);
     expect(await linesFor('4')).toHaveLength(0);
@@ -77,7 +77,9 @@ describe('Reward points posting (e2e)', () => {
 
   it('posts nothing, and does not throw, when there is no HQ entity', async () => {
     const fresh = createTestDb(); // no legal_entity rows at all
-    await expect(postRewardPointsIssued(fresh, { rewardPointTransactionId: 5, points: 100, reason: 'x' })).resolves.toBeUndefined();
+    await expect(
+      postRewardPointsIssued(fresh, { rewardPointTransactionId: 5, memberId: 42, points: 100, reason: 'x' }),
+    ).resolves.toBeUndefined();
     const lines = await fresh
       .select()
       .from(journalEntry)
@@ -86,7 +88,7 @@ describe('Reward points posting (e2e)', () => {
   });
 
   it('every posted entry is scoped to the HQ entity, not any store', async () => {
-    await postRewardPointsIssued(db, { rewardPointTransactionId: 6, points: 200, reason: 'x' });
+    await postRewardPointsIssued(db, { rewardPointTransactionId: 6, memberId: 42, points: 200, reason: 'x' });
     const [entry] = await db.select().from(journalEntry).where(eq(journalEntry.sourceId, '6'));
     expect(entry.entityId).toBe(hqEntityId);
   });

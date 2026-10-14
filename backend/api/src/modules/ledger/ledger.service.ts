@@ -32,6 +32,20 @@ export class LedgerService {
       .orderBy(legalEntity.name);
   }
 
+  /** The chart of accounts — small and static, for the Account filter on
+   *  the per-person ledger report. */
+  chartOfAccounts() {
+    return this.db
+      .select({
+        code: chartOfAccount.code,
+        name: chartOfAccount.name,
+        type: chartOfAccount.type,
+        isProvisional: chartOfAccount.isProvisional,
+      })
+      .from(chartOfAccount)
+      .orderBy(chartOfAccount.code);
+  }
+
   /**
    * Every account that has at least one posted line, summed — scoped to one
    * entity and/or one calendar month when given. `net` is debit minus
@@ -76,6 +90,104 @@ export class LedgerService {
       credit: Number(r.credit),
       net: round2(Number(r.debit) - Number(r.credit)),
     }));
+  }
+
+  /**
+   * One subject's (member/agent/investor) Debit, Credit and running Closing
+   * balance for one account, for one calendar month — a real sub-ledger, not
+   * a store-wide trial-balance row. Opening balance is every line posted
+   * before the month started; closing = opening + this month's movement,
+   * signed per the account's own type (asset/expense: debit grows the
+   * balance; liability/equity/revenue: credit grows it — see
+   * `shieldweb/src/lib/ledgerReport.ts`'s `movementBalance`, the same
+   * convention this mirrors server-side).
+   */
+  async subjectLedger(params: {
+    subjectType: string;
+    subjectId: number;
+    accountCode: string;
+    entityId?: number;
+    period: string;
+  }) {
+    const [account] = await this.db
+      .select({ id: chartOfAccount.id, code: chartOfAccount.code, name: chartOfAccount.name, type: chartOfAccount.type })
+      .from(chartOfAccount)
+      .where(eq(chartOfAccount.code, params.accountCode));
+    if (!account) throw new NotFoundException('No such account');
+
+    const subjectCondition = and(
+      eq(journalLine.subjectType, params.subjectType),
+      eq(journalLine.subjectId, params.subjectId),
+      eq(journalLine.accountId, account.id),
+    );
+    const entityCondition = params.entityId !== undefined ? eq(journalEntry.entityId, params.entityId) : undefined;
+
+    const sums = async (extra: ReturnType<typeof sql> | undefined) => {
+      const [row] = await this.db
+        .select({
+          debit: sql<string>`coalesce(sum(${journalLine.debit}), 0)`,
+          credit: sql<string>`coalesce(sum(${journalLine.credit}), 0)`,
+        })
+        .from(journalLine)
+        .innerJoin(journalEntry, eq(journalEntry.id, journalLine.entryId))
+        .where(and(subjectCondition, entityCondition, extra));
+      return { debit: Number(row.debit), credit: Number(row.credit) };
+    };
+
+    const opening = await sums(sql`${journalEntry.postedOn} < ${params.period}::date`);
+    const movement = await sums(
+      sql`${journalEntry.postedOn} >= ${params.period}::date
+          AND ${journalEntry.postedOn} < (${params.period}::date + interval '1 month')`,
+    );
+
+    // Debit grows an ASSET/EXPENSE account's balance; credit grows the other
+    // three types — same convention `trialBalance`'s own `net` leaves for
+    // the caller, made explicit here since a closing balance needs a sign,
+    // not just a net figure.
+    const debitNormal = account.type === 'ASSET' || account.type === 'EXPENSE';
+    const signed = (s: { debit: number; credit: number }) => (debitNormal ? s.debit - s.credit : s.credit - s.debit);
+
+    const openingBalance = round2(signed(opening));
+    const closingBalance = round2(openingBalance + signed(movement));
+
+    const lines = await this.db
+      .select({
+        id: journalLine.id,
+        debit: journalLine.debit,
+        credit: journalLine.credit,
+        postedOn: journalEntry.postedOn,
+        description: journalEntry.description,
+        event: journalEntry.event,
+      })
+      .from(journalLine)
+      .innerJoin(journalEntry, eq(journalEntry.id, journalLine.entryId))
+      .where(
+        and(
+          subjectCondition,
+          entityCondition,
+          sql`${journalEntry.postedOn} >= ${params.period}::date
+              AND ${journalEntry.postedOn} < (${params.period}::date + interval '1 month')`,
+        ),
+      )
+      .orderBy(journalEntry.postedOn);
+
+    return {
+      accountCode: account.code,
+      accountName: account.name,
+      accountType: account.type,
+      openingBalance,
+      debit: round2(movement.debit),
+      credit: round2(movement.credit),
+      closingBalance,
+      lines: lines.map((l) => ({
+        id: l.id,
+        postedOn: l.postedOn,
+        description: l.description,
+        event: l.event,
+        debit: Number(l.debit),
+        credit: Number(l.credit),
+      })),
+    };
   }
 
   listPeriods(entityId?: number) {

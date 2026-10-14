@@ -1,14 +1,21 @@
+import { randomUUID } from 'node:crypto';
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { AdminRole } from '../auth/session.types';
 import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
   agent,
+  agentCommission,
   agentCustomer,
   agentCustomerPlan,
+  chartOfAccount,
   commissionReserveEntry,
+  journalEntry,
+  journalLine,
+  legalEntity,
   membershipTier,
   membershipTierLoad,
+  postingRule,
   referral,
   shieldStore,
   users,
@@ -17,7 +24,7 @@ import {
   walletEntry,
 } from '../../db/schema';
 import type { HoldWalletCardDto, SaveWalletCardVerificationDto, SubmitWalletCardDto } from './dto';
-import { ReferralService } from './referral.service';
+import { REFERRAL_COMMISSION_RATE, ReferralService } from './referral.service';
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -338,6 +345,14 @@ export class WalletService {
       // them up at registration even if no agent code was typed at
       // checkout. Matches app.approve_wallet_card_activation's own
       // COALESCE(sold_by_agent_id, agent_customer-linked agent).
+      // Every agent actually credited below (seller + paid ancestors) — fed
+      // into the ledger posting at the end of this method, which splits the
+      // Head Office 'agent_commission' line per agent (subject_type='agent')
+      // instead of one combined figure, and into app.agent_commission
+      // (migration 0079), populated from this live path for the first time.
+      const credited: { agentId: number; hop: number; rate: number; amount: number }[] = [];
+      let poolReserve = 0;
+
       const sellerId = card.soldByAgentId ?? customerLinks.find((l) => l.agentId != null)?.agentId ?? null;
       if (sellerId != null) {
         const [seller] = await tx
@@ -359,6 +374,7 @@ export class WalletService {
               personalSales: (Number(seller.personalSales) + amount).toString(),
             })
             .where(eq(agent.id, seller.id));
+          credited.push({ agentId: seller.id, hop: 0, rate: DIRECT_SALE_SHARE_RATE, amount: directShare });
 
           let distributed = directShare;
 
@@ -379,16 +395,17 @@ export class WalletService {
                 .set({ earned: (Number(ancestor.earned) + hopShare).toString() })
                 .where(eq(agent.id, ancestor.id));
               distributed += hopShare;
+              credited.push({ agentId: ancestor.id, hop: hop + 1, rate: HOP_OVERRIDE_RATES[hop], amount: hopShare });
             }
 
             ancestorId = ancestor.parentId;
           }
 
-          const reserve = round2(pool - distributed);
-          if (reserve > 0) {
+          poolReserve = round2(pool - distributed);
+          if (poolReserve > 0) {
             await tx
               .insert(commissionReserveEntry)
-              .values({ walletCardId: card.id, amount: reserve.toString(), source: 'POOL_LEFTOVER' });
+              .values({ walletCardId: card.id, amount: poolReserve.toString(), source: 'POOL_LEFTOVER' });
           }
         }
       }
@@ -418,10 +435,11 @@ export class WalletService {
         referrerId = edge?.inviterMemberId ?? null;
       }
 
+      let companyShare = 0;
       if (sellerId == null && referrerId != null) {
         // Member-to-member referral: 8% reserved — the load's 10% pool minus
         // the 2% app.pay_referral_commission pays the referrer with, below.
-        const companyShare = round2(amount * COMPANY_RESERVE_RATE);
+        companyShare = round2(amount * COMPANY_RESERVE_RATE);
         if (companyShare > 0) {
           await tx
             .insert(commissionReserveEntry)
@@ -432,6 +450,7 @@ export class WalletService {
       // one with neither an agent nor a referrer reserves nothing — there is
       // no commission relationship on it for a share to be a share of.
 
+      let referralCommission = 0;
       if (referrerId != null) {
         // Idempotent: the database trigger normally pays this at the moment the
         // card flips to APPROVED; then this finds the ledger line and does nothing.
@@ -441,10 +460,226 @@ export class WalletService {
           referrerId,
           inviteeId: currentWallet.memberId,
         });
+        // The ledger figure below is this activation's own 2% obligation,
+        // computed straight from the rate — not payPlanCommission's return,
+        // which is 0 whenever the DB trigger already paid it moments earlier
+        // (its own idempotency guard). The commission is real and owed
+        // either way; only who actually wrote the wallet_entry differs.
+        referralCommission = round2(amount * REFERRAL_COMMISSION_RATE);
       }
+
+      await this.postActivationReceived(tx, {
+        cardId: card.id,
+        storeId: card.storeId,
+        memberId: currentWallet.memberId,
+        received: Number(card.receivedAmount ?? amount),
+        amount,
+        bonus,
+        referrerId,
+        referralCommission,
+        companyShare,
+        poolReserve,
+        credited,
+      });
 
       return updatedCard;
     });
+  }
+
+  /** Looks up account ids by (event, line_role), same convention
+   *  reward-points-ledger.ts's own local helper uses. */
+  private async ledgerAccountsFor(tx: Database, event: string, roles: string[]) {
+    const mapped = await tx
+      .select({ lineRole: postingRule.lineRole, accountId: chartOfAccount.id })
+      .from(postingRule)
+      .innerJoin(chartOfAccount, eq(chartOfAccount.code, postingRule.accountCode))
+      .where(and(eq(postingRule.event, event), inArray(postingRule.lineRole, roles)));
+    return Object.fromEntries(mapped.map((a) => [a.lineRole, a.accountId])) as Record<string, number | undefined>;
+  }
+
+  /**
+   * Posts a Health Pass activation to the ledger — two entries, same shape
+   * migrations 0075/0076/0079 define in SQL for `app.approve_wallet_card_activation`,
+   * reproduced here because this TS method (not that SQL function) is what
+   * the live approval endpoint actually calls. Confirmed live (this session)
+   * that the SQL function has no call site anywhere in this repo, so without
+   * this, activation_received — the single biggest money event — never
+   * reached the ledger at all.
+   *
+   * One difference from the SQL version: the Head Office side's agent
+   * commission payable line is split one line per credited agent
+   * (`subject_type='agent'`) instead of one combined figure, and
+   * `app.agent_commission` (migration 0079) is populated here for the first
+   * time from a live path — both needed for the per-person ledger report to
+   * show a real per-agent breakdown rather than one undifferentiated total.
+   *
+   * Same tolerance as every other posting helper in this codebase: never
+   * blocks the real approval.
+   */
+  private async postActivationReceived(
+    tx: Database,
+    params: {
+      cardId: number;
+      storeId: number | null;
+      memberId: number;
+      received: number;
+      amount: number;
+      bonus: number;
+      referrerId: number | null;
+      referralCommission: number;
+      companyShare: number;
+      poolReserve: number;
+      credited: { agentId: number; hop: number; rate: number; amount: number }[];
+    },
+  ) {
+    try {
+      const today = isoDate(new Date());
+      const distributed = round2(params.credited.reduce((sum, c) => sum + c.amount, 0));
+
+      // ---- store side: Dr Cash — store, Cr Due to Head Office -------------
+      if (params.storeId && params.received > 0) {
+        const [store] = await tx.select({ entityId: shieldStore.entityId }).from(shieldStore).where(eq(shieldStore.id, params.storeId));
+        if (store?.entityId) {
+          const byRole = await this.ledgerAccountsFor(tx, 'activation_received', ['cash_in', 'due_to_head_office']);
+          if (byRole.cash_in && byRole.due_to_head_office) {
+            const [entry] = await tx
+              .insert(journalEntry)
+              .values({
+                id: randomUUID(),
+                entityId: store.entityId,
+                postedOn: today,
+                sourceTable: 'wallet_card',
+                sourceId: String(params.cardId),
+                event: 'activation_received',
+                description: 'Health Pass activation received at store',
+              })
+              .returning();
+            if (entry) {
+              await tx.insert(journalLine).values([
+                { entryId: entry.id, accountId: byRole.cash_in, debit: params.received.toFixed(2), credit: '0' },
+                { entryId: entry.id, accountId: byRole.due_to_head_office, debit: '0', credit: params.received.toFixed(2) },
+              ]);
+            }
+          }
+        }
+      }
+
+      // ---- Head Office side: wallet credit, bonus, commissions, reserves --
+      const [hq] = await tx.select({ id: legalEntity.id }).from(legalEntity).where(eq(legalEntity.code, 'HQ'));
+      if (!hq) return;
+
+      const byRole = await this.ledgerAccountsFor(tx, 'activation_received', [
+        'due_from_store',
+        'member_wallet',
+        'agent_commission',
+        'reserve_company',
+        'reserve_pool',
+        'bonus_expense',
+        'agent_commission_expense',
+        'suspense',
+      ]);
+      if (!byRole.due_from_store || !byRole.member_wallet || !byRole.suspense) return;
+
+      const lines: { accountId: number; debit: string; credit: string; subjectType?: string; subjectId?: number }[] = [];
+      lines.push({ accountId: byRole.due_from_store, debit: params.received.toFixed(2), credit: '0' });
+
+      if (params.bonus > 0 && byRole.bonus_expense) {
+        lines.push({ accountId: byRole.bonus_expense, debit: params.bonus.toFixed(2), credit: '0' });
+      }
+      if (distributed > 0 && byRole.agent_commission_expense) {
+        lines.push({ accountId: byRole.agent_commission_expense, debit: distributed.toFixed(2), credit: '0' });
+      }
+
+      lines.push({
+        accountId: byRole.member_wallet,
+        debit: '0',
+        credit: (params.amount + params.bonus).toFixed(2),
+        subjectType: 'member',
+        subjectId: params.memberId,
+      });
+      if (params.referralCommission > 0 && params.referrerId != null) {
+        lines.push({
+          accountId: byRole.member_wallet,
+          debit: '0',
+          credit: params.referralCommission.toFixed(2),
+          subjectType: 'member',
+          subjectId: params.referrerId,
+        });
+      }
+
+      // One line per credited agent, not one combined figure — the point of
+      // this method's own rewrite (see its own doc above).
+      if (distributed > 0 && byRole.agent_commission) {
+        for (const c of params.credited) {
+          lines.push({
+            accountId: byRole.agent_commission,
+            debit: '0',
+            credit: c.amount.toFixed(2),
+            subjectType: 'agent',
+            subjectId: c.agentId,
+          });
+        }
+      }
+
+      if (params.companyShare > 0 && byRole.reserve_company) {
+        lines.push({ accountId: byRole.reserve_company, debit: '0', credit: params.companyShare.toFixed(2) });
+      }
+      if (params.poolReserve > 0 && byRole.reserve_pool) {
+        lines.push({ accountId: byRole.reserve_pool, debit: '0', credit: params.poolReserve.toFixed(2) });
+      }
+
+      // Whatever is left after the known pieces above is the same
+      // revenue-recognition gap migration 0076 plugs to Suspense rather than
+      // guessing at — see that migration's own header for why.
+      const totalDebit = round2(lines.reduce((sum, l) => sum + Number(l.debit), 0));
+      const totalCredit = round2(lines.reduce((sum, l) => sum + Number(l.credit), 0));
+      const plug = round2(totalCredit - totalDebit);
+      if (plug > 0) {
+        lines.push({ accountId: byRole.suspense, debit: plug.toFixed(2), credit: '0' });
+      } else if (plug < 0) {
+        lines.push({ accountId: byRole.suspense, debit: '0', credit: (-plug).toFixed(2) });
+      }
+
+      const [hqEntry] = await tx
+        .insert(journalEntry)
+        .values({
+          id: randomUUID(),
+          entityId: hq.id,
+          postedOn: today,
+          sourceTable: 'wallet_card',
+          sourceId: String(params.cardId),
+          event: 'activation_received',
+          description: 'Health Pass activation booked at Head Office — provisional, pending revenue-recognition review',
+        })
+        .returning();
+      if (!hqEntry) return;
+
+      await tx.insert(journalLine).values(
+        lines.map((l) => ({
+          entryId: hqEntry.id,
+          accountId: l.accountId,
+          debit: l.debit,
+          credit: l.credit,
+          subjectType: l.subjectType,
+          subjectId: l.subjectId,
+        })),
+      );
+
+      if (params.credited.length > 0) {
+        await tx.insert(agentCommission).values(
+          params.credited.map((c) => ({
+            walletCardId: params.cardId,
+            agentId: c.agentId,
+            hop: c.hop,
+            rate: c.rate.toString(),
+            amount: c.amount.toFixed(2),
+            journalEntryId: hqEntry.id,
+          })),
+        );
+      }
+    } catch {
+      // Ledger posting must never block a real approval.
+    }
   }
 
   /** A card on hold can be rejected too, same as approved — see approveCard's

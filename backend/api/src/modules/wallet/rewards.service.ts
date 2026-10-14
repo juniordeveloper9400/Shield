@@ -69,7 +69,7 @@ export class RewardsService {
           reason: 'REDEMPTION',
         })
         .returning();
-      await postRewardPointsRedeemed(tx, { rewardPointTransactionId: rewardTxn.id, points: dto.points });
+      await postRewardPointsRedeemed(tx, { rewardPointTransactionId: rewardTxn.id, memberId, points: dto.points });
 
       await tx.insert(walletEntry).values({
         walletId: theWallet.id,

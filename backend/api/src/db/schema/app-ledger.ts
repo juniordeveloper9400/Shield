@@ -60,6 +60,11 @@ export const journalLine = appSchema.table('journal_line', {
   accountId: bigint('account_id', { mode: 'number' }).notNull(),
   debit: numeric('debit', { precision: 12, scale: 2 }).notNull().default('0'),
   credit: numeric('credit', { precision: 12, scale: 2 }).notNull().default('0'),
+  /** Who this line belongs to — 'member' | 'agent' | 'investor' — or null
+   *  for a store-level line (cash, revenue, discounts, reserves) that isn't
+   *  any one person's. See migration 0090. */
+  subjectType: text('subject_type'),
+  subjectId: bigint('subject_id', { mode: 'number' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

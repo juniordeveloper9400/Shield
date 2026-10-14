@@ -22,6 +22,11 @@ export class StaffLedgerController {
     return this.ledger.listEntities();
   }
 
+  @Get('accounts')
+  chartOfAccounts() {
+    return this.ledger.chartOfAccounts();
+  }
+
   @Get('trial-balance')
   trialBalance(
     @Query('entityId') entityId?: string,
@@ -38,6 +43,23 @@ export class StaffLedgerController {
   @Get('periods')
   listPeriods(@Query('entityId') entityId?: string) {
     return this.ledger.listPeriods(entityId ? Number(entityId) : undefined);
+  }
+
+  @Get('subject-ledger')
+  subjectLedger(
+    @Query('subjectType') subjectType: string,
+    @Query('subjectId') subjectId: string,
+    @Query('accountCode') accountCode: string,
+    @Query('period') period: string,
+    @Query('entityId') entityId?: string,
+  ) {
+    return this.ledger.subjectLedger({
+      subjectType,
+      subjectId: Number(subjectId),
+      accountCode,
+      period,
+      entityId: entityId ? Number(entityId) : undefined,
+    });
   }
 
   @Get('agent-commissions')

@@ -325,6 +325,7 @@ export class ReferralService {
       .returning();
     await postRewardPointsIssued(tx, {
       rewardPointTransactionId: rewardTxn.id,
+      memberId: inviterMemberId,
       points: newPoints,
       reason: `referral ladder level ${newLevel}`,
     });

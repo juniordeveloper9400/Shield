@@ -474,7 +474,7 @@ export class BookingService {
    */
   private async postLabBillCollection(
     tx: Database,
-    params: { bookingId: number; storeId: number | null; cash: number; wallet: number },
+    params: { bookingId: number; storeId: number | null; memberId: number; cash: number; wallet: number },
   ) {
     try {
       if (!params.storeId) return;
@@ -489,9 +489,17 @@ export class BookingService {
       const byRole: Record<string, number> = Object.fromEntries(mapped.map((a) => [a.lineRole, a.accountId]));
       if (!byRole.cash_in || !byRole.wallet_in || !byRole.revenue) return;
 
-      const lines: { accountId: number; debit: string; credit: string }[] = [];
+      const lines: { accountId: number; debit: string; credit: string; subjectType?: string; subjectId?: number }[] = [];
       if (params.cash > 0) lines.push({ accountId: byRole.cash_in, debit: params.cash.toFixed(2), credit: '0' });
-      if (params.wallet > 0) lines.push({ accountId: byRole.wallet_in, debit: params.wallet.toFixed(2), credit: '0' });
+      if (params.wallet > 0) {
+        lines.push({
+          accountId: byRole.wallet_in,
+          debit: params.wallet.toFixed(2),
+          credit: '0',
+          subjectType: 'member',
+          subjectId: params.memberId,
+        });
+      }
       const total = params.cash + params.wallet;
       if (total <= 0 || lines.length === 0) return;
       lines.push({ accountId: byRole.revenue, debit: '0', credit: total.toFixed(2) });
@@ -510,7 +518,16 @@ export class BookingService {
         .returning();
       if (!entry) return;
 
-      await tx.insert(journalLine).values(lines.map((l) => ({ entryId: entry.id, accountId: l.accountId, debit: l.debit, credit: l.credit })));
+      await tx.insert(journalLine).values(
+        lines.map((l) => ({
+          entryId: entry.id,
+          accountId: l.accountId,
+          debit: l.debit,
+          credit: l.credit,
+          subjectType: l.subjectType,
+          subjectId: l.subjectId,
+        })),
+      );
     } catch {
       // Ledger posting must never block a real payment being recorded.
     }
@@ -601,6 +618,7 @@ export class BookingService {
       await this.postLabBillCollection(tx, {
         bookingId: found.id,
         storeId: found.storeId,
+        memberId: found.memberId,
         cash: cashAmount,
         wallet: walletAmount,
       });

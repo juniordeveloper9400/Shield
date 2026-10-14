@@ -173,6 +173,7 @@ export class OrderService {
             .returning();
           await postRewardPointsIssued(tx, {
             rewardPointTransactionId: rewardTxn.id,
+            memberId,
             points,
             reason: `order ${created.code}`,
           });
@@ -646,7 +647,15 @@ export class OrderService {
    */
   private async postOrderCollection(
     tx: Database,
-    params: { orderId: number; orderCode: string; storeId: number | null; cash: number; gpay: number; wallet: number },
+    params: {
+      orderId: number;
+      orderCode: string;
+      storeId: number | null;
+      memberId: number;
+      cash: number;
+      gpay: number;
+      wallet: number;
+    },
   ) {
     try {
       if (!params.storeId) return;
@@ -665,9 +674,17 @@ export class OrderService {
       // the activation's cash_in account) — folded into the same "received
       // at store" account as cash until the accountant wants that split.
       const received = params.cash + params.gpay;
-      const lines: { accountId: number; debit: string; credit: string }[] = [];
+      const lines: { accountId: number; debit: string; credit: string; subjectType?: string; subjectId?: number }[] = [];
       if (received > 0) lines.push({ accountId: byRole.cash_in, debit: received.toFixed(2), credit: '0' });
-      if (params.wallet > 0) lines.push({ accountId: byRole.wallet_in, debit: params.wallet.toFixed(2), credit: '0' });
+      if (params.wallet > 0) {
+        lines.push({
+          accountId: byRole.wallet_in,
+          debit: params.wallet.toFixed(2),
+          credit: '0',
+          subjectType: 'member',
+          subjectId: params.memberId,
+        });
+      }
       const total = received + params.wallet;
       if (total <= 0 || lines.length === 0) return;
       lines.push({ accountId: byRole.revenue, debit: '0', credit: total.toFixed(2) });
@@ -691,7 +708,16 @@ export class OrderService {
         .returning();
       if (!entry) return;
 
-      await tx.insert(journalLine).values(lines.map((l) => ({ entryId: entry.id, accountId: l.accountId, debit: l.debit, credit: l.credit })));
+      await tx.insert(journalLine).values(
+        lines.map((l) => ({
+          entryId: entry.id,
+          accountId: l.accountId,
+          debit: l.debit,
+          credit: l.credit,
+          subjectType: l.subjectType,
+          subjectId: l.subjectId,
+        })),
+      );
     } catch {
       // Ledger posting must never block a real payment being recorded.
     }
@@ -838,6 +864,7 @@ export class OrderService {
           orderId,
           orderCode: found.code,
           storeId: found.storeId,
+          memberId: found.memberId,
           cash: 0,
           gpay: 0,
           wallet: walletPaise / 100,
@@ -929,6 +956,7 @@ export class OrderService {
           orderId,
           orderCode: found.code,
           storeId: found.storeId,
+          memberId: found.memberId,
           cash: cashPaise / 100,
           gpay: gpayPaise / 100,
           wallet: 0,

@@ -33,7 +33,7 @@ async function ledgerAccounts(tx: Database, event: string, roles: string[]) {
  *  awarded (`points` is positive). */
 export async function postRewardPointsIssued(
   tx: Database,
-  params: { rewardPointTransactionId: number; points: number; reason: string },
+  params: { rewardPointTransactionId: number; memberId: number; points: number; reason: string },
 ) {
   try {
     if (params.points <= 0) return;
@@ -58,9 +58,19 @@ export async function postRewardPointsIssued(
       .returning();
     if (!entry) return;
 
+    // Only the liability line carries a subject — it's the member's own
+    // points balance; the expense side is a company cost, not owed to
+    // anyone (see migration 0090's scope: asset/liability accounts only).
     await tx.insert(journalLine).values([
       { entryId: entry.id, accountId: byRole.expense, debit: rupees, credit: '0' },
-      { entryId: entry.id, accountId: byRole.liability, debit: '0', credit: rupees },
+      {
+        entryId: entry.id,
+        accountId: byRole.liability,
+        debit: '0',
+        credit: rupees,
+        subjectType: 'member',
+        subjectId: params.memberId,
+      },
     ]);
   } catch {
     // Ledger posting must never block a real reward points award.
@@ -71,7 +81,7 @@ export async function postRewardPointsIssued(
  *  redeemed into the wallet (`points` is positive, the amount redeemed). */
 export async function postRewardPointsRedeemed(
   tx: Database,
-  params: { rewardPointTransactionId: number; points: number },
+  params: { rewardPointTransactionId: number; memberId: number; points: number },
 ) {
   try {
     if (params.points <= 0) return;
@@ -96,9 +106,25 @@ export async function postRewardPointsRedeemed(
       .returning();
     if (!entry) return;
 
+    // Both sides are the same member's own money, just moving between two
+    // of their own accounts (points balance -> wallet balance).
     await tx.insert(journalLine).values([
-      { entryId: entry.id, accountId: byRole.liability, debit: rupees, credit: '0' },
-      { entryId: entry.id, accountId: byRole.member_wallet, debit: '0', credit: rupees },
+      {
+        entryId: entry.id,
+        accountId: byRole.liability,
+        debit: rupees,
+        credit: '0',
+        subjectType: 'member',
+        subjectId: params.memberId,
+      },
+      {
+        entryId: entry.id,
+        accountId: byRole.member_wallet,
+        debit: '0',
+        credit: rupees,
+        subjectType: 'member',
+        subjectId: params.memberId,
+      },
     ]);
   } catch {
     // Ledger posting must never block a real redemption.
