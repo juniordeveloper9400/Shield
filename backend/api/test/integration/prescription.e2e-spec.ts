@@ -12,7 +12,7 @@ import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { eq } from 'drizzle-orm';
-import { adminUser, bill, order, patient, prescription, prescriptionImage, prescriptionMedicine, shieldStore, users } from '../../src/db/schema';
+import { adminUser, order, patient, prescription, prescriptionImage, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -704,7 +704,7 @@ describe('Prescription (e2e)', () => {
         .set('Authorization', `Bearer ${storeAStaffToken}`)
         .send({ fulfillmentType: 'HOME_DELIVERY' })
         .expect(200);
-      expect(whileProcessing.body).toBe(true);
+      expect(whileProcessing.body).toEqual({ changed: true });
       const [afterChange] = await db.select({ fulfillmentType: order.fulfillmentType }).from(order).where(eq(order.id, orderId));
       expect(afterChange.fulfillmentType).toBe('HOME_DELIVERY');
 
@@ -714,7 +714,7 @@ describe('Prescription (e2e)', () => {
         .set('Authorization', `Bearer ${storeAStaffToken}`)
         .send({ fulfillmentType: 'STORE_PICKUP' })
         .expect(200);
-      expect(afterDelivered.body).toBe(false); // already delivered — nothing left to change
+      expect(afterDelivered.body).toEqual({ changed: false }); // already delivered — nothing left to change
     });
 
     it('deletes without touching its order, unlike the member-facing delete', async () => {

@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import { DRIZZLE, type Database } from '../../db/client';
 import {
@@ -291,13 +291,8 @@ export class PrescriptionService {
    *  where only the id is needed (billing a prescription order, stamping
    *  reviewedAt on save). */
   private async latestOrderId(prescriptionId: number): Promise<number | null> {
-    const [row] = await this.db
-      .select({ orderId: prescriptionOrder.orderId })
-      .from(prescriptionOrder)
-      .where(and(eq(prescriptionOrder.prescriptionId, prescriptionId), isNotNull(prescriptionOrder.orderId)))
-      .orderBy(desc(prescriptionOrder.id))
-      .limit(1);
-    return row?.orderId ?? null;
+    const byRx = await this.latestOrders([prescriptionId]);
+    return byRx.get(prescriptionId)?.id ?? null;
   }
 
   /** Soft-deletes one of the caller's own prescriptions — same pattern as
@@ -524,14 +519,14 @@ export class PrescriptionService {
    * any stage. Its order, if any, is left untouched — cancel that
    * separately. Returns false when it was already gone.
    */
-  async deleteForStaff(role: AdminRole, storeId: number | null, id: number): Promise<boolean> {
+  async deleteForStaff(role: AdminRole, storeId: number | null, id: number) {
     await this.getOwnedByStaffOrThrow(id, role, storeId);
     const [updated] = await this.db
       .update(prescription)
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(prescription.id, id), isNull(prescription.deletedAt)))
       .returning({ id: prescription.id });
-    return updated !== undefined;
+    return { deleted: updated !== undefined };
   }
 
   /**
@@ -541,16 +536,14 @@ export class PrescriptionService {
    * cancelled, how it reached the member is a fact, not a plan. Returns
    * false when there was no such order to change.
    */
-  async updatePrescriptionFulfillment(role: AdminRole, storeId: number | null, id: number, dto: UpdatePrescriptionFulfillmentDto): Promise<boolean> {
+  async updatePrescriptionFulfillment(role: AdminRole, storeId: number | null, id: number, dto: UpdatePrescriptionFulfillmentDto) {
     await this.getOwnedByStaffOrThrow(id, role, storeId);
     const orderId = await this.latestOrderId(id);
-    if (orderId === null) return false;
-    const [updated] = await this.db
-      .update(order)
-      .set({ fulfillmentType: dto.fulfillmentType })
-      .where(and(eq(order.id, orderId), eq(order.status, 'PROCESSING')))
-      .returning({ id: order.id });
-    return updated !== undefined;
+    if (orderId === null) return { changed: false };
+    const [current] = await this.db.select({ status: order.status }).from(order).where(eq(order.id, orderId)).limit(1);
+    if (!current || current.status !== 'PROCESSING') return { changed: false };
+    await this.db.update(order).set({ fulfillmentType: dto.fulfillmentType }).where(eq(order.id, orderId));
+    return { changed: true };
   }
 
   /**
@@ -693,14 +686,21 @@ export class PrescriptionService {
     const patientIds = [...new Set(rows.map((r) => r.patientId))];
     const assignedStoreIds = [...new Set(rows.map((r) => r.storeId).filter((v): v is number => v != null))];
 
-    const [memberRows, patientRows, imagesByRx, ordersByRx] = await Promise.all([
+    const [memberRows, patientRows, imagesByRx, ordersByRx, medicineRows] = await Promise.all([
       this.db.select({ id: users.id, name: users.name, phone: users.phone, homeStoreId: users.homeStoreId }).from(users).where(inArray(users.id, memberIds)),
       this.db.select({ id: patient.id, name: patient.name }).from(patient).where(inArray(patient.id, patientIds)),
       this.attachImages(ids),
       this.latestOrders(ids),
+      this.db.select().from(prescriptionMedicine).where(inArray(prescriptionMedicine.prescriptionId, ids)).orderBy(asc(prescriptionMedicine.sort)),
     ]);
     const memberById = new Map(memberRows.map((m) => [m.id, m]));
     const patientById = new Map(patientRows.map((p) => [p.id, p]));
+    const medicinesByRx = new Map<number, (typeof prescriptionMedicine.$inferSelect)[]>();
+    for (const m of medicineRows) {
+      const bucket = medicinesByRx.get(m.prescriptionId);
+      if (bucket) bucket.push(m);
+      else medicinesByRx.set(m.prescriptionId, [m]);
+    }
 
     const orderIds = [...new Set([...ordersByRx.values()].map((o) => o.id))];
     const billRows = orderIds.length
@@ -752,6 +752,7 @@ export class PrescriptionService {
         orderConvertedToBillAt: linkedOrder?.convertedToBillAt ?? null,
         billAmount: linkedBill?.amount ?? '0',
         billStatus: linkedBill?.status ?? 'PENDING',
+        medicines: medicinesByRx.get(row.id) ?? [],
       };
     });
   }
