@@ -6,6 +6,7 @@ import '../../dates.dart';
 import '../../module/cart/cart_service.dart';
 import '../../module/checkout/checkout_order.dart' show CheckoutFailedException;
 import '../../module/checkout/fulfillment_type.dart';
+import '../../module/labtest/lab_fulfillment_type.dart';
 import '../../module/location/address_book.dart';
 import '../../module/orders/bill_invoice.dart';
 import '../../module/orders/purchase_service.dart';
@@ -525,6 +526,7 @@ class BackendOrderRepository {
     required List<LabBookingInput> bookings,
     Address? address,
     String? storeCode,
+    LabFulfillmentType fulfillmentType = LabFulfillmentType.homeCollection,
   }) async {
     if (!BackendHttp.isConfigured || bookings.isEmpty) {
       return;
@@ -567,6 +569,7 @@ class BackendOrderRepository {
             ],
             if (addressId != null) 'addressId': addressId,
             if (storeId != null) 'storeId': storeId,
+            'fulfillmentType': fulfillmentType.apiValue,
           },
         );
       } catch (error) {

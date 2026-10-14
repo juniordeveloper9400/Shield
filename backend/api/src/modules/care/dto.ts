@@ -13,11 +13,18 @@ const bookingPatientSchema = z
 export const bookLabTestSchema = z.object({
   labPackageId: z.number().int().positive(),
   patients: z.array(bookingPatientSchema).min(1),
+  // Not required server-side even for home collection — the app's own
+  // checkout screen already blocks placing a home-collection booking
+  // without one (see LabCheckoutScreen._canPlace); the server stays as
+  // permissive here as it always was for a client that doesn't.
   addressId: z.number().int().positive().optional(),
   scheduledFor: z.string().datetime().optional(),
   /** The branch to route this booking to. Falls back to the member's own
    *  home branch when omitted — see BookingService.bookLabTest's own doc. */
   storeId: z.number().int().positive().optional(),
+  /** How the sample reaches the lab — defaults to the original behaviour
+   *  (the lab visits the member) for a client that predates this field. */
+  fulfillmentType: z.enum(['HOME_COLLECTION', 'STORE_VISIT']).default('HOME_COLLECTION'),
 });
 
 export const updateLabBookingStatusSchema = z.object({

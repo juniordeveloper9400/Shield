@@ -2,7 +2,10 @@ import 'package:flutter/foundation.dart';
 
 import '../registration/registration_service.dart';
 import '../registration/shield_store.dart';
+import 'lab_fulfillment_type.dart';
 import 'lab_package.dart';
+
+export 'lab_fulfillment_type.dart' show LabFulfillmentType;
 
 /// One package booked for a number of patients.
 @immutable
@@ -45,6 +48,22 @@ class LabCartService extends ChangeNotifier {
   /// reference can never survive an admin edit; [store] re-resolves it fresh
   /// every read.
   String? _chosenStoreId;
+
+  /// How this basket's samples reach the lab — home collection by default,
+  /// matching the booking flow's original (and still most common) behaviour.
+  LabFulfillmentType _fulfillmentType = LabFulfillmentType.homeCollection;
+
+  LabFulfillmentType get fulfillmentType => _fulfillmentType;
+
+  /// Records the member's own pick from the checkout's service-type row. A
+  /// switch to store visit does not clear any address already chosen — it's
+  /// simply not required any more, and switching back to home collection
+  /// should not make the member pick an address again if they already had.
+  void chooseFulfillmentType(LabFulfillmentType type) {
+    if (_fulfillmentType == type) return;
+    _fulfillmentType = type;
+    notifyListeners();
+  }
 
   /// The branch this basket collects from: [_chosenStoreId] when the member
   /// picked one and it still takes lab bookings, otherwise their registered
@@ -141,6 +160,7 @@ class LabCartService extends ChangeNotifier {
   void clear() {
     _bookings.clear();
     _chosenStoreId = null;
+    _fulfillmentType = LabFulfillmentType.homeCollection;
     notifyListeners();
   }
 

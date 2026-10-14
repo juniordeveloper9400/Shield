@@ -72,6 +72,7 @@ export function createTestDb() {
     CREATE TYPE app.appointment_kind AS ENUM ('CLINIC','TELE','DENTAL','DIETITIAN');
     CREATE TYPE app.appointment_status AS ENUM ('REQUESTED','CONFIRMED','COMPLETED','CANCELLED');
     CREATE TYPE app.lab_booking_status AS ENUM ('REQUESTED','CONFIRMED','SAMPLE_COLLECTED','REPORT_READY','CANCELLED');
+    CREATE TYPE app.lab_booking_fulfillment AS ENUM ('HOME_COLLECTION','STORE_VISIT');
     CREATE TYPE app.agent_level AS ENUM ('NATIONAL','REGION','STATE','DISTRICT','ASSEMBLY','LSGD','WARD');
     CREATE TYPE app.agent_approval AS ENUM ('PENDING','APPROVED','REJECTED');
     CREATE TYPE app.withdrawal_status AS ENUM ('PENDING','PAID','REJECTED');
@@ -771,6 +772,7 @@ export function createTestDb() {
       unit_price numeric(12,2) NOT NULL DEFAULT 0,
       total_price numeric(12,2) NOT NULL DEFAULT 0,
       status app.lab_booking_status NOT NULL DEFAULT 'REQUESTED',
+      fulfillment_type app.lab_booking_fulfillment NOT NULL DEFAULT 'HOME_COLLECTION',
       scheduled_for timestamptz,
       address_id bigint REFERENCES app.member_address(id) ON DELETE SET NULL,
       store_id bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,

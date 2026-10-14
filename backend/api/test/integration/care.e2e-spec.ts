@@ -261,6 +261,8 @@ describe('Care Services (e2e)', () => {
     expect(Number(res.body.totalPrice)).toBe(1998);
     // No storeId sent: it fell back to the member's own home branch.
     expect(res.body.storeId).toBe(labStoreId);
+    // No fulfillmentType sent either — defaults to the original behaviour.
+    expect(res.body.fulfillmentType).toBe('HOME_COLLECTION');
 
     const detail = await request(app.getHttpServer())
       .get(`/v1/member/lab-bookings/${labBookingId}`)
@@ -293,6 +295,23 @@ describe('Care Services (e2e)', () => {
     ]);
     // Never the pages themselves — they are fetched on demand.
     expect(JSON.stringify(list.body)).not.toContain('data:image');
+  });
+
+  it('books a store-visit lab test with no address, and the staff list shows the service type', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/lab-bookings')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ labPackageId, patients: [{ name: 'Walk-in' }], fulfillmentType: 'STORE_VISIT' })
+      .expect(201);
+    expect(res.body.fulfillmentType).toBe('STORE_VISIT');
+    expect(res.body.addressId).toBeNull();
+
+    const staffList = await request(app.getHttpServer())
+      .get('/v1/staff/lab-bookings')
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+    const row = staffList.body.find((b: { id: number }) => b.id === res.body.id);
+    expect(row.fulfillmentType).toBe('STORE_VISIT');
   });
 
   it('books into a branch the member chose, refusing one not open for lab', async () => {

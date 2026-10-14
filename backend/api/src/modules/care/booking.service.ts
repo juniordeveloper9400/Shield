@@ -117,6 +117,7 @@ export class BookingService {
           totalPrice: totalPrice.toString(),
           addressId: dto.addressId,
           storeId: storeId ?? undefined,
+          fulfillmentType: dto.fulfillmentType,
           scheduledFor: dto.scheduledFor ? new Date(dto.scheduledFor) : undefined,
         })
         .returning();

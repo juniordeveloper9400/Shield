@@ -23,6 +23,13 @@ export const labBookingStatusEnum = appSchema.enum('lab_booking_status', [
   'REPORT_READY',
   'CANCELLED',
 ]);
+/** migration 0094 — how the member's sample reaches the lab: the lab visits
+ *  them, or they visit the branch. Defaults HOME_COLLECTION, matching every
+ *  booking made before this existed. */
+export const labBookingFulfillmentEnum = appSchema.enum('lab_booking_fulfillment', [
+  'HOME_COLLECTION',
+  'STORE_VISIT',
+]);
 
 /**
  * "Explore by health concern" — a member-browsable category (migration
@@ -146,6 +153,8 @@ export const labBooking = appSchema.table('lab_booking', {
   unitPrice: numeric('unit_price', { precision: 12, scale: 2 }).notNull().default('0'),
   totalPrice: numeric('total_price', { precision: 12, scale: 2 }).notNull().default('0'),
   status: labBookingStatusEnum('status').notNull().default('REQUESTED'),
+  /** migration 0094 — see labBookingFulfillmentEnum's own doc. */
+  fulfillmentType: labBookingFulfillmentEnum('fulfillment_type').notNull().default('HOME_COLLECTION'),
   scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
   addressId: bigint('address_id', { mode: 'number' }).references(() => memberAddress.id),
   /** Which branch this booking is routed to (migration 0057) — defaults to
