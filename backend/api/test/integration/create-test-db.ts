@@ -26,6 +26,27 @@ export function createTestDb() {
     implementation: (value: string, length: number, fill: string) =>
       value.length >= length ? value : (fill.repeat(Math.ceil((length - value.length) / fill.length)) + value).slice(-length),
   });
+  // Used by AgentService.assertNationalSlotAvailable to serialise the
+  // national-agent check-and-insert. pg-mem is single-connection/
+  // single-statement-at-a-time per test anyway — there's no real
+  // concurrency to lock against here — so a no-op stub is enough to let
+  // the surrounding SQL parse and run.
+  mem.public.registerFunction({
+    name: 'hashtext',
+    args: [DataType.text],
+    returns: DataType.integer,
+    implementation: (value: string) => {
+      let hash = 0;
+      for (let i = 0; i < value.length; i += 1) hash = (hash * 31 + value.charCodeAt(i)) | 0;
+      return hash;
+    },
+  });
+  mem.public.registerFunction({
+    name: 'pg_advisory_xact_lock',
+    args: [DataType.integer],
+    returns: DataType.integer,
+    implementation: () => 0,
+  });
 
   mem.public.none(`
     CREATE SCHEMA app;
@@ -936,8 +957,10 @@ export function createTestDb() {
     CREATE TABLE app.region (
       id uuid PRIMARY KEY,
       national_agent_id bigint REFERENCES app.agent(id) ON DELETE SET NULL,
+      agent_id bigint REFERENCES app.agent(id) ON DELETE SET NULL,
       name text NOT NULL UNIQUE,
       code text NOT NULL DEFAULT '',
+      prefix_code text NOT NULL DEFAULT '',
       sort integer NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
@@ -946,42 +969,52 @@ export function createTestDb() {
     CREATE TABLE app.state (
       id uuid PRIMARY KEY,
       region_id uuid NOT NULL REFERENCES app.region(id) ON DELETE RESTRICT,
+      agent_id bigint REFERENCES app.agent(id) ON DELETE SET NULL,
       name text NOT NULL,
       code text NOT NULL DEFAULT '',
+      prefix_code text NOT NULL DEFAULT '',
       sort integer NOT NULL DEFAULT 0
     );
 
     CREATE TABLE app.district (
       id uuid PRIMARY KEY,
       state_id uuid NOT NULL REFERENCES app.state(id) ON DELETE RESTRICT,
+      agent_id bigint REFERENCES app.agent(id) ON DELETE SET NULL,
       name text NOT NULL,
       code text NOT NULL DEFAULT '',
+      prefix_code text NOT NULL DEFAULT '',
       sort integer NOT NULL DEFAULT 0
     );
 
     CREATE TABLE app.assembly (
       id uuid PRIMARY KEY,
       district_id uuid NOT NULL REFERENCES app.district(id) ON DELETE RESTRICT,
+      agent_id bigint REFERENCES app.agent(id) ON DELETE SET NULL,
       name text NOT NULL,
       code text NOT NULL DEFAULT '',
+      prefix_code text NOT NULL DEFAULT '',
       sort integer NOT NULL DEFAULT 0
     );
 
     CREATE TABLE app.lsgd (
       id uuid PRIMARY KEY,
       assembly_id uuid REFERENCES app.assembly(id) ON DELETE RESTRICT,
+      agent_id bigint REFERENCES app.agent(id) ON DELETE SET NULL,
       type app.lsgd_type NOT NULL,
       name text NOT NULL,
       code text NOT NULL DEFAULT '',
+      prefix_code text NOT NULL DEFAULT '',
       sort integer NOT NULL DEFAULT 0
     );
 
     CREATE TABLE app.ward (
       id uuid PRIMARY KEY,
       lsgd_id uuid NOT NULL REFERENCES app.lsgd(id) ON DELETE RESTRICT,
+      agent_id bigint REFERENCES app.agent(id) ON DELETE SET NULL,
       ward_number integer NOT NULL,
       name text NOT NULL DEFAULT '',
       code text NOT NULL DEFAULT '',
+      prefix_code text NOT NULL DEFAULT '',
       sort integer NOT NULL DEFAULT 0
     );
 
@@ -1065,6 +1098,8 @@ export function createTestDb() {
       account_id bigint NOT NULL REFERENCES app.chart_of_account(id),
       debit numeric(12,2) NOT NULL DEFAULT 0 CHECK (debit >= 0),
       credit numeric(12,2) NOT NULL DEFAULT 0 CHECK (credit >= 0),
+      subject_type text CHECK (subject_type IS NULL OR subject_type IN ('member', 'agent', 'investor')),
+      subject_id bigint,
       created_at timestamptz NOT NULL DEFAULT now(),
       CHECK ((debit = 0) <> (credit = 0))
     );

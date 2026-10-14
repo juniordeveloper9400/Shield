@@ -15,6 +15,10 @@ export const lsgdTypeEnum = appSchema.enum('lsgd_type', ['corporation', 'municip
 export const region = appSchema.table('region', {
   id: uuid('id').primaryKey(),
   nationalAgentId: bigint('national_agent_id', { mode: 'number' }).references(() => agent.id),
+  // Migration 0021 — the REGION-level agent heading this one region,
+  // mirrored from app.agent.area_id. Distinct from nationalAgentId above
+  // (the single NATIONAL agent who heads every region at once).
+  agentId: bigint('agent_id', { mode: 'number' }).references(() => agent.id),
   name: text('name').notNull(),
   code: text('code').notNull().default(''),
   // The level-tagged display code ('REG-SOU-01', …) — migration
@@ -29,6 +33,9 @@ export const region = appSchema.table('region', {
 export const state = appSchema.table('state', {
   id: uuid('id').primaryKey(),
   regionId: uuid('region_id').notNull(),
+  // Migration 0021 — the approved agent heading this state, mirrored from
+  // app.agent.area_id. NULL when the slot is open.
+  agentId: bigint('agent_id', { mode: 'number' }).references(() => agent.id),
   name: text('name').notNull(),
   code: text('code').notNull().default(''),
   prefixCode: text('prefix_code').notNull().default(''),
@@ -38,6 +45,7 @@ export const state = appSchema.table('state', {
 export const district = appSchema.table('district', {
   id: uuid('id').primaryKey(),
   stateId: uuid('state_id').notNull(),
+  agentId: bigint('agent_id', { mode: 'number' }).references(() => agent.id),
   name: text('name').notNull(),
   code: text('code').notNull().default(''),
   prefixCode: text('prefix_code').notNull().default(''),
@@ -47,6 +55,7 @@ export const district = appSchema.table('district', {
 export const assembly = appSchema.table('assembly', {
   id: uuid('id').primaryKey(),
   districtId: uuid('district_id').notNull(),
+  agentId: bigint('agent_id', { mode: 'number' }).references(() => agent.id),
   name: text('name').notNull(),
   code: text('code').notNull().default(''),
   prefixCode: text('prefix_code').notNull().default(''),
@@ -56,6 +65,7 @@ export const assembly = appSchema.table('assembly', {
 export const lsgd = appSchema.table('lsgd', {
   id: uuid('id').primaryKey(),
   assemblyId: uuid('assembly_id'),
+  agentId: bigint('agent_id', { mode: 'number' }).references(() => agent.id),
   type: lsgdTypeEnum('type').notNull(),
   name: text('name').notNull(),
   code: text('code').notNull().default(''),
@@ -66,6 +76,7 @@ export const lsgd = appSchema.table('lsgd', {
 export const ward = appSchema.table('ward', {
   id: uuid('id').primaryKey(),
   lsgdId: uuid('lsgd_id').notNull(),
+  agentId: bigint('agent_id', { mode: 'number' }).references(() => agent.id),
   wardNumber: integer('ward_number').notNull(),
   name: text('name').notNull().default(''),
   code: text('code').notNull().default(''),

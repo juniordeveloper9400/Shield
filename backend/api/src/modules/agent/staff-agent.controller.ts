@@ -28,6 +28,13 @@ export class StaffAgentController {
     return this.agents.listPendingRequests();
   }
 
+  /** Approved agents only, for the "parent" picker on both the
+   *  agent_request KYC form and the Users page's direct-convert form. */
+  @Get('agent-options')
+  listAgentOptions() {
+    return this.agents.listApprovedAgentOptions();
+  }
+
   @Post('agent-requests/:id/approve')
   approve(@Param('id', ParseIntPipe) id: number) {
     return this.agents.approveRequest(id);

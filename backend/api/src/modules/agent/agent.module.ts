@@ -11,5 +11,6 @@ import { IdempotencyService } from '../../common/idempotency/idempotency.service
   imports: [AuthModule],
   controllers: [MemberAgentController, StaffAgentController],
   providers: [AgentService, IdempotencyService],
+  exports: [AgentService],
 })
 export class AgentModule {}

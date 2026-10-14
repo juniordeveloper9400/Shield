@@ -1,10 +1,28 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, isNull, ne, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Database } from '../../db/client';
-import { adminUser, memberAddress, patient, rewardPointTransaction, shieldStore, users } from '../../db/schema';
+import {
+  agent,
+  agentCustomer,
+  adminUser,
+  investor,
+  memberAddress,
+  patient,
+  rewardPointTransaction,
+  shieldStore,
+  users,
+} from '../../db/schema';
 import { AuthService } from '../auth/auth.service';
 import { postRewardPointsIssued } from '../ledger/reward-points-ledger';
-import type { CreateAddressDto, CreatePatientDto, UpdateAddressDto, UpdateMemberProfileDto, UpdatePatientDto } from './dto';
+import type {
+  CreateAddressDto,
+  CreatePatientDto,
+  UpdateAddressDto,
+  UpdateMemberContactDto,
+  UpdateMemberProfileDto,
+  UpdatePatientDto,
+} from './dto';
 
 /** Credited once, the first time a member completes registration. Mirrors the client's own display constant (`RewardsService.registrationBonus`). */
 const REGISTRATION_BONUS_POINTS = 500;
@@ -180,6 +198,7 @@ export class IdentityService {
           .returning();
         await postRewardPointsIssued(tx, {
           rewardPointTransactionId: rewardTxn.id,
+          memberId,
           points: REGISTRATION_BONUS_POINTS,
           reason: 'registration bonus',
         });
@@ -331,6 +350,155 @@ export class IdentityService {
       .where(and(eq(patient.id, patientId), eq(patient.memberId, memberId), isNull(patient.deletedAt)))
       .returning();
     if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Patient not found' } });
+  }
+
+  // ---- Staff: Users page ----------------------------------------------
+  // Unlike every method above (always scoped to the calling member's own
+  // session), these read/write an arbitrary member by id — the console's
+  // own Users list and detail page.
+
+  /** Every app member, newest first, tagged with whichever persona the
+   *  Super Admin has granted them. [storeCode], when given, scopes to one
+   *  branch's own members (a blank string short-circuits to an empty list
+   *  — the console's own "no branch chosen yet" state, not "every member"). */
+  async listUsersForStaff(storeCode?: string) {
+    if (storeCode === '') return [];
+    const conditions = [isNull(users.deletedAt)];
+    if (storeCode !== undefined) conditions.push(eq(shieldStore.code, storeCode));
+    return this.db
+      .select({
+        id: users.id,
+        name: users.name,
+        phone: users.phone,
+        email: users.email,
+        registered: sql<boolean>`${users.registrationCompletedAt} is not null`,
+        createdAt: users.createdAt,
+        lastLoginAt: users.lastLoginAt,
+        homeStoreCode: shieldStore.code,
+        homeStoreName: shieldStore.name,
+        agentCode: agent.code,
+        agentLevel: agent.level,
+        investorCode: investor.code,
+      })
+      .from(users)
+      .leftJoin(shieldStore, eq(shieldStore.id, users.homeStoreId))
+      .leftJoin(agent, eq(agent.memberId, users.id))
+      .leftJoin(investor, eq(investor.memberId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(users.createdAt));
+  }
+
+  async getUserForStaff(memberId: number) {
+    const [row] = await this.db
+      .select({
+        id: users.id,
+        name: users.name,
+        phone: users.phone,
+        email: users.email,
+        registered: sql<boolean>`${users.registrationCompletedAt} is not null`,
+        createdAt: users.createdAt,
+        lastLoginAt: users.lastLoginAt,
+        homeStoreCode: shieldStore.code,
+        homeStoreName: shieldStore.name,
+        agentCode: agent.code,
+        agentLevel: agent.level,
+        investorCode: investor.code,
+      })
+      .from(users)
+      .leftJoin(shieldStore, eq(shieldStore.id, users.homeStoreId))
+      .leftJoin(agent, eq(agent.memberId, users.id))
+      .leftJoin(investor, eq(investor.memberId, users.id))
+      .where(and(eq(users.id, memberId), isNull(users.deletedAt)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * The full profile for one member: the registration fields
+   * [getUserForStaff] leaves out, plus every patient and delivery address
+   * they have added — loaded when the console's user detail modal opens.
+   */
+  async getUserDetailForStaff(memberId: number) {
+    const [profile] = await this.db
+      .select({
+        gender: users.gender,
+        dob: users.dob,
+        address: users.address,
+        place: users.place,
+        pincode: users.pincode,
+        state: users.state,
+        rewardPoints: users.rewardPoints,
+        referralCode: users.referralCode,
+        registrationCompletedAt: users.registrationCompletedAt,
+      })
+      .from(users)
+      .where(and(eq(users.id, memberId), isNull(users.deletedAt)))
+      .limit(1);
+    if (!profile) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Member not found' } });
+
+    // A member referred by another member's account has referredByMemberId
+    // set; one referred by an agent's own code (SHD-…) has no such link —
+    // that one lives on app.agent_customer instead (set at registration by
+    // AgentCustomerRepository.linkCustomer). The two never both apply to
+    // one member, so the agent-customer join only ever matches when the
+    // member join above found nothing.
+    const referredByMember = alias(users, 'referred_by_member');
+    const [referredBy] = await this.db
+      .select({
+        memberName: referredByMember.name,
+        memberPhone: referredByMember.phone,
+        agentName: agent.name,
+        agentCode: agent.code,
+      })
+      .from(users)
+      .leftJoin(referredByMember, eq(referredByMember.id, users.referredByMemberId))
+      .leftJoin(agentCustomer, eq(agentCustomer.memberId, users.id))
+      .leftJoin(agent, eq(agent.id, agentCustomer.agentId))
+      .where(eq(users.id, memberId))
+      .limit(1);
+
+    const patients = await this.listPatients(memberId);
+    const addresses = await this.db
+      .select({ ...getTableColumns(memberAddress), patientName: patient.name })
+      .from(memberAddress)
+      .leftJoin(patient, eq(patient.id, memberAddress.patientId))
+      .where(and(eq(memberAddress.memberId, memberId), isNull(memberAddress.deletedAt)))
+      .orderBy(desc(memberAddress.isDefault), memberAddress.createdAt);
+
+    return {
+      id: memberId,
+      ...profile,
+      referredByName: referredBy?.memberName ?? null,
+      referredByPhone: referredBy?.memberPhone ?? null,
+      referredByAgentName: referredBy?.agentName ?? null,
+      referredByAgentCode: referredBy?.agentCode ?? null,
+      patients,
+      addresses,
+    };
+  }
+
+  /**
+   * Corrects a member's own name/phone directly — used from the
+   * prescription review flow and the Users page when what they typed at
+   * registration turns out wrong. This is their account's actual
+   * name/phone, so the fix shows everywhere on it, not just the one screen
+   * open when it's made. Returns false, changing nothing, when [phone]
+   * already belongs to a different account.
+   */
+  async updateMemberContactForStaff(memberId: number, dto: UpdateMemberContactDto): Promise<boolean> {
+    const [clash] = await this.db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.phone, dto.phone), ne(users.id, memberId)))
+      .limit(1);
+    if (clash) return false;
+
+    const [updated] = await this.db
+      .update(users)
+      .set({ name: dto.name, phone: dto.phone, updatedAt: new Date() })
+      .where(eq(users.id, memberId))
+      .returning({ id: users.id });
+    return updated !== undefined;
   }
 
   /**

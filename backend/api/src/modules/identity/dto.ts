@@ -61,8 +61,20 @@ export const updateMemberProfileSchema = z.object({
   homeStoreCode: z.string().min(1).max(32).optional(),
 });
 
+/**
+ * The staff console's own contact fix — used from the prescription review
+ * flow when what a member typed at registration turns out wrong. Unlike
+ * updateMemberProfileSchema (member's own self-service edit), both fields
+ * are required: there is no partial contact fix on this screen.
+ */
+export const updateMemberContactSchema = z.object({
+  name: z.string().trim().min(1),
+  phone: z.string().trim().min(1),
+});
+
 export type CreateAddressDto = z.infer<typeof createAddressSchema>;
 export type UpdateAddressDto = z.infer<typeof updateAddressSchema>;
 export type CreatePatientDto = z.infer<typeof createPatientSchema>;
 export type UpdatePatientDto = z.infer<typeof updatePatientSchema>;
 export type UpdateMemberProfileDto = z.infer<typeof updateMemberProfileSchema>;
+export type UpdateMemberContactDto = z.infer<typeof updateMemberContactSchema>;

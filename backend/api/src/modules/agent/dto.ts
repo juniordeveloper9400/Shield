@@ -64,9 +64,31 @@ export const moveEarningsToWalletSchema = z.object({
   amount: z.number().finite().positive().multipleOf(0.01),
 });
 
+/**
+ * The Users page's own "Make agent" action — an admin granting the
+ * persona directly to an existing member, bypassing the agent_request
+ * queue entirely (unlike submitAgentRequestSchema above). See
+ * AgentService.adminConvertToAgent.
+ */
+export const adminConvertToAgentSchema = z
+  .object({
+    level: z.enum(['NATIONAL', 'REGION', 'STATE', 'DISTRICT', 'ASSEMBLY', 'LSGD', 'WARD']),
+    // Explicit null clears it back to the geography-derived default; an
+    // admin who leaves this unset gets that same default (see
+    // AgentService.deriveParentAgentId) rather than a forced top-of-tree.
+    parentId: z.number().int().positive().nullable().optional(),
+    area: z.string().trim().default(''),
+    areaId: z.string().uuid().nullable().optional(),
+  })
+  .refine((v) => v.level === 'NATIONAL' || !!v.areaId, {
+    message: 'areaId is required for every level except NATIONAL',
+    path: ['areaId'],
+  });
+
 export type SubmitAgentRequestDto = z.infer<typeof submitAgentRequestSchema>;
 export type RejectAgentRequestDto = z.infer<typeof rejectAgentRequestSchema>;
 export type LinkCustomerDto = z.infer<typeof linkCustomerSchema>;
 export type RequestWithdrawalDto = z.infer<typeof requestWithdrawalSchema>;
 export type ResolveWithdrawalDto = z.infer<typeof resolveWithdrawalSchema>;
 export type MoveEarningsToWalletDto = z.infer<typeof moveEarningsToWalletSchema>;
+export type AdminConvertToAgentDto = z.infer<typeof adminConvertToAgentSchema>;

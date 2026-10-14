@@ -6,5 +6,6 @@ import { StaffInvestorController } from './staff-investor.controller';
 @Module({
   controllers: [MemberInvestorController, StaffInvestorController],
   providers: [InvestorService],
+  exports: [InvestorService],
 })
 export class InvestorModule {}
