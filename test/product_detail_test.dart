@@ -157,10 +157,9 @@ void main() {
       await pumpDetail(tester, dolo);
 
       expect(find.byIcon(Icons.ac_unit_rounded), findsNothing); // storage strip
-      expect(find.text('Product highlights'), findsNothing);
+      expect(find.text('Key uses'), findsNothing);
       expect(find.text('Product description'), findsNothing);
-      expect(find.text('Key benefits'), findsNothing);
-      expect(find.text('Directions for use'), findsNothing);
+      expect(find.text('How to use'), findsNothing);
       expect(find.text('Ingredients'), findsNothing);
       expect(find.text('Safety information'), findsNothing);
       expect(find.text('Frequently asked questions'), findsNothing);
@@ -220,10 +219,9 @@ void main() {
 
       await pumpDetail(tester, idProduct);
 
-      expect(find.text('Product highlights'), findsOneWidget);
+      expect(find.text('Key uses'), findsOneWidget);
       expect(find.text('Product description'), findsOneWidget);
-      expect(find.text('Key benefits'), findsOneWidget);
-      expect(find.text('Directions for use'), findsOneWidget);
+      expect(find.text('How to use'), findsOneWidget);
       expect(find.text('Ingredients'), findsOneWidget);
       expect(find.text('Safety information'), findsOneWidget);
       expect(find.text('Frequently asked questions'), findsOneWidget);
@@ -253,7 +251,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('fever and pain reliever'), findsOneWidget);
 
-      await tester.tap(find.text('Directions for use'));
+      await tester.tap(find.text('How to use'));
       await tester.pumpAndSettle();
       expect(find.textContaining('every 6 hours'), findsOneWidget);
     });
@@ -280,9 +278,8 @@ void main() {
 
       await pumpDetail(tester, idProduct);
 
-      expect(find.text('Product highlights'), findsOneWidget);
+      expect(find.text('Key uses'), findsOneWidget);
       expect(find.text('Product description'), findsNothing);
-      expect(find.text('Key benefits'), findsNothing);
       expect(find.text('Frequently asked questions'), findsNothing);
     });
   });
