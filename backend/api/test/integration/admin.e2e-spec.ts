@@ -7,6 +7,7 @@ import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { hash } from 'bcryptjs';
+import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
@@ -25,6 +26,7 @@ describe('Admin/Ops (e2e)', () => {
   let firebase: FakeFirebaseVerifier;
   let superAdminToken: string;
   let pharmacyToken: string;
+  let adminToken: string;
 
   beforeAll(async () => {
     db = createTestDb();
@@ -67,16 +69,59 @@ describe('Admin/Ops (e2e)', () => {
         .send({ loginId: 'pharmacy-admin@example.com', password: STAFF_PASSWORD })
         .expect(200)
     ).body.accessToken;
+
+    await db.insert(adminUser).values({
+      loginId: 'branch-admin@example.com',
+      name: 'Branch Admin',
+      passwordHash: await testPasswordHash(),
+      role: 'ADMIN',
+    });
+    adminToken = (
+      await request(app.getHttpServer())
+        .post('/v1/staff/auth/session')
+        .send({ loginId: 'branch-admin@example.com', password: STAFF_PASSWORD })
+        .expect(200)
+    ).body.accessToken;
   });
 
   afterAll(async () => {
     await app.close();
   });
 
-  it('rejects a non-SUPERADMIN staff role from managing staff accounts', async () => {
+  it('rejects a non-SUPERADMIN/ADMIN staff role from managing staff accounts', async () => {
     await request(app.getHttpServer())
       .get('/v1/staff/admins')
       .set('Authorization', `Bearer ${pharmacyToken}`)
+      .expect(403);
+  });
+
+  it('lets ADMIN create a store-bound staff login (many per store, not just one)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/staff/admins')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ loginId: 'branch-pharmacy-1@example.com', name: 'Branch Pharmacy Login 1', password: 'a-fresh-password', role: 'PHARMACY' })
+      .expect(201);
+    expect(res.body.isActive).toBe(true);
+
+    await request(app.getHttpServer())
+      .post('/v1/staff/admins')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ loginId: 'branch-pharmacy-2@example.com', name: 'Branch Pharmacy Login 2', password: 'a-fresh-password', role: 'PHARMACY' })
+      .expect(201);
+  });
+
+  it('refuses an ADMIN caller creating or editing a SUPERADMIN/ADMIN account', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/staff/admins')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ loginId: 'sneaky-admin@example.com', name: 'Sneaky', password: 'a-fresh-password', role: 'ADMIN' })
+      .expect(403);
+
+    const [existingAdmin] = await db.select({ id: adminUser.id }).from(adminUser).where(eq(adminUser.loginId, 'branch-admin@example.com'));
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/admins/${existingAdmin.id}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Renamed' })
       .expect(403);
   });
 

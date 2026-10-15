@@ -1,8 +1,9 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE, type Database } from '../../db/client';
 import { adminUser, shieldStore } from '../../db/schema';
+import type { AdminRole } from '../auth/session.types';
 import type { CreateStaffDto, UpdateStaffDto } from './dto';
 
 const BCRYPT_ROUNDS = 12;
@@ -30,16 +31,29 @@ const STAFF_COLUMNS = {
 export class AdminService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
 
-  /** Includes the store's `code` (e.g. 'SHD-MEL'), not just its id — see identity.service.ts getStaffProfile for the same pattern. */
-  async listStaff() {
+  /** Includes the store's `code` (e.g. 'SHD-MEL'), not just its id — see identity.service.ts getStaffProfile for the same pattern. Narrowed to one branch's own logins when `storeId` is given — the Stores page's own per-branch "Staff logins" table. */
+  async listStaff(storeId?: number) {
     return this.db
       .select({ ...STAFF_COLUMNS, storeCode: shieldStore.code })
       .from(adminUser)
       .leftJoin(shieldStore, eq(adminUser.storeId, shieldStore.id))
+      .where(storeId !== undefined ? eq(adminUser.storeId, storeId) : undefined)
       .orderBy(adminUser.name);
   }
 
-  async createStaff(dto: CreateStaffDto) {
+  /** An ADMIN caller may open store-bound/operational logins only — console-
+   *  wide access (another SUPERADMIN or ADMIN account) stays SUPERADMIN-only,
+   *  so ADMIN can staff a branch without being able to mint its own peers. */
+  private assertRoleGrantAllowed(callerRole: AdminRole | undefined, grantedRole: AdminRole) {
+    if (callerRole === 'ADMIN' && (grantedRole === 'SUPERADMIN' || grantedRole === 'ADMIN')) {
+      throw new ForbiddenException({
+        error: { code: 'FORBIDDEN', message: 'Only a Super Admin can create or change a Super Admin/Admin account' },
+      });
+    }
+  }
+
+  async createStaff(dto: CreateStaffDto, callerRole: AdminRole | undefined) {
+    this.assertRoleGrantAllowed(callerRole, dto.role);
     const { password, ...rest } = dto;
     const passwordHash = await hash(password, BCRYPT_ROUNDS);
 
@@ -53,7 +67,16 @@ export class AdminService {
     }
   }
 
-  async updateStaff(id: number, dto: UpdateStaffDto) {
+  async updateStaff(id: number, dto: UpdateStaffDto, callerRole: AdminRole | undefined) {
+    if (dto.role) this.assertRoleGrantAllowed(callerRole, dto.role);
+    if (callerRole === 'ADMIN') {
+      const [existing] = await this.db.select({ role: adminUser.role }).from(adminUser).where(eq(adminUser.id, id));
+      if (existing && (existing.role === 'SUPERADMIN' || existing.role === 'ADMIN')) {
+        throw new ForbiddenException({
+          error: { code: 'FORBIDDEN', message: 'Only a Super Admin can change a Super Admin/Admin account' },
+        });
+      }
+    }
     const { password, ...rest } = dto;
     const values: typeof rest & { passwordHash?: string } = { ...rest };
     if (password) values.passwordHash = await hash(password, BCRYPT_ROUNDS);
