@@ -5,6 +5,14 @@ const bookingPatientSchema = z
     patientId: z.number().int().positive().optional(),
     name: z.string().optional(),
     age: z.number().int().positive().optional(),
+    /** This patient's own collection address — an id from the member's own
+     *  saved address book. Omitted/null falls back to the booking's own
+     *  address (BookingService's own doc on labBookingPatient.addressId). */
+    addressId: z.number().int().positive().nullable().optional(),
+    /** Admin-only free-text override for this one patient — never written
+     *  back to the member's saved address book. `''`/null clears it back
+     *  to addressId (or the booking's own address if that's unset too). */
+    addressOverride: z.string().max(500).nullable().optional(),
   })
   .refine((v) => v.patientId !== undefined || (v.name && v.name.length > 0), {
     message: 'Each patient needs either patientId (an owned patient) or a name',

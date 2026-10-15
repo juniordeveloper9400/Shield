@@ -76,6 +76,23 @@ export class BookingService {
       }
     }
 
+    // Every address id this request references — the booking's own plus
+    // each patient's own — must belong to this member; a home-collection
+    // visit is a real person going to a real address, so this is never
+    // trusted blind the way bare text would be.
+    const ownedAddressIds = [dto.addressId, ...dto.patients.map((p) => p.addressId)].filter(
+      (id): id is number => id !== undefined && id !== null,
+    );
+    if (ownedAddressIds.length > 0) {
+      const owned = await this.db
+        .select({ id: memberAddress.id })
+        .from(memberAddress)
+        .where(and(inArray(memberAddress.id, ownedAddressIds), eq(memberAddress.memberId, memberId)));
+      if (owned.length !== new Set(ownedAddressIds).size) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'One or more addresses do not belong to this member' } });
+      }
+    }
+
     // Price comes from the live lab_package row, never the client — same
     // rule as cart pricing in commerce/cart.service.ts.
     const [pkg] = await this.db.select().from(labPackage).where(eq(labPackage.id, dto.labPackageId)).limit(1);
@@ -125,7 +142,13 @@ export class BookingService {
         .returning();
 
       await tx.insert(labBookingPatient).values(
-        dto.patients.map((p) => ({ labBookingId: created.id, patientId: p.patientId, name: p.name, age: p.age })),
+        dto.patients.map((p) => ({
+          labBookingId: created.id,
+          patientId: p.patientId,
+          name: p.name,
+          age: p.age,
+          addressId: p.addressId,
+        })),
       );
 
       return created;
@@ -240,16 +263,28 @@ export class BookingService {
     // limited native-function set in tests; the real Postgres difference
     // this replaces was cosmetic (whitespace-only names), not a behavior
     // this needs SQL for.
+    const patientAddress = alias(memberAddress, 'patient_address');
     const patientRows = await this.db
       .select({
+        id: labBookingPatient.id,
         labBookingId: labBookingPatient.labBookingId,
+        patientId: labBookingPatient.patientId,
         ownName: labBookingPatient.name,
         ownAge: labBookingPatient.age,
         patientName: patient.name,
         patientDob: patient.dob,
+        addressId: labBookingPatient.addressId,
+        addressOverride: labBookingPatient.addressOverride,
+        addrHouse: patientAddress.house,
+        addrArea: patientAddress.area,
+        addrLandmark: patientAddress.landmark,
+        addrCity: patientAddress.city,
+        addrState: patientAddress.state,
+        addrPincode: patientAddress.pincode,
       })
       .from(labBookingPatient)
       .leftJoin(patient, eq(patient.id, labBookingPatient.patientId))
+      .leftJoin(patientAddress, eq(patientAddress.id, labBookingPatient.addressId))
       .where(inArray(labBookingPatient.labBookingId, ids))
       .orderBy(asc(labBookingPatient.id));
     const ageFromDob = (dob: string | null) => {
@@ -257,12 +292,37 @@ export class BookingService {
       const diff = Date.now() - new Date(dob).getTime();
       return Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
     };
-    const patientsByBooking = new Map<number, { name: string; age: number | null }[]>();
+    const bookingAddressById = new Map(rows.map((r) => [r.id, r]));
+    const patientsByBooking = new Map<
+      number,
+      { id: number; patientId: number | null; name: string; age: number | null; addressId: number | null; addressOverride: string | null; address: string }[]
+    >();
     for (const p of patientRows) {
       const bucket = patientsByBooking.get(p.labBookingId) ?? [];
+      const ownFormatted = [p.addrHouse, p.addrArea, p.addrLandmark, p.addrCity, p.addrState, p.addrPincode]
+        .map((part) => (part ?? '').trim())
+        .filter(Boolean)
+        .join(', ');
+      // This patient's own address if set (override text first, then its
+      // own saved address), else the booking's own shared address — same
+      // "override wins, then the real row, then nothing" precedence the
+      // booking level already uses.
+      const booking = bookingAddressById.get(p.labBookingId);
+      const bookingAddress = booking
+        ? booking.addressOverride?.trim() ||
+          [booking.house, booking.area, booking.landmark, booking.city, booking.state, booking.pincode]
+            .map((part) => (part ?? '').trim())
+            .filter(Boolean)
+            .join(', ')
+        : '';
       bucket.push({
+        id: p.id,
+        patientId: p.patientId,
         name: p.ownName?.trim() || p.patientName || 'Patient',
         age: p.ownAge ?? ageFromDob(p.patientDob),
+        addressId: p.addressId,
+        addressOverride: p.addressOverride,
+        address: p.addressOverride?.trim() || ownFormatted || bookingAddress,
       });
       patientsByBooking.set(p.labBookingId, bucket);
     }
@@ -379,9 +439,26 @@ export class BookingService {
             throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'One or more patients do not belong to this member' } });
           }
         }
+        const ownedAddressIds = dto.patients.map((p) => p.addressId).filter((aid): aid is number => aid !== undefined && aid !== null);
+        if (ownedAddressIds.length > 0) {
+          const owned = await tx
+            .select({ id: memberAddress.id })
+            .from(memberAddress)
+            .where(and(inArray(memberAddress.id, ownedAddressIds), eq(memberAddress.memberId, found.memberId)));
+          if (owned.length !== new Set(ownedAddressIds).size) {
+            throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'One or more addresses do not belong to this member' } });
+          }
+        }
         await tx.delete(labBookingPatient).where(eq(labBookingPatient.labBookingId, bookingId));
         await tx.insert(labBookingPatient).values(
-          dto.patients.map((p) => ({ labBookingId: bookingId, patientId: p.patientId, name: p.name, age: p.age })),
+          dto.patients.map((p) => ({
+            labBookingId: bookingId,
+            patientId: p.patientId,
+            name: p.name,
+            age: p.age,
+            addressId: p.addressId,
+            addressOverride: p.addressOverride?.trim() || null,
+          })),
         );
       }
 

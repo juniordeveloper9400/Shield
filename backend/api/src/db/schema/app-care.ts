@@ -278,6 +278,11 @@ export const labBookingPatient = appSchema.table('lab_booking_patient', {
   patientId: bigint('patient_id', { mode: 'number' }).references(() => patient.id),
   name: text('name'),
   age: integer('age'),
+  // migration 0099 — this patient's own collection address, mirroring
+  // labBooking's addressId/addressOverride pair exactly. Null falls back to
+  // the booking's own address (every booking made before this migration).
+  addressId: bigint('address_id', { mode: 'number' }).references(() => memberAddress.id),
+  addressOverride: text('address_override'),
 });
 
 /** One page of a booking's lab report — a resized JPEG data URI (migration 0052). */
