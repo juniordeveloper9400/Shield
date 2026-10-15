@@ -24,6 +24,7 @@ import {
   labPackage,
   labPackageExtraCategory,
   labTest,
+  memberAddress,
   membershipTier,
   patient,
   shieldStore,
@@ -716,6 +717,81 @@ describe('Care Services (e2e)', () => {
       // Same unit price (₹999) × the new headcount of 3 — system-computed,
       // not whatever an admin might type.
       expect(Number(row.totalPrice)).toBe(2997);
+    });
+
+    it("gives each patient its own collection address, falling back to the booking's own when unset", async () => {
+      const [ownAddress] = await db
+        .insert(memberAddress)
+        .values({ memberId, label: 'HOME', house: 'Flat 2B', area: 'Palace Road', pincode: '679326' })
+        .returning();
+      const [stranger] = await db
+        .insert(users)
+        .values({ phone: '9000000098', name: 'Someone Else', firebaseUid: 'member-stranger-1', registrationCompletedAt: new Date() })
+        .returning();
+      const [strangersAddress] = await db
+        .insert(memberAddress)
+        .values({ memberId: stranger.id, label: 'HOME', house: 'Not theirs', area: 'Elsewhere', pincode: '679999' })
+        .returning();
+
+      const refused = await request(app.getHttpServer())
+        .post('/v1/member/lab-bookings')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .send({
+          labPackageId,
+          patients: [{ patientId: ownedPatientId, addressId: strangersAddress.id }],
+        })
+        .expect(403);
+      expect(refused.body.error.message).toMatch(/addresses do not belong/i);
+
+      const created = await request(app.getHttpServer())
+        .post('/v1/member/lab-bookings')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .send({
+          labPackageId,
+          patients: [
+            { patientId: ownedPatientId, addressId: ownAddress.id },
+            { name: 'No own address', age: 55 },
+          ],
+        })
+        .expect(201);
+      const ownAddressBookingId = created.body.id;
+
+      const staffList = await request(app.getHttpServer())
+        .get('/v1/staff/lab-bookings')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      const row = staffList.body.find((b: { id: number }) => b.id === ownAddressBookingId);
+      expect(row.patients).toHaveLength(2);
+      const withOwnAddress = row.patients.find((p: { addressId: number | null }) => p.addressId === ownAddress.id);
+      expect(withOwnAddress.address).toContain('Flat 2B');
+      const withoutOwnAddress = row.patients.find((p: { addressId: number | null }) => p.addressId === null);
+      // No address of its own — falls back to the booking's own address
+      // (whatever that resolves to, here the member's own home branch
+      // default since none was sent at booking time).
+      expect(withoutOwnAddress.address).toBe(row.address);
+
+      // The console can override one patient's address with free text,
+      // without touching the other patient or the booking's own address.
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${ownAddressBookingId}/details`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({
+          scheduledFor: null,
+          note: '',
+          patients: [
+            { patientId: ownedPatientId, addressId: ownAddress.id },
+            { name: 'No own address', age: 55, addressOverride: 'Collect from the shop next door instead' },
+          ],
+        })
+        .expect(200);
+
+      const afterEdit = await request(app.getHttpServer())
+        .get('/v1/staff/lab-bookings')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      const editedRow = afterEdit.body.find((b: { id: number }) => b.id === ownAddressBookingId);
+      const overridden = editedRow.patients.find((p: { addressOverride: string | null }) => p.addressOverride);
+      expect(overridden.address).toBe('Collect from the shop next door instead');
     });
 
     it('refuses Report ready until a page is attached, then accepts one page at a time and keeps the last on a finished booking', async () => {

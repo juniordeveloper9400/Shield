@@ -891,7 +891,9 @@ export function createTestDb() {
       lab_booking_id bigint NOT NULL REFERENCES app.lab_booking(id) ON DELETE CASCADE,
       patient_id bigint REFERENCES app.patient(id) ON DELETE SET NULL,
       name text,
-      age integer
+      age integer,
+      address_id bigint REFERENCES app.member_address(id),
+      address_override text
     );
 
     CREATE TABLE app.lab_booking_report (
