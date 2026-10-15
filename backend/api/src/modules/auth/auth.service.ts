@@ -8,6 +8,7 @@ import { authSession, refreshToken } from '../../db/schema/backend-auth';
 import { TokenService, REFRESH_TOKEN_TTL_MS } from './token.service';
 import { FIREBASE_VERIFIER, type FirebaseVerifier, type IssuedTokens, type RequestSubject } from './session.types';
 import { OtpService, type VerifyMsg91Result } from '../otp/otp.service';
+import { AuditService } from '../audit/audit.service';
 
 export interface RequestContext {
   userAgent?: string;
@@ -34,6 +35,7 @@ export class AuthService {
     @Inject(FIREBASE_VERIFIER) private readonly firebase: FirebaseVerifier,
     private readonly tokens: TokenService,
     private readonly otp: OtpService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -317,17 +319,63 @@ export class AuthService {
   async loginStaff(loginId: string, password: string, ctx: RequestContext): Promise<IssuedTokens> {
     const invalid = () =>
       new UnauthorizedException({ error: { code: 'UNAUTHORIZED', message: 'Invalid login id or password' } });
+    // No authenticated actor exists yet at a login attempt — AuditInterceptor
+    // can't cover this one itself (see its own doc) — so every path through
+    // here, success or failure, logs explicitly instead.
+    const logFailure = (staff?: { id: number; name: string; role: string; storeId: number | null }) =>
+      this.audit.record({
+        staffId: staff?.id ?? null,
+        staffLoginId: loginId,
+        staffName: staff?.name ?? '(unknown)',
+        staffRole: staff?.role ?? '',
+        storeId: staff?.storeId ?? null,
+        action: 'LOGIN_FAILED',
+        method: 'POST',
+        path: '/v1/staff/auth/session',
+        statusCode: 401,
+        ip: ctx.ip ?? null,
+      });
 
     const [staff] = await this.db.select().from(adminUser).where(eq(adminUser.loginId, loginId)).limit(1);
-    if (!staff || !staff.passwordHash) throw invalid();
+    if (!staff || !staff.passwordHash) {
+      logFailure();
+      throw invalid();
+    }
 
     const ok = await compare(password, staff.passwordHash);
-    if (!ok) throw invalid();
+    if (!ok) {
+      logFailure(staff);
+      throw invalid();
+    }
 
     if (!staff.isActive) {
+      this.audit.record({
+        staffId: staff.id,
+        staffLoginId: staff.loginId,
+        staffName: staff.name,
+        staffRole: staff.role,
+        storeId: staff.storeId,
+        action: 'LOGIN_FAILED',
+        method: 'POST',
+        path: '/v1/staff/auth/session',
+        statusCode: 403,
+        ip: ctx.ip ?? null,
+      });
       throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Staff account is deactivated' } });
     }
 
+    this.audit.record({
+      staffId: staff.id,
+      staffLoginId: staff.loginId,
+      staffName: staff.name,
+      staffRole: staff.role,
+      storeId: staff.storeId,
+      action: 'LOGIN',
+      method: 'POST',
+      path: '/v1/staff/auth/session',
+      statusCode: 200,
+      ip: ctx.ip ?? null,
+    });
     return this.createSession('STAFF', String(staff.id), staff.role, staff.storeId, ctx);
   }
 

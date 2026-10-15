@@ -9,9 +9,10 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { FIREBASE_VERIFIER } from './session.types';
 import { OtpModule } from '../otp/otp.module';
+import { AuditModule } from '../audit/audit.module';
 
 @Module({
-  imports: [JwtModule.register({}), OtpModule],
+  imports: [JwtModule.register({}), OtpModule, AuditModule],
   controllers: [MemberAuthController, StaffAuthController],
   providers: [
     AuthService,

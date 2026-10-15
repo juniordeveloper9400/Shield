@@ -161,6 +161,22 @@ export function createTestDb() {
       updated_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE app.staff_audit_log (
+      id bigserial PRIMARY KEY,
+      staff_id bigint REFERENCES app.admin_user(id) ON DELETE SET NULL,
+      staff_login_id text NOT NULL,
+      staff_name text NOT NULL,
+      staff_role text NOT NULL,
+      store_id bigint,
+      action text NOT NULL,
+      method text NOT NULL,
+      path text NOT NULL,
+      status_code integer NOT NULL,
+      request_body jsonb,
+      ip text,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE app.shield_store (
       id bigserial PRIMARY KEY,
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),

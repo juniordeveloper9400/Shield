@@ -20,6 +20,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { OtpModule } from './modules/otp/otp.module';
+import { AuditModule } from './modules/audit/audit.module';
 import { HealthController } from './modules/health/health.controller';
 import { AuthGuard } from './common/guards/auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -55,6 +56,7 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
     LedgerModule,
     AccountsModule,
     OtpModule,
+    AuditModule,
   ],
   controllers: [HealthController],
   providers: [

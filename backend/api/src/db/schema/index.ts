@@ -9,5 +9,6 @@ export * from './app-agent';
 export * from './app-geo';
 export * from './app-investor';
 export * from './app-ledger';
+export * from './app-audit';
 export * from './backend-auth';
 export * from './backend-idempotency';
