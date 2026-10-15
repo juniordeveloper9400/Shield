@@ -6,6 +6,7 @@ import '../../data/backend/backend_order_repository.dart';
 import '../../theme/app_colors.dart';
 import '../auth/auth_service.dart';
 import '../location/address_book.dart';
+import '../patients/patient_book.dart';
 import 'lab_booking_placed_screen.dart';
 import 'lab_cart_service.dart';
 import 'lab_checkout_panels.dart';
@@ -45,26 +46,50 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
       LabCartService.instance.fulfillmentType ==
       LabFulfillmentType.homeCollection;
 
+  /// Every distinct patient across the basket, in first-booked order — one
+  /// address row each on the checkout screen.
+  List<Patient> get _uniquePatients {
+    final seen = <String>{};
+    final result = <Patient>[];
+    for (final booking in LabCartService.instance.bookings) {
+      for (final patient in booking.patients) {
+        if (seen.add(patient.id)) result.add(patient);
+      }
+    }
+    return result;
+  }
+
+  /// A patient with none of their own falls back to the basket's shared
+  /// address — so every patient has one once that shared default is set,
+  /// same as before this was per-patient at all.
+  bool get _everyPatientHasAddress {
+    if (AddressBook.instance.deliverTo != null) return true;
+    return _uniquePatients.every(
+      (p) => LabCartService.instance.addressFor(p) != null,
+    );
+  }
+
   bool get _canPlace =>
       !_placing &&
       !LabCartService.instance.isEmpty &&
       LabCartService.instance.store != null &&
-      (!_needsAddress || AddressBook.instance.deliverTo != null);
+      (!_needsAddress || _everyPatientHasAddress);
 
   Future<void> _placeLabTest() async {
     final cart = LabCartService.instance;
     final user = AuthService.instance.currentUser.value;
     final needsAddress = _needsAddress;
-    final hasAddress = AddressBook.instance.deliverTo != null;
+    final hasAddress = _everyPatientHasAddress;
     if (!_canPlace || user == null) {
       setState(() {
         _error = cart.store == null && needsAddress && !hasAddress
-            ? 'Choose a branch and a delivery address above before placing '
+            ? 'Choose a branch and a collection address above before placing '
                   'this booking.'
             : cart.store == null
             ? 'Choose a branch above before placing this booking.'
             : needsAddress && !hasAddress
-            ? 'Choose a delivery address above before placing this booking.'
+            ? 'Choose a collection address for every patient above before '
+                  'placing this booking.'
             : null;
       });
       return;
@@ -86,7 +111,17 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
           reportIn: booking.package.reportIn,
           unitPrice: booking.package.priceValue,
           mrp: booking.package.mrpValue,
-          patients: booking.patients,
+          patients: [
+            for (final patient in booking.patients)
+              LabBookingPatientInput(
+                patient: patient,
+                // Only when this patient actually has one of their own —
+                // omitted falls back to the booking's shared address
+                // server-side, the same precedence the console's own
+                // override already follows.
+                address: cart.addressFor(patient),
+              ),
+          ],
           forWhom: booking.package.forWhom,
           ageRange: booking.package.ageRange,
           preparation: booking.package.preparation,
@@ -166,16 +201,13 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
               const SizedBox(height: 12),
               const LabFulfillmentRow(),
               const SizedBox(height: 12),
-              // Only home collection needs a delivery address — a store
+              // Only home collection needs a collection address — a store
               // visit's "branch" (LabBranchRow below) is where the member
-              // goes themselves, so there's nothing to deliver to.
+              // goes themselves, so there's nothing to deliver to. One row
+              // per distinct patient across the basket, not one for the
+              // whole thing — each can have its own.
               if (_needsAddress) ...[
-                // Not const — like LabBranchRow below, its build() reads
-                // AddressBook.instance.deliverTo directly rather than a
-                // constructor field, so a const instance would never rebuild
-                // after AddressBook changes (Flutter skips rebuilding an
-                // unchanged const widget outright).
-                LabAddressRow(),
+                LabPatientAddressList(patients: _uniquePatients),
                 const SizedBox(height: 12),
               ],
               LabBranchRow(),
@@ -322,9 +354,9 @@ class _ReviewCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        booking.patients == 1
-                            ? '1 patient'
-                            : '${booking.patients} patients',
+                        booking.patients.map((p) => p.name).join(', '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 12.5,
                           color: AppColors.textMuted,

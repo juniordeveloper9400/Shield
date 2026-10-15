@@ -10,6 +10,7 @@ import '../../module/labtest/lab_fulfillment_type.dart';
 import '../../module/location/address_book.dart';
 import '../../module/orders/bill_invoice.dart';
 import '../../module/orders/purchase_service.dart';
+import '../../module/patients/patient_book.dart';
 import 'backend_address_repository.dart';
 import 'backend_http.dart';
 import 'care_repository.dart';
@@ -26,7 +27,7 @@ class OrderBillDetail {
   const OrderBillDetail({required this.invoice});
 }
 
-/// One lab package booked for a number of patients, as
+/// One lab package booked for a named list of patients, as
 /// [BackendOrderRepository.saveLabBookings] sends it. The package fields
 /// are carried so a package the app knows but the backend has never seen
 /// can still be matched by name against a fresh catalogue read.
@@ -40,7 +41,7 @@ class LabBookingInput {
   final String reportIn;
   final int unitPrice;
   final int mrp;
-  final int patients;
+  final List<LabBookingPatientInput> patients;
   final String forWhom;
   final String ageRange;
   final String preparation;
@@ -63,6 +64,19 @@ class LabBookingInput {
     this.sample = '',
     this.about = '',
   });
+}
+
+/// One patient on a [LabBookingInput] — [address] is this patient's own
+/// collection address, chosen at checkout; null falls back to the
+/// booking's own shared address (the [saveLabBookings] call's own
+/// [Address] parameter), the same way the backend's `addressOverride`
+/// column does.
+@immutable
+class LabBookingPatientInput {
+  final Patient patient;
+  final Address? address;
+
+  const LabBookingPatientInput({required this.patient, this.address});
 }
 
 /// One line item on a standard order, as
@@ -532,25 +546,13 @@ class BackendOrderRepository {
     if (!BackendHttp.isConfigured || bookings.isEmpty) {
       return;
     }
-    final addressId = address == null
-        ? null
-        : int.tryParse(address.remoteId ?? '') ??
-            int.tryParse(
-              await BackendAddressRepository.instance.upsert(
-                    label: address.label.name.toUpperCase(),
-                    house: address.house,
-                    area: address.area,
-                    landmark: address.landmark,
-                    pincode: address.pincode,
-                    firstName: address.firstName,
-                    lastName: address.lastName,
-                    phone: address.phone,
-                    patientId: address.patientId,
-                  ) ??
-                  '',
-            );
+    final addressId = await _resolveAddressId(address);
     final storeId = storeCode == null ? null : await _labStoreIdFor(storeCode);
     final packages = await CareRepository.instance.fetchLabPackages() ?? const [];
+    // Every distinct patient's own address is written once and cached here,
+    // even when they appear on more than one booking in this basket — no
+    // reason to insert the same member_address row twice in one checkout.
+    final patientAddressIdCache = <String, int?>{};
     for (final booking in bookings) {
       final package = packages.where((p) => p.name == booking.name).firstOrNull;
       if (package == null) {
@@ -560,14 +562,29 @@ class BackendOrderRepository {
         continue;
       }
       try {
+        final patients = <Map<String, dynamic>>[];
+        for (final entry in booking.patients) {
+          int? patientAddressId;
+          if (entry.address != null) {
+            if (!patientAddressIdCache.containsKey(entry.patient.id)) {
+              patientAddressIdCache[entry.patient.id] = await _resolveAddressId(entry.address);
+            }
+            patientAddressId = patientAddressIdCache[entry.patient.id];
+          }
+          patients.add({
+            if (entry.patient.remoteId != null)
+              'patientId': int.tryParse(entry.patient.remoteId!),
+            'name': entry.patient.name,
+            'age': entry.patient.age,
+            if (patientAddressId != null) 'addressId': patientAddressId,
+          });
+        }
         await BackendHttp.instance.request(
           'POST',
           '/v1/member/lab-bookings',
           body: {
             'labPackageId': int.parse(package.id),
-            'patients': [
-              for (var i = 1; i <= booking.patients; i++) {'name': 'Patient $i'},
-            ],
+            'patients': patients,
             if (addressId != null) 'addressId': addressId,
             if (storeId != null) 'storeId': storeId,
             'fulfillmentType': fulfillmentType.apiValue,
@@ -581,6 +598,27 @@ class BackendOrderRepository {
         );
       }
     }
+  }
+
+  /// [address]'s backend id — already-synced ([Address.remoteId]) or
+  /// written now via [BackendAddressRepository.upsert]. Null for a null
+  /// [address], or one that failed to save.
+  Future<int?> _resolveAddressId(Address? address) async {
+    if (address == null) return null;
+    final existing = int.tryParse(address.remoteId ?? '');
+    if (existing != null) return existing;
+    final written = await BackendAddressRepository.instance.upsert(
+      label: address.label.name.toUpperCase(),
+      house: address.house,
+      area: address.area,
+      landmark: address.landmark,
+      pincode: address.pincode,
+      firstName: address.firstName,
+      lastName: address.lastName,
+      phone: address.phone,
+      patientId: address.patientId,
+    );
+    return int.tryParse(written ?? '');
   }
 
   /// The store's itemised invoice for one of the member's own orders —

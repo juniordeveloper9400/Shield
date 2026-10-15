@@ -4,6 +4,7 @@ import '../../dates.dart';
 import '../../theme/app_colors.dart';
 import '../location/address_book.dart';
 import '../location/manage_addresses_screen.dart';
+import '../patients/patient_book.dart';
 import '../registration/store_picker_sheet.dart';
 import 'lab_cart_service.dart';
 import 'lab_package.dart';
@@ -11,7 +12,7 @@ import 'lab_package.dart';
 /// Lets the member pick how their sample reaches the lab — the lab visits
 /// them (home collection, the default) or they visit the branch themselves
 /// (store visit). Only home collection needs a delivery address, so
-/// [LabCheckoutScreen] shows/requires [LabAddressRow] only while this is set
+/// [LabCheckoutScreen] shows/requires [LabPatientAddressList] only while this is set
 /// to home collection.
 class LabFulfillmentRow extends StatelessWidget {
   const LabFulfillmentRow({super.key});
@@ -100,94 +101,120 @@ class _FulfillmentOption extends StatelessWidget {
   }
 }
 
-/// Where the sample collection visits — the same [AddressBook] the medicine
-/// checkout's "Deliver to" row reads from and writes to, so an address saved
-/// on one checkout is already there on the other. "Change" opens
+/// One row per patient across every booking in the basket — each can be
+/// given its own collection address, defaulting to the basket's shared
+/// [AddressBook.deliverTo] until changed. "Change" opens
 /// [ManageAddressesScreen] — pick a saved address or add a new one, the same
-/// screen the account menu's "Manage addresses" reaches — rather than a
-/// second, lab-only address picker.
-class LabAddressRow extends StatelessWidget {
-  const LabAddressRow({super.key});
+/// screen the account menu's "Manage addresses" reaches — with whatever is
+/// picked there then pinned to just this patient
+/// ([LabCartService.setAddressFor]), not the whole basket.
+class LabPatientAddressList extends StatelessWidget {
+  final List<Patient> patients;
+
+  const LabPatientAddressList({super.key, required this.patients});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (final patient in patients) ...[
+          _LabPatientAddressRow(patient: patient),
+          if (patient != patients.last) const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _LabPatientAddressRow extends StatelessWidget {
+  final Patient patient;
+
+  const _LabPatientAddressRow({required this.patient});
 
   Future<void> _choose(BuildContext context) async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ManageAddressesScreen()),
     );
+    // ManageAddressesScreen's only way of returning a choice is setting the
+    // basket-wide AddressBook.deliverTo as a side effect — captured here and
+    // pinned to this one patient rather than left as the shared default.
+    final chosen = AddressBook.instance.deliverTo;
+    if (chosen != null) {
+      LabCartService.instance.setAddressFor(patient, chosen);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final address = AddressBook.instance.deliverTo;
+    final own = LabCartService.instance.addressFor(patient);
+    final address = own ?? AddressBook.instance.deliverTo;
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Material(
-        color: AppColors.white,
+    return Material(
+      color: AppColors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: () => _choose(context),
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: () => _choose(context),
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                // A missing address blocks checkout — same red the branch
-                // row below uses when nothing is chosen yet.
-                color: address == null ? AppColors.danger : AppColors.border,
-              ),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: address == null ? AppColors.danger : AppColors.border,
             ),
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.location_on_outlined,
-                  size: 20,
-                  color: AppColors.brandBlue,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Deliver to',
-                        style: TextStyle(
-                          fontSize: 12,
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.location_on_outlined,
+                size: 20,
+                color: AppColors.brandBlue,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      patient.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                      ),
+                    ),
+                    Text(
+                      address == null
+                          ? 'Choose a collection address'
+                          : '${address.label.label} (${address.pincode})',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textDark,
+                      ),
+                    ),
+                    if (address != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        address.summary,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
                           color: AppColors.textMuted,
                         ),
                       ),
-                      Text(
-                        address == null
-                            ? 'Choose a delivery address'
-                            : '${address.label.label} (${address.pincode})',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textDark,
-                        ),
-                      ),
-                      if (address != null) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          address.summary,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
                     ],
-                  ),
+                  ],
                 ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.textMuted,
-                ),
-              ],
-            ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textMuted,
+              ),
+            ],
           ),
         ),
       ),

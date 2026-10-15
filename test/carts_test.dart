@@ -7,6 +7,7 @@ import 'package:shield/module/cart/carts_section.dart';
 import 'package:shield/module/labtest/lab_cart_screen.dart';
 import 'package:shield/module/labtest/lab_cart_service.dart';
 import 'package:shield/module/labtest/lab_package.dart';
+import 'package:shield/module/patients/patient_book.dart';
 
 const _testPackage = LabPackage(
   id: 'test-1',
@@ -23,10 +24,22 @@ void main() {
   void resetAll() {
     CartService.instance.reset();
     LabCartService.instance.reset();
+    PatientBook.instance.reset();
   }
 
   setUp(resetAll);
   tearDown(resetAll);
+
+  List<Patient> somePatients(int count) => [
+    for (var i = 1; i <= count; i++)
+      PatientBook.instance.add(
+        name: 'Patient $i',
+        phone: '900000000$i',
+        dob: DateTime(1990, 1, i),
+        gender: PatientGender.other,
+        relation: i == 1 ? PatientRelation.self : PatientRelation.other,
+      ),
+  ];
 
   Future<void> pumpSection(
     WidgetTester tester, {
@@ -52,7 +65,7 @@ void main() {
         price: 32.5,
         qty: 2,
       );
-      LabCartService.instance.book(_testPackage, patients: 2);
+      LabCartService.instance.book(_testPackage, patients: somePatients(2));
 
       expect(CartService.instance.itemCount, 2);
       expect(LabCartService.instance.bookingCount, 1);
@@ -87,7 +100,7 @@ void main() {
         price: 32.5,
         qty: 2,
       );
-      LabCartService.instance.book(_testPackage, patients: 3);
+      LabCartService.instance.book(_testPackage, patients: somePatients(3));
 
       await pumpSection(tester);
 
@@ -102,7 +115,7 @@ void main() {
       await pumpSection(tester);
       expect(find.text('Empty'), findsNWidgets(2));
 
-      LabCartService.instance.book(_testPackage, patients: 1);
+      LabCartService.instance.book(_testPackage, patients: somePatients(1));
       await tester.pumpAndSettle();
 
       expect(find.text('1 booking'), findsOneWidget);
@@ -125,7 +138,7 @@ void main() {
 
     testWidgets('both tiles fit the narrowest phone', (tester) async {
       CartService.instance.add(name: 'Dolo', pack: 'Strip', price: 10);
-      LabCartService.instance.book(_testPackage, patients: 1);
+      LabCartService.instance.book(_testPackage, patients: somePatients(1));
 
       await pumpSection(tester, size: const Size(320, 900));
 

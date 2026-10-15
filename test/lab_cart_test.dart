@@ -12,9 +12,10 @@ import 'package:shield/module/labtest/lab_cart_service.dart';
 import 'package:shield/module/labtest/lab_checkout_screen.dart';
 import 'package:shield/module/labtest/lab_package.dart';
 import 'package:shield/module/labtest/lab_package_screen.dart';
-import 'package:shield/module/labtest/patient_count_sheet.dart';
+import 'package:shield/module/labtest/lab_patient_picker_sheet.dart';
 import 'package:shield/module/labtest/top_packages_screen.dart';
 import 'package:shield/module/location/address_book.dart';
+import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/registration/store_picker_sheet.dart';
 
 const _activeLife = LabPackage(
@@ -87,6 +88,7 @@ void main() {
     LabCartService.instance.reset();
     CartService.instance.reset();
     AddressBook.instance.reset();
+    PatientBook.instance.reset();
     CareRepository.labPackagesOverride =
         () async => [_preventivePlus, _activeLife, _completeCare];
   });
@@ -94,8 +96,22 @@ void main() {
     LabCartService.instance.reset();
     CartService.instance.reset();
     AddressBook.instance.reset();
+    PatientBook.instance.reset();
     CareRepository.labPackagesOverride = null;
   });
+
+  /// [count] fresh patients on the account, for tests that only care how
+  /// many are booked, not who they are.
+  List<Patient> somePatients(int count) => [
+    for (var i = 1; i <= count; i++)
+      PatientBook.instance.add(
+        name: 'Patient $i',
+        phone: '900000000$i',
+        dob: DateTime(1990, 1, i),
+        gender: PatientGender.other,
+        relation: i == 1 ? PatientRelation.self : PatientRelation.other,
+      ),
+  ];
 
   void giveAddress() {
     AddressBook.instance.add(
@@ -148,7 +164,7 @@ void main() {
 
   group('the lab basket', () {
     test('is a different basket from the medicine cart', () {
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
 
       expect(LabCartService.instance.bookingCount, 1);
       // Booking a test does not put anything in the medicine cart.
@@ -161,7 +177,7 @@ void main() {
     });
 
     test('prices a booking per patient', () {
-      LabCartService.instance.book(_activeLife, patients: 3);
+      LabCartService.instance.book(_activeLife, patients: somePatients(3));
 
       final booking = LabCartService.instance.bookings.single;
       expect(booking.amount, 1299 * 3);
@@ -169,33 +185,30 @@ void main() {
       expect(LabCartService.instance.patientCount, 3);
     });
 
-    test('booking the same package again corrects the count', () {
-      LabCartService.instance.book(_activeLife, patients: 2);
-      LabCartService.instance.book(_activeLife, patients: 4);
+    test('booking the same package again corrects the patients', () {
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
+      LabCartService.instance.book(_activeLife, patients: somePatients(4));
 
       // One line, not two visits.
       expect(LabCartService.instance.bookingCount, 1);
-      expect(LabCartService.instance.bookings.single.patients, 4);
+      expect(LabCartService.instance.bookings.single.patients.length, 4);
     });
 
     test('counts packages, not heads', () {
-      LabCartService.instance.book(_activeLife, patients: 3);
-      LabCartService.instance.book(_completeCare, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(3));
+      LabCartService.instance.book(_completeCare, patients: somePatients(2));
 
       expect(LabCartService.instance.bookingCount, 2);
       expect(LabCartService.instance.patientCount, 5);
     });
 
-    test('the patient count is clamped to what the sheet offers', () {
-      LabCartService.instance.book(_activeLife, patients: 99);
-      expect(LabCartService.instance.bookings.single.patients, 5);
-
-      LabCartService.instance.book(_activeLife, patients: 0);
-      expect(LabCartService.instance.bookings.single.patients, 1);
+    test('the patient list is clamped to what the sheet offers', () {
+      LabCartService.instance.book(_activeLife, patients: somePatients(99));
+      expect(LabCartService.instance.bookings.single.patients.length, 5);
     });
 
     test('savings are the gap between MRP and price, per patient', () {
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
 
       expect(LabCartService.instance.mrpTotal, 3248 * 2);
       expect(LabCartService.instance.savings, (3248 - 1299) * 2);
@@ -208,13 +221,36 @@ void main() {
         null,
       );
 
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
 
-      expect(LabCartService.instance.patientsFor(_activeLife), 2);
+      expect(LabCartService.instance.patientsFor(_activeLife)?.length, 2);
       expect(
         LabCartService.instance.patientsFor(_completeCare),
         null,
       );
+    });
+
+    test('a patient can be given their own collection address, separate from the shared one', () {
+      final patients = somePatients(2);
+      LabCartService.instance.book(_activeLife, patients: patients);
+      expect(LabCartService.instance.addressFor(patients[0]), null);
+
+      const own = Address(
+        pincode: '679999',
+        house: 'Door 9',
+        area: 'Elsewhere',
+        firstName: 'Grandma',
+        phone: '9000099999',
+        label: AddressLabel.home,
+      );
+      LabCartService.instance.setAddressFor(patients[0], own);
+
+      expect(LabCartService.instance.addressFor(patients[0]), own);
+      // The other patient is untouched.
+      expect(LabCartService.instance.addressFor(patients[1]), null);
+
+      LabCartService.instance.clear();
+      expect(LabCartService.instance.addressFor(patients[0]), null);
     });
 
     test('a preferred date is unset by default, settable and clearable, and reset on clear()', () {
@@ -228,21 +264,22 @@ void main() {
       expect(LabCartService.instance.scheduledFor, null);
 
       LabCartService.instance.chooseScheduledFor(date);
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
       LabCartService.instance.clear();
       expect(LabCartService.instance.scheduledFor, null);
     });
   });
 
   group('the patient sheet', () {
-    testWidgets('offers five counts, each with its own amount', (tester) async {
+    testWidgets('lists every patient on the account, checkable', (tester) async {
+      final patients = somePatients(2);
       await pump(
         tester,
         Scaffold(
           body: Builder(
             builder: (context) => TextButton(
               onPressed: () =>
-                  PatientCountSheet.show(context, _activeLife),
+                  LabPatientPickerSheet.show(context, _activeLife),
               child: const Text('open'),
             ),
           ),
@@ -252,24 +289,21 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Select number of patients'), findsOneWidget);
-      expect(find.text('1 patient'), findsOneWidget);
-      expect(find.text('5 patients'), findsOneWidget);
-
-      // The cost of each choice is visible before it is made.
-      expect(find.text('₹1,299'), findsOneWidget);
-      expect(find.text('₹2,598'), findsOneWidget);
-      expect(find.text('₹6,495'), findsOneWidget);
+      expect(find.text('Who is this for?'), findsOneWidget);
+      for (final p in patients) {
+        expect(find.text(p.name), findsOneWidget);
+      }
     });
 
-    testWidgets('cannot confirm until a count is chosen', (tester) async {
+    testWidgets('cannot confirm until at least one patient is picked, then prices the selection', (tester) async {
+      somePatients(2);
       await pump(
         tester,
         Scaffold(
           body: Builder(
             builder: (context) => TextButton(
               onPressed: () =>
-                  PatientCountSheet.show(context, _activeLife),
+                  LabPatientPickerSheet.show(context, _activeLife),
               child: const Text('open'),
             ),
           ),
@@ -281,9 +315,10 @@ void main() {
 
       final button = tester.widget<FilledButton>(find.byType(FilledButton));
       expect(button.onPressed, isNull);
-      expect(find.text('Select patients'), findsOneWidget);
+      expect(find.text('Select at least one patient'), findsOneWidget);
 
-      await tester.tap(find.text('2 patients'));
+      await tester.tap(find.text('Patient 1'));
+      await tester.tap(find.text('Patient 2'));
       await tester.pumpAndSettle();
 
       expect(find.text('Add · ₹2,598'), findsOneWidget);
@@ -322,6 +357,7 @@ void main() {
     testWidgets('Add opens the sheet and the choice reaches the basket', (
       tester,
     ) async {
+      somePatients(3);
       await pump(
         tester,
         const LabPackageScreen(package: _activeLife),
@@ -330,14 +366,16 @@ void main() {
 
       await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
-      expect(find.text('Select number of patients'), findsOneWidget);
+      expect(find.text('Who is this for?'), findsOneWidget);
 
-      await tester.tap(find.text('3 patients'));
+      await tester.tap(find.text('Patient 1'));
+      await tester.tap(find.text('Patient 2'));
+      await tester.tap(find.text('Patient 3'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Add · ₹3,897'));
       await tester.pumpAndSettle();
 
-      expect(LabCartService.instance.bookings.single.patients, 3);
+      expect(LabCartService.instance.bookings.single.patients.length, 3);
       expect(LabCartService.instance.subtotal, 3897);
 
       // The button now reflects the booking rather than offering to add again.
@@ -359,7 +397,7 @@ void main() {
         findsNothing,
       );
 
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
       await tester.pumpAndSettle();
 
       expect(
@@ -382,7 +420,7 @@ void main() {
     testWidgets('lists the booking, the patients and the amount', (
       tester,
     ) async {
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
       await pump(tester, const LabCartScreen());
 
       expect(find.text('Active Life'), findsOneWidget);
@@ -393,10 +431,11 @@ void main() {
       expect(find.text('FREE'), findsOneWidget);
     });
 
-    testWidgets('the patient count can be changed from the basket', (
+    testWidgets('who the booking is for can be changed from the basket', (
       tester,
     ) async {
-      LabCartService.instance.book(_activeLife, patients: 2);
+      final patients = somePatients(4);
+      LabCartService.instance.book(_activeLife, patients: patients.sublist(0, 2));
       await pump(tester, const LabCartScreen());
 
       await tester.tap(find.text('2 patients'));
@@ -405,12 +444,13 @@ void main() {
       // Reopens on what is already booked rather than blank.
       expect(find.text('Add · ₹2,598'), findsOneWidget);
 
-      await tester.tap(find.text('4 patients'));
+      await tester.tap(find.text('Patient 3'));
+      await tester.tap(find.text('Patient 4'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Add · ₹5,196'));
       await tester.pumpAndSettle();
 
-      expect(LabCartService.instance.bookings.single.patients, 4);
+      expect(LabCartService.instance.bookings.single.patients.length, 4);
       expect(find.text('₹5,196'), findsWidgets);
       // The bill card itself — not just the booking's own line — reflects
       // the new count: a regression check for a canonicalized `const
@@ -421,7 +461,7 @@ void main() {
     });
 
     testWidgets('a booking can be removed', (tester) async {
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
       await pump(tester, const LabCartScreen());
 
       await tester.tap(find.byTooltip('Remove booking'));
@@ -436,7 +476,7 @@ void main() {
     testWidgets('asks for a branch when nothing is registered or chosen', (
       tester,
     ) async {
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
       await pump(tester, const LabCartScreen());
 
       expect(find.text('Choose a branch'), findsOneWidget);
@@ -446,7 +486,7 @@ void main() {
       'opens a picker excluding branches switched off for lab, and the '
       'choice reaches the basket',
       (tester) async {
-        LabCartService.instance.book(_activeLife, patients: 2);
+        LabCartService.instance.book(_activeLife, patients: somePatients(2));
         await pump(tester, const LabCartScreen());
 
         await tester.tap(find.text('Choose a branch'));
@@ -502,7 +542,7 @@ void main() {
       'a fake "choosing a slot" toast',
       (tester) async {
         AuthService.instance.signInAs();
-        LabCartService.instance.book(_activeLife, patients: 2);
+        LabCartService.instance.book(_activeLife, patients: somePatients(2));
         await pump(tester, const LabCartScreen());
         await chooseBranch(tester);
 
@@ -522,7 +562,7 @@ void main() {
       'picks up an address added elsewhere',
       (tester) async {
         AuthService.instance.signInAs();
-        LabCartService.instance.book(_activeLife, patients: 2);
+        LabCartService.instance.book(_activeLife, patients: somePatients(1));
         await pump(tester, const LabCartScreen());
         await chooseBranch(tester);
         await tester.tap(find.text('Proceed to checkout'));
@@ -531,7 +571,7 @@ void main() {
         // Nothing on file yet: the row asks for one, same red-border guard
         // the branch row already uses, and "Place lab test" is disabled —
         // same as a missing branch already disables it.
-        expect(find.text('Choose a delivery address'), findsOneWidget);
+        expect(find.text('Choose a collection address'), findsOneWidget);
         expect(
           tester
               .widget<FilledButton>(
@@ -566,7 +606,7 @@ void main() {
     testWidgets('signed out, asks to sign in before opening checkout', (
       tester,
     ) async {
-      LabCartService.instance.book(_activeLife, patients: 2);
+      LabCartService.instance.book(_activeLife, patients: somePatients(2));
       await pump(tester, const LabCartScreen());
       await chooseBranch(tester);
 
@@ -583,7 +623,7 @@ void main() {
       (tester) async {
         AuthService.instance.signInAs();
         giveAddress();
-        LabCartService.instance.book(_activeLife, patients: 2);
+        LabCartService.instance.book(_activeLife, patients: somePatients(2));
         await pump(tester, const LabCartScreen());
         await chooseBranch(tester);
         await tester.tap(find.text('Proceed to checkout'));
