@@ -521,6 +521,7 @@ export class IdentityService {
         role: adminUser.role,
         storeId: adminUser.storeId,
         storeCode: shieldStore.code,
+        modules: adminUser.modules,
         isActive: adminUser.isActive,
       })
       .from(adminUser)

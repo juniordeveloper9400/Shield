@@ -154,6 +154,7 @@ export function createTestDb() {
       password_hash text,
       role app.admin_role NOT NULL DEFAULT 'PHARMACY',
       store_id bigint,
+      modules text[],
       avatar_color text NOT NULL DEFAULT '#2c57a6',
       is_active boolean NOT NULL DEFAULT true,
       last_login_at timestamptz,

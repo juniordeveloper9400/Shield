@@ -24,6 +24,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { HealthController } from './modules/health/health.controller';
 import { AuthGuard } from './common/guards/auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { ModuleGuard } from './common/guards/module.guard';
 import { PerSubjectThrottlerGuard } from './common/guards/per-subject-throttler.guard';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -60,9 +61,12 @@ import { HttpExceptionFilter } from './common/filters/http-exception.filter';
   ],
   controllers: [HealthController],
   providers: [
-    // Order matters: resolve identity first, then role, then rate limit.
+    // Order matters: resolve identity first, then role, then the account's
+    // own module narrowing (which only makes sense once role already
+    // passed), then rate limit.
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: ModuleGuard },
     { provide: APP_GUARD, useClass: PerSubjectThrottlerGuard },
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
   ],

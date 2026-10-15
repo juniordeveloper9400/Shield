@@ -16,6 +16,7 @@ const STAFF_COLUMNS = {
   name: adminUser.name,
   role: adminUser.role,
   storeId: adminUser.storeId,
+  modules: adminUser.modules,
   isActive: adminUser.isActive,
   lastLoginAt: adminUser.lastLoginAt,
   createdAt: adminUser.createdAt,

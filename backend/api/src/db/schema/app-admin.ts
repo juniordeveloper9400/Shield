@@ -46,6 +46,11 @@ export const adminUser = appSchema.table('admin_user', {
   passwordHash: text('password_hash'),
   role: adminRoleEnum('role').notNull().default('PHARMACY'),
   storeId: bigint('store_id', { mode: 'number' }),
+  // NULL (every row, until an edit sets it) means "everything the role
+  // grants" — unchanged behaviour. A non-null array narrows this account to
+  // exactly those module keys; see common/module-routes.ts and ModuleGuard,
+  // which enforce this on every request alongside (never instead of) role.
+  modules: text('modules').array(),
   avatarColor: text('avatar_color').notNull().default('#2c57a6'),
   isActive: boolean('is_active').notNull().default(true),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
