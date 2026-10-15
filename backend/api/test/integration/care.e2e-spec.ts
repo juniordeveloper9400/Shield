@@ -23,6 +23,7 @@ import {
   labCategory,
   labPackage,
   labPackageExtraCategory,
+  labTest,
   membershipTier,
   patient,
   shieldStore,
@@ -44,6 +45,7 @@ describe('Care Services (e2e)', () => {
   let staffAccessToken: string;
   let careStaffId: number;
   let labPackageId: number;
+  let sourceTestId: number;
   let labCategoryId: number;
   let secondLabCategoryId: number;
   let labStoreId: number;
@@ -102,9 +104,11 @@ describe('Care Services (e2e)', () => {
     nonLabStoreId = notLabStore.id;
 
     // A test switched on with "Show in the app" is listed as its own one-profile row.
+    const [sourceTest] = await db.insert(labTest).values({ name: 'HbA1c Source Test' }).returning();
+    sourceTestId = sourceTest.id;
     await db
       .insert(labPackage)
-      .values({ slug: 'hba1c', name: 'HbA1c', categoryId: labCategoryId, sourceTestId: 4242, price: '309.00', mrp: '500.00' });
+      .values({ slug: 'hba1c', name: 'HbA1c', categoryId: labCategoryId, sourceTestId, price: '309.00', mrp: '500.00' });
 
     // Inactive: proves listLabCategories' testCount only tallies active packages.
     await db
@@ -170,7 +174,7 @@ describe('Care Services (e2e)', () => {
     expect(packages.body).toEqual(expect.arrayContaining([expect.objectContaining({ id: labPackageId, categoryId: labCategoryId })]));
     // A real package carries no source test; a one-test listing does, which is how the apps tell them apart.
     expect(packages.body.find((p: { id: number }) => p.id === labPackageId).sourceTestId).toBeNull();
-    expect(packages.body.find((p: { slug: string }) => p.slug === 'hba1c').sourceTestId).toBe(4242);
+    expect(packages.body.find((p: { slug: string }) => p.slug === 'hba1c').sourceTestId).toBe(sourceTestId);
     // Extra categories (migration 0067) ride alongside the primary one — the
     // package set up under both Diabetes and Men health carries both.
     expect(packages.body.find((p: { id: number }) => p.id === labPackageId).extraCategoryIds).toEqual([

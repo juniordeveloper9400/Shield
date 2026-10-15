@@ -1,5 +1,8 @@
 import { z } from 'zod';
 
+export const setAdminWhatsappSchema = z.object({ value: z.string().trim().default('') });
+export type SetAdminWhatsappDto = z.infer<typeof setAdminWhatsappSchema>;
+
 export const listProductsQuerySchema = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   subcategoryId: z.coerce.number().int().positive().optional(),

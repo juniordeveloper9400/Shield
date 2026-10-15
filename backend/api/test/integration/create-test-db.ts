@@ -305,6 +305,12 @@ export function createTestDb() {
       created_at timestamptz NOT NULL DEFAULT now()
     );
 
+    CREATE TABLE app.app_setting (
+      key text PRIMARY KEY,
+      value text NOT NULL DEFAULT '',
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE app.home_banner (
       id bigserial PRIMARY KEY,
       title text,
@@ -690,13 +696,82 @@ export function createTestDb() {
       is_active boolean NOT NULL DEFAULT true
     );
 
-    -- No Drizzle mirror yet (that module hasn't moved off direct SQL) — just
-    -- enough columns for CareService.deleteLabCategory's own "is this
-    -- category still in use" count, added when that method first needed it.
+    -- Production hands lis_code out from a named sequence
+    -- (app.lab_test_lis_code_seq, migration 0046); pg-mem's nextval()
+    -- doesn't resolve a schema-qualified sequence name, so this uses a
+    -- plain serial instead — same practical effect (an auto-assigned,
+    -- unique, ascending integer with no explicit value needed on insert).
     CREATE TABLE app.lab_test (
       id bigserial PRIMARY KEY,
+      uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+      lis_code serial NOT NULL UNIQUE,
+      test_type text NOT NULL DEFAULT 'TEST',
       name text NOT NULL,
-      category_id bigint REFERENCES app.lab_category(id) ON DELETE SET NULL
+      short_name text NOT NULL DEFAULT '',
+      calc_code text NOT NULL DEFAULT '',
+      division text NOT NULL DEFAULT 'LAB',
+      department text NOT NULL DEFAULT '',
+      method text NOT NULL DEFAULT '',
+      unit text NOT NULL DEFAULT '',
+      rate numeric(12,2) NOT NULL DEFAULT 0,
+      discount_percent numeric(5,2) NOT NULL DEFAULT 0,
+      amount numeric(12,2) NOT NULL DEFAULT 0,
+      sample text NOT NULL DEFAULT '',
+      volume text NOT NULL DEFAULT '',
+      cut_of_time text NOT NULL DEFAULT '',
+      technology text NOT NULL DEFAULT '',
+      test_mode text NOT NULL DEFAULT '',
+      report_on_value integer NOT NULL DEFAULT 0,
+      report_on_unit text NOT NULL DEFAULT 'Minutes',
+      perform_at text NOT NULL DEFAULT 'In House',
+      internal_note text NOT NULL DEFAULT '',
+      nabl_accredited boolean NOT NULL DEFAULT false,
+      send_sms boolean NOT NULL DEFAULT false,
+      sample_type_barcode boolean NOT NULL DEFAULT false,
+      free_test boolean NOT NULL DEFAULT false,
+      avoid_incentive boolean NOT NULL DEFAULT false,
+      alphanumeric_critical boolean NOT NULL DEFAULT false,
+      common_technology boolean NOT NULL DEFAULT false,
+      avoid_result_entry boolean NOT NULL DEFAULT false,
+      hide_head boolean NOT NULL DEFAULT false,
+      edit_test_rate boolean NOT NULL DEFAULT false,
+      ref1 text NOT NULL DEFAULT '',
+      ref2 text NOT NULL DEFAULT '',
+      specification_1 text NOT NULL DEFAULT '',
+      specification_2 text NOT NULL DEFAULT '',
+      specification_3 text NOT NULL DEFAULT '',
+      result_template text NOT NULL DEFAULT '',
+      is_active boolean NOT NULL DEFAULT true,
+      created_by text NOT NULL DEFAULT '',
+      updated_by text NOT NULL DEFAULT '',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      scheduled_days text NOT NULL DEFAULT '',
+      reporting_time text NOT NULL DEFAULT '',
+      lab_rate numeric(12,2) NOT NULL DEFAULT 0,
+      source text NOT NULL DEFAULT 'ADMIN',
+      category_id bigint REFERENCES app.lab_category(id) ON DELETE SET NULL,
+      show_in_app boolean NOT NULL DEFAULT false,
+      is_most_common boolean NOT NULL DEFAULT false
+    );
+    CREATE UNIQUE INDEX lab_test_name_uidx ON app.lab_test (lower(name));
+
+    CREATE TABLE app.lab_test_group_item (
+      id bigserial PRIMARY KEY,
+      group_id bigint NOT NULL REFERENCES app.lab_test(id) ON DELETE CASCADE,
+      test_id bigint NOT NULL REFERENCES app.lab_test(id) ON DELETE RESTRICT,
+      amount numeric(12,2) NOT NULL DEFAULT 0,
+      set_order integer NOT NULL DEFAULT 0,
+      is_subhead boolean NOT NULL DEFAULT false,
+      UNIQUE (group_id, test_id)
+    );
+
+    CREATE TABLE app.lab_test_special_rate (
+      id bigserial PRIMARY KEY,
+      test_id bigint NOT NULL REFERENCES app.lab_test(id) ON DELETE CASCADE,
+      ref_lab text NOT NULL,
+      rate numeric(12,2) NOT NULL DEFAULT 0,
+      UNIQUE (test_id, ref_lab)
     );
 
     CREATE TABLE app.lab_package (
@@ -705,7 +780,7 @@ export function createTestDb() {
       slug text NOT NULL UNIQUE,
       name text NOT NULL,
       category_id bigint REFERENCES app.lab_category(id) ON DELETE SET NULL,
-      source_test_id bigint UNIQUE,
+      source_test_id bigint UNIQUE REFERENCES app.lab_test(id) ON DELETE CASCADE,
       test_count integer NOT NULL DEFAULT 0,
       profile_count integer NOT NULL DEFAULT 0,
       rating text,
@@ -742,6 +817,14 @@ export function createTestDb() {
       package_id bigint NOT NULL REFERENCES app.lab_package(id) ON DELETE CASCADE,
       category_id bigint NOT NULL REFERENCES app.lab_category(id) ON DELETE CASCADE,
       PRIMARY KEY (package_id, category_id)
+    );
+
+    CREATE TABLE app.lab_package_test_item (
+      id bigserial PRIMARY KEY,
+      package_id bigint NOT NULL REFERENCES app.lab_package(id) ON DELETE CASCADE,
+      test_id bigint NOT NULL REFERENCES app.lab_test(id) ON DELETE RESTRICT,
+      sort integer NOT NULL DEFAULT 0,
+      UNIQUE (package_id, test_id)
     );
 
     CREATE TABLE app.clinic (

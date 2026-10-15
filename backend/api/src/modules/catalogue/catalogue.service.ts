@@ -93,6 +93,20 @@ export class CatalogueService {
     return { adminWhatsapp: (rows[0]?.value ?? '').trim() };
   }
 
+  /** The console's own write side of [contactSettings] — the Stores page's
+   *  "Admin WhatsApp number" card. Digits and a leading '+' only, same
+   *  cleanup the old direct-SQL version applied client-side; blank clears
+   *  it, which hides the option in the apps again. */
+  async setAdminWhatsapp(value: string): Promise<{ adminWhatsapp: string }> {
+    const clean = value.replace(/[^0-9+]/g, '');
+    await this.db.execute(sql`
+      INSERT INTO app.app_setting (key, value, updated_at)
+      VALUES ('admin_whatsapp', ${clean}, now())
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()
+    `);
+    return { adminWhatsapp: clean };
+  }
+
   async listStores() {
     return this.cache.getOrSet('catalogue:stores', TTL.LONG, () =>
       this.db

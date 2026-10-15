@@ -14,6 +14,7 @@ import {
   createSubcategorySchema,
   renameBrandSchema,
   reviewVideoChunkSchema,
+  setAdminWhatsappSchema,
   setBannerActiveSchema,
   setBannerSortSchema,
   setCategoryActiveSchema,
@@ -38,6 +39,7 @@ import {
   type CreateSubcategoryDto,
   type RenameBrandDto,
   type ReviewVideoChunkDto,
+  type SetAdminWhatsappDto,
   type SetBannerActiveDto,
   type SetBannerSortDto,
   type SetCategoryActiveDto,
@@ -110,6 +112,15 @@ export class CatalogueAdminController {
     @Body(new ZodValidationPipe(setStoreOffersLabSchema)) dto: SetStoreOffersLabDto,
   ) {
     return this.catalogue.setStoreOffersLab(id, dto.offersLabCollection);
+  }
+
+  /** The Stores page's own "Admin WhatsApp number" card — the write side of
+   *  the public GET /v1/public/catalogue/contact. Same role gate as the
+   *  store writes just above; it lives on the same page. */
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB')
+  @Patch('contact/admin-whatsapp')
+  setAdminWhatsapp(@Body(new ZodValidationPipe(setAdminWhatsappSchema)) dto: SetAdminWhatsappDto) {
+    return this.catalogue.setAdminWhatsapp(dto.value);
   }
 
   // ---- Categories & subcategories --------------------------------------

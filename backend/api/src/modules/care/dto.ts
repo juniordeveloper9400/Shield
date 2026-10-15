@@ -95,6 +95,104 @@ export const addLabReportPagesSchema = z.object({
   pages: z.array(z.object({ name: z.string().default(''), image: z.string().min(1) })).min(1),
 });
 
+// ---- Test Master (app.lab_test) ------------------------------------------
+// Matches shieldweb's own LabTestInput (src/types/index.ts) field for
+// field — the Test Master form posts this shape directly, no reshaping.
+
+export const labTestInputSchema = z.object({
+  testType: z.enum(['TEST', 'GROUP', 'PACKAGE']),
+  name: z.string().min(1),
+  categoryId: z.string().default(''),
+  showInApp: z.boolean().default(false),
+  isMostCommon: z.boolean().default(false),
+  shortName: z.string().default(''),
+  calcCode: z.string().default(''),
+  division: z.string().default('LAB'),
+  department: z.string().default(''),
+  method: z.string().default(''),
+  unit: z.string().default(''),
+  rate: z.number().nonnegative().default(0),
+  discountPercent: z.number().min(0).max(100).default(0),
+  amount: z.number().nonnegative().default(0),
+  labRate: z.number().nonnegative().default(0),
+  sample: z.string().default(''),
+  volume: z.string().default(''),
+  scheduledDays: z.string().default(''),
+  cutOfTime: z.string().default(''),
+  reportingTime: z.string().default(''),
+  technology: z.string().default(''),
+  testMode: z.string().default(''),
+  reportOnValue: z.number().int().nonnegative().default(0),
+  reportOnUnit: z.enum(['Minutes', 'Hours', 'Days']).default('Minutes'),
+  performAt: z.string().default('In House'),
+  internalNote: z.string().default(''),
+  nablAccredited: z.boolean().default(false),
+  sendSms: z.boolean().default(false),
+  sampleTypeBarcode: z.boolean().default(false),
+  freeTest: z.boolean().default(false),
+  avoidIncentive: z.boolean().default(false),
+  alphanumericCritical: z.boolean().default(false),
+  commonTechnology: z.boolean().default(false),
+  avoidResultEntry: z.boolean().default(false),
+  hideHead: z.boolean().default(false),
+  editTestRate: z.boolean().default(false),
+  ref1: z.string().default(''),
+  ref2: z.string().default(''),
+  specification1: z.string().default(''),
+  specification2: z.string().default(''),
+  specification3: z.string().default(''),
+  resultTemplate: z.string().default(''),
+  isActive: z.boolean().default(true),
+});
+
+const labGroupItemSchema = z.object({
+  testId: z.string().min(1),
+  name: z.string().default(''),
+  department: z.string().default(''),
+  sample: z.string().default(''),
+  amount: z.number().nonnegative().default(0),
+  setOrder: z.number().int().default(0),
+  isSubhead: z.boolean().default(false),
+});
+
+const labSpecialRateSchema = z.object({
+  refLab: z.string().min(1),
+  rate: z.number().nonnegative().default(0),
+});
+
+export const saveLabTestSchema = z.object({
+  input: labTestInputSchema,
+  groupItems: z.array(labGroupItemSchema).default([]),
+  specialRates: z.array(labSpecialRateSchema).default([]),
+});
+
+// ---- Lab Packages (app.lab_package, staff-built) --------------------------
+
+export const setLabPackageActiveSchema = z.object({ isActive: z.boolean() });
+export const updateLabPackagePriceSchema = z.object({
+  price: z.number().nonnegative(),
+  mrp: z.number().nonnegative(),
+});
+
+const labPackageInputSchema = z.object({
+  name: z.string().min(1),
+  categoryId: z.string().default(''),
+  price: z.number().nonnegative(),
+  mrp: z.number().nonnegative(),
+  forWhom: z.string().default(''),
+  sample: z.string().default(''),
+  preparation: z.string().default(''),
+  reportIn: z.string().default(''),
+  about: z.string().default(''),
+  testIds: z.array(z.string()).default([]),
+});
+
+export const createLabPackageSchema = labPackageInputSchema;
+export const updateLabPackageBuildSchema = z.object({
+  input: labPackageInputSchema,
+  testsChanged: z.boolean().default(false),
+});
+
 export type BookLabTestDto = z.infer<typeof bookLabTestSchema>;
 export type UpdateLabBookingStatusDto = z.infer<typeof updateLabBookingStatusSchema>;
 export type SendLabBillDto = z.infer<typeof sendLabBillSchema>;
@@ -107,3 +205,9 @@ export type SetLabCategorySortDto = z.infer<typeof setLabCategorySortSchema>;
 export type UpdateLabBookingDetailsDto = z.infer<typeof updateLabBookingDetailsSchema>;
 export type AssignLabStaffDto = z.infer<typeof assignLabStaffSchema>;
 export type AddLabReportPagesDto = z.infer<typeof addLabReportPagesSchema>;
+export type LabTestInputDto = z.infer<typeof labTestInputSchema>;
+export type SaveLabTestDto = z.infer<typeof saveLabTestSchema>;
+export type SetLabPackageActiveDto = z.infer<typeof setLabPackageActiveSchema>;
+export type UpdateLabPackagePriceDto = z.infer<typeof updateLabPackagePriceSchema>;
+export type CreateLabPackageDto = z.infer<typeof createLabPackageSchema>;
+export type UpdateLabPackageBuildDto = z.infer<typeof updateLabPackageBuildSchema>;
