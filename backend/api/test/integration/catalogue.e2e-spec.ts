@@ -831,6 +831,27 @@ describe('Catalogue (e2e)', () => {
         faqs: [{ question: 'How much per day?', answer: 'One drop daily.' }],
         extraImages: ['data:image/png;base64,extra1'],
       });
+
+      const pub = await request(app.getHttpServer())
+        .get(`/v1/public/catalogue/products/${created.body.id}`)
+        .expect(200);
+      expect(pub.body.images).toEqual(['data:image/png;base64,primary', 'data:image/png;base64,extra1']);
+
+      // Patching price, stock and extraImages through PATCH /v1/staff/catalogue/products/:id
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/products/${created.body.id}`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ price: 299, extraImages: ['data:image/png;base64,extra2', 'data:image/png;base64,extra3'] })
+        .expect(200);
+
+      const pubUpdated = await request(app.getHttpServer())
+        .get(`/v1/public/catalogue/products/${created.body.id}`)
+        .expect(200);
+      expect(pubUpdated.body.images).toEqual([
+        'data:image/png;base64,primary',
+        'data:image/png;base64,extra2',
+        'data:image/png;base64,extra3',
+      ]);
     });
 
     it('rejects an unknown category slug', async () => {

@@ -59,6 +59,7 @@ class BackendProductRepository {
       final data = ProductDetailData.fromRows(
         row['detail'] as Map<String, dynamic>?,
         row['faqs'],
+        imagesJson: row['images'],
       );
       return data.isEmpty ? null : data;
     } catch (error) {

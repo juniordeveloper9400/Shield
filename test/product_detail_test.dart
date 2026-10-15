@@ -311,4 +311,26 @@ void main() {
     expect(find.byType(ProductDetailScreen), findsOneWidget);
     expect(find.text('Product Details'), findsOneWidget);
   });
+
+  testWidgets('product with multiple images shows gallery indicator and thumbnails', (tester) async {
+    const multiImageProduct = Product(
+      backendId: 99,
+      name: 'Multi Image Cream',
+      pack: '50g',
+      price: '199',
+      mrp: '250',
+      image: 'primary.jpg',
+      icon: Icons.medication_outlined,
+    );
+
+    BackendProductRepository.detailOverride = (id) async {
+      return const ProductDetailData(
+        description: 'Multi image test product',
+        images: ['primary.jpg', 'extra1.jpg', 'extra2.jpg'],
+      );
+    };
+
+    await pumpDetail(tester, multiImageProduct);
+    expect(find.text('1 / 3'), findsOneWidget);
+  });
 }

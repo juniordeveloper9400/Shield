@@ -446,10 +446,16 @@ export class CatalogueService {
         .from(productFaq)
         .where(eq(productFaq.productId, id))
         .orderBy(asc(productFaq.sort));
+      const images = await this.db
+        .select()
+        .from(productImage)
+        .where(eq(productImage.productId, id))
+        .orderBy(asc(productImage.sort));
 
-      return { ...row, detail: detail ?? null, faqs };
+      const gallery = images.length > 0 ? images.map((i) => i.image) : (row.image ? [row.image] : []);
+      return { ...row, detail: detail ?? null, faqs, images: gallery };
     });
-    return { ...this.withEffectiveSections(result), detail: result.detail, faqs: result.faqs };
+    return { ...this.withEffectiveSections(result), detail: result.detail, faqs: result.faqs, images: result.images };
   }
 
 /** `app.product.category_id` by slug — the console picks a category by
@@ -684,6 +690,24 @@ export class CatalogueService {
       .where(eq(product.id, id))
       .returning();
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Product not found' } });
+
+    if (dto.extraImages !== undefined || dto.image !== undefined) {
+      const primary = dto.image !== undefined ? dto.image : (updated.image ?? '');
+      if (dto.extraImages !== undefined) {
+        const gallery = [primary, ...dto.extraImages].filter((img) => img && img.trim());
+        await this.writeProductImages(id, gallery);
+      } else if (dto.image !== undefined) {
+        const existing = await this.db
+          .select()
+          .from(productImage)
+          .where(eq(productImage.productId, id))
+          .orderBy(asc(productImage.sort));
+        const rest = existing.slice(1).map((i) => i.image);
+        const gallery = [primary, ...rest].filter((img) => img && img.trim());
+        await this.writeProductImages(id, gallery);
+      }
+    }
+
     await this.cache.invalidate('catalogue:products:*', `catalogue:product:${id}`);
     return updated;
   }
