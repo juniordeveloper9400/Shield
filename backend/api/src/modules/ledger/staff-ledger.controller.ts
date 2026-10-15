@@ -31,11 +31,15 @@ export class StaffLedgerController {
   trialBalance(
     @Query('entityId') entityId?: string,
     @Query('period') period?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
     @Query('type') type?: string,
   ) {
     return this.ledger.trialBalance({
       entityId: entityId ? Number(entityId) : undefined,
       period,
+      fromDate,
+      toDate,
       type,
     });
   }
@@ -50,7 +54,9 @@ export class StaffLedgerController {
     @Query('subjectType') subjectType: string,
     @Query('subjectId') subjectId: string,
     @Query('accountCode') accountCode: string,
-    @Query('period') period: string,
+    @Query('period') period?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
     @Query('entityId') entityId?: string,
   ) {
     return this.ledger.subjectLedger({
@@ -58,6 +64,8 @@ export class StaffLedgerController {
       subjectId: Number(subjectId),
       accountCode,
       period,
+      fromDate,
+      toDate,
       entityId: entityId ? Number(entityId) : undefined,
     });
   }

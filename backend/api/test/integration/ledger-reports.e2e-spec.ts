@@ -79,6 +79,14 @@ describe('Ledger reports (e2e)', () => {
     expect(september.find((r) => r.accountCode === 'CASH-R')!.debit).toBe(500);
   });
 
+  it('scopes the trial balance to a custom fromDate and toDate range', async () => {
+    const octRange = await ledger.trialBalance({ fromDate: '2026-10-01', toDate: '2026-10-10' });
+    expect(octRange.find((r) => r.accountCode === 'CASH-R')!.debit).toBe(1000);
+
+    const emptyRange = await ledger.trialBalance({ fromDate: '2026-10-10', toDate: '2026-10-20' });
+    expect(emptyRange).toEqual([]);
+  });
+
   it('filters the trial balance by account type', async () => {
     const assets = await ledger.trialBalance({ type: 'ASSET' });
     expect(assets.map((r) => r.accountCode)).toEqual(['CASH-R']);

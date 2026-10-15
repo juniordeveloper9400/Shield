@@ -54,10 +54,25 @@ export class LedgerService {
    * EQUITY or REVENUE account normally sits net-credit) — left for the
    * caller to interpret rather than guessed at here.
    */
-  async trialBalance(params: { entityId?: number; period?: string; type?: string }) {
+  async trialBalance(params: {
+    entityId?: number;
+    period?: string;
+    fromDate?: string;
+    toDate?: string;
+    type?: string;
+  }) {
     const conditions = [];
     if (params.entityId !== undefined) conditions.push(eq(journalEntry.entityId, params.entityId));
-    if (params.period) {
+    if (params.fromDate && params.toDate) {
+      conditions.push(
+        sql`${journalEntry.postedOn} >= ${params.fromDate}::date
+            AND ${journalEntry.postedOn} <= ${params.toDate}::date`,
+      );
+    } else if (params.fromDate) {
+      conditions.push(sql`${journalEntry.postedOn} >= ${params.fromDate}::date`);
+    } else if (params.toDate) {
+      conditions.push(sql`${journalEntry.postedOn} <= ${params.toDate}::date`);
+    } else if (params.period) {
       conditions.push(
         sql`${journalEntry.postedOn} >= ${params.period}::date
             AND ${journalEntry.postedOn} < (${params.period}::date + interval '1 month')`,
@@ -94,9 +109,9 @@ export class LedgerService {
 
   /**
    * One subject's (member/agent/investor) Debit, Credit and running Closing
-   * balance for one account, for one calendar month — a real sub-ledger, not
+   * balance for one account, for one date range or calendar month — a real sub-ledger, not
    * a store-wide trial-balance row. Opening balance is every line posted
-   * before the month started; closing = opening + this month's movement,
+   * before the fromDate (or period started); closing = opening + this period's movement,
    * signed per the account's own type (asset/expense: debit grows the
    * balance; liability/equity/revenue: credit grows it — see
    * `shieldweb/src/lib/ledgerReport.ts`'s `movementBalance`, the same
@@ -107,7 +122,9 @@ export class LedgerService {
     subjectId: number;
     accountCode: string;
     entityId?: number;
-    period: string;
+    period?: string;
+    fromDate?: string;
+    toDate?: string;
   }) {
     const [account] = await this.db
       .select({ id: chartOfAccount.id, code: chartOfAccount.code, name: chartOfAccount.name, type: chartOfAccount.type })
@@ -134,11 +151,24 @@ export class LedgerService {
       return { debit: Number(row.debit), credit: Number(row.credit) };
     };
 
-    const opening = await sums(sql`${journalEntry.postedOn} < ${params.period}::date`);
-    const movement = await sums(
-      sql`${journalEntry.postedOn} >= ${params.period}::date
-          AND ${journalEntry.postedOn} < (${params.period}::date + interval '1 month')`,
-    );
+    const from = params.fromDate || params.period;
+    const to = params.toDate;
+
+    const openingCondition = from ? sql`${journalEntry.postedOn} < ${from}::date` : undefined;
+
+    let movementCondition: ReturnType<typeof sql> | undefined;
+    if (from && to) {
+      movementCondition = sql`${journalEntry.postedOn} >= ${from}::date AND ${journalEntry.postedOn} <= ${to}::date`;
+    } else if (from && !to && params.period) {
+      movementCondition = sql`${journalEntry.postedOn} >= ${from}::date AND ${journalEntry.postedOn} < (${from}::date + interval '1 month')`;
+    } else if (from) {
+      movementCondition = sql`${journalEntry.postedOn} >= ${from}::date`;
+    } else if (to) {
+      movementCondition = sql`${journalEntry.postedOn} <= ${to}::date`;
+    }
+
+    const opening = await sums(openingCondition);
+    const movement = await sums(movementCondition);
 
     // Debit grows an ASSET/EXPENSE account's balance; credit grows the other
     // three types — same convention `trialBalance`'s own `net` leaves for
@@ -165,8 +195,7 @@ export class LedgerService {
         and(
           subjectCondition,
           entityCondition,
-          sql`${journalEntry.postedOn} >= ${params.period}::date
-              AND ${journalEntry.postedOn} < (${params.period}::date + interval '1 month')`,
+          movementCondition,
         ),
       )
       .orderBy(journalEntry.postedOn);

@@ -24,26 +24,37 @@ unregistered profile and no old wallet. Existing access/refresh sessions
 cannot be used to access the deleted account. This does not retroactively
 purge users soft-deleted by older versions or change member self-deletion.
 
-### Ledger and account explanations
+### Ledger, collapsible reports, and chart of accounts
 
-Ledger shows posted account movements for the selected calendar month,
-not current cash in hand or cumulative wallet liabilities. Account names
-include short explanations; net movements display an absolute amount and
-Debit/Credit side. A debit to member wallet liability reduces the amount
-owed to members; a credit increases it. Credit revenue is not a loss.
-The account rules retain their Provisional badges pending accountant review.
+Ledger shows posted account movements for the selected date range (`From Date` and `To Date`,
+with presets such as This Month, Last Month, Today, Last 30 Days, This Financial Year, or Custom),
+not current cash in hand or cumulative wallet liabilities. Account names include short
+explanations; net movements display an absolute amount and Debit/Credit side. A debit to
+member wallet liability reduces the amount owed to members; a credit increases it. Credit revenue
+is not a loss. The account rules retain their Provisional badges pending accountant review.
 
-Admin and Super Admin can open the store-wise monthly report in Ledger.
-It shows each selected store and Head Office separately, applying the
-month and account-type filters. Download CSV exports those same rows with
-store names/codes, explanations, debit and credit movements, net movement
-side and review status. Shared Head Office accounts are not allocated to
-individual branches by this report. Filtering to one account type may show
-unequal debit and credit totals; it is not a complete trial balance.
+Ledger provides:
+1. **Collapsible Report Views**: Trial balance groups accounts by account type (Assets, Liabilities,
+   Equity, Revenue, Expense) with expandable/collapsible accordion sections, subtotals, and Expand/Collapse All
+   controls. The Store-wise report similarly provides collapsible accordion groups per branch/entity.
+   The filter sidebar and the accounting guidance banner are also collapsible.
+2. **From and To Date Range Filtering**: Reports support custom `fromDate` and `toDate` inputs with quick presets,
+   filtering trial balances, store-wise figures, and person sub-ledgers precisely to the specified dates.
+3. **Chart of Accounts Master View**: A master catalogue view of all general ledger accounts featuring:
+   - Summary KPI cards for Total Accounts, Assets, Liabilities, Equity, Revenue, and Expenses.
+   - Code, name, and description search, type pills, and provisional status filtering.
+   - Collapsible account type sections with period debit/credit movements.
+   - Direct shortcuts to Trial Balance and Person Ledger.
+   - CSV export for the Chart of Accounts and Trial Balance.
 
-Accounts uses short bracket explanations for collections, completed
-payouts, net money flow and unused wallet balances. Its money-in total
-includes approved Health Pass wallet funding, so it is not a sales-profit
+Admin and Super Admin can open the store-wise report in Ledger. It shows each selected store and Head Office
+separately, applying the date range and account-type filters. Download CSV exports those same rows with
+store names/codes, explanations, debit and credit movements, net movement side and review status. Shared
+Head Office accounts are not allocated to individual branches by this report. Filtering to one account type
+may show unequal debit and credit totals; it is not a complete trial balance.
+
+Accounts uses short bracket explanations for collections, completed payouts, net money flow and unused
+wallet balances. Its money-in total includes approved Health Pass wallet funding, so it is not a sales-profit
 figure. No accounting posting rules change with these display/report changes.
 
 ### Branch users
