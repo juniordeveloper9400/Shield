@@ -656,6 +656,61 @@ describe('Catalogue (e2e)', () => {
       expect(row).toEqual(expect.objectContaining({ isActive: false, offersLabCollection: false }));
     });
 
+    it('derives offersLabCollection from storeType — never trusts a client-sent value for it', async () => {
+      const pharmacy = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/stores')
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({
+          code: 'shd-pha',
+          name: 'Pharmacy Only',
+          area: 'A',
+          city: 'B',
+          state: 'Kerala',
+          pincode: '676100',
+          storeType: 'PHARMACY',
+          // A lying client sending true anyway must still be ignored.
+          offersLabCollection: true,
+        })
+        .expect(201);
+      expect(pharmacy.body.store.storeType).toBe('PHARMACY');
+      expect(pharmacy.body.store.offersLabCollection).toBe(false);
+
+      const lab = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/stores')
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({ code: 'shd-lab', name: 'Lab Only', area: 'A', city: 'B', state: 'Kerala', pincode: '676100', storeType: 'LAB' })
+        .expect(201);
+      expect(lab.body.store.storeType).toBe('LAB');
+      expect(lab.body.store.offersLabCollection).toBe(true);
+
+      // No storeType sent at all — defaults to PHARMACY_LAB, same as every
+      // branch before this existed.
+      const defaulted = await request(app.getHttpServer())
+        .post('/v1/staff/catalogue/stores')
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({ code: 'shd-def', name: 'Default', area: 'A', city: 'B', state: 'Kerala', pincode: '676100' })
+        .expect(201);
+      expect(defaulted.body.store.storeType).toBe('PHARMACY_LAB');
+      expect(defaulted.body.store.offersLabCollection).toBe(true);
+
+      // Editing an existing branch's storeType re-derives the flag too.
+      const toPharmacy = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/stores/${lab.body.store.id}`)
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({ storeType: 'PHARMACY' })
+        .expect(200);
+      expect(toPharmacy.body.offersLabCollection).toBe(false);
+
+      // A patch that never mentions storeType leaves both fields alone.
+      const untouched = await request(app.getHttpServer())
+        .patch(`/v1/staff/catalogue/stores/${pharmacy.body.store.id}`)
+        .set('Authorization', `Bearer ${labAccessToken}`)
+        .send({ name: 'Pharmacy Only (renamed)' })
+        .expect(200);
+      expect(untouched.body.storeType).toBe('PHARMACY');
+      expect(untouched.body.offersLabCollection).toBe(false);
+    });
+
     it('returns { store: null } (not an error) creating a branch whose code is already taken', async () => {
       await db.insert(shieldStore).values({
         code: 'SHD-DUP',

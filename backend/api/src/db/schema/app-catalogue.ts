@@ -6,6 +6,11 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   dataType: () => 'bytea',
 });
 
+/** migration 0096 — what kind of branch this is. `offersLabCollection`
+ *  (below) is always derived from this, never set independently — see
+ *  CatalogueService.createStore/updateStore. */
+export const storeTypeEnum = appSchema.enum('store_type', ['PHARMACY', 'LAB', 'PHARMACY_LAB']);
+
 /**
  * Typed READ/WRITE MIRROR of catalogue tables owned by
  * backend/db/app_schema.sql — see backend/docs/erd.md §2.
@@ -22,8 +27,11 @@ export const shieldStore = appSchema.table('shield_store', {
   phone: text('phone').notNull().default(''),
   hours: text('hours').notNull().default('8:00 AM – 10:00 PM'),
   isActive: boolean('is_active').notNull().default(true),
-  /** Migration 0057 — whether this branch takes lab bookings at all. On by
-   *  default; a branch with no phlebotomist can be switched off. */
+  /** migration 0096 — standalone pharmacy, standalone lab, or both. */
+  storeType: storeTypeEnum('store_type').notNull().default('PHARMACY_LAB'),
+  /** Migration 0057 — whether this branch takes lab bookings at all. Kept
+   *  (every existing lab-eligibility check already reads it) but now always
+   *  derived from [storeType] — LAB/PHARMACY_LAB are true, PHARMACY is false. */
   offersLabCollection: boolean('offers_lab_collection').notNull().default(true),
   /** Town-centre coordinates (migration 0007). Null until an admin pins the
    *  branch; `StoreDirectory.nearest` in the Flutter apps then falls back to

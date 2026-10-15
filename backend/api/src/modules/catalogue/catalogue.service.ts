@@ -210,6 +210,7 @@ export class CatalogueService {
         .insert(shieldStore)
         .values({
           ...dto,
+          offersLabCollection: dto.storeType !== 'PHARMACY',
           latitude: dto.latitude?.toString() ?? null,
           longitude: dto.longitude?.toString() ?? null,
           sort,
@@ -231,6 +232,9 @@ export class CatalogueService {
       .update(shieldStore)
       .set({
         ...rest,
+        // Always re-derived alongside storeType, never left to whatever the
+        // client separately sent for it — see CreateStoreDto's own doc.
+        ...(dto.storeType !== undefined ? { offersLabCollection: dto.storeType !== 'PHARMACY' } : {}),
         ...(latitude !== undefined ? { latitude: latitude?.toString() ?? null } : {}),
         ...(longitude !== undefined ? { longitude: longitude?.toString() ?? null } : {}),
       })

@@ -165,6 +165,11 @@ const storeFields = {
   phone: z.string().trim().default(''),
   hours: z.string().trim().default('8:00 AM – 10:00 PM'),
   isActive: z.boolean().default(true),
+  /** Standalone pharmacy, standalone lab, or both — the server always
+   *  derives `offersLabCollection` from this (see CatalogueService), so a
+   *  client-sent value for it is accepted for backward compatibility but
+   *  never trusted. */
+  storeType: z.enum(['PHARMACY', 'LAB', 'PHARMACY_LAB']).default('PHARMACY_LAB'),
   offersLabCollection: z.boolean().default(true),
   latitude: z.number().min(-90).max(90).nullable().default(null),
   longitude: z.number().min(-180).max(180).nullable().default(null),

@@ -57,6 +57,7 @@ export function createTestDb() {
     CREATE TYPE app.patient_relation AS ENUM ('SELF','SPOUSE','CHILD','PARENT','OTHER');
     CREATE TYPE app.cart_line_source AS ENUM ('SHOP','PRESCRIPTION');
     CREATE TYPE app.order_kind AS ENUM ('STANDARD','PRESCRIPTION');
+    CREATE TYPE app.store_type AS ENUM ('PHARMACY','LAB','PHARMACY_LAB');
     CREATE TYPE app.order_status AS ENUM ('PROCESSING','OUT_FOR_DELIVERY','DELIVERED','CANCELLED');
     CREATE TYPE app.track_state AS ENUM ('DONE','CURRENT','UPCOMING');
     CREATE TYPE app.fulfillment_type AS ENUM ('HOME_DELIVERY','STORE_PICKUP');
@@ -172,6 +173,7 @@ export function createTestDb() {
       phone text NOT NULL DEFAULT '',
       hours text NOT NULL DEFAULT '8:00 AM – 10:00 PM',
       is_active boolean NOT NULL DEFAULT true,
+      store_type app.store_type NOT NULL DEFAULT 'PHARMACY_LAB',
       offers_lab_collection boolean NOT NULL DEFAULT true,
       latitude numeric(9,6),
       longitude numeric(9,6),
