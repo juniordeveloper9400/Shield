@@ -17,6 +17,15 @@
 --  the exact same COALESCE approve_wallet_card_activation itself already
 --  uses), so that one is its own block.
 --
+--  Each account is matched by a subquery (`jl.account_id = (SELECT id FROM
+--  app.chart_of_account WHERE code = '2001')`), not a JOIN — Postgres
+--  refuses an UPDATE ... FROM whose explicit JOIN ON clause references the
+--  UPDATE's own target table (confirmed live: "invalid reference to
+--  FROM-clause entry for table jl", error 42P01, the first time this
+--  migration actually ran against the real database). The target table is
+--  only ever in scope in the top-level WHERE clause and in a FROM clause's
+--  own plain (comma-joined) entries, not inside another entry's ON clause.
+--
 --  Safe to re-run: every UPDATE below only touches rows where subject_id is
 --  still NULL.
 --
@@ -40,11 +49,10 @@ CREATE INDEX IF NOT EXISTS journal_line_subject_idx
 UPDATE app.journal_line jl
 SET subject_type = 'member', subject_id = w.member_id
 FROM app.journal_entry je
-JOIN app.chart_of_account ca ON ca.id = jl.account_id
 JOIN app.wallet_card wc ON wc.id = je.source_id::bigint
 JOIN app.wallet w ON w.id = wc.wallet_id
 WHERE jl.entry_id = je.id
-  AND ca.code = '2001'
+  AND jl.account_id = (SELECT id FROM app.chart_of_account WHERE code = '2001')
   AND je.source_table = 'wallet_card'
   AND jl.subject_id IS NULL;
 
@@ -54,10 +62,9 @@ WHERE jl.entry_id = je.id
 UPDATE app.journal_line jl
 SET subject_type = 'member', subject_id = o.member_id
 FROM app.journal_entry je
-JOIN app.chart_of_account ca ON ca.id = jl.account_id
 JOIN app."order" o ON o.id = split_part(je.source_id, '-', 1)::bigint
 WHERE jl.entry_id = je.id
-  AND ca.code = '2001'
+  AND jl.account_id = (SELECT id FROM app.chart_of_account WHERE code = '2001')
   AND je.source_table = 'bill'
   AND jl.subject_id IS NULL;
 
@@ -66,10 +73,9 @@ WHERE jl.entry_id = je.id
 UPDATE app.journal_line jl
 SET subject_type = 'member', subject_id = lb.member_id
 FROM app.journal_entry je
-JOIN app.chart_of_account ca ON ca.id = jl.account_id
 JOIN app.lab_booking lb ON lb.id = je.source_id::bigint
 WHERE jl.entry_id = je.id
-  AND ca.code = '2001'
+  AND jl.account_id = (SELECT id FROM app.chart_of_account WHERE code = '2001')
   AND je.source_table = 'lab_bill'
   AND jl.subject_id IS NULL;
 
@@ -78,10 +84,9 @@ WHERE jl.entry_id = je.id
 UPDATE app.journal_line jl
 SET subject_type = 'member', subject_id = rpt.member_id
 FROM app.journal_entry je
-JOIN app.chart_of_account ca ON ca.id = jl.account_id
 JOIN app.reward_point_transaction rpt ON rpt.id = je.source_id::bigint
 WHERE jl.entry_id = je.id
-  AND ca.code = '2001'
+  AND jl.account_id = (SELECT id FROM app.chart_of_account WHERE code = '2001')
   AND je.source_table = 'reward_point_transaction'
   AND jl.subject_id IS NULL;
 
@@ -91,11 +96,10 @@ WHERE jl.entry_id = je.id
 UPDATE app.journal_line jl
 SET subject_type = 'member', subject_id = w.member_id
 FROM app.journal_entry je
-JOIN app.chart_of_account ca ON ca.id = jl.account_id
 JOIN app.wallet_entry we ON we.id = je.source_id::bigint
 JOIN app.wallet w ON w.id = we.wallet_id
 WHERE jl.entry_id = je.id
-  AND ca.code = '2001'
+  AND jl.account_id = (SELECT id FROM app.chart_of_account WHERE code = '2001')
   AND je.source_table = 'wallet_entry'
   AND jl.subject_id IS NULL;
 
@@ -104,10 +108,9 @@ WHERE jl.entry_id = je.id
 UPDATE app.journal_line jl
 SET subject_type = 'member', subject_id = rpt.member_id
 FROM app.journal_entry je
-JOIN app.chart_of_account ca ON ca.id = jl.account_id
 JOIN app.reward_point_transaction rpt ON rpt.id = je.source_id::bigint
 WHERE jl.entry_id = je.id
-  AND ca.code = '2003'
+  AND jl.account_id = (SELECT id FROM app.chart_of_account WHERE code = '2003')
   AND je.source_table = 'reward_point_transaction'
   AND jl.subject_id IS NULL;
 
@@ -117,10 +120,9 @@ WHERE jl.entry_id = je.id
 UPDATE app.journal_line jl
 SET subject_type = 'agent', subject_id = aw.agent_id
 FROM app.journal_entry je
-JOIN app.chart_of_account ca ON ca.id = jl.account_id
 JOIN app.agent_withdrawal aw ON aw.id = je.source_id::bigint
 WHERE jl.entry_id = je.id
-  AND ca.code = '2002'
+  AND jl.account_id = (SELECT id FROM app.chart_of_account WHERE code = '2002')
   AND je.source_table = 'agent_withdrawal'
   AND jl.subject_id IS NULL;
 
@@ -129,12 +131,11 @@ WHERE jl.entry_id = je.id
 UPDATE app.journal_line jl
 SET subject_type = 'agent', subject_id = a.id
 FROM app.journal_entry je
-JOIN app.chart_of_account ca ON ca.id = jl.account_id
 JOIN app.wallet_entry we ON we.id = je.source_id::bigint
 JOIN app.wallet w ON w.id = we.wallet_id
 JOIN app.agent a ON a.member_id = w.member_id
 WHERE jl.entry_id = je.id
-  AND ca.code = '2002'
+  AND jl.account_id = (SELECT id FROM app.chart_of_account WHERE code = '2002')
   AND je.source_table = 'wallet_entry'
   AND jl.subject_id IS NULL;
 
