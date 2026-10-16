@@ -230,7 +230,13 @@ describe('Staff order writes (e2e)', () => {
       await request(http())
         .put(`/v1/staff/orders/${storeAOrderId}/invoice`)
         .set('Authorization', `Bearer ${pharmacyA}`)
-        .send({ amount: 90, discountAmount: 10, lines: [{ name: 'Vitamin C', unitPrice: 100, qty: 1 }] })
+        .send({
+          amount: 90,
+          discountAmount: 10,
+          lines: [{ name: 'Vitamin C', unitPrice: 100, qty: 1 }],
+          image: 'data:image/png;base64,AAAA',
+          billNumber: 'BK-0001',
+        })
         .expect(200);
 
       await request(http())
@@ -254,6 +260,8 @@ describe('Staff order writes (e2e)', () => {
             { name: 'Vitamin C', unitPrice: 100, qty: 1 },
             { name: 'Zinc', unitPrice: 40, qty: 2 },
           ],
+          image: 'data:image/png;base64,AAAA',
+          billNumber: 'BK-0002',
         })
         .expect(200);
       const [b] = await db.select().from(bill).where(eq(bill.orderId, storeAOrderId));
@@ -286,7 +294,12 @@ describe('Staff order writes (e2e)', () => {
       await request(http())
         .put(`/v1/staff/orders/${bareOrder.id}/invoice`)
         .set('Authorization', `Bearer ${pharmacyA}`)
-        .send({ amount: 100, lines: [{ name: 'Vitamin C', unitPrice: 100, qty: 1 }], billNumber: 'BK-4521' })
+        .send({
+          amount: 100,
+          lines: [{ name: 'Vitamin C', unitPrice: 100, qty: 1 }],
+          billNumber: 'BK-4521',
+          image: 'data:image/png;base64,AAAA',
+        })
         .expect(200);
       const [first] = await db.select().from(bill).where(eq(bill.orderId, bareOrder.id));
       expect(first.billNumber).toBe('BK-4521');

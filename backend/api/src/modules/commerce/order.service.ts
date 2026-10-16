@@ -1095,6 +1095,20 @@ export class OrderService {
       // number follows the same rule.
       const image = dto.image ? dto.image : existing?.image ?? '';
       const billNumber = dto.billNumber ? dto.billNumber : existing?.billNumber ?? null;
+
+      // Both mandatory, server-side — not just shieldweb's own disabled
+      // Send button (BillEditorModal's missingBillNumber/missingBillImage).
+      // A blank value only ever means "keep whatever's already on record"
+      // (see above), so this only refuses a bill that would come out of
+      // this call with neither — a brand-new bill with no number or no
+      // picture at all.
+      if (!image) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'A picture of the bill is required.' } });
+      }
+      if (!billNumber) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'The bill number is required.' } });
+      }
+
       let billId: number;
       let sentAt: Date;
       if (existing) {
