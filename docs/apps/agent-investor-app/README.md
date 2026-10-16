@@ -1,6 +1,6 @@
 # Agent / Investor App Documentation
 
-This is the separate Flutter project under `shield agent_invester/`. It currently overlaps substantially with the member app and has no dedicated test directory or README in its project root.
+This is the separate Flutter project under `shield agent_invester/`. It currently overlaps substantially with the member app and has its own `test/` directory, including lab patient-selection, checkout and branch regression tests.
 
 - [Partner app PRD](prd.md)
 - [Partner app FRD](frd.md)

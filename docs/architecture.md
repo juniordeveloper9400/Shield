@@ -169,3 +169,11 @@ An existing number always keeps the name stored on it. If the number is edited o
 ## Important boundary
 
 The `shield agent_invester/` directory is a parallel project tree, not part of the normal root build commands. Treat it as legacy or separately targeted until ownership is clarified.
+
+### Named patients in member lab booking
+
+The root Flutter app and the separate agent/investor web app (`shield agent_invester/`) use the same `LabPatientPickerSheet` flow: choose 1-5 patients, then fill each slot with a distinct saved patient or create one through `PatientFormSheet` (name, phone, date of birth, gender, relationship and address; ABHA optional). The selected-count price stays visible during collection. Review shows names and the current total; removing a patient reduces the total, and Add another patient collects another person up to five. Closing the picker leaves the existing cart booking unchanged. The sheet scrolls on short screens.
+
+The cart retains the named patient list, deduplicates patient IDs per test and prices each package per selected person. Change from the package or cart reopens those selections. Checkout passes each patient's name, age and available remote patient ID to the existing booking API, along with any per-patient collection address. Existing backend ownership checks protect saved patients. Patient creation remains best-effort sync as documented in `PatientRepository`; unsynced patients are submitted by name and age. This change needs a new Flutter web deployment and a new Android build; no database migration is required.
+
+The agent/investor web app keeps its own registration gate and backend-fetched lab branch list. Its picker and cart also support 1-5 named patients, creating a patient during booking, duplicate prevention and a count-times-unit-price review. Regression coverage lives in `shield agent_invester/test/lab_patient_picker_test.dart`, alongside its existing lab checkout, branch and profile tests. Deploy that project's web build to update the agent/investor website.

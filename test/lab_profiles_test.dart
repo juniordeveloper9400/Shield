@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:shield/data/backend/care_repository.dart';
 import 'package:shield/module/labtest/lab_cart_service.dart';
+import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/labtest/lab_package.dart';
 import 'package:shield/module/labtest/lab_test_screen.dart';
 import 'package:shield/module/labtest/top_packages_screen.dart';
@@ -37,8 +38,12 @@ const _package = LabPackage(
 /// "Top Profiles and Tests": the single tests and group tests a lab switched on
 /// with "Show in the app", listed as bookable rows beside the package cards.
 void main() {
-  setUp(LabCartService.instance.reset);
+  setUp(() {
+    LabCartService.instance.reset();
+    PatientBook.instance.reset();
+  });
   tearDown(() {
+    PatientBook.instance.reset();
     LabCartService.instance.reset();
     CareRepository.labPackagesOverride = null;
     CareRepository.labCategoriesOverride = null;
@@ -168,12 +173,27 @@ void main() {
     expect(find.text('Select number of patients'), findsOneWidget);
     await tester.tap(find.text('2 patients'));
     await tester.pumpAndSettle();
+    for (var i = 1; i <= 2; i++) {
+      PatientBook.instance.add(
+        name: 'Profile Patient $i',
+        phone: '900000000$i',
+        dob: DateTime(1990, 1, i),
+        gender: PatientGender.other,
+        relation: PatientRelation.other,
+      );
+    }
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Profile Patient 1'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Profile Patient 2'));
+    await tester.pumpAndSettle();
+
     await tester.tap(find.textContaining('Add · ₹'));
     await tester.pumpAndSettle();
 
     expect(LabCartService.instance.bookingCount, 1);
     expect(LabCartService.instance.bookings.first.package.name, 'HbA1c');
-    expect(LabCartService.instance.bookings.first.patients, 2);
+    expect(LabCartService.instance.bookings.first.patients.length, 2);
     expect(LabCartService.instance.subtotal, 618);
     expect(find.byIcon(Icons.check_rounded), findsOneWidget);
   });

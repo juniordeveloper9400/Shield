@@ -45,7 +45,8 @@ const _activeLife = LabPackage(
     'Blood Vessels',
     'Thyroid Gland',
   ],
-  about: 'Everything in Preventive Plus, plus the two markers that show '
+  about:
+      'Everything in Preventive Plus, plus the two markers that show '
       'how blood sugar has behaved over the past three months.',
   extras: [
     LabProfile('🩸', 'HbA1c', 0),
@@ -90,8 +91,11 @@ void main() {
     CartService.instance.reset();
     AddressBook.instance.reset();
     PatientBook.instance.reset();
-    CareRepository.labPackagesOverride =
-        () async => [_preventivePlus, _activeLife, _completeCare];
+    CareRepository.labPackagesOverride = () async => [
+      _preventivePlus,
+      _activeLife,
+      _completeCare,
+    ];
   });
   tearDown(() {
     LabCartService.instance.reset();
@@ -164,6 +168,16 @@ void main() {
   });
 
   group('the lab basket', () {
+    test('the same patient is only charged once per test', () {
+      final patients = somePatients(2);
+      LabCartService.instance.book(
+        _activeLife,
+        patients: [patients[0], patients[0], patients[1]],
+      );
+      expect(LabCartService.instance.bookings.single.patients.length, 2);
+      expect(LabCartService.instance.payable, 2598);
+    });
+
     test('is a different basket from the medicine cart', () {
       LabCartService.instance.book(_activeLife, patients: somePatients(2));
 
@@ -217,117 +231,242 @@ void main() {
     });
 
     test('patientsFor reports what is booked', () {
-      expect(
-        LabCartService.instance.patientsFor(_activeLife),
-        null,
-      );
+      expect(LabCartService.instance.patientsFor(_activeLife), null);
 
       LabCartService.instance.book(_activeLife, patients: somePatients(2));
 
       expect(LabCartService.instance.patientsFor(_activeLife)?.length, 2);
-      expect(
-        LabCartService.instance.patientsFor(_completeCare),
-        null,
-      );
+      expect(LabCartService.instance.patientsFor(_completeCare), null);
     });
 
-    test('a patient can be given their own collection address, separate from the shared one', () {
-      final patients = somePatients(2);
-      LabCartService.instance.book(_activeLife, patients: patients);
-      expect(LabCartService.instance.addressFor(patients[0]), null);
+    test(
+      'a patient can be given their own collection address, separate from the shared one',
+      () {
+        final patients = somePatients(2);
+        LabCartService.instance.book(_activeLife, patients: patients);
+        expect(LabCartService.instance.addressFor(patients[0]), null);
 
-      const own = Address(
-        pincode: '679999',
-        house: 'Door 9',
-        area: 'Elsewhere',
-        firstName: 'Grandma',
-        phone: '9000099999',
-        label: AddressLabel.home,
-      );
-      LabCartService.instance.setAddressFor(patients[0], own);
+        const own = Address(
+          pincode: '679999',
+          house: 'Door 9',
+          area: 'Elsewhere',
+          firstName: 'Grandma',
+          phone: '9000099999',
+          label: AddressLabel.home,
+        );
+        LabCartService.instance.setAddressFor(patients[0], own);
 
-      expect(LabCartService.instance.addressFor(patients[0]), own);
-      // The other patient is untouched.
-      expect(LabCartService.instance.addressFor(patients[1]), null);
+        expect(LabCartService.instance.addressFor(patients[0]), own);
+        // The other patient is untouched.
+        expect(LabCartService.instance.addressFor(patients[1]), null);
 
-      LabCartService.instance.clear();
-      expect(LabCartService.instance.addressFor(patients[0]), null);
-    });
+        LabCartService.instance.clear();
+        expect(LabCartService.instance.addressFor(patients[0]), null);
+      },
+    );
 
-    test('a preferred date is unset by default, settable and clearable, and reset on clear()', () {
-      expect(LabCartService.instance.scheduledFor, null);
+    test(
+      'a preferred date is unset by default, settable and clearable, and reset on clear()',
+      () {
+        expect(LabCartService.instance.scheduledFor, null);
 
-      final date = DateTime(2026, 11, 3);
-      LabCartService.instance.chooseScheduledFor(date);
-      expect(LabCartService.instance.scheduledFor, date);
+        final date = DateTime(2026, 11, 3);
+        LabCartService.instance.chooseScheduledFor(date);
+        expect(LabCartService.instance.scheduledFor, date);
 
-      LabCartService.instance.chooseScheduledFor(null);
-      expect(LabCartService.instance.scheduledFor, null);
+        LabCartService.instance.chooseScheduledFor(null);
+        expect(LabCartService.instance.scheduledFor, null);
 
-      LabCartService.instance.chooseScheduledFor(date);
-      LabCartService.instance.book(_activeLife, patients: somePatients(2));
-      LabCartService.instance.clear();
-      expect(LabCartService.instance.scheduledFor, null);
-    });
+        LabCartService.instance.chooseScheduledFor(date);
+        LabCartService.instance.book(_activeLife, patients: somePatients(2));
+        LabCartService.instance.clear();
+        expect(LabCartService.instance.scheduledFor, null);
+      },
+    );
   });
 
   group('the patient sheet', () {
-    testWidgets('lists every patient on the account, checkable', (tester) async {
-      final patients = somePatients(2);
+    testWidgets('Back cancels adding another patient and keeps the review', (
+      tester,
+    ) async {
+      final patients = somePatients(1);
       await pump(
         tester,
         Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () =>
-                  LabPatientPickerSheet.show(context, _activeLife),
-              child: const Text('open'),
-            ),
-          ),
+          body: LabPatientPickerSheet(package: _activeLife, initial: patients),
         ),
       );
-
-      await tester.tap(find.text('open'));
+      await tester.tap(find.text('Add another patient'));
       await tester.pumpAndSettle();
-
-      expect(find.text('Who is this for?'), findsOneWidget);
-      for (final p in patients) {
-        expect(find.text(p.name), findsOneWidget);
-      }
-    });
-
-    testWidgets('cannot confirm until at least one patient is picked, then prices the selection', (tester) async {
-      somePatients(2);
-      await pump(
-        tester,
-        Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () =>
-                  LabPatientPickerSheet.show(context, _activeLife),
-              child: const Text('open'),
-            ),
-          ),
-        ),
-      );
-
-      await tester.tap(find.text('open'));
+      expect(find.text('Patient 2 of 2'), findsOneWidget);
+      await tester.tap(find.byTooltip('Back'));
       await tester.pumpAndSettle();
-
-      final button = tester.widget<FilledButton>(find.byType(FilledButton));
-      expect(button.onPressed, isNull);
-      expect(find.text('Select at least one patient'), findsOneWidget);
-
-      await tester.tap(find.text('Patient 1'));
-      await tester.tap(find.text('Patient 2'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Add · ₹2,598'), findsOneWidget);
+      expect(find.text('Confirm patients'), findsOneWidget);
       expect(
-        tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
-        isNotNull,
+        find.text('1 patient \u00d7 \u20b91,299 = \u20b91,299'),
+        findsOneWidget,
       );
+      expect(find.text(patients.single.name), findsOneWidget);
     });
+
+    testWidgets('a new patient can be added alongside a saved patient', (
+      tester,
+    ) async {
+      final saved = somePatients(1).single;
+      await pump(
+        tester,
+        const LabPackageScreen(package: _activeLife),
+        size: const Size(400, 1800),
+      );
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2 patients'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(saved.name));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Add a new patient'));
+      await tester.pumpAndSettle();
+      Future<void> fill(String label, String value) async {
+        final field = find.widgetWithText(TextFormField, label);
+        await tester.ensureVisible(field);
+        await tester.enterText(field, value);
+      }
+
+      await fill('Full name', 'New Family Patient');
+      await fill('Mobile number', '9000012345');
+      await tester.tap(find.widgetWithText(TextFormField, 'Date of birth'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('OK'));
+      await tester.pumpAndSettle();
+      await fill('Pincode', '682001');
+      await fill('House no / Floor / Building', '12 Lake View Road');
+      await fill('Area / Locality', 'Kochi');
+      await fill('First name', 'Receiver');
+      await fill('Mobile Number', '9000012345');
+      await tester.ensureVisible(find.text('Save patient'));
+      await tester.tap(find.text('Save patient'));
+      await tester.pumpAndSettle();
+      expect(find.text('Confirm patients'), findsOneWidget);
+      expect(find.text(saved.name), findsOneWidget);
+      expect(find.text('New Family Patient'), findsOneWidget);
+      await tester.tap(find.text('Add · ₹2,598'));
+      await tester.pumpAndSettle();
+      expect(
+        LabCartService.instance.bookings.single.patients.map((p) => p.name),
+        [saved.name, 'New Family Patient'],
+      );
+      expect(PatientBook.instance.patients.length, 2);
+    });
+
+    testWidgets('count picker scrolls on a short landscape screen', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => LabPatientPickerSheet.show(context, _activeLife),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+        size: const Size(740, 360),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('5 patients'));
+      await tester.tap(find.text('5 patients'));
+      await tester.pumpAndSettle();
+      expect(find.text('Patient 1 of 5'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      'shows the full selected-count price while collecting patients',
+      (tester) async {
+        somePatients(2);
+        await pump(
+          tester,
+          const Scaffold(body: LabPatientPickerSheet(package: _activeLife)),
+        );
+        await tester.tap(find.text('2 patients'));
+        await tester.pumpAndSettle();
+        expect(find.text('2 patients × ₹1,299 = ₹2,598'), findsOneWidget);
+        await tester.tap(find.text('Patient 1'));
+        await tester.pumpAndSettle();
+        expect(find.text('Patient 1'), findsNothing);
+        expect(find.text('Patient 2 of 2'), findsOneWidget);
+        expect(find.text('2 patients × ₹1,299 = ₹2,598'), findsOneWidget);
+      },
+    );
+
+    testWidgets('opens on the old-style headcount picker', (tester) async {
+      await pump(
+        tester,
+        Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => LabPatientPickerSheet.show(context, _activeLife),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Select number of patients'), findsOneWidget);
+      expect(find.text('1 patient'), findsOneWidget);
+      expect(find.text('5 patients'), findsOneWidget);
+    });
+
+    testWidgets(
+      'picking a count collects that many patients one at a time, each a saved-patient shortcut away, then prices the selection',
+      (tester) async {
+        final patients = somePatients(2);
+        await pump(
+          tester,
+          Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () =>
+                    LabPatientPickerSheet.show(context, _activeLife),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('2 patients'));
+        await tester.pumpAndSettle();
+        expect(find.text('Patient 1 of 2'), findsOneWidget);
+        expect(find.text(patients[0].name), findsOneWidget);
+
+        await tester.tap(find.text(patients[0].name));
+        await tester.pumpAndSettle();
+        expect(find.text('Patient 2 of 2'), findsOneWidget);
+
+        await tester.tap(find.text(patients[1].name));
+        await tester.pumpAndSettle();
+
+        // Both slots filled — the review step, with the stable count-based price.
+        expect(find.text('Add · ₹2,598'), findsOneWidget);
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Add · ₹2,598'),
+              )
+              .onPressed,
+          isNotNull,
+        );
+      },
+    );
   });
 
   group('the package screen', () {
@@ -358,7 +497,7 @@ void main() {
     testWidgets('Add opens the sheet and the choice reaches the basket', (
       tester,
     ) async {
-      somePatients(3);
+      final patients = somePatients(3);
       await pump(
         tester,
         const LabPackageScreen(package: _activeLife),
@@ -367,12 +506,14 @@ void main() {
 
       await tester.tap(find.text('Add'));
       await tester.pumpAndSettle();
-      expect(find.text('Who is this for?'), findsOneWidget);
+      expect(find.text('Select number of patients'), findsOneWidget);
 
-      await tester.tap(find.text('Patient 1'));
-      await tester.tap(find.text('Patient 2'));
-      await tester.tap(find.text('Patient 3'));
+      await tester.tap(find.text('3 patients'));
       await tester.pumpAndSettle();
+      for (final p in patients) {
+        await tester.tap(find.text(p.name));
+        await tester.pumpAndSettle();
+      }
       await tester.tap(find.text('Add · ₹3,897'));
       await tester.pumpAndSettle();
 
@@ -436,7 +577,10 @@ void main() {
       tester,
     ) async {
       final patients = somePatients(4);
-      LabCartService.instance.book(_activeLife, patients: patients.sublist(0, 2));
+      LabCartService.instance.book(
+        _activeLife,
+        patients: patients.sublist(0, 2),
+      );
       await pump(tester, const LabCartScreen());
 
       await tester.tap(find.text('2 patients'));
@@ -445,9 +589,16 @@ void main() {
       // Reopens on what is already booked rather than blank.
       expect(find.text('Add · ₹2,598'), findsOneWidget);
 
+      await tester.tap(find.text('Add another patient'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Patient 3'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Add another patient'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Patient 4'));
       await tester.pumpAndSettle();
+
       await tester.tap(find.text('Add · ₹5,196'));
       await tester.pumpAndSettle();
 

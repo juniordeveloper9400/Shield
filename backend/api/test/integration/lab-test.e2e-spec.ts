@@ -12,7 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, labPackage, labTest } from '../../src/db/schema';
+import { adminUser, labCategory, labPackage, labTest } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -73,6 +73,23 @@ describe('Lab Test Master & Package builder (e2e)', () => {
   let db: TestDb;
   let firebase: FakeFirebaseVerifier;
   let superAdminToken: string;
+
+  it('lists every test with its category and saves description/category edits to its member listing', async () => {
+    const [kidney] = await db.insert(labCategory).values({ name: 'Kidney edit fixture' }).returning();
+    const [general] = await db.insert(labCategory).values({ name: 'General edit fixture' }).returning();
+    const created = await request(app.getHttpServer()).post('/v1/staff/lab-tests')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ input: { ...BLANK_INPUT, name: 'Description fixture', categoryId: String(kidney.id), description: 'Initial description', showInApp: true }, groupItems: [], specialRates: [] }).expect(201);
+    const id = created.body.id;
+    await request(app.getHttpServer()).post(`/v1/staff/lab-tests/${id}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ input: { ...BLANK_INPUT, name: 'Updated description fixture', categoryId: String(general.id), description: 'Updated member description', showInApp: true }, groupItems: [], specialRates: [] }).expect(201);
+    const listed = await request(app.getHttpServer()).get('/v1/staff/lab-tests').set('Authorization', `Bearer ${superAdminToken}`).expect(200);
+    expect(listed.body.find((row: { id: number }) => String(row.id) === String(id))).toMatchObject({ categoryId: general.id, categoryName: general.name, description: 'Updated member description' });
+    const [listing] = await db.select().from(labPackage).where(eq(labPackage.sourceTestId, id));
+    expect(listing.about).toBe('Updated member description');
+    expect(listing.categoryId).toBe(general.id);
+  });
   let labToken: string;
   let pharmacyToken: string;
 

@@ -725,6 +725,7 @@ export function createTestDb() {
       report_on_value integer NOT NULL DEFAULT 0,
       report_on_unit text NOT NULL DEFAULT 'Minutes',
       perform_at text NOT NULL DEFAULT 'In House',
+      description text NOT NULL DEFAULT '',
       internal_note text NOT NULL DEFAULT '',
       nabl_accredited boolean NOT NULL DEFAULT false,
       send_sms boolean NOT NULL DEFAULT false,

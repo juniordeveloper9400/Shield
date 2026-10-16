@@ -2,7 +2,7 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Database } from '../../db/client';
-import { adminUser, labPackage, labPackageTestItem, labProfile, labTest, labTestGroupItem, labTestSpecialRate } from '../../db/schema';
+import { adminUser, labCategory, labPackage, labPackageTestItem, labProfile, labTest, labTestGroupItem, labTestSpecialRate } from '../../db/schema';
 import type {
   CreateLabPackageDto,
   LabTestInputDto,
@@ -58,6 +58,9 @@ export class LabTestService {
         lisCode: labTest.lisCode,
         testType: labTest.testType,
         name: labTest.name,
+        categoryId: labTest.categoryId,
+        categoryName: labCategory.name,
+        description: labTest.description,
         shortName: labTest.shortName,
         department: labTest.department,
         method: labTest.method,
@@ -69,6 +72,7 @@ export class LabTestService {
         isActive: labTest.isActive,
       })
       .from(labTest)
+      .leftJoin(labCategory, eq(labCategory.id, labTest.categoryId))
       .orderBy(asc(labTest.name));
     const countById = await this.groupItemCounts();
     return rows.map((r) => ({ ...r, itemCount: countById.get(r.id) ?? 0 }));
@@ -181,6 +185,7 @@ export class LabTestService {
       reportOnValue: input.reportOnValue,
       reportOnUnit: input.reportOnUnit,
       performAt: input.performAt,
+      description: input.description,
       internalNote: input.internalNote,
       nablAccredited: input.nablAccredited,
       sendSms: input.sendSms,
@@ -357,6 +362,7 @@ export class LabTestService {
         id: labTest.id,
         testType: labTest.testType,
         name: labTest.name,
+        description: labTest.description,
         rate: labTest.rate,
         amount: labTest.amount,
         categoryId: labTest.categoryId,
@@ -396,6 +402,7 @@ export class LabTestService {
       .values({
         slug,
         name: t.name,
+        about: t.description,
         categoryId: t.categoryId,
         testCount,
         profileCount: 1,
@@ -413,6 +420,7 @@ export class LabTestService {
         set: {
           slug,
           name: t.name,
+          about: t.description,
           categoryId: t.categoryId,
           testCount,
           profileCount: 1,

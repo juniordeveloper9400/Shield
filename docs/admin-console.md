@@ -314,3 +314,11 @@ npm run dev
 ```
 
 Vite normally serves at `http://localhost:5173`. Vercel is configured to build `dist` and rewrite routes to `index.html`; see [Deployment](deployment.md).
+
+### All Tests and public descriptions
+
+Lab Tests ? **All Tests**, beside Categories, lists every test, group and package from both the admin master and imported rate list. It includes inactive and uncategorized records. Search by test name, LIS code, category or description; filter by category and active status. Edit opens the full Test Master editor, including category, pricing, specifications and a public **Description (shown in the app)**. Internal Note remains for staff only. Saving returns to All Tests; Back asks before discarding unsaved edits.
+
+Deleting requires confirmation and uses the existing API safeguards: tests referenced by groups, packages or bookings cannot be deleted until those dependencies are resolved; booked records should be deactivated instead. Errors remain visible in the confirmation dialog.
+
+Before deploying this feature, apply `backend/db/migrations/0100_lab_test_description.sql`, then deploy the backend and admin console. The migration adds a separate public description and preserves existing generated app-listing descriptions. Saving and listing sync the public description and category to the test's member-facing listing. The migration does not delete data. No APK rebuild is required for these admin changes.

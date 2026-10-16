@@ -141,6 +141,7 @@ export const labTest = appSchema.table('lab_test', {
   reportOnValue: integer('report_on_value').notNull().default(0),
   reportOnUnit: text('report_on_unit').notNull().default('Minutes'), // 'Minutes' | 'Hours' | 'Days'
   performAt: text('perform_at').notNull().default('In House'),
+  description: text('description').notNull().default(''),
   internalNote: text('internal_note').notNull().default(''),
   nablAccredited: boolean('nabl_accredited').notNull().default(false),
   sendSms: boolean('send_sms').notNull().default(false),

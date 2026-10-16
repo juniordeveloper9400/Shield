@@ -133,6 +133,7 @@ export const labTestInputSchema = z.object({
   reportOnValue: z.number().int().nonnegative().default(0),
   reportOnUnit: z.enum(['Minutes', 'Hours', 'Days']).default('Minutes'),
   performAt: z.string().default('In House'),
+  description: z.string().optional(),
   internalNote: z.string().default(''),
   nablAccredited: z.boolean().default(false),
   sendSms: z.boolean().default(false),
