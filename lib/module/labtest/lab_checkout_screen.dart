@@ -199,7 +199,12 @@ class _LabCheckoutScreenState extends State<LabCheckoutScreen> {
             children: [
               _ReviewCard(bookings: cart.bookings),
               const SizedBox(height: 12),
-              const LabFulfillmentRow(),
+              // Not const — its build() reads LabCartService.instance
+              // .fulfillmentType directly rather than a constructor field,
+              // so a const instance would never rebuild (and never show
+              // the selection change) after a tap — same reasoning as
+              // LabBranchRow below.
+              LabFulfillmentRow(),
               const SizedBox(height: 12),
               // Only home collection needs a collection address — a store
               // visit's "branch" (LabBranchRow below) is where the member

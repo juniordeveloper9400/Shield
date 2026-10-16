@@ -17,6 +17,7 @@ import 'package:shield/module/labtest/top_packages_screen.dart';
 import 'package:shield/module/location/address_book.dart';
 import 'package:shield/module/patients/patient_book.dart';
 import 'package:shield/module/registration/store_picker_sheet.dart';
+import 'package:shield/theme/app_colors.dart';
 
 const _activeLife = LabPackage(
   id: '2',
@@ -554,6 +555,33 @@ void main() {
         expect(find.text('Booking summary'), findsOneWidget);
         expect(find.text('Active Life'), findsOneWidget);
         expect(find.text('Place lab test'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'switching between Home Collection and Store Visit actually moves the blue highlight',
+      (tester) async {
+        // A non-const LabFulfillmentRow regression check — a const instance
+        // would keep reading whichever option was selected at first build,
+        // never rebuilding after a tap (see its own call site comment).
+        AuthService.instance.signInAs();
+        LabCartService.instance.book(_activeLife, patients: somePatients(1));
+        await pump(tester, const LabCartScreen());
+        await chooseBranch(tester);
+        await tester.tap(find.text('Proceed to checkout'));
+        await tester.pumpAndSettle();
+
+        Color? colorOf(String label) =>
+            tester.widget<Text>(find.text(label)).style?.color;
+
+        expect(colorOf('Home Collection'), AppColors.brandBlue);
+        expect(colorOf('Store Visit'), AppColors.textDark);
+
+        await tester.tap(find.text('Store Visit'));
+        await tester.pumpAndSettle();
+
+        expect(colorOf('Store Visit'), AppColors.brandBlue);
+        expect(colorOf('Home Collection'), AppColors.textDark);
       },
     );
 
