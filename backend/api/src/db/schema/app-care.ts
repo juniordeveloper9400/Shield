@@ -192,6 +192,20 @@ export const labTestSpecialRate = appSchema.table('lab_test_special_rate', {
   rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
 });
 
+/** Migration 0101 — one staff-managed entry in a Test Master free-text
+ *  field's pick list (Department, Method, Sample, Volume, Scheduled Days,
+ *  Cut of time, Reporting Time, Technology, Test Mode, Perform At),
+ *  `fieldKey` naming which one — see {@link LabTestFieldKey} in dto.ts.
+ *  Deleting a row only removes it from the list; it never touches a test
+ *  that already carries the value as free text. */
+export const labTestFieldOption = appSchema.table('lab_test_field_option', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  fieldKey: text('field_key').notNull(),
+  value: text('value').notNull(),
+  sort: integer('sort').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 /** Migration 0055 — the real {@link labTest} rows a member-bookable
  *  {@link labPackage} is built from (the package builder's own picker). */
 export const labPackageTestItem = appSchema.table('lab_package_test_item', {

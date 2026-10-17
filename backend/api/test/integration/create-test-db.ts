@@ -776,6 +776,17 @@ export function createTestDb() {
       UNIQUE (test_id, ref_lab)
     );
 
+    -- migration 0101
+    CREATE TABLE app.lab_test_field_option (
+      id bigserial PRIMARY KEY,
+      field_key text NOT NULL,
+      value text NOT NULL,
+      sort integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE UNIQUE INDEX lab_test_field_option_key_value_uidx
+      ON app.lab_test_field_option (field_key, lower(value));
+
     CREATE TABLE app.lab_package (
       id bigserial PRIMARY KEY,
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),

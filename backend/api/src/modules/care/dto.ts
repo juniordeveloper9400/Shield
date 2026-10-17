@@ -175,6 +175,33 @@ export const saveLabTestSchema = z.object({
   specialRates: z.array(labSpecialRateSchema).default([]),
 });
 
+// ---- Lab test field options (app.lab_test_field_option) -------------------
+
+/** Which {@link labTestInputSchema} free-text field a pick-list entry is
+ *  for — matches `LabTestService.FIELD_KEYS` and shieldweb's own
+ *  `LabTestFieldKey` one for one. */
+export const LAB_TEST_FIELD_KEYS = [
+  'department',
+  'method',
+  'sample',
+  'volume',
+  'scheduledDays',
+  'cutOfTime',
+  'reportingTime',
+  'technology',
+  'testMode',
+  'performAt',
+] as const;
+export const labTestFieldKeySchema = z.enum(LAB_TEST_FIELD_KEYS);
+
+export const createLabTestFieldOptionSchema = z.object({
+  fieldKey: labTestFieldKeySchema,
+  value: z.string().trim().min(1),
+});
+export const updateLabTestFieldOptionSchema = z.object({
+  value: z.string().trim().min(1),
+});
+
 // ---- Lab Packages (app.lab_package, staff-built) --------------------------
 
 export const setLabPackageActiveSchema = z.object({ isActive: z.boolean() });
@@ -215,6 +242,9 @@ export type UpdateLabBookingDetailsDto = z.infer<typeof updateLabBookingDetailsS
 export type AssignLabStaffDto = z.infer<typeof assignLabStaffSchema>;
 export type AddLabReportPagesDto = z.infer<typeof addLabReportPagesSchema>;
 export type LabTestInputDto = z.infer<typeof labTestInputSchema>;
+export type LabTestFieldKey = z.infer<typeof labTestFieldKeySchema>;
+export type CreateLabTestFieldOptionDto = z.infer<typeof createLabTestFieldOptionSchema>;
+export type UpdateLabTestFieldOptionDto = z.infer<typeof updateLabTestFieldOptionSchema>;
 export type SaveLabTestDto = z.infer<typeof saveLabTestSchema>;
 export type SetLabPackageActiveDto = z.infer<typeof setLabPackageActiveSchema>;
 export type UpdateLabPackagePriceDto = z.infer<typeof updateLabPackagePriceSchema>;

@@ -2,9 +2,21 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Database } from '../../db/client';
-import { adminUser, labCategory, labPackage, labPackageTestItem, labProfile, labTest, labTestGroupItem, labTestSpecialRate } from '../../db/schema';
+import {
+  adminUser,
+  labCategory,
+  labPackage,
+  labPackageTestItem,
+  labProfile,
+  labTest,
+  labTestFieldOption,
+  labTestGroupItem,
+  labTestSpecialRate,
+} from '../../db/schema';
+import { LAB_TEST_FIELD_KEYS } from './dto';
 import type {
   CreateLabPackageDto,
+  LabTestFieldKey,
   LabTestInputDto,
   SaveLabTestDto,
   UpdateLabPackageBuildDto,
@@ -288,6 +300,12 @@ export class LabTestService {
       throw error;
     }
 
+    // Whatever was typed into a pick-list field is available to pick next
+    // time too, even if nobody explicitly added it on the Field Options
+    // list first — the same "nothing has to be registered before it's
+    // used" freedom the field already had as a plain text input.
+    await this.upsertFieldOptionsFromTest(values);
+
     try {
       await this.syncLabTestListing(saved.id);
     } catch (syncError) {
@@ -334,6 +352,78 @@ export class LabTestService {
         });
       }
       throw error;
+    }
+  }
+
+  // ---- Field options (app.lab_test_field_option, migration 0101) ----------
+
+  /** Every pick-list entry, grouped by field — what the Test Master's nine
+   *  free-text fields (Department, Method, Sample, Volume, Scheduled Days,
+   *  Cut of time, Reporting Time, Technology, Test Mode, Perform At) offer
+   *  as suggestions. */
+  async listLabTestFieldOptions(): Promise<Record<LabTestFieldKey, { id: string; value: string }[]>> {
+    const rows = await this.db
+      .select({ id: labTestFieldOption.id, fieldKey: labTestFieldOption.fieldKey, value: labTestFieldOption.value })
+      .from(labTestFieldOption)
+      .orderBy(asc(labTestFieldOption.value));
+    const byKey = Object.fromEntries(
+      LAB_TEST_FIELD_KEYS.map((key) => [key, [] as { id: string; value: string }[]]),
+    ) as Record<LabTestFieldKey, { id: string; value: string }[]>;
+    for (const row of rows) {
+      const key = row.fieldKey as LabTestFieldKey;
+      if (key in byKey) byKey[key].push({ id: String(row.id), value: row.value });
+    }
+    return byKey;
+  }
+
+  /** Adds one entry to a field's pick list — same values a test could
+   *  already save with that field, just addable up front instead of only
+   *  after a test first uses it. */
+  async createLabTestFieldOption(fieldKey: LabTestFieldKey, value: string): Promise<{ id: string; value: string }> {
+    const trimmed = value.trim();
+    const [existing] = await this.db
+      .select({ id: labTestFieldOption.id, value: labTestFieldOption.value })
+      .from(labTestFieldOption)
+      .where(and(eq(labTestFieldOption.fieldKey, fieldKey), sql`lower(${labTestFieldOption.value}) = lower(${trimmed})`))
+      .limit(1);
+    if (existing) return { id: String(existing.id), value: existing.value };
+    const [created] = await this.db
+      .insert(labTestFieldOption)
+      .values({ fieldKey, value: trimmed })
+      .returning({ id: labTestFieldOption.id, value: labTestFieldOption.value });
+    return { id: String(created.id), value: created.value };
+  }
+
+  /** Renames a pick-list entry — a test that already carries the old text
+   *  keeps it; only the list's own wording changes for the next test. */
+  async updateLabTestFieldOption(id: number, value: string): Promise<void> {
+    const [updated] = await this.db
+      .update(labTestFieldOption)
+      .set({ value: value.trim() })
+      .where(eq(labTestFieldOption.id, id))
+      .returning({ id: labTestFieldOption.id });
+    if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'That entry no longer exists.' } });
+  }
+
+  /** Removes one pick-list entry. Never touches a test that already used
+   *  the value — it just stops being offered as a suggestion. */
+  async deleteLabTestFieldOption(id: number): Promise<void> {
+    const [deleted] = await this.db.delete(labTestFieldOption).where(eq(labTestFieldOption.id, id)).returning({ id: labTestFieldOption.id });
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'That entry no longer exists.' } });
+  }
+
+  /** Upserts whatever a just-saved test's own pick-list fields carry — see
+   *  `saveLabTest`'s own call. Best-effort per field: one odd value should
+   *  never fail the test save that's already committed. */
+  private async upsertFieldOptionsFromTest(values: Record<string, unknown>): Promise<void> {
+    const rows = LAB_TEST_FIELD_KEYS.map((fieldKey) => ({ fieldKey, value: String(values[fieldKey] ?? '').trim() })).filter(
+      (row) => row.value !== '',
+    );
+    if (rows.length === 0) return;
+    try {
+      await this.db.insert(labTestFieldOption).values(rows).onConflictDoNothing();
+    } catch {
+      // Never block a test save over its pick-list bookkeeping.
     }
   }
 

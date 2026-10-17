@@ -299,6 +299,74 @@ describe('Lab Test Master & Package builder (e2e)', () => {
     expect(row).toBeUndefined();
   });
 
+  describe('field options (Department/Method/Sample/… pick lists)', () => {
+    it('saving a test with a new value adds it to that field\'s list, without needing it added first', async () => {
+      await request(app.getHttpServer())
+        .post('/v1/staff/lab-tests')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ input: { ...BLANK_INPUT, name: 'Field option fixture', department: 'Serology Fixture' }, groupItems: [], specialRates: [] })
+        .expect(201);
+
+      const options = await request(app.getHttpServer())
+        .get('/v1/staff/lab-tests/field-options')
+        .set('Authorization', `Bearer ${labToken}`)
+        .expect(200);
+      expect(options.body.department).toEqual(
+        expect.arrayContaining([expect.objectContaining({ value: 'Serology Fixture' })]),
+      );
+      // Saving the exact same value again does not duplicate the entry.
+      expect(options.body.department.filter((o: { value: string }) => o.value === 'Serology Fixture')).toHaveLength(1);
+    });
+
+    it('can add, rename and delete an entry directly — never touching a test that already used the old text', async () => {
+      const added = await request(app.getHttpServer())
+        .post('/v1/staff/lab-tests/field-options')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ fieldKey: 'sample', value: 'Swab Fixture' })
+        .expect(201);
+      expect(added.body.value).toBe('Swab Fixture');
+
+      const test = await request(app.getHttpServer())
+        .post('/v1/staff/lab-tests')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ input: { ...BLANK_INPUT, name: 'Sample option fixture', sample: 'Swab Fixture' }, groupItems: [], specialRates: [] })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-tests/field-options/${added.body.id}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ value: 'Swab (renamed) Fixture' })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .delete(`/v1/staff/lab-tests/field-options/${added.body.id}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+
+      const options = await request(app.getHttpServer())
+        .get('/v1/staff/lab-tests/field-options')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(options.body.sample).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ value: 'Swab (renamed) Fixture' })]),
+      );
+
+      // The test that already carried the old value keeps it untouched.
+      const got = await request(app.getHttpServer())
+        .get(`/v1/staff/lab-tests/${test.body.id}`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(got.body.sample).toBe('Swab Fixture');
+    });
+
+    it('rejects a PHARMACY role, same as the rest of the Test Master', async () => {
+      await request(app.getHttpServer())
+        .get('/v1/staff/lab-tests/field-options')
+        .set('Authorization', `Bearer ${pharmacyToken}`)
+        .expect(403);
+    });
+  });
+
   describe('package builder', () => {
     it('lists every active TEST/GROUP for the picker, never a PACKAGE', async () => {
       await request(app.getHttpServer())
