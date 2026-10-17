@@ -856,6 +856,7 @@ class _ShortcutTile extends StatelessWidget {
               Container(
                 width: 40,
                 height: 40,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: tint,
                   borderRadius: BorderRadius.circular(9),
