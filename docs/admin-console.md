@@ -330,3 +330,24 @@ Admin, Super Admin and Lab logins can open **Lab Orders ? an order ? Edit order 
 Contact and patient corrections are saved only to this booking. They do not rename the account, change its verified phone or modify saved patient/address records. Wallet OTP continues to target the owning account's verified phone. Technician logins retain the existing narrow editor and branch restrictions. Already-collected charges cannot be rewritten from this form; metadata remains editable. Unpaid bill amounts/lines are refreshed if the test, unit price or patient count changes. A test with an attached report must have that report resolved before replacement, preventing a result from being attached to the wrong test.
 
 Deployment order: apply `backend/db/migrations/0102_lab_booking_admin_details.sql`, deploy the backend, then deploy the `shieldweb` build. This additive migration introduces booking-local contact fields and patient detail snapshots. No live migration/deployment is performed by editing the source. Existing unchanged staff assignments remain valid for metadata corrections even if the old technician is now inactive. Invoice pricing and collection share transaction locks so a collected bill cannot race with a price correction. pg-mem integration tests exercise the paths, but do not prove real-Postgres concurrent lock behavior.
+
+
+### Lab Charges
+
+Admin, Super Admin and Lab Admin have a **Lab Charges** sidebar entry after Lab Tests.
+The page supports creating, editing and deleting named technician fees and distance
+rules, marking them active/inactive, and previewing a distance against the active
+rates. Only one active rule of each type is allowed. Accounts with an explicit
+custom module list need `lab_charges` granted through Staff Login. Technician and
+pharmacy roles do not receive this module by default.
+
+Apply additive migration `0103_lab_charges.sql`, then deploy the backend and
+`shieldweb` build. The migration seeds the requested distance slabs: up to 3 km
+INR 20; over 3 through 5 km INR 50; above 5 km INR 50 plus INR 15 per additional
+started kilometre. It does not invent a technician fee. Delete requires confirmation.
+
+This release manages rate settings only: automatic address routing and applying
+visit charges to bookings/invoices are not implemented. The page makes this
+limitation visible; previews do not charge members or change existing invoices.
+The automatic collection design remains proposed in
+`superpowers/specs/2026-10-17-lab-charges-design.md`.

@@ -45,6 +45,9 @@ interface ModuleRoute {
 }
 
 const ROUTES: ModuleRoute[] = [
+  { pattern: '/v1/staff/lab-charges', modules: ['lab_charges'] },
+  { pattern: '/v1/staff/lab-charges/preview', modules: ['lab_charges'] },
+  { pattern: '/v1/staff/lab-charges/:id', modules: ['lab_charges'] },
   // ---- admins ----
   { pattern: '/v1/staff/admins', modules: ['admins'] },
   { pattern: '/v1/staff/admins/:id', modules: ['admins'] },

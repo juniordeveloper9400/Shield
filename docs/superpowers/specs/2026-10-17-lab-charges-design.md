@@ -1,6 +1,8 @@
 # Lab charges and automatic collection distance
 
-Status: proposed for user review; not implemented or deployed.
+Status: sidebar and rate-settings CRUD implemented in source following the
+missing-sidebar follow-up. Automatic routing, shared collection visits and
+invoice integration below remain proposed and are not implemented or deployed.
 
 ## Outcome
 

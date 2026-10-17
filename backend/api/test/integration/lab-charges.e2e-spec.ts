@@ -46,6 +46,23 @@ describe('Lab Charges settings', () => {
       .send({ name: 'Technician visit', kind: 'TECHNICIAN', amount: 100, isActive: true }).expect(200);
     const preview = await request(app.getHttpServer()).post(`${base}/preview`).set('Authorization', `Bearer ${token}`).send({ distanceKm: 6 }).expect(201);
     expect(preview.body).toMatchObject({ technician: 100, distance: 65, total: 165 });
+    for (const [distanceKm, charge] of [[0, 20], [3, 20], [3.1, 50], [5, 50], [5.1, 65], [6.1, 80]]) {
+      const result = await request(app.getHttpServer()).post(`${base}/preview`).set('Authorization', `Bearer ${token}`)
+        .send({ distanceKm }).expect(201);
+      expect(result.body.distance).toBe(charge);
+    }
+    await request(app.getHttpServer()).post(base).set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Duplicate technician', kind: 'TECHNICIAN', amount: 10, isActive: true }).expect(409);
+    const inactive = await request(app.getHttpServer()).post(base).set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Inactive technician', kind: 'TECHNICIAN', amount: 999, isActive: false }).expect(201);
+    await request(app.getHttpServer()).patch(`${base}/${inactive.body.id}`).set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Inactive technician', kind: 'TECHNICIAN', amount: 999, isActive: true }).expect(409);
+    await request(app.getHttpServer()).delete(`${base}/${inactive.body.id}`).set('Authorization', `Bearer ${token}`).expect(200);
+    await request(app.getHttpServer()).patch(`${base}/${distance.body.id}`).set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Fractional thresholds', kind: 'DISTANCE', firstKm: 2, firstAmount: 20, secondKm: 3.4, secondAmount: 50, extraPerKm: 15, isActive: true }).expect(200);
+    const decimalPreview = await request(app.getHttpServer()).post(`${base}/preview`).set('Authorization', `Bearer ${token}`)
+      .send({ distanceKm: 4.4 }).expect(201);
+    expect(decimalPreview.body.distance).toBe(65);
     await request(app.getHttpServer()).delete(`${base}/${tech.body.id}`).set('Authorization', `Bearer ${token}`).expect(200);
     await request(app.getHttpServer()).delete(`${base}/${distance.body.id}`).set('Authorization', `Bearer ${token}`).expect(200);
     expect((await request(app.getHttpServer()).get(base).set('Authorization', `Bearer ${token}`).expect(200)).body).toEqual([]);
@@ -54,5 +71,8 @@ describe('Lab Charges settings', () => {
     await request(app.getHttpServer()).post('/v1/staff/lab-charges').set('Authorization', `Bearer ${token}`)
       .send({ name: 'Bad slabs', kind: 'DISTANCE', firstKm: 5, firstAmount: 20, secondKm: 3, secondAmount: 50, extraPerKm: -15 }).expect(400);
     await request(app.getHttpServer()).get('/v1/staff/lab-charges').set('Authorization', `Bearer ${technicianToken}`).expect(403);
+    await request(app.getHttpServer()).post('/v1/staff/lab-charges').set('Authorization', `Bearer ${technicianToken}`)
+      .send({ name: 'Not allowed', kind: 'TECHNICIAN', amount: 10 }).expect(403);
+    await request(app.getHttpServer()).get('/v1/staff/lab-charges').expect(401);
   });
 });

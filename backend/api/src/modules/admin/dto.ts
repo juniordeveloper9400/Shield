@@ -23,6 +23,7 @@ const moduleKeyEnum = z.enum([
   'lab_orders',
   'lab_bills',
   'lab_tests',
+  'lab_charges',
   'appointments',
   'accounts',
   'users',

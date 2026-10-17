@@ -9,8 +9,12 @@ import { StaffCareController } from './staff-care.controller';
 import { StaffLabTestController } from './staff-lab-test.controller';
 import { StaffLabPackageController } from './staff-lab-package.controller';
 
+import { LabChargesService } from './lab-charges.service';
+import { StaffLabChargesController } from './staff-lab-charges.controller';
+
 @Module({
   controllers: [
+    StaffLabChargesController,
     CareController,
     MemberBookingController,
     StaffBookingController,
@@ -18,6 +22,6 @@ import { StaffLabPackageController } from './staff-lab-package.controller';
     StaffLabTestController,
     StaffLabPackageController,
   ],
-  providers: [CareService, BookingService, LabTestService],
+  providers: [LabChargesService, CareService, BookingService, LabTestService],
 })
 export class CareModule {}

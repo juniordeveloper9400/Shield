@@ -365,3 +365,12 @@ export const appointment = appSchema.table('appointment', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Collection rate settings; migration 0103. Existing invoices are not repriced. */
+export const labCharge = appSchema.table('lab_charge', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  name: text('name').notNull(),
+  kind: text('kind').notNull(),
+  config: jsonb('config').$type<Record<string, number>>().notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+});
