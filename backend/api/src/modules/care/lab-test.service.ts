@@ -215,6 +215,7 @@ export class LabTestService {
       specification2: input.specification2,
       specification3: input.specification3,
       fasting: input.fasting,
+      symptoms: input.symptoms,
       resultTemplate: input.resultTemplate,
       isActive: input.isActive,
     };
@@ -453,7 +454,10 @@ export class LabTestService {
         id: labTest.id,
         testType: labTest.testType,
         name: labTest.name,
+        shortName: labTest.shortName,
         description: labTest.description,
+        specification2: labTest.specification2,
+        symptoms: labTest.symptoms,
         rate: labTest.rate,
         amount: labTest.amount,
         categoryId: labTest.categoryId,
@@ -507,6 +511,9 @@ export class LabTestService {
         sourceTestId: testId,
         isMostCommon: t.isMostCommon,
         fasting: t.fasting,
+        shortName: t.shortName,
+        whyThisTest: t.specification2,
+        symptoms: t.symptoms,
       })
       .onConflictDoUpdate({
         target: labPackage.sourceTestId,
@@ -525,6 +532,9 @@ export class LabTestService {
           isActive: true,
           isMostCommon: t.isMostCommon,
           fasting: t.fasting,
+          shortName: t.shortName,
+          whyThisTest: t.specification2,
+          symptoms: t.symptoms,
         },
       })
       .returning({ id: labPackage.id });
@@ -532,7 +542,7 @@ export class LabTestService {
 
     const member = alias(labTest, 'member_test');
     const memberItems = await this.db
-      .select({ name: member.name })
+      .select({ id: member.id, name: member.name, shortName: member.shortName })
       .from(labTestGroupItem)
       .innerJoin(member, eq(member.id, labTestGroupItem.testId))
       .where(eq(labTestGroupItem.groupId, testId))
@@ -541,7 +551,14 @@ export class LabTestService {
     await this.db.delete(labProfile).where(eq(labProfile.labPackageId, packageId));
     if (memberItems.length > 0) {
       await this.db.insert(labProfile).values(
-        memberItems.map((item, idx) => ({ labPackageId: packageId, name: item.name, parameters: 1, sort: idx })),
+        memberItems.map((item, idx) => ({
+          labPackageId: packageId,
+          name: item.name,
+          parameters: 1,
+          sort: idx,
+          testId: item.id,
+          shortName: item.shortName,
+        })),
       );
     } else {
       await this.db.insert(labProfile).values({ labPackageId: packageId, name: t.name, parameters: testCount, sort: 0 });

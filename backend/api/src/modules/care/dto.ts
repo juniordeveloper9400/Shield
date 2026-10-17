@@ -167,6 +167,8 @@ export const labTestInputSchema = z.object({
   specification3: z.string().default(''),
   /** Only meaningful while testType is PACKAGE — see app-care.ts's own doc. */
   fasting: z.string().default(''),
+  /** Chips for "Symptoms that may indicate this test" — see app-care.ts's own doc. */
+  symptoms: z.array(z.string()).default([]),
   resultTemplate: z.string().default(''),
   isActive: z.boolean().default(true),
 });

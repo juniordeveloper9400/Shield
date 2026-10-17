@@ -153,6 +153,7 @@ export class CareService {
         sample: found.sample,
         reportingTime: found.reportingTime,
         fasting: found.fasting,
+        symptoms: found.symptoms,
         about: found.specification1,
         whyThisTest: found.specification2,
       };

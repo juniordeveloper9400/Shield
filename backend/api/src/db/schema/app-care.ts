@@ -80,6 +80,15 @@ export const labPackage = appSchema.table('lab_package', {
   sample: text('sample'),
   organs: text('organs').array().notNull().default([]),
   about: text('about').notNull().default(''),
+  /** migration 0107 — `app.lab_test.short_name`, synced the same way
+   *  [fasting] is — "Also referred as" on the detail screen. */
+  shortName: text('short_name').notNull().default(''),
+  /** migration 0107 — `app.lab_test.specification_2` ("Why this test" on
+   *  the Test Master form), synced onto this listing as its own "Why is
+   *  this done" section. */
+  whyThisTest: text('why_this_test').notNull().default(''),
+  /** migration 0107 — `app.lab_test.symptoms`, synced the same way. */
+  symptoms: text('symptoms').array().notNull().default([]),
   isActive: boolean('is_active').notNull().default(true),
   sort: integer('sort').notNull().default(0),
   /** Migration 0068 — the Test Master's "Most Common Test" switch, mirrored
@@ -180,6 +189,9 @@ export const labTest = appSchema.table('lab_test', {
    *  form) while testType is PACKAGE; synced onto `app.lab_package.fasting`
    *  by syncLabTestListing the same way reportingTime becomes reportIn. */
   fasting: text('fasting').notNull().default(''),
+  /** migration 0107 — chips for "Symptoms that may indicate this test" on
+   *  the member-facing detail screen; staff-entered, never hardcoded. */
+  symptoms: text('symptoms').array().notNull().default([]),
   resultTemplate: text('result_template').notNull().default(''),
   isActive: boolean('is_active').notNull().default(true),
   createdBy: text('created_by').notNull().default(''),

@@ -748,6 +748,7 @@ export function createTestDb() {
       specification_2 text NOT NULL DEFAULT '',
       specification_3 text NOT NULL DEFAULT '',
       fasting text NOT NULL DEFAULT '',
+      symptoms text[] NOT NULL DEFAULT '{}',
       result_template text NOT NULL DEFAULT '',
       is_active boolean NOT NULL DEFAULT true,
       created_by text NOT NULL DEFAULT '',
@@ -818,6 +819,9 @@ export function createTestDb() {
       sample text,
       organs text[] NOT NULL DEFAULT '{}',
       about text NOT NULL DEFAULT '',
+      short_name text NOT NULL DEFAULT '',
+      why_this_test text NOT NULL DEFAULT '',
+      symptoms text[] NOT NULL DEFAULT '{}',
       is_active boolean NOT NULL DEFAULT true,
       sort integer NOT NULL DEFAULT 0,
       is_most_common boolean NOT NULL DEFAULT false
