@@ -177,3 +177,13 @@ The root Flutter app and the separate agent/investor web app (`shield agent_inve
 The cart retains the named patient list, deduplicates patient IDs per test and prices each package per selected person. Change from the package or cart reopens those selections. Checkout passes each patient's name, age and available remote patient ID to the existing booking API, along with any per-patient collection address. Existing backend ownership checks protect saved patients. Patient creation remains best-effort sync as documented in `PatientRepository`; unsynced patients are submitted by name and age. This change needs a new Flutter web deployment and a new Android build; no database migration is required.
 
 The agent/investor web app keeps its own registration gate and backend-fetched lab branch list. Its picker and cart also support 1-5 named patients, creating a patient during booking, duplicate prevention and a count-times-unit-price review. Regression coverage lives in `shield agent_invester/test/lab_patient_picker_test.dart`, alongside its existing lab checkout, branch and profile tests. Deploy that project's web build to update the agent/investor website.
+
+### Optional lab patient details and collection address
+
+Both the member app and `shield agent_invester` web app offer **Skip patient details** after choosing the patient count. Skip fills the remaining slots with booking-only labels (Patient 1, Patient 2, etc.), preserving any real patients already chosen. These labels are not added to saved patients; requests omit their age and patient ID, and keep the selected count and per-patient pricing. Review, removal and adding another patient remain available.
+
+Lab checkout accepts home-collection bookings without a collection address. Branch selection and sign-in remain required. Addresses remain available as optional additions. The lab's Add new patient form also accepts a completely blank address section; entering part of an address still requires completing its validation. This option applies only when opening the form from lab booking; the normal patient-management form retains its existing validation. Existing backend lab-booking fields already accept omitted addresses and ages, so no database migration is needed. Release requires rebuilding the Android app and deploying the agent/investor web app.
+
+Lab checkout omits the Bill summary card in both projects. Booking details and the bottom total remain visible; cart pricing and billing calculations are unchanged.
+
+Both lab checkout summaries explain that the displayed charges are estimates and the lab may revise the final amount. The bottom price is labeled Estimated total. This is explanatory text; pricing calculations and the omitted Bill summary card are unchanged.

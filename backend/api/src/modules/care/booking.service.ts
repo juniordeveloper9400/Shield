@@ -52,6 +52,11 @@ async function listLabStores(db: Database) {
       area: shieldStore.area,
       city: shieldStore.city,
       pincode: shieldStore.pincode,
+      // Lets a client rank this live list by real distance the same way the
+      // app's own bundled StoreDirectory already can — see LabStore's own
+      // doc on why this list is fetched live instead of reusing that one.
+      latitude: shieldStore.latitude,
+      longitude: shieldStore.longitude,
     })
     .from(shieldStore)
     .where(and(eq(shieldStore.isActive, true), eq(shieldStore.offersLabCollection, true)))

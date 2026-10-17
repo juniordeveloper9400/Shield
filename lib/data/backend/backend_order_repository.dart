@@ -77,6 +77,14 @@ class LabBookingPatientInput {
   final Address? address;
 
   const LabBookingPatientInput({required this.patient, this.address});
+
+  Map<String, dynamic> toJson({int? addressId}) => {
+    if (!patient.detailsPending && int.tryParse(patient.remoteId ?? '') != null)
+      'patientId': int.parse(patient.remoteId!),
+    'name': patient.name,
+    if (!patient.detailsPending) 'age': patient.age,
+    if (addressId != null) 'addressId': addressId,
+  };
 }
 
 /// One line item on a standard order, as
@@ -571,13 +579,7 @@ class BackendOrderRepository {
             }
             patientAddressId = patientAddressIdCache[entry.patient.id];
           }
-          patients.add({
-            if (entry.patient.remoteId != null)
-              'patientId': int.tryParse(entry.patient.remoteId!),
-            'name': entry.patient.name,
-            'age': entry.patient.age,
-            if (patientAddressId != null) 'addressId': patientAddressId,
-          });
+          patients.add(entry.toJson(addressId: patientAddressId));
         }
         await BackendHttp.instance.request(
           'POST',

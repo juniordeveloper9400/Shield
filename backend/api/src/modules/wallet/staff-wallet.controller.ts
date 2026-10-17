@@ -42,6 +42,14 @@ export class StaffWalletController {
     return this.wallet.listCardsForMemberStaffView(memberId);
   }
 
+  /** The Health Passes page's own summary panel — balance plus this
+   *  month's redeemable/redeemed/available, the same figures the member's
+   *  own app shows on their wallet card front. */
+  @Get('member/:memberId/summary')
+  memberSummary(@Param('memberId', ParseIntPipe) memberId: number) {
+    return this.wallet.getMemberWalletSummaryForStaff(memberId);
+  }
+
   /**
    * The company's reserve, split by store. SUPERADMIN and ADMIN see every
    * store; PHARMACY sees only its own store's reserve. See

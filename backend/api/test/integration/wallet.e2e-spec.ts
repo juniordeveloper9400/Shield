@@ -296,6 +296,32 @@ describe('Wallet & Rewards (e2e)', () => {
     expect(cards.body[0].status).toBe('APPROVED');
   });
 
+  it("gives staff the member's wallet summary — balance plus this month's redeemable/redeemed/available, same figures the member's own app shows", async () => {
+    const summary = await request(app.getHttpServer())
+      .get(`/v1/staff/wallet-cards/member/${memberId}/summary`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    expect(summary.body.balance).toBe(11000); // 10000 + 1000 bonus, from the approval just above
+    // Freshly approved this month — one twelfth of the load is redeemable,
+    // none of it spent yet.
+    expect(summary.body.monthlyRedeemable).toBe(Math.floor(11000 / 12));
+    expect(summary.body.redeemedThisMonth).toBe(0);
+    expect(summary.body.availableAllowance).toBe(summary.body.monthlyRedeemable);
+    expect(summary.body.monthlyBalance).toBe(summary.body.monthlyRedeemable);
+  });
+
+  it('reports every figure as 0 for a member with no wallet row at all', async () => {
+    const [noWalletMember] = await db
+      .insert(users)
+      .values({ phone: '9000000099', name: 'No Wallet Yet', firebaseUid: 'member-no-wallet', registrationCompletedAt: new Date() })
+      .returning();
+    const summary = await request(app.getHttpServer())
+      .get(`/v1/staff/wallet-cards/member/${noWalletMember.id}/summary`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    expect(summary.body).toEqual({ balance: 0, monthlyRedeemable: 0, redeemedThisMonth: 0, availableAllowance: 0 });
+  });
+
   it('rejects approving the same card twice', async () => {
     await request(app.getHttpServer())
       .patch(`/v1/staff/wallet-cards/${cardId}/approve`)

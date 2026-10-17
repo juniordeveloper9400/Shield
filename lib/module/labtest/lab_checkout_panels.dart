@@ -159,7 +159,7 @@ class _LabPatientAddressRow extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: address == null ? AppColors.danger : AppColors.border,
+              color: AppColors.border,
             ),
           ),
           padding: const EdgeInsets.all(14),

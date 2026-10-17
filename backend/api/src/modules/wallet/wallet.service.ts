@@ -25,6 +25,7 @@ import {
 } from '../../db/schema';
 import type { HoldWalletCardDto, SaveWalletCardVerificationDto, SubmitWalletCardDto } from './dto';
 import { REFERRAL_COMMISSION_RATE, ReferralService } from './referral.service';
+import { availablePlanAllowance, monthlyBalanceOf, redeemableAllowance, redeemedThisMonth, toIsoDate } from './wallet-month';
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -757,6 +758,7 @@ export class WalletService {
       submittedAt: walletCard.submittedAt,
       reviewedAt: walletCard.reviewedAt,
       issuedOn: walletCard.issuedOn,
+      rechargedOn: walletCard.rechargedOn,
       expiresOn: walletCard.expiresOn,
       verifiedReference: walletCard.verifiedReference,
       receivedOn: walletCard.receivedOn,
@@ -796,6 +798,45 @@ export class WalletService {
     return this.activationsBaseQuery()
       .where(eq(wallet.memberId, memberId))
       .orderBy(sql`CASE ${walletCard.status} WHEN 'PENDING' THEN 0 WHEN 'ON_HOLD' THEN 1 ELSE 2 END`, desc(walletCard.submittedAt));
+  }
+
+  /**
+   * The same three Health Pass figures the member's own app shows on the
+   * front of their wallet card ("MONTHLY ALLOWANCE + CARRY-FORWARD" —
+   * REDEEMABLE/REDEEMED/AVAILABLE), and the figures `BillEditorModal`'s own
+   * preview already shows staff for a specific order — generalised here to
+   * any member, for the Health Passes console page. Reads the same
+   * `wallet-month.ts` pure functions as both of those, so none of the three
+   * surfaces can ever disagree. `0` across the board for a member with no
+   * wallet row at all, same convention `OrderService.getWalletPreview` uses.
+   */
+  async getMemberWalletSummaryForStaff(memberId: number) {
+    const [theWallet] = await this.db.select().from(wallet).where(eq(wallet.memberId, memberId)).limit(1);
+    if (!theWallet) {
+      return { balance: 0, monthlyRedeemable: 0, redeemedThisMonth: 0, availableAllowance: 0 };
+    }
+    const balance = Number(theWallet.balance);
+    const cardRows = await this.db
+      .select({ amount: walletCard.amount, bonus: walletCard.bonus, rechargedExtra: walletCard.rechargedExtra, issuedOn: walletCard.issuedOn })
+      .from(walletCard)
+      .where(and(eq(walletCard.walletId, theWallet.id), eq(walletCard.status, 'APPROVED')));
+    const entryRows = await this.db
+      .select({ kind: walletEntry.kind, amount: walletEntry.amount, occurredOn: walletEntry.occurredOn, createdAt: walletEntry.createdAt })
+      .from(walletEntry)
+      .where(eq(walletEntry.walletId, theWallet.id))
+      .orderBy(walletEntry.createdAt, walletEntry.id);
+    const cards = cardRows.map((c) => ({ loaded: Number(c.amount) + Number(c.bonus) + Number(c.rechargedExtra), issuedOn: toIsoDate(c.issuedOn) }));
+    const entries = entryRows.map((e) => ({ kind: e.kind, amount: Number(e.amount), occurredOn: toIsoDate(e.occurredOn) }));
+    const now = new Date();
+    const monthlyRedeemable = redeemableAllowance(cards, entries, now);
+    const redeemed = redeemedThisMonth(entries, now);
+    return {
+      balance,
+      monthlyRedeemable,
+      redeemedThisMonth: redeemed,
+      availableAllowance: cards.length === 0 ? balance : availablePlanAllowance(cards, entries, now, balance),
+      monthlyBalance: monthlyBalanceOf(monthlyRedeemable, redeemed),
+    };
   }
 
   /** Balance + reward points beside a card under review. `users.rewardPoints`,
