@@ -46,10 +46,33 @@ Retain existing backend role and store authorization. Pharmacy users retain thei
 
 Keep operational statuses per test. Show completed/total and canceled counts at order level; a single ready report must not mark all tests ready. Existing bills, OTP collection, wallet debits, refunds and report ownership continue to reference the individual test entry. This feature does not create a new consolidated financial invoice.
 
+## Full admin editing of user-entered lab details
+
+Admin and Super Admin must be able to correct every user-entered detail from the grouped lab order. The current modal already edits branch, collection address, patient names/ages, schedule and notes, but that is not complete coverage. Build an explicit editor rather than leaving the remaining details as read-only rows.
+
+| Section | Editable information |
+| --- | --- |
+| Booking contact | Booking contact name, phone and collection-address contact name/phone |
+| Tests | Add another eligible test/package, replace a selected test, cancel/remove a test entry from the active order, and change each test's patient selection/count |
+| Patient details | Name, phone, date of birth or age, gender, relationship and optional ABHA; fill in details skipped at checkout, add patients or remove patients from a test |
+| Service and branch | Home collection/store visit and eligible branch, using existing staff/store authorization |
+| Collection location | Shared and per-patient collection address, including address lines, locality, landmark, pincode and receiver/contact details; an address can remain absent |
+| Dates and instructions | Customer-requested visit/collection date, lab schedule, assigned technician and order/test notes |
+| Charges | Unit price and applicable discounts through the staff billing workflow, with line/order totals recomputed from patient counts; the lab-confirmed amount remains distinct from the checkout estimate |
+| Progress and reports | Existing status transitions, report attachments and report notes, exposed within each test entry |
+
+Store editable booking-contact, patient and collection-location snapshots so that changing one lab order does not silently update `app.users`, saved patients, saved addresses or unrelated orders. Extend submission and detail DTOs to carry all supplied patient/address fields; the current name/age-only booking representation cannot support editing or displaying data it never saved. Snapshot fields are optional for old records and skipped details. Where an old booking has only a saved-patient/address reference, resolve the existing permitted data for display; an edit creates an order-specific snapshot. Never invent missing historical values.
+
+An edited contact phone is an order contact, not a change to the owning member's identity. Wallet collection authentication continues to use the actual owning account's verified phone, not an editable display/contact number. Keep owner IDs, order IDs and original creation/audit timestamps server-controlled because the user did not enter them.
+
+Save related changes atomically, validate field formats and limits, and record actor, timestamp, reason and before/after values in the existing staff-audit system. Show successful changes in member order details in both clients. Preserve authorization and clinical workflow checks: editing a progress label cannot bypass required staff assignment or report requirements. Corrections to a finalized report or settled bill use a recorded correction/adjustment path; retain the prior report and financial audit history. Removing an already acted-on test cancels that entry rather than deleting its reports, bill or payment records. The order detail must make every supported edit discoverable, including fields with no value yet.
+
 ## Validation and rollout
 
 Backend integration coverage: two tests create one parent/two children; invalid second test rolls back everything; retries and concurrent duplicates do not duplicate charges; changed payload with the same request UUID is rejected; guest patients and absent addresses work; prices are server-derived; member ownership, staff branch scoping and pharmacy redaction hold; old singleton bookings remain readable; per-test reports and bills remain linked correctly.
 
 Flutter coverage in each project: two cart tests produce one checkout request and confirmation; both tests appear inside one history order; different patient selections are retained; optional details/addresses still work; errors preserve the cart; retries reuse the request UUID. Admin coverage: one order row expands to two test entries, filtering/search and permissions remain correct, and an individual test can still be managed.
+
+Admin editing coverage must exercise each row of the editing matrix, completion of skipped patient fields, adding/replacing/removing a test, recomputed counts/totals, persistence across reload and visibility in both member clients. Verify that booking contact/patient/address edits do not mutate the account's saved records, edited contact phones cannot redirect wallet OTPs, paid-bill/report corrections retain history, audit entries identify the staff actor, and unauthorized roles/stores cannot perform edits.
 
 Apply the additive migration, deploy the compatible backend, deploy the admin console and agent/investor web app, then release the new Android build. Verify a real two-test checkout in each client and confirm one admin order with both entries. Preserve compatibility routes during rollout. Do not infer historical grouping or delete existing clinical/financial records. Live migration and production deployment are separate release actions, not completed by preparing this design.
