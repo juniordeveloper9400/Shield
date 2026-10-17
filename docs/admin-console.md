@@ -339,7 +339,7 @@ Before deploying this feature, apply `backend/db/migrations/0100_lab_test_descri
 
 ### Lab Orders: Edit order details
 
-Admin, Super Admin and Lab logins can open **Lab Orders ? an order ? Edit order details** from the modal footer. This opens an actual editable form for the booking contact name/phone, address contact phone, test/package, Home Collection/Store Visit, branch, assigned technician, collection address, unit price, schedule, instructions and each patient's name, age/DOB, phone, gender, relationship, ABHA and collection address. Patients can be added or removed; the total is calculated from unit price times patient count. The order reference and original creation timestamp remain system records.
+Admin, Super Admin and Lab logins edit directly inside **Lab Orders > an order**. A pencil beside each editable detail reveals its input in the same row; there is no separate Edit order details screen. The existing dialog footer shows Save changes and Cancel changes after an edit starts. Editable details include booking contact name/phone, address contact phone, test/package, Home Collection/Store Visit, branch, assigned technician, collection address, unit price, schedule, instructions and each patient's name, age/DOB, phone, gender, relationship, ABHA and collection address. Closing with pending edits asks before discarding them. Save failures retain the draft for correction and retry. Patients can be added or removed; the total is calculated from unit price times patient count. The order reference and original creation timestamp remain system records.
 
 Contact and patient corrections are saved only to this booking. They do not rename the account, change its verified phone or modify saved patient/address records. Wallet OTP continues to target the owning account's verified phone. Technician logins retain the existing narrow editor and branch restrictions. Already-collected charges cannot be rewritten from this form; metadata remains editable. Unpaid bill amounts/lines are refreshed if the test, unit price or patient count changes. A test with an attached report must have that report resolved before replacement, preventing a result from being attached to the wrong test.
 
@@ -359,6 +359,17 @@ Apply additive migration `0103_lab_charges.sql`, then deploy the backend and
 `shieldweb` build. The migration seeds the requested distance slabs: up to 3 km
 INR 20; over 3 through 5 km INR 50; above 5 km INR 50 plus INR 15 per additional
 started kilometre. It does not invent a technician fee. Delete requires confirmation.
+
+If the page and Save charge show "Something went wrong", check that migration
+0103 has been applied to the deployed backend's database. On 17 October 2026,
+the configured repository database lacked `app.lab_charge` (Postgres `42P01`).
+Migration 0103 was applied and the default distance rule verified. The actual
+LabChargesService then passed list/create/edit/delete checks for both kinds and
+the 6 km distance preview. Verification ran inside a rolled-back transaction;
+no test charge rows were retained. The integration suite also passed. This
+verified the configured database and backend service, not an authenticated
+production browser session. Edit the seeded distance rule rather than creating
+a second active rule of the same type.
 
 This release manages rate settings only: automatic address routing and applying
 visit charges to bookings/invoices are not implemented. The page makes this
