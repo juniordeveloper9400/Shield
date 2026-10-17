@@ -75,4 +75,24 @@ describe('Lab Charges settings', () => {
       .send({ name: 'Not allowed', kind: 'TECHNICIAN', amount: 10 }).expect(403);
     await request(app.getHttpServer()).get('/v1/staff/lab-charges').expect(401);
   });
+  it('calculates saved kilometre charges from the rate note and allows several distances', async () => {
+    const base = '/v1/staff/lab-charges';
+    await request(app.getHttpServer()).post(base).set('Authorization', `Bearer ${token}`)
+      .send({ name: 'No note yet', kind: 'KM', distanceKm: 6, isActive: true }).expect(400);
+    const rule = await request(app.getHttpServer()).post(base).set('Authorization', `Bearer ${token}`)
+      .send({ name: 'Distance rate note', kind: 'DISTANCE', firstKm: 3, firstAmount: 20, secondKm: 5, secondAmount: 50, extraPerKm: 15, isActive: true }).expect(201);
+    const six = await request(app.getHttpServer()).post(base).set('Authorization', `Bearer ${token}`)
+      .send({ name: '6 km collection', kind: 'KM', distanceKm: 6, amount: 1, isActive: true }).expect(201);
+    expect(six.body).toMatchObject({ distanceKm: 6, amount: 65, rateId: rule.body.id });
+    const three = await request(app.getHttpServer()).post(base).set('Authorization', `Bearer ${token}`)
+      .send({ name: '3 km collection', kind: 'KM', distanceKm: 3, isActive: true }).expect(201);
+    expect(three.body.amount).toBe(20);
+    const edited = await request(app.getHttpServer()).patch(`${base}/${six.body.id}`).set('Authorization', `Bearer ${token}`)
+      .send({ name: '8 km collection', kind: 'KM', distanceKm: 8, isActive: true }).expect(200);
+    expect(edited.body.amount).toBe(95);
+    await request(app.getHttpServer()).delete(`${base}/${rule.body.id}`).set('Authorization', `Bearer ${token}`).expect(200);
+    const rows = await request(app.getHttpServer()).get(base).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(rows.body.find((r: { id: number }) => r.id === six.body.id).amount).toBe(95);
+    for (const id of [six.body.id, three.body.id]) await request(app.getHttpServer()).delete(`${base}/${id}`).set('Authorization', `Bearer ${token}`).expect(200);
+  });
 });

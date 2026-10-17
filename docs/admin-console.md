@@ -348,6 +348,27 @@ Deployment order: apply `backend/db/migrations/0102_lab_booking_admin_details.sq
 
 ### Lab Charges
 
+The home-collection distance policy is displayed separately as a **rate note**,
+with Edit note / Delete note controls. **Create charge** defaults to **KM
+charge**: enter the kilometres only; the name is generated and the amount is
+calculated from the active note (6 km is INR 65 under the initial policy).
+Technician fee remains the other charge type. Multiple KM charges can be saved,
+edited and deleted; each stores its distance, calculated amount and the rate
+snapshot used. Changing or deleting a note does not rewrite saved charges.
+Editing and saving a KM charge explicitly recalculates against the current
+active note. Without an active note, KM creation/recalculation is blocked rather
+than saved as zero. The backend ignores browser-supplied KM amounts.
+
+Deployment requires additive migration `0104_lab_km_charges.sql`, backend and
+admin deployment together. This migration adds the KM kind and permits several
+active KM charges while retaining one active distance note and technician fee.
+On 17 October 2026 it was applied to the configured repository database.
+Actual-service create/edit/delete checks ran in a rolled-back transaction and
+preserved existing rows; backend integration and frontend calculation tests,
+typechecks and production builds passed. An authenticated production browser
+session was not used for verification. Order attachment/billing integration and
+automatic address routing remain pending.
+
 Admin, Super Admin and Lab Admin have a **Lab Charges** sidebar entry after Lab Tests.
 The page supports creating, editing and deleting named technician fees and distance
 rules, marking them active/inactive, and previewing a distance against the active

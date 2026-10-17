@@ -55,7 +55,7 @@ export function createTestDb() {
       id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL,
       config JSONB NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE
     );
-    CREATE UNIQUE INDEX lab_charge_one_active_kind ON app.lab_charge(kind) WHERE is_active;
+    CREATE UNIQUE INDEX lab_charge_one_active_kind ON app.lab_charge(kind) WHERE is_active AND kind <> 'KM';
     CREATE TYPE app.admin_role AS ENUM ('SUPERADMIN','ADMIN','PHARMACY','LAB','APPOINTMENTS','DELIVERY','LAB_TECHNICIAN');
     CREATE TYPE app.gender AS ENUM ('MALE','FEMALE','OTHER');
     CREATE TYPE app.address_label AS ENUM ('HOME','WORK','OTHER');
