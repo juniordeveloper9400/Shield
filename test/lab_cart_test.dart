@@ -616,8 +616,8 @@ void main() {
       expect(LabCartService.instance.bookings.single.patients.length, 3);
       expect(LabCartService.instance.subtotal, 3897);
 
-      // The button now reflects the booking rather than offering to add again.
-      expect(find.text('Booked for 3 patients · Change'), findsOneWidget);
+      // The bottom bar now reflects the booking rather than offering to add again.
+      expect(find.text('3 Patients'), findsOneWidget);
     });
 
     testWidgets('the badge counts the booking', (tester) async {
