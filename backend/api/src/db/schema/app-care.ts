@@ -259,6 +259,7 @@ export const labBooking = appSchema.table('lab_booking', {
   labPackageId: bigint('lab_package_id', { mode: 'number' }).notNull(),
   patientsCount: integer('patients_count').notNull().default(1),
   unitPrice: numeric('unit_price', { precision: 12, scale: 2 }).notNull().default('0'),
+  fixCharge: numeric('fix_charge', { precision: 12, scale: 2 }).notNull().default('0'),
   totalPrice: numeric('total_price', { precision: 12, scale: 2 }).notNull().default('0'),
   status: labBookingStatusEnum('status').notNull().default('REQUESTED'),
   /** migration 0094 — see labBookingFulfillmentEnum's own doc. */

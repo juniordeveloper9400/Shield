@@ -889,6 +889,7 @@ export function createTestDb() {
       lab_package_id bigint NOT NULL REFERENCES app.lab_package(id) ON DELETE RESTRICT,
       patients_count integer NOT NULL DEFAULT 1,
       unit_price numeric(12,2) NOT NULL DEFAULT 0,
+      fix_charge numeric(12,2) NOT NULL DEFAULT 0,
       total_price numeric(12,2) NOT NULL DEFAULT 0,
       status app.lab_booking_status NOT NULL DEFAULT 'REQUESTED',
       fulfillment_type app.lab_booking_fulfillment NOT NULL DEFAULT 'HOME_COLLECTION',

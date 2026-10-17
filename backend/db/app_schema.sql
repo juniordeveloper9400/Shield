@@ -495,6 +495,7 @@ CREATE TABLE app.lab_booking (
     lab_package_id bigint NOT NULL,
     patients_count integer NOT NULL DEFAULT 1,
     unit_price numeric(12,2) NOT NULL DEFAULT 0,
+    fix_charge numeric(12,2) NOT NULL DEFAULT 0,
     total_price numeric(12,2) NOT NULL DEFAULT 0,
     status app.lab_booking_status NOT NULL DEFAULT 'REQUESTED'::app.lab_booking_status,
     scheduled_for timestamptz,

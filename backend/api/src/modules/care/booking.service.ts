@@ -463,7 +463,12 @@ export class BookingService {
       }
       if (dto.unitPrice !== undefined) nextUnitPrice = dto.unitPrice;
       const nextCount = dto.patients?.length ?? found.patientsCount;
-      const priceChanged = nextUnitPrice !== Number(found.unitPrice) || nextCount !== found.patientsCount || nextPackageId !== found.labPackageId;
+      const nextFixCharge = dto.fixCharge !== undefined ? dto.fixCharge : Number(found.fixCharge ?? 0);
+      const priceChanged =
+        nextUnitPrice !== Number(found.unitPrice) ||
+        nextCount !== found.patientsCount ||
+        nextPackageId !== found.labPackageId ||
+        nextFixCharge !== Number(found.fixCharge ?? 0);
       const nextFulfillment = dto.fulfillmentType ?? found.fulfillmentType;
       let nextStaff = dto.assignedStaffId !== undefined ? dto.assignedStaffId : found.assignedStaffId;
       if (nextFulfillment === 'STORE_VISIT') nextStaff = null;
@@ -541,8 +546,9 @@ export class BookingService {
           assignedStaffId: nextStaff,
           labPackageId: nextPackageId,
           unitPrice: nextUnitPrice.toFixed(2),
+          fixCharge: nextFixCharge.toFixed(2),
           patientsCount: nextCount,
-          totalPrice: (nextUnitPrice * nextCount).toFixed(2),
+          totalPrice: (nextUnitPrice * nextCount + nextFixCharge).toFixed(2),
           ...(nextStoreId !== undefined ? { storeId: nextStoreId } : {}),
           ...(dto.address !== undefined ? { addressOverride: dto.address.trim() || null } : {}),
 
@@ -550,7 +556,8 @@ export class BookingService {
         })
         .where(eq(labBooking.id, bookingId));
       if (priceChanged && bill) {
-        const amount = Math.max(nextUnitPrice * nextCount - Number(bill.discountAmount), 0).toFixed(2);
+        const nextTotal = nextUnitPrice * nextCount + nextFixCharge;
+        const amount = Math.max(nextTotal - Number(bill.discountAmount), 0).toFixed(2);
         await tx.update(labBill).set({ amount, updatedAt: new Date() }).where(eq(labBill.id, bill.id));
         await tx.update(labBillLine).set({ unitPrice: nextUnitPrice.toFixed(2), qty: nextCount, ...(nextPackageName ? { name: nextPackageName } : {}) }).where(eq(labBillLine.labBillId, bill.id));
       }
@@ -698,6 +705,14 @@ export class BookingService {
         unitPrice: found.unitPrice,
         qty: found.patientsCount,
       });
+      if (Number(found.fixCharge || 0) > 0) {
+        await tx.insert(labBillLine).values({
+          labBillId: billId,
+          name: 'Fixed charge / Collection fee',
+          unitPrice: Number(found.fixCharge).toFixed(2),
+          qty: 1,
+        });
+      }
 
       const [result] = await tx.select().from(labBill).where(eq(labBill.id, billId)).limit(1);
       return result;

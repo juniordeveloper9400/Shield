@@ -93,6 +93,7 @@ export const updateLabBookingDetailsSchema = z.object({
   fulfillmentType: z.enum(['HOME_COLLECTION', 'STORE_VISIT']).optional(),
   assignedStaffId: z.number().int().positive().nullable().optional(),
   unitPrice: z.number().finite().nonnegative().max(10000000).refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.000001, 'Use at most two decimal places').optional(),
+  fixCharge: z.number().finite().nonnegative().max(10000000).refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.000001, 'Use at most two decimal places').optional(),
   scheduledFor: z.string().datetime().nullable(),
   note: z.string().default(''),
   /** Re-routes the booking to a different lab-eligible branch. Omitted
