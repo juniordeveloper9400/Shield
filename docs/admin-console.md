@@ -4,6 +4,20 @@
 
 ## Routes
 
+### Catalogue: Manage product save
+
+The product Manage dialog has a visible **Save changes** button in its fixed
+footer. Popular Items, Deals You Love, Offer of the Day and their expiry dates
+are staged locally and saved together through the authenticated sections API.
+The dialog closes only after a successful save; errors remain visible and the
+draft is retained for retry. Closing with pending visibility changes asks before
+discarding them, and the existing navigation guard covers these changes too.
+Switching to Edit product, saving price/stock or changing status first saves any
+pending visibility changes. Image removal continues to use its existing
+confirmation and immediate save. Description and FAQ content remain editable in
+Edit product / Add custom details & FAQs, with that form's own Save control.
+Deploy the updated admin build to make the new footer button visible online.
+
 ### Permanent user deletion
 
 Admin and Super Admin's **Delete user** now calls the authenticated backend
@@ -351,3 +365,20 @@ visit charges to bookings/invoices are not implemented. The page makes this
 limitation visible; previews do not charge members or change existing invoices.
 The automatic collection design remains proposed in
 `superpowers/specs/2026-10-17-lab-charges-design.md`.
+
+### Lab Orders and Lab Bills: missing-column failure
+
+Both pages load `GET /v1/staff/lab-bookings`. Deploying the booking-details
+backend before migration `0102_lab_booking_admin_details.sql` causes this shared
+query to fail with PostgreSQL `42703` (for example, missing `contact_name`),
+displayed as "Something went wrong" on both pages. Apply that additive migration
+to the database configured for the deployed backend before serving the updated
+code; do not work around it by removing booking details or hiding the error.
+
+On 17 October 2026, the configured repository database was confirmed to lack all
+four columns introduced by 0102. The migration was applied and all four columns
+verified. A read-only call to the actual `BookingService.listLabBookingsForStaff`
+method then successfully loaded 20 bookings, including 3 billed bookings. No
+booking, patient, bill or payment records were deleted or repriced. Verification
+covered the database and shared backend query; no authenticated production
+browser session was available to check the rendered pages.

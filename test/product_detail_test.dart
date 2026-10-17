@@ -162,7 +162,7 @@ void main() {
       expect(find.text('How to use'), findsNothing);
       expect(find.text('Ingredients'), findsNothing);
       expect(find.text('Safety information'), findsNothing);
-      expect(find.text('Frequently asked questions'), findsNothing);
+      expect(find.text('Frequently asked questions (FAQs)'), findsNothing);
     });
 
     testWidgets('ADD puts the product in the shared cart', (tester) async {
@@ -224,7 +224,7 @@ void main() {
       expect(find.text('How to use'), findsOneWidget);
       expect(find.text('Ingredients'), findsOneWidget);
       expect(find.text('Safety information'), findsOneWidget);
-      expect(find.text('Frequently asked questions'), findsOneWidget);
+      expect(find.text('Frequently asked questions (FAQs)'), findsOneWidget);
       expect(find.byIcon(Icons.ac_unit_rounded), findsOneWidget);
       expect(find.text(adminContent.storage), findsOneWidget);
     });
@@ -280,7 +280,7 @@ void main() {
 
       expect(find.text('Key uses'), findsOneWidget);
       expect(find.text('Product description'), findsNothing);
-      expect(find.text('Frequently asked questions'), findsNothing);
+      expect(find.text('Frequently asked questions (FAQs)'), findsNothing);
     });
   });
 
