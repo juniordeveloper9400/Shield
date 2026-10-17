@@ -12,7 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, agentRequest, membershipTier, users, wallet, walletCard } from '../../src/db/schema';
+import { adminUser, agentRequest, membershipTier, shieldStore, users, wallet, walletCard } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -107,6 +107,64 @@ describe('Admin/Ops (e2e)', () => {
       .post('/v1/staff/admins')
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ loginId: 'branch-pharmacy-2@example.com', name: 'Branch Pharmacy Login 2', password: 'a-fresh-password', role: 'PHARMACY' })
+      .expect(201);
+  });
+
+  it("refuses a role that doesn't fit the branch's store type, then accepts it once the role or branch changes", async () => {
+    const [labOnly] = await db
+      .insert(shieldStore)
+      .values({ code: 'SHD-LABONLY', name: 'Lab Only Branch', area: 'A', city: 'B', state: 'Kerala', pincode: '676100', storeType: 'LAB' })
+      .returning();
+    const [pharmacyOnly] = await db
+      .insert(shieldStore)
+      .values({ code: 'SHD-PHARONLY', name: 'Pharmacy Only Branch', area: 'A', city: 'B', state: 'Kerala', pincode: '676100', storeType: 'PHARMACY' })
+      .returning();
+
+    const refused = await request(app.getHttpServer())
+      .post('/v1/staff/admins')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ loginId: 'mismatch-pharmacy@example.com', name: 'X', password: 'a-fresh-password', role: 'PHARMACY', storeId: labOnly.id })
+      .expect(400);
+    expect(refused.body.error.message).toContain('Standalone Lab');
+
+    const refusedDelivery = await request(app.getHttpServer())
+      .post('/v1/staff/admins')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ loginId: 'mismatch-delivery@example.com', name: 'X', password: 'a-fresh-password', role: 'DELIVERY', storeId: labOnly.id })
+      .expect(400);
+    expect(refusedDelivery.body.error.message).toContain('Standalone Lab');
+
+    const refusedTech = await request(app.getHttpServer())
+      .post('/v1/staff/admins')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ loginId: 'mismatch-tech@example.com', name: 'X', password: 'a-fresh-password', role: 'LAB_TECHNICIAN', storeId: pharmacyOnly.id })
+      .expect(400);
+    expect(refusedTech.body.error.message).toContain('Standalone Pharmacy');
+
+    // The matching pair for each branch goes through fine.
+    const created = await request(app.getHttpServer())
+      .post('/v1/staff/admins')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ loginId: 'fits-pharmacy@example.com', name: 'X', password: 'a-fresh-password', role: 'PHARMACY', storeId: pharmacyOnly.id })
+      .expect(201);
+
+    // Editing just the branch on an existing PHARMACY account re-checks
+    // against the merged (existing role + new store) pair.
+    await request(app.getHttpServer())
+      .patch(`/v1/staff/admins/${created.body.id}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ storeId: labOnly.id })
+      .expect(400);
+
+    // A Pharmacy + Lab branch (the default) accepts every store-bound role.
+    const [both] = await db
+      .insert(shieldStore)
+      .values({ code: 'SHD-BOTH', name: 'Both Branch', area: 'A', city: 'B', state: 'Kerala', pincode: '676100', storeType: 'PHARMACY_LAB' })
+      .returning();
+    await request(app.getHttpServer())
+      .post('/v1/staff/admins')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({ loginId: 'fits-both@example.com', name: 'X', password: 'a-fresh-password', role: 'LAB_TECHNICIAN', storeId: both.id })
       .expect(201);
   });
 
