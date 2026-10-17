@@ -1,10 +1,17 @@
 import { z } from 'zod';
 
+const optionalContactPhone = z.string().trim().refine((v) => v === '' || /^\d{10}$/.test(v), 'Enter a 10-digit phone number');
 const bookingPatientSchema = z
   .object({
+    bookingPatientId: z.number().int().positive().optional(),
     patientId: z.number().int().positive().optional(),
     name: z.string().optional(),
-    age: z.number().int().positive().optional(),
+    age: z.number().int().min(0).max(120).optional(),
+    phone: optionalContactPhone.optional(),
+    dob: z.string().refine((v) => v === '' || (/^\d{4}-\d{2}-\d{2}$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v && Date.parse(v) <= Date.now()), 'Enter a valid date of birth').optional(),
+    gender: z.enum(['', 'MALE', 'FEMALE', 'OTHER']).optional(),
+    relation: z.enum(['', 'SELF', 'SPOUSE', 'CHILD', 'PARENT', 'OTHER']).optional(),
+    abhaId: z.string().refine((v) => v === '' || /^\d{14}$/.test(v), 'Enter a 14-digit ABHA number').optional(),
     /** This patient's own collection address — an id from the member's own
      *  saved address book. Omitted/null falls back to the booking's own
      *  address (BookingService's own doc on labBookingPatient.addressId). */
@@ -79,6 +86,13 @@ export const setLabCategoryActiveSchema = z.object({ isActive: z.boolean() });
 export const setLabCategorySortSchema = z.object({ sort: z.number().int() });
 
 export const updateLabBookingDetailsSchema = z.object({
+  contactName: z.string().trim().min(1).max(160).optional(),
+  contactPhone: optionalContactPhone.optional(),
+  addressPhone: optionalContactPhone.optional(),
+  labPackageId: z.number().int().positive().optional(),
+  fulfillmentType: z.enum(['HOME_COLLECTION', 'STORE_VISIT']).optional(),
+  assignedStaffId: z.number().int().positive().nullable().optional(),
+  unitPrice: z.number().finite().nonnegative().max(10000000).refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 0.000001, 'Use at most two decimal places').optional(),
   scheduledFor: z.string().datetime().nullable(),
   note: z.string().default(''),
   /** Re-routes the booking to a different lab-eligible branch. Omitted

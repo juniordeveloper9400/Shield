@@ -63,6 +63,15 @@ async function listLabStores(db: Database) {
     .orderBy(asc(shieldStore.sort), asc(shieldStore.name));
 }
 
+function ageFromDob(dob: string | null): number | null {
+  if (!dob) return null;
+  const born = new Date(dob);
+  const today = new Date();
+  let age = today.getUTCFullYear() - born.getUTCFullYear();
+  if (today.getUTCMonth() < born.getUTCMonth() || (today.getUTCMonth() === born.getUTCMonth() && today.getUTCDate() < born.getUTCDate())) age--;
+  return age;
+}
+
 @Injectable()
 export class BookingService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
@@ -278,6 +287,11 @@ export class BookingService {
         ownAge: labBookingPatient.age,
         patientName: patient.name,
         patientDob: patient.dob,
+        savedPhone: patient.phone,
+        savedGender: patient.gender,
+        savedRelation: patient.relation,
+        savedAbhaId: patient.abhaId,
+        details: labBookingPatient.details,
         addressId: labBookingPatient.addressId,
         addressOverride: labBookingPatient.addressOverride,
         addrHouse: patientAddress.house,
@@ -292,15 +306,10 @@ export class BookingService {
       .leftJoin(patientAddress, eq(patientAddress.id, labBookingPatient.addressId))
       .where(inArray(labBookingPatient.labBookingId, ids))
       .orderBy(asc(labBookingPatient.id));
-    const ageFromDob = (dob: string | null) => {
-      if (!dob) return null;
-      const diff = Date.now() - new Date(dob).getTime();
-      return Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
-    };
     const bookingAddressById = new Map(rows.map((r) => [r.id, r]));
     const patientsByBooking = new Map<
       number,
-      { id: number; patientId: number | null; name: string; age: number | null; addressId: number | null; addressOverride: string | null; address: string }[]
+      { id: number; patientId: number | null; name: string; age: number | null; addressId: number | null; addressOverride: string | null; address: string; phone: string; dob: string; gender: string; relation: string; abhaId: string }[]
     >();
     for (const p of patientRows) {
       const bucket = patientsByBooking.get(p.labBookingId) ?? [];
@@ -324,7 +333,12 @@ export class BookingService {
         id: p.id,
         patientId: p.patientId,
         name: p.ownName?.trim() || p.patientName || 'Patient',
-        age: p.ownAge ?? ageFromDob(p.patientDob),
+        age: p.ownAge ?? ageFromDob(p.details?.dob !== undefined ? p.details.dob || null : p.patientDob),
+        phone: p.details?.phone ?? p.savedPhone ?? '',
+        dob: p.details?.dob ?? p.patientDob ?? '',
+        gender: p.details?.gender ?? p.savedGender ?? '',
+        relation: p.details?.relation ?? p.savedRelation ?? '',
+        abhaId: p.details?.abhaId ?? p.savedAbhaId ?? '',
         addressId: p.addressId,
         addressOverride: p.addressOverride,
         address: p.addressOverride?.trim() || ownFormatted || bookingAddress,
@@ -343,6 +357,9 @@ export class BookingService {
       const { house, area, landmark, city, state, pincode, ...rest } = r;
       return {
         ...rest,
+        contactName: r.contactName ?? r.memberName ?? '',
+        contactPhone: r.contactPhone ?? r.memberPhone ?? '',
+        addressPhone: r.addressPhoneOverride ?? r.addressPhone ?? '',
         code: `LB-${String(r.id).padStart(4, '0')}`,
         // An admin's address override (see updateLabBookingDetails) always
         // wins over the member's own saved address — that's the whole
@@ -409,30 +426,62 @@ export class BookingService {
     return { balance: Number(row?.balance ?? 0) };
   }
 
-  /**
-   * The lab's edit of a booking: when it is scheduled for and the note shown
-   * to the member, plus (since migration 0095) its branch, collection
-   * address and patients — the "operational" fields an admin can correct
-   * after the fact, never the ones the bill prices from directly (unit
-   * price itself stays whatever the package charged; only the headcount,
-   * and so totalPrice, can move, and only by editing patients). A blank
-   * date clears the schedule. Cancelled bookings, and dates on a finished
-   * (Report ready) one, are left alone.
-   */
+  /** Correct this booking only; saved member/patient/address records remain unchanged. */
   async updateLabBookingDetails(role: AdminRole, storeId: number | null, bookingId: number, dto: UpdateLabBookingDetailsDto) {
-    const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
-    if (found.status === 'CANCELLED') return found;
-
-    let nextStoreId: number | undefined;
-    if (dto.storeId !== undefined) {
-      const labStores = await listLabStores(this.db);
-      if (!labStores.some((s) => s.id === dto.storeId)) {
-        throw new BadRequestException({ error: { code: 'BAD_REQUEST', message: 'That branch is not open for lab bookings.' } });
+    await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    return this.db.transaction(async (tx) => {
+      const [found] = await tx.select().from(labBooking).where(eq(labBooking.id, bookingId)).limit(1).for('update');
+      if (!found || (role !== 'ADMIN' && role !== 'SUPERADMIN' && role !== 'LAB' && found.storeId !== storeId)) {
+        throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab booking not found' } });
       }
-      nextStoreId = dto.storeId;
-    }
+      const fullEditor = role === 'ADMIN' || role === 'SUPERADMIN' || role === 'LAB';
+      const advancedEdit = ['contactName', 'contactPhone', 'addressPhone', 'labPackageId', 'fulfillmentType', 'assignedStaffId', 'unitPrice'].some((key) => key in dto);
+      if (advancedEdit && !fullEditor) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Only a lab administrator can edit these order fields.' } });
+      }
+      if (found.status === 'CANCELLED' && !fullEditor) return found;
 
-    await this.db.transaction(async (tx) => {
+      let nextStoreId: number | undefined;
+      if (dto.storeId !== undefined && dto.storeId !== found.storeId) {
+        const labStores = await listLabStores(tx);
+        if (!labStores.some((s) => s.id === dto.storeId)) {
+          throw new BadRequestException({ error: { code: 'BAD_REQUEST', message: 'That branch is not open for lab bookings.' } });
+        }
+        nextStoreId = dto.storeId;
+      }
+
+      const nextPackageId = dto.labPackageId ?? found.labPackageId;
+      let nextUnitPrice = Number(found.unitPrice);
+      let nextPackageName: string | undefined;
+      if (dto.labPackageId !== undefined && dto.labPackageId !== found.labPackageId) {
+        const [pkg] = await tx.select().from(labPackage).where(eq(labPackage.id, nextPackageId)).limit(1);
+        if (!pkg?.isActive) throw new BadRequestException({ error: { code: 'BAD_REQUEST', message: 'Choose an active lab test or package.' } });
+        const reports = await this.db.select({ id: labBookingReport.id }).from(labBookingReport).where(eq(labBookingReport.labBookingId, bookingId)).limit(1);
+        if (reports.length) throw new ConflictException({ error: { code: 'REPORT_ATTACHED', message: 'Remove the existing test report before changing the test.' } });
+        nextUnitPrice = Number(pkg.price);
+        nextPackageName = pkg.name;
+      }
+      if (dto.unitPrice !== undefined) nextUnitPrice = dto.unitPrice;
+      const nextCount = dto.patients?.length ?? found.patientsCount;
+      const priceChanged = nextUnitPrice !== Number(found.unitPrice) || nextCount !== found.patientsCount || nextPackageId !== found.labPackageId;
+      const nextFulfillment = dto.fulfillmentType ?? found.fulfillmentType;
+      let nextStaff = dto.assignedStaffId !== undefined ? dto.assignedStaffId : found.assignedStaffId;
+      if (nextFulfillment === 'STORE_VISIT') nextStaff = null;
+      if (nextStaff != null && (nextStaff !== found.assignedStaffId || nextStoreId !== undefined || nextFulfillment !== found.fulfillmentType)) {
+        const [staff] = await tx.select().from(adminUser).where(eq(adminUser.id, nextStaff)).limit(1);
+        if (!staff?.isActive || staff.role !== 'LAB_TECHNICIAN' || staff.storeId !== (nextStoreId ?? found.storeId)) {
+          throw new BadRequestException({ error: { code: 'BAD_REQUEST', message: 'Choose an active lab technician from the selected branch.' } });
+        }
+      }
+      if (nextFulfillment === 'HOME_COLLECTION' && !nextStaff && found.status !== 'REQUESTED' && found.status !== 'CANCELLED') {
+        throw new ConflictException({ error: { code: 'STAFF_REQUIRED', message: 'Assign a technician for this home-collection booking.' } });
+      }
+
+      const [bill] = await tx.select().from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1).for('update');
+      if (priceChanged && bill?.status === 'PAID') {
+        throw new ConflictException({ error: { code: 'BILL_PAID', message: 'This bill has been collected. Correct charges through billing before changing the test, price or patient count.' } });
+      }
+      const previousPatients = await tx.select().from(labBookingPatient).where(eq(labBookingPatient.labBookingId, bookingId));
       if (dto.patients) {
         const ownedPatientIds = dto.patients.map((p) => p.patientId).filter((pid): pid is number => pid !== undefined);
         if (ownedPatientIds.length > 0) {
@@ -456,31 +505,55 @@ export class BookingService {
         }
         await tx.delete(labBookingPatient).where(eq(labBookingPatient.labBookingId, bookingId));
         await tx.insert(labBookingPatient).values(
-          dto.patients.map((p) => ({
-            labBookingId: bookingId,
-            patientId: p.patientId,
-            name: p.name,
-            age: p.age,
-            addressId: p.addressId,
-            addressOverride: p.addressOverride?.trim() || null,
-          })),
+          dto.patients.map((p) => {
+            const previous = p.bookingPatientId !== undefined
+              ? previousPatients.find((old) => old.id === p.bookingPatientId)
+              : p.patientId !== undefined ? previousPatients.find((old) => old.patientId === p.patientId) : undefined;
+            if (p.bookingPatientId !== undefined && !previous) {
+              throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'That patient row does not belong to this booking.' } });
+            }
+            const details = { ...previous?.details };
+            for (const key of ['phone', 'dob', 'gender', 'relation', 'abhaId'] as const) {
+              if (p[key] !== undefined) details[key] = p[key]!;
+            }
+            return {
+              labBookingId: bookingId,
+              patientId: p.patientId ?? previous?.patientId,
+              name: p.name ?? previous?.name,
+              age: p.dob ? ageFromDob(p.dob) : p.age ?? previous?.age,
+              details: Object.keys(details).length ? details : null,
+              addressId: p.addressId !== undefined ? p.addressId : previous?.addressId,
+              addressOverride: p.addressOverride !== undefined ? p.addressOverride?.trim() || null : previous?.addressOverride,
+            };
+          }),
         );
       }
 
-      const patientsCount = dto.patients?.length;
       await tx
         .update(labBooking)
         .set({
           note: dto.note,
-          scheduledFor: found.status === 'REPORT_READY' ? found.scheduledFor : dto.scheduledFor ? new Date(dto.scheduledFor) : null,
+          scheduledFor: found.status === 'REPORT_READY' && !fullEditor ? found.scheduledFor : dto.scheduledFor ? new Date(dto.scheduledFor) : null,
+          contactName: dto.contactName,
+          contactPhone: dto.contactPhone,
+          addressPhoneOverride: dto.addressPhone,
+          fulfillmentType: nextFulfillment,
+          assignedStaffId: nextStaff,
+          labPackageId: nextPackageId,
+          unitPrice: nextUnitPrice.toFixed(2),
+          patientsCount: nextCount,
+          totalPrice: (nextUnitPrice * nextCount).toFixed(2),
           ...(nextStoreId !== undefined ? { storeId: nextStoreId } : {}),
           ...(dto.address !== undefined ? { addressOverride: dto.address.trim() || null } : {}),
-          ...(patientsCount !== undefined
-            ? { patientsCount, totalPrice: (Number(found.unitPrice) * patientsCount).toString() }
-            : {}),
+
           updatedAt: new Date(),
         })
         .where(eq(labBooking.id, bookingId));
+      if (priceChanged && bill) {
+        const amount = Math.max(nextUnitPrice * nextCount - Number(bill.discountAmount), 0).toFixed(2);
+        await tx.update(labBill).set({ amount, updatedAt: new Date() }).where(eq(labBill.id, bill.id));
+        await tx.update(labBillLine).set({ unitPrice: nextUnitPrice.toFixed(2), qty: nextCount, ...(nextPackageName ? { name: nextPackageName } : {}) }).where(eq(labBillLine.labBillId, bill.id));
+      }
     });
   }
 
@@ -587,11 +660,12 @@ export class BookingService {
    */
   async sendLabBill(role: AdminRole, storeId: number | null, bookingId: number, dto: SendLabBillDto) {
     const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
-    const [pkg] = await this.db.select({ name: labPackage.name }).from(labPackage).where(eq(labPackage.id, found.labPackageId)).limit(1);
-    const amount = Math.max(Number(found.totalPrice) - dto.discountAmount, 0);
-
     return this.db.transaction(async (tx) => {
-      const [existing] = await tx.select({ id: labBill.id }).from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1);
+      const [found] = await tx.select().from(labBooking).where(eq(labBooking.id, bookingId)).limit(1).for('update');
+      const [pkg] = await tx.select({ name: labPackage.name }).from(labPackage).where(eq(labPackage.id, found.labPackageId)).limit(1);
+      const amount = Math.max(Number(found.totalPrice) - dto.discountAmount, 0);
+      const [existing] = await tx.select().from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1).for('update');
+      if (existing?.status === 'PAID') throw new ConflictException({ error: { code: 'BILL_PAID', message: 'A collected bill cannot be repriced.' } });
       let billId: number;
       if (existing) {
         await tx
@@ -739,7 +813,12 @@ export class BookingService {
   async collectLabBillWithWallet(role: AdminRole, storeId: number | null, bookingId: number) {
     const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
 
-    const [theBill] = await this.db.select().from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1);
+    return this.db.transaction(async (tx) => {
+      const [found] = await tx.select().from(labBooking).where(eq(labBooking.id, bookingId)).limit(1).for('update');
+      if (role !== 'ADMIN' && role !== 'SUPERADMIN' && role !== 'LAB' && found.storeId !== storeId) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'This booking is no longer at your branch.' } });
+      }
+    const [theBill] = await tx.select().from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1).for('update');
     if (!theBill) {
       return { ok: false as const, reason: 'No bill has been sent for this booking yet.' };
     }
@@ -751,8 +830,7 @@ export class BookingService {
       return { ok: false as const, reason: 'This bill has not been priced yet.' };
     }
 
-    return this.db.transaction(async (tx) => {
-      const [theWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
+      const [theWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1).for('update');
       const balance = theWallet ? Number(theWallet.balance) : 0;
       // Capped at this month's Health Pass allowance, not just the raw
       // balance — see OrderService.collectBillWithWallet's identical fix for

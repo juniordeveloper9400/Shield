@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { bigint, boolean, integer, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { bigint, boolean, integer, jsonb, numeric, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { appSchema } from './app-identity';
 import { memberAddress, patient } from './app-identity';
 import { orderPaymentStatusEnum } from './app-commerce';
@@ -279,6 +279,9 @@ export const labBooking = appSchema.table('lab_booking', {
    *  saved `member_address` row; `''`/null falls back to that row's own
    *  formatted address. */
   addressOverride: text('address_override'),
+  contactName: text('contact_name'),
+  contactPhone: text('contact_phone'),
+  addressPhoneOverride: text('address_phone_override'),
   /** A line from the lab to the member (migration 0052). */
   note: text('note'),
   /** When the report was last attached (migration 0052). */
@@ -293,6 +296,7 @@ export const labBookingPatient = appSchema.table('lab_booking_patient', {
   patientId: bigint('patient_id', { mode: 'number' }).references(() => patient.id),
   name: text('name'),
   age: integer('age'),
+  details: jsonb('details').$type<Record<string, string>>(),
   // migration 0099 — this patient's own collection address, mirroring
   // labBooking's addressId/addressOverride pair exactly. Null falls back to
   // the booking's own address (every booking made before this migration).

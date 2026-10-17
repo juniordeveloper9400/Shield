@@ -892,6 +892,9 @@ export function createTestDb() {
       store_id bigint REFERENCES app.shield_store(id) ON DELETE SET NULL,
       assigned_staff_id bigint REFERENCES app.admin_user(id) ON DELETE SET NULL,
       address_override text,
+      contact_name text,
+      contact_phone text,
+      address_phone_override text,
       note text,
       report_uploaded_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
@@ -904,6 +907,7 @@ export function createTestDb() {
       patient_id bigint REFERENCES app.patient(id) ON DELETE SET NULL,
       name text,
       age integer,
+      details jsonb,
       address_id bigint REFERENCES app.member_address(id),
       address_override text
     );

@@ -8,6 +8,7 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { hash } from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
+import { BookingService } from '../../src/modules/care/booking.service';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
@@ -168,6 +169,84 @@ describe('Care Services (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+  });
+
+  it('edits the actual lab order details without rewriting the user account or saved patient', async () => {
+    const [originalMember] = await db.select().from(users).where(eq(users.id, memberId));
+    const [originalPatient] = await db.select().from(patient).where(eq(patient.id, ownedPatientId));
+    const [replacement] = await db.insert(labPackage).values({ slug: 'admin-edit-fixture', name: 'Replacement lab test', price: '250', mrp: '300' }).returning();
+    const [booking] = await db.insert(labBooking).values({ memberId, labPackageId, storeId: labStoreId, unitPrice: '999', totalPrice: '999', patientsCount: 1 }).returning();
+    await db.insert(labBookingPatient).values({ labBookingId: booking.id, patientId: ownedPatientId });
+    await request(app.getHttpServer()).patch(`/v1/staff/lab-bookings/${booking.id}/details`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ scheduledFor: '2026-12-01T09:30:00.000Z', note: 'Edited order instructions',
+        contactName: 'Corrected order contact', contactPhone: '9000012345', addressPhone: '9000054321',
+        labPackageId: replacement.id, fulfillmentType: 'STORE_VISIT', unitPrice: 225,
+        address: 'Updated collection location', assignedStaffId: null,
+        patients: [{ patientId: ownedPatientId, name: 'Corrected patient', age: 30,
+          phone: '9000099999', dob: '1996-01-01', gender: 'FEMALE', relation: 'PARENT', abhaId: '12345678901234', addressOverride: 'Patient address' }],
+      }).expect(200);
+    const list = await request(app.getHttpServer()).get('/v1/staff/lab-bookings').set('Authorization', `Bearer ${staffAccessToken}`).expect(200);
+    const saved = list.body.find((row: { id: number }) => row.id === booking.id);
+    expect(saved).toMatchObject({ contactName: 'Corrected order contact', contactPhone: '9000012345', addressPhone: '9000054321', labPackageId: replacement.id, fulfillmentType: 'STORE_VISIT', packageName: replacement.name, note: 'Edited order instructions' });
+    expect(Number(saved.unitPrice)).toBe(225);
+    expect(Number(saved.totalPrice)).toBe(225);
+    expect(saved.patients[0]).toMatchObject({ patientId: ownedPatientId, name: 'Corrected patient', phone: '9000099999', dob: '1996-01-01', gender: 'FEMALE', relation: 'PARENT', abhaId: '12345678901234' });
+    const [afterMember] = await db.select().from(users).where(eq(users.id, memberId));
+    const [afterPatient] = await db.select().from(patient).where(eq(patient.id, ownedPatientId));
+    expect(afterMember.phone).toBe(originalMember.phone);
+    expect(afterMember.name).toBe(originalMember.name);
+    expect(afterPatient).toEqual(originalPatient);
+    // The narrower technician form must retain hidden demographics when renaming a row.
+    await request(app.getHttpServer()).patch(`/v1/staff/lab-bookings/${booking.id}/details`).set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ scheduledFor: null, note: '', patients: [{ bookingPatientId: saved.patients[0].id, name: 'Renamed without metadata', age: 30 }] }).expect(200);
+    const renamedList = await request(app.getHttpServer()).get('/v1/staff/lab-bookings').set('Authorization', `Bearer ${staffAccessToken}`).expect(200);
+    const renamed = renamedList.body.find((row: { id: number }) => row.id === booking.id).patients[0];
+    expect(renamed).toMatchObject({ patientId: ownedPatientId, name: 'Renamed without metadata', phone: '9000099999', dob: '1996-01-01', gender: 'FEMALE', relation: 'PARENT', abhaId: '12345678901234', address: 'Patient address' });
+
+    await db.delete(labBookingPatient).where(eq(labBookingPatient.labBookingId, booking.id));
+    await db.delete(labBooking).where(eq(labBooking.id, booking.id));
+    await db.delete(labPackage).where(eq(labPackage.id, replacement.id));
+  });
+
+  it('allows metadata corrections on a paid order but refuses changing its collected charges', async () => {
+    const [formerStaff] = await db.insert(adminUser).values({ loginId: 'inactive-edit-fixture@example.com', name: 'Former technician', passwordHash: 'test-fixture-no-login', role: 'LAB_TECHNICIAN', storeId: labStoreId, isActive: false }).returning();
+    const [booking] = await db.insert(labBooking).values({ memberId, labPackageId, storeId: labStoreId, assignedStaffId: formerStaff.id, unitPrice: '999', totalPrice: '999', patientsCount: 1 }).returning();
+    const [bill] = await db.insert(labBill).values({ labBookingId: booking.id, image: '', amount: '999', status: 'PAID' }).returning();
+    const refused = await request(app.getHttpServer()).patch(`/v1/staff/lab-bookings/${booking.id}/details`).set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ scheduledFor: null, note: '', unitPrice: 500 }).expect(409);
+    expect(refused.body.error.code).toBe('BILL_PAID');
+    await request(app.getHttpServer()).patch(`/v1/staff/lab-bookings/${booking.id}/details`).set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ scheduledFor: null, note: 'Corrected contact', contactName: 'New contact', contactPhone: '9000012345' }).expect(200);
+    const [unchanged] = await db.select().from(labBill).where(eq(labBill.id, bill.id));
+    expect(Number(unchanged.amount)).toBe(999);
+    await db.delete(labBill).where(eq(labBill.id, bill.id));
+    await db.delete(labBooking).where(eq(labBooking.id, booking.id));
+    await db.delete(adminUser).where(eq(adminUser.id, formerStaff.id));
+  });
+
+  it('a metadata save cannot restore a price read before another collection committed', async () => {
+    const [booking] = await db.insert(labBooking).values({ memberId, labPackageId, storeId: labStoreId, unitPrice: '100', totalPrice: '100', patientsCount: 1 }).returning();
+    const [bill] = await db.insert(labBill).values({ labBookingId: booking.id, image: '', amount: '100', status: 'PENDING' }).returning();
+    const service = app.get(BookingService);
+    const internal = service as unknown as { getLabBookingOwnedByStaffOrThrow: (...args: unknown[]) => Promise<unknown> };
+    const original = internal.getLabBookingOwnedByStaffOrThrow.bind(service);
+    const authCheck = jest.spyOn(internal, 'getLabBookingOwnedByStaffOrThrow').mockImplementationOnce(async (...args) => {
+      const before = await original(...args);
+      // Represents an already-committed reprice/collection after the access check's read.
+      await db.update(labBooking).set({ unitPrice: '200', totalPrice: '200' }).where(eq(labBooking.id, booking.id));
+      await db.update(labBill).set({ amount: '200', status: 'PAID', cashCollected: '200' }).where(eq(labBill.id, bill.id));
+      return before;
+    });
+    try {
+      await request(app.getHttpServer()).patch(`/v1/staff/lab-bookings/${booking.id}/details`).set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ scheduledFor: null, note: 'Metadata only' }).expect(200);
+      const [after] = await db.select().from(labBooking).where(eq(labBooking.id, booking.id));
+      expect(Number(after.unitPrice)).toBe(200);
+      expect(Number(after.totalPrice)).toBe(200);
+    } finally { authCheck.mockRestore(); }
+    await db.delete(labBill).where(eq(labBill.id, bill.id));
+    await db.delete(labBooking).where(eq(labBooking.id, booking.id));
   });
 
   it('lists lab packages, clinics, and dietitians publicly', async () => {
