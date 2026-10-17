@@ -19,6 +19,7 @@ import {
   agentCustomer,
   agentCustomerPlan,
   agentRequest,
+  agentWithdrawal,
   assembly,
   authSession,
   district,
@@ -647,6 +648,64 @@ describe('Agent & Geography (e2e)', () => {
         .get('/v1/staff/agents/999999')
         .set('Authorization', `Bearer ${superAdminToken}`)
         .expect(404);
+    });
+
+    it('the Agent Portal reads any agent\'s own direct customers/plans and withdrawal history by id', async () => {
+      const [customerMember] = await db
+        .insert(users)
+        .values({ phone: '9200000099', name: 'Portal Customer', firebaseUid: 'portal-customer' })
+        .returning();
+      const [linked] = await db
+        .insert(agentCustomer)
+        .values({ agentId: wardAgentId, memberId: customerMember.id, name: 'Portal Customer' })
+        .returning();
+      const [tier] = await db
+        .insert(membershipTier)
+        .values({ kind: 'GOLD', name: 'Gold', bin: '5678', bonusRate: '0.1', validityMonths: 12 })
+        .returning();
+      await db.insert(agentCustomerPlan).values({
+        agentCustomerId: linked.id,
+        tierId: tier.id,
+        amount: '20000',
+        activatedOn: '2026-09-23',
+      });
+
+      const customers = await request(app.getHttpServer())
+        .get(`/v1/staff/agents/${wardAgentId}/customers`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(customers.body).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: linked.id,
+            plans: [expect.objectContaining({ tierKind: 'GOLD', amount: 20000 })],
+          }),
+        ]),
+      );
+
+      await db.insert(agentWithdrawal).values({
+        agentId: wardAgentId,
+        amount: '3500',
+        status: 'PENDING',
+        requestedOn: '2026-09-24',
+      });
+      const withdrawals = await request(app.getHttpServer())
+        .get(`/v1/staff/agents/${wardAgentId}/withdrawals`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(withdrawals.body).toEqual(
+        expect.arrayContaining([expect.objectContaining({ amount: 3500, status: 'PENDING' })]),
+      );
+
+      // listApprovedAgents' own plansSold now rides along on the roster read
+      // the Agent Portal's tree view uses — same figure, not re-derived.
+      const roster = await request(app.getHttpServer())
+        .get('/v1/staff/agents')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .expect(200);
+      expect(roster.body).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: wardAgentId, plansSold: 2 })]),
+      );
     });
 
     it('moves an approved agent to a new slot, resyncing both the old and new geo rows, and refuses a slot already held', async () => {

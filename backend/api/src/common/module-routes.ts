@@ -123,9 +123,12 @@ const ROUTES: ModuleRoute[] = [
   { pattern: '/v1/staff/prescriptions/:id/intake', modules: ['prescriptions'] },
   { pattern: '/v1/staff/prescriptions/:id/order', modules: ['prescriptions'] },
 
-  // ---- activations ---- (wallet-cards/member/:id is shared with Users —
-  // left unmapped; wallet-cards/reserve is its own module, below)
-  { pattern: '/v1/staff/wallet-cards', modules: ['activations'] },
+  // ---- activations + health_passes ---- (wallet-cards/member/:id is
+  // shared with Users — left unmapped; wallet-cards/reserve is its own
+  // module, below. The bare list and the per-member summary are shared
+  // between Activations' approval queue and the Health Passes browse page.)
+  { pattern: '/v1/staff/wallet-cards', modules: ['activations', 'health_passes'] },
+  { pattern: '/v1/staff/wallet-cards/member/:memberId/summary', modules: ['health_passes', 'users'] },
   { pattern: '/v1/staff/wallet-cards/:id', modules: ['activations'] },
   { pattern: '/v1/staff/wallet-cards/:id/wallet-activity', modules: ['activations'] },
   { pattern: '/v1/staff/wallet-cards/:id/verification', modules: ['activations'] },
@@ -139,10 +142,16 @@ const ROUTES: ModuleRoute[] = [
   { pattern: '/v1/staff/agent-requests/:id', modules: ['agent_approvals'] },
   { pattern: '/v1/staff/agent-requests/:id/approve', modules: ['agent_approvals'] },
   { pattern: '/v1/staff/agent-requests/:id/reject', modules: ['agent_approvals'] },
-  { pattern: '/v1/staff/agents', modules: ['agent_approvals'] },
-  { pattern: '/v1/staff/agents/:id', modules: ['agent_approvals'] },
+  { pattern: '/v1/staff/agents', modules: ['agent_approvals', 'agent_portal'] },
+  { pattern: '/v1/staff/agents/:id', modules: ['agent_approvals', 'agent_portal'] },
   { pattern: '/v1/staff/agents/:id/position', modules: ['agent_approvals'] },
   { pattern: '/v1/staff/agents/:id/active', modules: ['agent_approvals'] },
+
+  // ---- agent_portal ---- (the full national-to-ward tree and each
+  // agent's own money-flow detail; agent_approvals keeps edit rights —
+  // see agents/:id/position and /active above)
+  { pattern: '/v1/staff/agents/:id/customers', modules: ['agent_portal'] },
+  { pattern: '/v1/staff/agents/:id/withdrawals', modules: ['agent_portal'] },
 
   // ---- agent_withdrawals ----
   { pattern: '/v1/staff/agent-withdrawals', modules: ['agent_withdrawals'] },

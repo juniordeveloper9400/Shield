@@ -317,8 +317,13 @@ export class AgentService {
       .leftJoin(parent, eq(parent.id, agent.parentId));
   }
 
+  /** The whole live roster, each row carrying `plansSold` — see
+   *  `withPlansSold`'s own doc — for the Agent Portal's tree view, which
+   *  shows every agent's own selling figure inline rather than only the
+   *  caller's own team the member-facing `getTeamForMember` is scoped to. */
   async listApprovedAgents() {
-    return this.approvedAgentsQuery().where(eq(agent.approvalStatus, 'APPROVED')).orderBy(agent.level, agent.code);
+    const rows = await this.approvedAgentsQuery().where(eq(agent.approvalStatus, 'APPROVED')).orderBy(agent.level, agent.code);
+    return this.withPlansSold(rows);
   }
 
   async getApprovedAgent(id: number) {
@@ -859,6 +864,54 @@ export class AgentService {
     }
 
     return customers.map((c) => ({ ...c, plans: plansByCustomer.get(c.id) ?? [] }));
+  }
+
+  /** Staff-facing counterpart to `listCustomers`: any agent's own direct
+   *  customers and the plans they've activated, by `app.agent.id` directly
+   *  rather than scoped to the calling member — what the Agent Portal's
+   *  money-flow view shows for whichever agent is open, not just "my own". */
+  async listCustomersForAgent(agentId: number) {
+    const customers = await this.db
+      .select()
+      .from(agentCustomer)
+      .where(eq(agentCustomer.agentId, agentId))
+      .orderBy(desc(agentCustomer.createdAt));
+    if (customers.length === 0) return [];
+
+    const plans = await this.db
+      .select({
+        id: agentCustomerPlan.id,
+        agentCustomerId: agentCustomerPlan.agentCustomerId,
+        tierKind: membershipTier.kind,
+        amount: agentCustomerPlan.amount,
+        activatedOn: agentCustomerPlan.activatedOn,
+      })
+      .from(agentCustomerPlan)
+      .innerJoin(membershipTier, eq(membershipTier.id, agentCustomerPlan.tierId))
+      .where(
+        inArray(
+          agentCustomerPlan.agentCustomerId,
+          customers.map((c) => c.id),
+        ),
+      )
+      .orderBy(asc(agentCustomerPlan.activatedOn));
+
+    const plansByCustomer = new Map<number, typeof plans>();
+    for (const plan of plans) {
+      const list = plansByCustomer.get(plan.agentCustomerId) ?? [];
+      list.push(plan);
+      plansByCustomer.set(plan.agentCustomerId, list);
+    }
+
+    return customers.map((c) => ({ ...c, plans: plansByCustomer.get(c.id) ?? [] }));
+  }
+
+  /** Staff-facing counterpart to `listOwnWithdrawals`: any agent's own
+   *  withdrawal history by `app.agent.id` directly. */
+  async listWithdrawalsForAgent(agentId: number) {
+    const result = await this.db.execute(sql`select id, amount, status, requested_on as "requestedOn", approved_at as "approvedAt",
+      payment_reference as "paymentReference", verification_note as "note" from app.agent_withdrawal where agent_id = ${agentId} order by id desc`);
+    return result.rows;
   }
 
   async requestWithdrawal(memberId: number, dto: RequestWithdrawalDto) {

@@ -84,6 +84,19 @@ export class StaffAgentController {
     return this.agents.setAgentActive(id, dto);
   }
 
+  /** This agent's own direct customers and activated plans — the Agent
+   *  Portal's money-flow view, same shape the agent's own app shows. */
+  @Get('agents/:id/customers')
+  listCustomers(@Param('id', ParseIntPipe) id: number) {
+    return this.agents.listCustomersForAgent(id);
+  }
+
+  /** This agent's own withdrawal history. */
+  @Get('agents/:id/withdrawals')
+  listAgentWithdrawals(@Param('id', ParseIntPipe) id: number) {
+    return this.agents.listWithdrawalsForAgent(id);
+  }
+
   @Get('agent-withdrawals')
   listWithdrawals() {
     return this.agents.listWithdrawalsForStaff();
