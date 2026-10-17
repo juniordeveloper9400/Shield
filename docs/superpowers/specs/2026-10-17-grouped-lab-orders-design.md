@@ -1,6 +1,6 @@
 # One lab order per checkout
 
-Status: proposed design, awaiting written-spec approval. No implementation or migration has been run for this feature.
+Status: written design approved by the user on 2026-10-17, including full admin editing. Implementation planning follows. No implementation or migration has been run for this feature.
 
 ## Outcome and scope
 
