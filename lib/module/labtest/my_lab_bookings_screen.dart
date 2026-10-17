@@ -263,6 +263,105 @@ class _BookingCard extends StatelessWidget {
               ),
             ),
           ],
+          if (booking.isVerified) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.receipt_long_outlined,
+                            size: 16,
+                            color: AppColors.brandBlue,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'Bill Summary',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.greenTint,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle_rounded,
+                              size: 12,
+                              color: AppColors.brandGreenDark,
+                            ),
+                            SizedBox(width: 3),
+                            Text(
+                              'Verified',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.brandGreenDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _BillRow(
+                    label:
+                        'Tests subtotal (${booking.patients} ${booking.patients == 1 ? 'patient' : 'patients'})',
+                    amount:
+                        '₹${formatRupees((booking.total - booking.fuelCharge - booking.techFee).clamp(0, double.infinity).round())}',
+                  ),
+                  if (booking.fuelCharge > 0) ...[
+                    const SizedBox(height: 5),
+                    _BillRow(
+                      label: 'Fuel distance charge',
+                      amount: '+₹${formatRupees(booking.fuelCharge.round())}',
+                    ),
+                  ],
+                  if (booking.techFee > 0) ...[
+                    const SizedBox(height: 5),
+                    _BillRow(
+                      label: 'Technician visit fee',
+                      amount: '+₹${formatRupees(booking.techFee.round())}',
+                    ),
+                  ],
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  ),
+                  _BillRow(
+                    label: 'Total Bill Amount',
+                    amount: '₹${formatRupees(booking.total.round())}',
+                    isTotal: true,
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (booking.reportAvailable) ...[
             const SizedBox(height: 12),
             SizedBox(
@@ -430,3 +529,44 @@ class _Notice extends StatelessWidget {
     );
   }
 }
+
+class _BillRow extends StatelessWidget {
+  final String label;
+  final String amount;
+  final bool isTotal;
+
+  const _BillRow({
+    required this.label,
+    required this.amount,
+    this.isTotal = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: isTotal ? 13.5 : 12.5,
+              fontWeight: isTotal ? FontWeight.w700 : FontWeight.w500,
+              color: isTotal ? AppColors.textDark : AppColors.textMuted,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          amount,
+          style: TextStyle(
+            fontSize: isTotal ? 15 : 12.5,
+            fontWeight: isTotal ? FontWeight.w800 : FontWeight.w600,
+            color: isTotal ? AppColors.brandBlue : AppColors.textDark,
+          ),
+        ),
+      ],
+    );
+  }
+}
+

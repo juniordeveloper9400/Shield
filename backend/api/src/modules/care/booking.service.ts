@@ -72,6 +72,18 @@ function ageFromDob(dob: string | null): number | null {
   return age;
 }
 
+function parseBillMeta(note: string | null | undefined) {
+  if (!note) return { cleanNote: '', fuelCharge: 0, techFee: 0, isVerified: false };
+  const match = note.match(/\[BILL_VERIFIED:\s*fuel=(\d+(?:\.\d+)?),\s*tech=(\d+(?:\.\d+)?)\]/);
+  if (match) {
+    const fuel = parseFloat(match[1]) || 0;
+    const tech = parseFloat(match[2]) || 0;
+    const cleanNote = note.replace(/\[BILL_VERIFIED:\s*fuel=\d+(?:\.\d+)?,\s*tech=\d+(?:\.\d+)?\]\s*/, '').trim();
+    return { cleanNote, fuelCharge: fuel, techFee: tech, isVerified: true };
+  }
+  return { cleanNote: note, fuelCharge: 0, techFee: 0, isVerified: false };
+}
+
 @Injectable()
 export class BookingService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
@@ -190,7 +202,17 @@ export class BookingService {
       .where(inArray(labBookingReport.labBookingId, rows.map((r) => r.id)))
       .groupBy(labBookingReport.labBookingId);
     const pagesById = new Map(counts.map((c) => [c.labBookingId, c.n]));
-    return rows.map((r) => ({ ...r, reportPages: pagesById.get(r.id) ?? 0 }));
+    return rows.map((r) => {
+      const meta = parseBillMeta(r.note);
+      return {
+        ...r,
+        note: meta.cleanNote,
+        fuelCharge: meta.fuelCharge,
+        techFee: meta.techFee,
+        isVerified: meta.isVerified,
+        reportPages: pagesById.get(r.id) ?? 0,
+      };
+    });
   }
 
   async getLabBookingForMember(memberId: number, id: number) {
@@ -201,7 +223,17 @@ export class BookingService {
       .select({ n: sql<number>`count(*)::int` })
       .from(labBookingReport)
       .where(eq(labBookingReport.labBookingId, id));
-    return { ...found, patients, packageName: pkg?.name ?? null, reportPages: pages?.n ?? 0 };
+    const meta = parseBillMeta(found.note);
+    return {
+      ...found,
+      note: meta.cleanNote,
+      fuelCharge: meta.fuelCharge,
+      techFee: meta.techFee,
+      isVerified: meta.isVerified,
+      patients,
+      packageName: pkg?.name ?? null,
+      reportPages: pages?.n ?? 0,
+    };
   }
 
   /**
@@ -355,8 +387,13 @@ export class BookingService {
 
     return rows.map((r) => {
       const { house, area, landmark, city, state, pincode, ...rest } = r;
+      const meta = parseBillMeta(r.note);
       return {
         ...rest,
+        note: meta.cleanNote,
+        fuelCharge: meta.fuelCharge,
+        techFee: meta.techFee,
+        isVerified: meta.isVerified,
         contactName: r.contactName ?? r.memberName ?? '',
         contactPhone: r.contactPhone ?? r.memberPhone ?? '',
         addressPhone: r.addressPhoneOverride ?? r.addressPhone ?? '',

@@ -17,15 +17,22 @@ LabBookingRecord _booking({
   String note = '',
   int reportPages = 0,
   DateTime? scheduledFor,
+  double total = 1998,
+  double fuelCharge = 0,
+  double techFee = 0,
+  bool isVerified = false,
 }) => LabBookingRecord(
   id: id,
   packageName: 'Full Body Checkup',
   patients: 2,
-  total: 1998,
+  total: total,
   stage: stage,
   note: note,
   reportPages: reportPages,
   scheduledFor: scheduledFor,
+  fuelCharge: fuelCharge,
+  techFee: techFee,
+  isVerified: isVerified,
 );
 
 void main() {
@@ -103,6 +110,31 @@ void main() {
       expect(record.note, '');
       expect(record.scheduledFor, isNull);
     });
+
+    test('parses verified bill metadata from JSON or note', () {
+      final jsonDirect = LabBookingRecord.fromJson({
+        'id': 10,
+        'totalPrice': '550',
+        'fuelCharge': 50,
+        'techFee': 100,
+        'isVerified': true,
+        'note': 'Sample note',
+      });
+      expect(jsonDirect.isVerified, isTrue);
+      expect(jsonDirect.fuelCharge, 50);
+      expect(jsonDirect.techFee, 100);
+      expect(jsonDirect.note, 'Sample note');
+
+      final noteMeta = LabBookingRecord.fromJson({
+        'id': 11,
+        'totalPrice': '750',
+        'note': '[BILL_VERIFIED: fuel=60, tech=120] Please fast',
+      });
+      expect(noteMeta.isVerified, isTrue);
+      expect(noteMeta.fuelCharge, 60);
+      expect(noteMeta.techFee, 120);
+      expect(noteMeta.note, 'Please fast');
+    });
   });
 
   group('My Lab Bookings', () {
@@ -153,6 +185,35 @@ void main() {
       expect(find.text('Scheduled 25 Sep 2026, 09:30 AM'), findsOneWidget);
       expect(find.text('Please come fasting for 10 hours.'), findsOneWidget);
       expect(find.textContaining('View report'), findsNothing);
+    });
+
+    testWidgets('shows bill summary when the bill is verified', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        MyLabBookingsScreen(
+          source: source(
+            bookings: [
+              _booking(
+                total: 2148,
+                fuelCharge: 50,
+                techFee: 100,
+                isVerified: true,
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(find.text('Bill Summary'), findsOneWidget);
+      expect(find.text('Verified'), findsOneWidget);
+      expect(find.text('Fuel distance charge'), findsOneWidget);
+      expect(find.text('+₹50'), findsOneWidget);
+      expect(find.text('Technician visit fee'), findsOneWidget);
+      expect(find.text('+₹100'), findsOneWidget);
+      expect(find.text('Total Bill Amount'), findsOneWidget);
+      expect(find.text('₹2,148'), findsOneWidget);
     });
 
     testWidgets('a cancelled booking shows no progress or schedule', (

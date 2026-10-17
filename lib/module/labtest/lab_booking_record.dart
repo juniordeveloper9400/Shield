@@ -51,6 +51,9 @@ class LabBookingRecord {
   /// fetched only when the member opens the report.
   final int reportPages;
   final DateTime? createdAt;
+  final double fuelCharge;
+  final double techFee;
+  final bool isVerified;
 
   const LabBookingRecord({
     required this.id,
@@ -62,6 +65,9 @@ class LabBookingRecord {
     this.note = '',
     this.reportPages = 0,
     this.createdAt,
+    this.fuelCharge = 0,
+    this.techFee = 0,
+    this.isVerified = false,
   });
 
   /// The label the console shows for the same booking — `LB-0007`.
@@ -72,6 +78,19 @@ class LabBookingRecord {
 
   /// Reads one booking from `backend/api`'s `GET /v1/member/lab-bookings`.
   factory LabBookingRecord.fromJson(Map<String, dynamic> json) {
+    final rawNote = _text(json['note']);
+    final billMatch = RegExp(r'\[BILL_VERIFIED:\s*fuel=(\d+(?:\.\d+)?),\s*tech=(\d+(?:\.\d+)?)\]').firstMatch(rawNote);
+    final verified = json['isVerified'] == true || billMatch != null;
+    final fuel = json['fuelCharge'] != null
+        ? _num(json['fuelCharge'])
+        : (billMatch != null ? double.tryParse(billMatch.group(1)!) ?? 0.0 : 0.0);
+    final tech = json['techFee'] != null
+        ? _num(json['techFee'])
+        : (billMatch != null ? double.tryParse(billMatch.group(2)!) ?? 0.0 : 0.0);
+    final cleanNote = billMatch != null
+        ? rawNote.replaceAll(RegExp(r'\[BILL_VERIFIED:\s*fuel=\d+(?:\.\d+)?,\s*tech=\d+(?:\.\d+)?\]\s*'), '').trim()
+        : rawNote;
+
     return LabBookingRecord(
       id: _int(json['id']),
       packageName: _text(json['packageName'], fallback: 'Lab test'),
@@ -79,9 +98,12 @@ class LabBookingRecord {
       total: _num(json['totalPrice']),
       stage: LabStage.parse(json['status']),
       scheduledFor: _date(json['scheduledFor']),
-      note: _text(json['note']),
+      note: cleanNote,
       reportPages: _int(json['reportPages']),
       createdAt: _date(json['createdAt']),
+      fuelCharge: fuel,
+      techFee: tech,
+      isVerified: verified,
     );
   }
 
