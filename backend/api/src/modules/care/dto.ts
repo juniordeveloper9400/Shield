@@ -165,6 +165,8 @@ export const labTestInputSchema = z.object({
   specification1: z.string().default(''),
   specification2: z.string().default(''),
   specification3: z.string().default(''),
+  /** Only meaningful while testType is PACKAGE — see app-care.ts's own doc. */
+  fasting: z.string().default(''),
   resultTemplate: z.string().default(''),
   isActive: z.boolean().default(true),
 });
@@ -233,6 +235,7 @@ const labPackageInputSchema = z.object({
   forWhom: z.string().default(''),
   sample: z.string().default(''),
   preparation: z.string().default(''),
+  fasting: z.string().default(''),
   reportIn: z.string().default(''),
   about: z.string().default(''),
   testIds: z.array(z.string()).default([]),

@@ -9,6 +9,7 @@ import {
   labPackage,
   labPackageExtraCategory,
   labProfile,
+  labTest,
 } from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
 import type { CreateLabCategoryDto, UpdateLabCategoryDto } from './dto';
@@ -132,6 +133,29 @@ export class CareService {
       if (!pkg) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab package not found' } });
       const profiles = await this.db.select().from(labProfile).where(eq(labProfile.labPackageId, id)).orderBy(asc(labProfile.sort));
       return { ...pkg, profiles };
+    });
+  }
+
+  /** A single test's full detail — the "Test Details" page opened by tapping
+   *  an included test inside a package's "Included In The Package" list, or
+   *  a standalone test's own card. `about`/`whyThisTest` are specification1/2
+   *  renamed for this response only (the admin-facing column names stay as
+   *  they are in Test Master). */
+  async getLabTestDetail(id: number) {
+    return this.cache.getOrSet(`care:lab-test:${id}`, TTL, async () => {
+      const [found] = await this.db.select().from(labTest).where(eq(labTest.id, id)).limit(1);
+      if (!found || !found.isActive) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Test not found' } });
+      return {
+        id: found.id,
+        name: found.name,
+        shortName: found.shortName,
+        testType: found.testType,
+        sample: found.sample,
+        reportingTime: found.reportingTime,
+        fasting: found.fasting,
+        about: found.specification1,
+        whyThisTest: found.specification2,
+      };
     });
   }
 

@@ -747,6 +747,7 @@ export function createTestDb() {
       specification_1 text NOT NULL DEFAULT '',
       specification_2 text NOT NULL DEFAULT '',
       specification_3 text NOT NULL DEFAULT '',
+      fasting text NOT NULL DEFAULT '',
       result_template text NOT NULL DEFAULT '',
       is_active boolean NOT NULL DEFAULT true,
       created_by text NOT NULL DEFAULT '',
@@ -813,6 +814,7 @@ export function createTestDb() {
       for_whom text,
       age_range text,
       preparation text,
+      fasting text NOT NULL DEFAULT '',
       sample text,
       organs text[] NOT NULL DEFAULT '{}',
       about text NOT NULL DEFAULT '',
@@ -828,7 +830,9 @@ export function createTestDb() {
       name text NOT NULL,
       parameters integer NOT NULL DEFAULT 0,
       is_extra boolean NOT NULL DEFAULT false,
-      sort integer NOT NULL DEFAULT 0
+      sort integer NOT NULL DEFAULT 0,
+      test_id bigint REFERENCES app.lab_test(id) ON DELETE SET NULL,
+      short_name text NOT NULL DEFAULT ''
     );
 
     CREATE TABLE app.lab_package_extra_category (

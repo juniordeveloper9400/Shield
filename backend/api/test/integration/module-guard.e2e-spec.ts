@@ -121,6 +121,21 @@ describe('ModuleGuard — per-account module restriction (e2e)', () => {
       .expect(403);
   });
 
+  it('a route shared between two modules (wallet-cards/member/:id/summary) is reachable with either one in the custom list', async () => {
+    const healthPassesToken = await staffToken('mg-super-health-passes@example.com', 'SUPERADMIN', ['health_passes']);
+    await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/member/1/summary')
+      .set('Authorization', `Bearer ${healthPassesToken}`)
+      .expect(200);
+
+    // Narrowed to a module this route does NOT belong to — refused.
+    const labTestsOnlyToken = await staffToken('mg-super-lab-tests-only@example.com', 'SUPERADMIN', ['lab_tests']);
+    await request(app.getHttpServer())
+      .get('/v1/staff/wallet-cards/member/1/summary')
+      .set('Authorization', `Bearer ${labTestsOnlyToken}`)
+      .expect(403);
+  });
+
   it("role still wins first — narrowing modules never grants a route the role itself can't reach", async () => {
     // A LAB account customized to list 'admins' in its own modules still
     // can't reach /v1/staff/admins — RolesGuard refuses it before

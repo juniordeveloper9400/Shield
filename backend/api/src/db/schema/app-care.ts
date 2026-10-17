@@ -71,6 +71,12 @@ export const labPackage = appSchema.table('lab_package', {
   forWhom: text('for_whom'),
   ageRange: text('age_range'),
   preparation: text('preparation'),
+  /** migration 0106 — a short, structured prep note (e.g. "12 hrs fasting")
+   *  shown as its own fact chip alongside Report in / Home sample, distinct
+   *  from the free-text [preparation] sentence. Synced from `app.lab_test
+   *  .fasting` for a Test-Master-driven package (testType PACKAGE); also
+   *  settable directly on a builder-made package. */
+  fasting: text('fasting').notNull().default(''),
   sample: text('sample'),
   organs: text('organs').array().notNull().default([]),
   about: text('about').notNull().default(''),
@@ -106,6 +112,18 @@ export const labProfile = appSchema.table('lab_profile', {
   parameters: integer('parameters').notNull().default(0),
   isExtra: boolean('is_extra').notNull().default(false),
   sort: integer('sort').notNull().default(0),
+  /** migration 0106 — the Test Master row this included test was actually
+   *  built from (set alongside `app.lab_package_test_item`, the same real
+   *  link) — lets the app open a real Test Details page for it rather than
+   *  this being just a display name. Null for a profile row synced from a
+   *  single test/group's own one-package listing (LabTestService.
+   *  syncLabTestListing), which already points the member straight at that
+   *  one test. */
+  testId: bigint('test_id', { mode: 'number' }),
+  /** migration 0106 — `app.lab_test.short_name`, copied at the same time as
+   *  [testId] so the included-test row can show "Name (Alias)" without a
+   *  join back to Test Master. */
+  shortName: text('short_name').notNull().default(''),
 });
 
 /**
@@ -158,6 +176,10 @@ export const labTest = appSchema.table('lab_test', {
   specification1: text('specification_1').notNull().default(''),
   specification2: text('specification_2').notNull().default(''),
   specification3: text('specification_3').notNull().default(''),
+  /** migration 0106 — only meaningful (and only shown in the Test Master
+   *  form) while testType is PACKAGE; synced onto `app.lab_package.fasting`
+   *  by syncLabTestListing the same way reportingTime becomes reportIn. */
+  fasting: text('fasting').notNull().default(''),
   resultTemplate: text('result_template').notNull().default(''),
   isActive: boolean('is_active').notNull().default(true),
   createdBy: text('created_by').notNull().default(''),

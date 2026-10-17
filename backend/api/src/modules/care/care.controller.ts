@@ -33,6 +33,11 @@ export class CareController {
     return this.care.getLabPackage(id);
   }
 
+  @Get('lab-tests/:id')
+  labTest(@Param('id', ParseIntPipe) id: number) {
+    return this.care.getLabTestDetail(id);
+  }
+
   @Get('clinics')
   clinics() {
     return this.care.listClinics();

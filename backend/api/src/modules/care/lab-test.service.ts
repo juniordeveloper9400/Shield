@@ -214,6 +214,7 @@ export class LabTestService {
       specification1: input.specification1,
       specification2: input.specification2,
       specification3: input.specification3,
+      fasting: input.fasting,
       resultTemplate: input.resultTemplate,
       isActive: input.isActive,
     };
@@ -461,6 +462,7 @@ export class LabTestService {
         isActive: labTest.isActive,
         showInApp: labTest.showInApp,
         isMostCommon: labTest.isMostCommon,
+        fasting: labTest.fasting,
       })
       .from(labTest)
       .where(eq(labTest.id, testId))
@@ -504,6 +506,7 @@ export class LabTestService {
         isActive: true,
         sourceTestId: testId,
         isMostCommon: t.isMostCommon,
+        fasting: t.fasting,
       })
       .onConflictDoUpdate({
         target: labPackage.sourceTestId,
@@ -521,6 +524,7 @@ export class LabTestService {
           sample: t.sample,
           isActive: true,
           isMostCommon: t.isMostCommon,
+          fasting: t.fasting,
         },
       })
       .returning({ id: labPackage.id });
@@ -627,7 +631,7 @@ export class LabTestService {
 
     const ids = testIds.map((t) => Number(t));
     const tests = await this.db
-      .select({ id: labTest.id, name: labTest.name, testType: labTest.testType })
+      .select({ id: labTest.id, name: labTest.name, testType: labTest.testType, shortName: labTest.shortName })
       .from(labTest)
       .where(inArray(labTest.id, ids));
     const counts = await this.db
@@ -637,15 +641,25 @@ export class LabTestService {
       .groupBy(labTestGroupItem.groupId);
     const countById = new Map(counts.map((c) => [c.groupId, c.count]));
     const byId = new Map(
-      tests.map((t) => [String(t.id), { name: t.name, parameters: t.testType === 'GROUP' ? Math.max(countById.get(t.id) ?? 0, 1) : 1 }]),
+      tests.map((t) => [
+        String(t.id),
+        { name: t.name, shortName: t.shortName, parameters: t.testType === 'GROUP' ? Math.max(countById.get(t.id) ?? 0, 1) : 1 },
+      ]),
     );
 
     let testCount = 0;
     for (const [index, testId] of testIds.entries()) {
-      const info = byId.get(testId) ?? { name: 'Test', parameters: 1 };
+      const info = byId.get(testId) ?? { name: 'Test', shortName: '', parameters: 1 };
       testCount += info.parameters;
       await this.db.insert(labPackageTestItem).values({ packageId, testId: Number(testId), sort: index });
-      await this.db.insert(labProfile).values({ labPackageId: packageId, name: info.name, parameters: info.parameters, sort: index });
+      await this.db.insert(labProfile).values({
+        labPackageId: packageId,
+        name: info.name,
+        parameters: info.parameters,
+        sort: index,
+        testId: Number(testId),
+        shortName: info.shortName,
+      });
     }
     return { testCount };
   }
@@ -669,6 +683,7 @@ export class LabTestService {
         forWhom: dto.forWhom,
         sample: dto.sample,
         preparation: dto.preparation,
+        fasting: dto.fasting,
         reportIn: dto.reportIn,
         about: dto.about,
       })
@@ -699,6 +714,7 @@ export class LabTestService {
         forWhom: input.forWhom,
         sample: input.sample,
         preparation: input.preparation,
+        fasting: input.fasting,
         reportIn: input.reportIn,
         about: input.about,
       })
