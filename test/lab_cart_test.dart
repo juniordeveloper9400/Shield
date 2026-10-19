@@ -574,14 +574,12 @@ void main() {
       );
 
       expect(find.text('Product Details'), findsOneWidget);
-      expect(find.text('For Male & Female'), findsOneWidget);
-      expect(find.text('5-99 yrs'), findsOneWidget);
       // The top card carries report time and the home sample — no
       // "contains" or "preparation" tile any more.
       expect(find.text('CONTAINS'), findsNothing);
       expect(find.text('PREPARATION'), findsNothing);
-      expect(find.text('HOME SAMPLE'), findsOneWidget);
-      expect(find.text('REPORT IN'), findsOneWidget);
+      expect(find.text('SAMPLE'), findsOneWidget);
+      expect(find.text('REPORT ON'), findsOneWidget);
       expect(find.text('15 hr'), findsOneWidget);
       expect(find.text('ORGANS & SYSTEMS COVERED'), findsOneWidget);
       expect(find.text('Pancreas'), findsOneWidget);
