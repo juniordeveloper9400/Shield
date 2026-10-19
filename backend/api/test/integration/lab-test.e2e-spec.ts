@@ -516,5 +516,38 @@ describe('Lab Test Master & Package builder (e2e)', () => {
         .expect(200);
       expect(idsAfterTestsEdit.body.map(Number)).toEqual([Number(t2.body.id)]);
     });
+
+    it('a newly created package shows up on the public read immediately — the public list is cached 5 minutes and has to be busted on write', async () => {
+      // Populate the cache with whatever exists before this package does.
+      const before = await request(app.getHttpServer()).get('/v1/public/care/lab-packages').expect(200);
+      expect(before.body.some((p: { name: string }) => p.name === 'Freshly Cached Package')).toBe(false);
+
+      const plainTest = await request(app.getHttpServer())
+        .post('/v1/staff/lab-tests')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ input: { ...BLANK_INPUT, name: 'Freshly Cached Package Member' }, groupItems: [], specialRates: [] })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/v1/staff/lab-packages')
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({
+          name: 'Freshly Cached Package',
+          categoryId: '',
+          price: 300,
+          mrp: 400,
+          forWhom: '',
+          sample: '',
+          preparation: '',
+          reportIn: '',
+          about: '',
+          testIds: [plainTest.body.id],
+        })
+        .expect(201);
+
+      // Without busting the cache this still reads the pre-create snapshot
+      // from the first call above — the bug this test is for.
+      const after = await request(app.getHttpServer()).get('/v1/public/care/lab-packages').expect(200);
+      expect(after.body.some((p: { name: string }) => p.name === 'Freshly Cached Package')).toBe(true);
+    });
   });
 });

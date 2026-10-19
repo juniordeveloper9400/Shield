@@ -220,6 +220,7 @@ export class CareService {
 
     try {
       const [created] = await this.db.insert(labCategory).values(dto).returning();
+      await this.cache.invalidate('care:lab-categories');
       return { category: created };
     } catch {
       return { category: null };
@@ -236,6 +237,7 @@ export class CareService {
     try {
       const [updated] = await this.db.update(labCategory).set(dto).where(eq(labCategory.id, id)).returning();
       if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab category not found' } });
+      await this.cache.invalidate('care:lab-categories');
       return { category: updated };
     } catch (err) {
       if (err instanceof NotFoundException) throw err;
@@ -246,12 +248,14 @@ export class CareService {
   async setLabCategoryActive(id: number, isActive: boolean) {
     const [updated] = await this.db.update(labCategory).set({ isActive }).where(eq(labCategory.id, id)).returning();
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab category not found' } });
+    await this.cache.invalidate('care:lab-categories');
     return updated;
   }
 
   async setLabCategorySort(id: number, sort: number) {
     const [updated] = await this.db.update(labCategory).set({ sort }).where(eq(labCategory.id, id)).returning();
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab category not found' } });
+    await this.cache.invalidate('care:lab-categories');
     return updated;
   }
 
@@ -282,5 +286,6 @@ export class CareService {
       });
     }
     await this.db.delete(labCategory).where(eq(labCategory.id, id));
+    await this.cache.invalidate('care:lab-categories');
   }
 }

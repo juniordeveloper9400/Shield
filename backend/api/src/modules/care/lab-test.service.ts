@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundExce
 import { and, asc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { DRIZZLE, type Database } from '../../db/client';
+import { CacheService } from '../../cache/cache.service';
 import {
   adminUser,
   labCategory,
@@ -54,7 +55,19 @@ function pgErrorText(error: unknown): string {
  */
 @Injectable()
 export class LabTestService {
-  constructor(@Inject(DRIZZLE) private readonly db: Database) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly cache: CacheService,
+  ) {}
+
+  /** Both apps' public package/category reads (`CareService.listLabPackages`
+   *  / `listLabCategories`) are cached for 5 minutes — a write here that
+   *  changes what either would return has to bust them itself, or a just
+   *  -activated package / just-edited test sits invisible in the app for
+   *  up to that long. */
+  private async invalidatePublicCatalogueCache(): Promise<void> {
+    await this.cache.invalidate('care:lab-packages', 'care:lab-categories');
+  }
 
   // ---- Test Master --------------------------------------------------------
 
@@ -82,6 +95,8 @@ export class LabTestService {
         labRate: labTest.labRate,
         source: labTest.source,
         isActive: labTest.isActive,
+        showInApp: labTest.showInApp,
+        isMostCommon: labTest.isMostCommon,
       })
       .from(labTest)
       .leftJoin(labCategory, eq(labCategory.id, labTest.categoryId))
@@ -316,6 +331,7 @@ export class LabTestService {
         error: { code: 'SYNC_FAILED', message: `"${input.name}" was saved, but its listing in the app could not be updated (${why}). Save it again to retry.` },
       });
     }
+    await this.invalidatePublicCatalogueCache();
     return { id: String(saved.id), lisCode: saved.lisCode };
   }
 
@@ -355,6 +371,7 @@ export class LabTestService {
       }
       throw error;
     }
+    await this.invalidatePublicCatalogueCache();
   }
 
   // ---- Field options (app.lab_test_field_option, migration 0101) ----------
@@ -581,6 +598,7 @@ export class LabTestService {
   async setLabPackageActive(id: number, isActive: boolean) {
     const [updated] = await this.db.update(labPackage).set({ isActive }).where(eq(labPackage.id, id)).returning({ id: labPackage.id });
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab package not found' } });
+    await this.invalidatePublicCatalogueCache();
   }
 
   async updateLabPackagePrice(id: number, dto: UpdateLabPackagePriceDto) {
@@ -590,6 +608,7 @@ export class LabTestService {
       .where(eq(labPackage.id, id))
       .returning({ id: labPackage.id });
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab package not found' } });
+    await this.invalidatePublicCatalogueCache();
   }
 
   /** Every active test or group test the package builder can offer — never
@@ -708,6 +727,7 @@ export class LabTestService {
     const id = created.id;
     const { testCount } = await this.writePackageTests(id, dto.testIds);
     await this.db.update(labPackage).set({ testCount }).where(eq(labPackage.id, id));
+    await this.invalidatePublicCatalogueCache();
     return { id: String(id) };
   }
 
@@ -743,5 +763,6 @@ export class LabTestService {
       const { testCount } = await this.writePackageTests(id, input.testIds);
       await this.db.update(labPackage).set({ testCount, profileCount: input.testIds.length }).where(eq(labPackage.id, id));
     }
+    await this.invalidatePublicCatalogueCache();
   }
 }
