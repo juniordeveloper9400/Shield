@@ -167,6 +167,10 @@ export class CareService {
         testType: found.testType,
         sample: found.sample,
         reportingTime: found.reportingTime,
+        reportOn: found.reportOnValue > 0
+          ? `${found.reportOnValue} ${found.reportOnUnit || 'Hours'}`
+          : (found.reportingTime ?? '').trim(),
+        testMode: found.testMode ?? '',
         fasting: found.fasting,
         symptoms: found.symptoms,
         about: (found.description ?? '').trim() || (found.specification1 ?? '').trim(),

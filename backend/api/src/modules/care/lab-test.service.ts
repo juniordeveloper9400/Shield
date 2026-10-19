@@ -501,6 +501,9 @@ export class LabTestService {
         categoryId: labTest.categoryId,
         sample: labTest.sample,
         reportingTime: labTest.reportingTime,
+        testMode: labTest.testMode,
+        reportOnValue: labTest.reportOnValue,
+        reportOnUnit: labTest.reportOnUnit,
         isActive: labTest.isActive,
         showInApp: labTest.showInApp,
         isMostCommon: labTest.isMostCommon,
@@ -556,6 +559,9 @@ export class LabTestService {
 
     const aboutText = (t.description ?? '').trim() || (t.specification1 ?? '').trim();
     const whyThisTestText = (t.specification2 ?? '').trim();
+    const reportOnText = t.reportOnValue > 0
+      ? `${t.reportOnValue} ${t.reportOnUnit || 'Hours'}`
+      : (t.reportingTime ?? '').trim();
 
     const [saved] = await this.db
       .insert(labPackage)
@@ -569,7 +575,9 @@ export class LabTestService {
         price: price.toString(),
         mrp: mrp.toString(),
         saved: Math.max(mrp - price, 0).toString(),
-        reportIn: t.reportingTime,
+        reportIn: reportOnText,
+        reportOn: reportOnText,
+        testMode: t.testMode ?? '',
         sample: t.sample,
         isActive: true,
         sourceTestId: testId,
@@ -591,7 +599,9 @@ export class LabTestService {
           price: price.toString(),
           mrp: mrp.toString(),
           saved: Math.max(mrp - price, 0).toString(),
-          reportIn: t.reportingTime,
+          reportIn: reportOnText,
+          reportOn: reportOnText,
+          testMode: t.testMode ?? '',
           sample: t.sample,
           isActive: true,
           isMostCommon: t.isMostCommon,

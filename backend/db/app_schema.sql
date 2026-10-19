@@ -1,6 +1,6 @@
 -- ============================================================================
 --  app schema — regenerated from the live database by
-aadhaar--  `dart run backend/db/dump_app_schema.dart --write` on 2026-10-19.
+--  `dart run backend/db/dump_app_schema.dart --write` on 2026-10-19.
 --
 --  Machine-generated — do not hand-edit. The prose explaining *why* each
 --  table/column exists lives in backend/db/APP_SCHEMA.md instead, which
@@ -540,6 +540,8 @@ CREATE TABLE app.lab_package (
     symptoms text[] NOT NULL DEFAULT '{}'::text[],
     short_name text NOT NULL DEFAULT ''::text,
     why_this_test text NOT NULL DEFAULT ''::text,
+    test_mode text NOT NULL DEFAULT ''::text,
+    report_on text NOT NULL DEFAULT ''::text,
     CONSTRAINT lab_package_category_id_fkey FOREIGN KEY (category_id) REFERENCES app.lab_category(id) ON DELETE SET NULL,
     CONSTRAINT lab_package_source_test_id_fkey FOREIGN KEY (source_test_id) REFERENCES app.lab_test(id) ON DELETE CASCADE,
     CONSTRAINT lab_package_pkey PRIMARY KEY (id),
@@ -2348,6 +2350,7 @@ CREATE INDEX lab_booking_store_idx ON app.lab_booking USING btree (store_id);
 CREATE INDEX lab_package_category_idx ON app.lab_package USING btree (category_id);
 CREATE INDEX lab_package_extra_category_category_idx ON app.lab_package_extra_category USING btree (category_id);
 CREATE INDEX lab_package_test_item_test_idx ON app.lab_package_test_item USING btree (test_id);
+CREATE INDEX lab_profile_test_id_idx ON app.lab_profile USING btree (test_id);
 CREATE INDEX lab_test_category_idx ON app.lab_test USING btree (category_id);
 CREATE INDEX lab_test_group_item_test_idx ON app.lab_test_group_item USING btree (test_id);
 CREATE INDEX lab_test_source_idx ON app.lab_test USING btree (source, is_active);

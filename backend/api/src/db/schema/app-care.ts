@@ -89,6 +89,10 @@ export const labPackage = appSchema.table('lab_package', {
   whyThisTest: text('why_this_test').notNull().default(''),
   /** migration 0107 — `app.lab_test.symptoms`, synced the same way. */
   symptoms: text('symptoms').array().notNull().default([]),
+  /** migration 0108 — Test Mode (e.g. "Automated") from Test Master. */
+  testMode: text('test_mode').notNull().default(''),
+  /** migration 0108 — Report On (e.g. "5 Minutes" or "Same Day") from Test Master. */
+  reportOn: text('report_on').notNull().default(''),
   isActive: boolean('is_active').notNull().default(true),
   sort: integer('sort').notNull().default(0),
   /** Migration 0068 — the Test Master's "Most Common Test" switch, mirrored

@@ -822,6 +822,8 @@ export function createTestDb() {
       short_name text NOT NULL DEFAULT '',
       why_this_test text NOT NULL DEFAULT '',
       symptoms text[] NOT NULL DEFAULT '{}',
+      test_mode text NOT NULL DEFAULT '',
+      report_on text NOT NULL DEFAULT '',
       is_active boolean NOT NULL DEFAULT true,
       sort integer NOT NULL DEFAULT 0,
       is_most_common boolean NOT NULL DEFAULT false
