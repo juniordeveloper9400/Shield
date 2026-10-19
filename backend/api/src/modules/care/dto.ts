@@ -40,6 +40,10 @@ export const bookLabTestSchema = z.object({
   /** How the sample reaches the lab — defaults to the original behaviour
    *  (the lab visits the member) for a client that predates this field. */
   fulfillmentType: z.enum(['HOME_COLLECTION', 'STORE_VISIT']).default('HOME_COLLECTION'),
+  /** The member tapped "Apply" on their Health Pass coupon at checkout —
+   *  see app-care.ts's own doc on labBooking.healthPassApplied. */
+  healthPassApplied: z.boolean().default(false),
+  healthPassTier: z.string().max(100).optional(),
 });
 
 export const updateLabBookingStatusSchema = z.object({

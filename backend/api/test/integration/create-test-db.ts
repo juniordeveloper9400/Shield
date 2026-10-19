@@ -913,6 +913,8 @@ export function createTestDb() {
       address_phone_override text,
       note text,
       report_uploaded_at timestamptz,
+      health_pass_applied boolean NOT NULL DEFAULT false,
+      health_pass_tier text,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );

@@ -325,6 +325,17 @@ export const labBooking = appSchema.table('lab_booking', {
   note: text('note'),
   /** When the report was last attached (migration 0052). */
   reportUploadedAt: timestamp('report_uploaded_at', { withTimezone: true }),
+  /** migration 0109 — the member tapped "Apply" on their Health Pass coupon
+   *  at checkout (see LabCartScreen/LabCheckoutScreen's own
+   *  _HealthPassCouponCard). A visual confirmation on the member's own
+   *  screens, not something this booking's price is computed from — carried
+   *  here purely so the lab/admin can see the member expects that plan's
+   *  home-care rate to apply and settle the bill accordingly. */
+  healthPassApplied: boolean('health_pass_applied').notNull().default(false),
+  /** migration 0109 — which plan ("Silver Shield", "Gold Shield", …) was
+   *  applied, for the admin's own display; null when [healthPassApplied]
+   *  is false. */
+  healthPassTier: text('health_pass_tier'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
