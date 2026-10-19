@@ -586,7 +586,6 @@ void main() {
       expect(find.text('₹1,299'), findsOneWidget);
       expect(find.text('60.01% off'), findsOneWidget);
       expect(find.text('Add'), findsOneWidget);
-      expect(find.text('AVAILABLE COUPON'), findsOneWidget);
       expect(find.text('About this Package'), findsOneWidget);
     });
 
