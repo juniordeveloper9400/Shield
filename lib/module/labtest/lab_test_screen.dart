@@ -5,6 +5,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/app_image.dart';
 import '../home/home_hero_banner.dart';
 import '../location/location_sheet.dart';
+import '../registration/shield_store.dart';
 import 'lab_cart_badge.dart';
 import 'lab_cart_service.dart';
 import 'lab_package.dart';
@@ -51,6 +52,7 @@ class _LabTestScreenState extends State<LabTestScreen> {
   @override
   void initState() {
     super.initState();
+    StoreCatalog.instance.ensureLoaded();
     _load();
   }
 
@@ -253,6 +255,11 @@ class _LabTestScreenState extends State<LabTestScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: 22),
+            _LabTrustSections(
+              testCount: all == null ? null : profiles.length,
+              packageCount: packages?.length,
+            ),
             const SizedBox(height: 18),
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -956,6 +963,182 @@ class _CouponBanner extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The two reassurance blocks at the foot of the Lab landing: "Why trust
+/// Sahakar 360 Labs" (live counts off what is actually on offer) and "How home
+/// sample collection works". The counts are read, never typed in: tests and
+/// packages come from the lab catalogue the screen already loaded, and
+/// collection branches from the branch directory — so they move when staff
+/// add a test or open a branch.
+class _LabTrustSections extends StatelessWidget {
+  final int? testCount;
+  final int? packageCount;
+
+  const _LabTrustSections({required this.testCount, required this.packageCount});
+
+  static const _steps = [
+    (
+      'Book your test',
+      'Pick a package or test, add the patients and choose a branch.',
+    ),
+    (
+      'Phlebotomist visits',
+      'A trained collector from your branch comes to your address.',
+    ),
+    (
+      'Sample collected',
+      'Single-use kit, sealed on the spot and sent to the lab.',
+    ),
+    ('Reports on app', 'Digital reports appear in the app once ready.'),
+  ];
+
+  static const _headingStyle = TextStyle(
+    fontSize: 19,
+    fontWeight: FontWeight.w800,
+    color: AppColors.textDark,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Why trust Sahakar 360 Labs', style: _headingStyle),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: ListenableBuilder(
+              listenable: StoreCatalog.instance,
+              builder: (context, _) {
+                final branches = StoreCatalog.instance.stores
+                    .where((s) => s.offersLabCollection)
+                    .length;
+                return IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      _Stat(value: testCount, label: 'Tests available'),
+                      const VerticalDivider(width: 1, color: AppColors.border),
+                      _Stat(value: packageCount, label: 'Health packages'),
+                      const VerticalDivider(width: 1, color: AppColors.border),
+                      _Stat(value: branches, label: 'Collection branches'),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 22),
+          const Text('How home sample collection works', style: _headingStyle),
+          const SizedBox(height: 12),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              children: [
+                for (var i = 0; i < _steps.length; i++) ...[
+                  if (i > 0) const Divider(height: 1, color: AppColors.border),
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: const BoxDecoration(
+                            color: AppColors.brandBlue,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '${i + 1}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.white,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _steps[i].$1,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textDark,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _steps[i].$2,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  height: 1.35,
+                                  color: AppColors.textBody,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One figure in the trust strip; a dash while its count is still loading.
+class _Stat extends StatelessWidget {
+  final int? value;
+  final String label;
+
+  const _Stat({required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            value == null ? '—' : '$value',
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textDark,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
           ),
         ],
       ),
