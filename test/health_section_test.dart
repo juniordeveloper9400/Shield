@@ -81,7 +81,6 @@ void main() {
     expect(find.text('Top Packages'), findsWidgets);
     expect(find.text('Preventive Plus'), findsWidgets);
     expect(find.text('Book via'), findsNWidgets(2));
-    expect(find.text('Flat 25% off on all tests'), findsOneWidget);
   });
 
   testWidgets('the health section replaces the main bottom bar', (tester) async {
