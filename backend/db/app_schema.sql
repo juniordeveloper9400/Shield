@@ -1,6 +1,6 @@
 -- ============================================================================
 --  app schema — regenerated from the live database by
---  `dart run backend/db/dump_app_schema.dart --write` on 2026-10-01.
+--  `dart run backend/db/dump_app_schema.dart --write` on 2026-10-19.
 --
 --  Machine-generated — do not hand-edit. The prose explaining *why* each
 --  table/column exists lives in backend/db/APP_SCHEMA.md instead, which
@@ -28,6 +28,7 @@ CREATE TYPE app.cart_line_source AS ENUM ('SHOP', 'PRESCRIPTION');
 CREATE TYPE app.fulfillment_type AS ENUM ('HOME_DELIVERY', 'STORE_PICKUP');
 CREATE TYPE app.gender AS ENUM ('FEMALE', 'MALE', 'OTHER');
 CREATE TYPE app.investor_plan_type AS ENUM ('YEARLY', 'MONTHLY');
+CREATE TYPE app.lab_booking_fulfillment AS ENUM ('HOME_COLLECTION', 'STORE_VISIT');
 CREATE TYPE app.lab_booking_status AS ENUM ('REQUESTED', 'CONFIRMED', 'SAMPLE_COLLECTED', 'REPORT_READY', 'CANCELLED');
 CREATE TYPE app.lsgd_type AS ENUM ('corporation', 'municipality', 'grama_panchayat');
 CREATE TYPE app.medicine_duration AS ENUM ('ONE_WEEK', 'FIFTEEN_DAYS', 'ONE_MONTH', 'TWO_MONTHS', 'THREE_MONTHS');
@@ -44,11 +45,22 @@ CREATE TYPE app.privilege_card_kind AS ENUM ('SILVER', 'GOLD', 'PLATINUM');
 CREATE TYPE app.push_platform AS ENUM ('ANDROID', 'IOS', 'WEB');
 CREATE TYPE app.referral_status AS ENUM ('SHARED', 'REGISTERED', 'TRANSACTED', 'PLAN_ACTIVATED');
 CREATE TYPE app.reward_txn_reason AS ENUM ('REGISTRATION', 'REFERRAL_LEVEL', 'ORDER', 'REDEMPTION', 'ADJUSTMENT');
+CREATE TYPE app.store_type AS ENUM ('PHARMACY', 'LAB', 'PHARMACY_LAB');
 CREATE TYPE app.track_state AS ENUM ('DONE', 'CURRENT', 'UPCOMING');
 CREATE TYPE app.wallet_entry_kind AS ENUM ('ACTIVATION', 'BONUS', 'TOPUP', 'SPEND', 'POINTS_REDEEMED', 'AGENT_EARNINGS', 'REFERRAL_EARNINGS');
 CREATE TYPE app.withdrawal_status AS ENUM ('PENDING', 'PAID', 'REJECTED');
 
 -- ---- Tables ------------------------------------------------------------------
+CREATE TABLE app.legal_entity (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    code text NOT NULL,
+    name text NOT NULL,
+    is_provisional boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT legal_entity_pkey PRIMARY KEY (id),
+    CONSTRAINT legal_entity_code_key UNIQUE (code)
+);
+
 CREATE TABLE app.shield_store (
     id bigint GENERATED ALWAYS AS IDENTITY,
     uuid uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -72,6 +84,9 @@ CREATE TABLE app.shield_store (
     bank_ifsc text NOT NULL DEFAULT ''::text,
     bank_name text NOT NULL DEFAULT ''::text,
     offers_lab_collection boolean NOT NULL DEFAULT true,
+    entity_id bigint,
+    store_type app.store_type NOT NULL DEFAULT 'PHARMACY_LAB'::app.store_type,
+    CONSTRAINT shield_store_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES app.legal_entity(id),
     CONSTRAINT shield_store_pkey PRIMARY KEY (id),
     CONSTRAINT shield_store_code_key UNIQUE (code)
 );
@@ -90,6 +105,7 @@ CREATE TABLE app.admin_user (
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
     password_hash text,
+    modules text[],
     CONSTRAINT admin_user_store_id_fkey FOREIGN KEY (store_id) REFERENCES app.shield_store(id) ON DELETE SET NULL,
     CONSTRAINT admin_user_pkey PRIMARY KEY (id),
     CONSTRAINT admin_user_email_key UNIQUE (login_id),
@@ -120,6 +136,7 @@ CREATE TABLE app.users (
     updated_at timestamptz NOT NULL DEFAULT now(),
     deleted_at timestamptz,
     referral_level_awarded integer NOT NULL DEFAULT 0,
+    pan text,
     CONSTRAINT member_home_store_id_fkey FOREIGN KEY (home_store_id) REFERENCES app.shield_store(id) ON DELETE SET NULL,
     CONSTRAINT member_referred_by_member_id_fkey FOREIGN KEY (referred_by_member_id) REFERENCES app.users(id) ON DELETE SET NULL,
     CONSTRAINT member_pkey PRIMARY KEY (id),
@@ -166,18 +183,18 @@ CREATE TABLE app.agent (
     CONSTRAINT agent_code_key UNIQUE (code)
 );
 
-CREATE TABLE app.agent_customer (
+CREATE TABLE app.wallet (
     id bigint GENERATED ALWAYS AS IDENTITY,
-    uuid uuid NOT NULL DEFAULT gen_random_uuid(),
-    agent_id bigint NOT NULL,
-    member_id bigint,
-    name text NOT NULL,
-    phone text NOT NULL DEFAULT ''::text,
+    member_id bigint NOT NULL,
+    balance numeric(12,2) NOT NULL DEFAULT 0,
+    reward_points integer NOT NULL DEFAULT 0,
+    redeemed_this_month numeric(12,2) NOT NULL DEFAULT 0,
+    opened_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT agent_customer_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agent(id) ON DELETE CASCADE,
-    CONSTRAINT agent_customer_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.users(id) ON DELETE SET NULL,
-    CONSTRAINT agent_customer_pkey PRIMARY KEY (id),
-    CONSTRAINT agent_customer_agent_member_key UNIQUE (agent_id, member_id)
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT wallet_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.users(id) ON DELETE CASCADE,
+    CONSTRAINT wallet_pkey PRIMARY KEY (id),
+    CONSTRAINT wallet_member_id_key UNIQUE (member_id)
 );
 
 CREATE TABLE app.membership_tier (
@@ -194,20 +211,6 @@ CREATE TABLE app.membership_tier (
     updated_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT membership_tier_pkey PRIMARY KEY (id),
     CONSTRAINT membership_tier_kind_key UNIQUE (kind)
-);
-
-CREATE TABLE app.wallet (
-    id bigint GENERATED ALWAYS AS IDENTITY,
-    member_id bigint NOT NULL,
-    balance numeric(12,2) NOT NULL DEFAULT 0,
-    reward_points integer NOT NULL DEFAULT 0,
-    redeemed_this_month numeric(12,2) NOT NULL DEFAULT 0,
-    opened_at timestamptz,
-    created_at timestamptz NOT NULL DEFAULT now(),
-    updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT wallet_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.users(id) ON DELETE CASCADE,
-    CONSTRAINT wallet_pkey PRIMARY KEY (id),
-    CONSTRAINT wallet_member_id_key UNIQUE (member_id)
 );
 
 CREATE TABLE app.wallet_card (
@@ -241,6 +244,53 @@ CREATE TABLE app.wallet_card (
     CONSTRAINT wallet_card_tier_id_fkey FOREIGN KEY (tier_id) REFERENCES app.membership_tier(id) ON DELETE RESTRICT,
     CONSTRAINT wallet_card_wallet_id_fkey FOREIGN KEY (wallet_id) REFERENCES app.wallet(id) ON DELETE CASCADE,
     CONSTRAINT wallet_card_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE app.journal_entry (
+    id uuid NOT NULL DEFAULT gen_random_uuid(),
+    entity_id bigint NOT NULL,
+    posted_on date NOT NULL DEFAULT CURRENT_DATE,
+    source_table text NOT NULL,
+    source_id text NOT NULL,
+    event text NOT NULL,
+    description text NOT NULL DEFAULT ''::text,
+    reversal_of uuid,
+    reversed_by uuid,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT journal_entry_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES app.legal_entity(id),
+    CONSTRAINT journal_entry_reversal_of_fkey FOREIGN KEY (reversal_of) REFERENCES app.journal_entry(id),
+    CONSTRAINT journal_entry_reversed_by_fkey FOREIGN KEY (reversed_by) REFERENCES app.journal_entry(id),
+    CONSTRAINT journal_entry_pkey PRIMARY KEY (id),
+    CONSTRAINT journal_entry_source_table_source_id_event_entity_id_key UNIQUE (source_table, source_id, event, entity_id)
+);
+
+CREATE TABLE app.agent_commission (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    wallet_card_id bigint NOT NULL,
+    agent_id bigint NOT NULL,
+    hop smallint NOT NULL,
+    rate numeric(5,4) NOT NULL,
+    amount numeric(12,2) NOT NULL,
+    journal_entry_id uuid,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT agent_commission_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agent(id),
+    CONSTRAINT agent_commission_journal_entry_id_fkey FOREIGN KEY (journal_entry_id) REFERENCES app.journal_entry(id),
+    CONSTRAINT agent_commission_wallet_card_id_fkey FOREIGN KEY (wallet_card_id) REFERENCES app.wallet_card(id),
+    CONSTRAINT agent_commission_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE app.agent_customer (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+    agent_id bigint NOT NULL,
+    member_id bigint,
+    name text NOT NULL,
+    phone text NOT NULL DEFAULT ''::text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT agent_customer_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agent(id) ON DELETE CASCADE,
+    CONSTRAINT agent_customer_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.users(id) ON DELETE SET NULL,
+    CONSTRAINT agent_customer_pkey PRIMARY KEY (id),
+    CONSTRAINT agent_customer_agent_member_key UNIQUE (agent_id, member_id)
 );
 
 CREATE TABLE app.agent_customer_plan (
@@ -440,6 +490,10 @@ CREATE TABLE app.lab_test (
     source text NOT NULL DEFAULT 'ADMIN'::text,
     category_id bigint,
     show_in_app boolean NOT NULL DEFAULT false,
+    is_most_common boolean NOT NULL DEFAULT false,
+    description text NOT NULL DEFAULT ''::text,
+    fasting text NOT NULL DEFAULT ''::text,
+    symptoms text[] NOT NULL DEFAULT '{}'::text[],
     CONSTRAINT lab_test_amount_check CHECK ((amount >= (0)::numeric)),
     CONSTRAINT lab_test_discount_percent_check CHECK (((discount_percent >= (0)::numeric) AND (discount_percent <= (100)::numeric))),
     CONSTRAINT lab_test_lab_rate_check CHECK ((lab_rate >= (0)::numeric)),
@@ -481,6 +535,11 @@ CREATE TABLE app.lab_package (
     updated_at timestamptz NOT NULL DEFAULT now(),
     category_id bigint,
     source_test_id bigint,
+    is_most_common boolean NOT NULL DEFAULT false,
+    fasting text NOT NULL DEFAULT ''::text,
+    symptoms text[] NOT NULL DEFAULT '{}'::text[],
+    short_name text NOT NULL DEFAULT ''::text,
+    why_this_test text NOT NULL DEFAULT ''::text,
     CONSTRAINT lab_package_category_id_fkey FOREIGN KEY (category_id) REFERENCES app.lab_category(id) ON DELETE SET NULL,
     CONSTRAINT lab_package_source_test_id_fkey FOREIGN KEY (source_test_id) REFERENCES app.lab_test(id) ON DELETE CASCADE,
     CONSTRAINT lab_package_pkey PRIMARY KEY (id),
@@ -495,7 +554,6 @@ CREATE TABLE app.lab_booking (
     lab_package_id bigint NOT NULL,
     patients_count integer NOT NULL DEFAULT 1,
     unit_price numeric(12,2) NOT NULL DEFAULT 0,
-    fix_charge numeric(12,2) NOT NULL DEFAULT 0,
     total_price numeric(12,2) NOT NULL DEFAULT 0,
     status app.lab_booking_status NOT NULL DEFAULT 'REQUESTED'::app.lab_booking_status,
     scheduled_for timestamptz,
@@ -505,7 +563,15 @@ CREATE TABLE app.lab_booking (
     note text,
     report_uploaded_at timestamptz,
     store_id bigint,
+    fulfillment_type app.lab_booking_fulfillment NOT NULL DEFAULT 'HOME_COLLECTION'::app.lab_booking_fulfillment,
+    assigned_staff_id bigint,
+    address_override text,
+    contact_name text,
+    contact_phone text,
+    address_phone_override text,
+    fix_charge numeric(12,2) NOT NULL DEFAULT 0,
     CONSTRAINT lab_booking_address_id_fkey FOREIGN KEY (address_id) REFERENCES app.member_address(id) ON DELETE SET NULL,
+    CONSTRAINT lab_booking_assigned_staff_id_fkey FOREIGN KEY (assigned_staff_id) REFERENCES app.admin_user(id) ON DELETE SET NULL,
     CONSTRAINT lab_booking_lab_package_id_fkey FOREIGN KEY (lab_package_id) REFERENCES app.lab_package(id) ON DELETE RESTRICT,
     CONSTRAINT lab_booking_member_id_fkey FOREIGN KEY (member_id) REFERENCES app.users(id) ON DELETE CASCADE,
     CONSTRAINT lab_booking_store_id_fkey FOREIGN KEY (store_id) REFERENCES app.shield_store(id) ON DELETE SET NULL,
@@ -558,6 +624,13 @@ CREATE TABLE app.agent_withdrawal (
     processed_by text,
     CONSTRAINT agent_withdrawal_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES app.agent(id) ON DELETE CASCADE,
     CONSTRAINT agent_withdrawal_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE app.app_setting (
+    key text NOT NULL,
+    value text NOT NULL DEFAULT ''::text,
+    updated_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT app_setting_pkey PRIMARY KEY (key)
 );
 
 CREATE TABLE app.clinic (
@@ -761,6 +834,8 @@ CREATE TABLE app.bill (
     wallet_collected numeric(12,2) NOT NULL DEFAULT 0,
     cash_collected numeric(12,2) NOT NULL DEFAULT 0,
     discount_amount numeric(12,2) NOT NULL DEFAULT 0,
+    gpay_collected numeric(12,2) NOT NULL DEFAULT 0,
+    bill_number text,
     CONSTRAINT bill_order_id_fkey FOREIGN KEY (order_id) REFERENCES app."order"(id) ON DELETE CASCADE,
     CONSTRAINT bill_pkey PRIMARY KEY (id),
     CONSTRAINT bill_order_id_key UNIQUE (order_id)
@@ -775,6 +850,14 @@ CREATE TABLE app.bill_line (
     qty integer NOT NULL DEFAULT 1,
     CONSTRAINT bill_line_bill_id_fkey FOREIGN KEY (bill_id) REFERENCES app.bill(id) ON DELETE CASCADE,
     CONSTRAINT bill_line_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE app.brand (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    uuid uuid NOT NULL DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT brand_pkey PRIMARY KEY (id)
 );
 
 CREATE TABLE app.cart (
@@ -840,6 +923,9 @@ CREATE TABLE app.product (
     is_popular boolean NOT NULL DEFAULT false,
     is_deal boolean NOT NULL DEFAULT false,
     is_offer_of_day boolean NOT NULL DEFAULT false,
+    popular_until timestamptz,
+    deal_until timestamptz,
+    offer_of_day_until timestamptz,
     CONSTRAINT product_category_id_fkey FOREIGN KEY (category_id) REFERENCES app.product_category(id) ON DELETE SET NULL,
     CONSTRAINT product_subcategory_id_fkey FOREIGN KEY (subcategory_id) REFERENCES app.product_subcategory(id) ON DELETE SET NULL,
     CONSTRAINT product_pkey PRIMARY KEY (id),
@@ -864,6 +950,18 @@ CREATE TABLE app.cart_line (
     CONSTRAINT cart_line_prescription_fk FOREIGN KEY (prescription_id) REFERENCES app.prescription(id) ON DELETE SET NULL,
     CONSTRAINT cart_line_product_id_fkey FOREIGN KEY (product_id) REFERENCES app.product(id) ON DELETE SET NULL,
     CONSTRAINT cart_line_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE app.chart_of_account (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    code text NOT NULL,
+    name text NOT NULL,
+    type text NOT NULL,
+    is_provisional boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT chart_of_account_type_check CHECK ((type = ANY (ARRAY['ASSET'::text, 'LIABILITY'::text, 'EQUITY'::text, 'REVENUE'::text, 'EXPENSE'::text]))),
+    CONSTRAINT chart_of_account_pkey PRIMARY KEY (id),
+    CONSTRAINT chart_of_account_code_key UNIQUE (code)
 );
 
 CREATE TABLE app.clinic_doctor (
@@ -986,6 +1084,8 @@ CREATE TABLE app.home_banner (
     is_active boolean NOT NULL DEFAULT true,
     sort integer NOT NULL DEFAULT 0,
     created_at timestamptz NOT NULL DEFAULT now(),
+    placement text NOT NULL DEFAULT 'home'::text,
+    CONSTRAINT home_banner_placement_check CHECK ((placement = ANY (ARRAY['home'::text, 'lab'::text]))),
     CONSTRAINT home_banner_pkey PRIMARY KEY (id)
 );
 
@@ -1032,6 +1132,24 @@ CREATE TABLE app.investor_plan_change_request (
     CONSTRAINT investor_plan_change_request_pkey PRIMARY KEY (id)
 );
 
+CREATE TABLE app.journal_line (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    entry_id uuid NOT NULL,
+    account_id bigint NOT NULL,
+    debit numeric(12,2) NOT NULL DEFAULT 0,
+    credit numeric(12,2) NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    subject_type text,
+    subject_id bigint,
+    CONSTRAINT journal_line_check CHECK (((debit = (0)::numeric) <> (credit = (0)::numeric))),
+    CONSTRAINT journal_line_credit_check CHECK ((credit >= (0)::numeric)),
+    CONSTRAINT journal_line_debit_check CHECK ((debit >= (0)::numeric)),
+    CONSTRAINT journal_line_subject_type_check CHECK (((subject_type IS NULL) OR (subject_type = ANY (ARRAY['member'::text, 'agent'::text, 'investor'::text])))),
+    CONSTRAINT journal_line_account_id_fkey FOREIGN KEY (account_id) REFERENCES app.chart_of_account(id),
+    CONSTRAINT journal_line_entry_id_fkey FOREIGN KEY (entry_id) REFERENCES app.journal_entry(id) ON DELETE CASCADE,
+    CONSTRAINT journal_line_pkey PRIMARY KEY (id)
+);
+
 CREATE TABLE app.lab_bill (
     id bigint GENERATED ALWAYS AS IDENTITY,
     uuid uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -1067,6 +1185,10 @@ CREATE TABLE app.lab_booking_patient (
     patient_id bigint,
     name text,
     age integer,
+    address_id bigint,
+    address_override text,
+    details jsonb,
+    CONSTRAINT lab_booking_patient_address_id_fkey FOREIGN KEY (address_id) REFERENCES app.member_address(id),
     CONSTRAINT lab_booking_patient_lab_booking_id_fkey FOREIGN KEY (lab_booking_id) REFERENCES app.lab_booking(id) ON DELETE CASCADE,
     CONSTRAINT lab_booking_patient_patient_id_fkey FOREIGN KEY (patient_id) REFERENCES app.patient(id) ON DELETE SET NULL,
     CONSTRAINT lab_booking_patient_pkey PRIMARY KEY (id)
@@ -1081,6 +1203,24 @@ CREATE TABLE app.lab_booking_report (
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT lab_booking_report_lab_booking_id_fkey FOREIGN KEY (lab_booking_id) REFERENCES app.lab_booking(id) ON DELETE CASCADE,
     CONSTRAINT lab_booking_report_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE app.lab_charge (
+    id bigint NOT NULL,
+    name text NOT NULL,
+    kind text NOT NULL,
+    config jsonb NOT NULL,
+    is_active boolean NOT NULL DEFAULT true,
+    CONSTRAINT lab_charge_kind_check CHECK ((kind = ANY (ARRAY['TECHNICIAN'::text, 'DISTANCE'::text, 'KM'::text]))),
+    CONSTRAINT lab_charge_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE app.lab_package_extra_category (
+    package_id bigint NOT NULL,
+    category_id bigint NOT NULL,
+    CONSTRAINT lab_package_extra_category_category_id_fkey FOREIGN KEY (category_id) REFERENCES app.lab_category(id) ON DELETE CASCADE,
+    CONSTRAINT lab_package_extra_category_package_id_fkey FOREIGN KEY (package_id) REFERENCES app.lab_package(id) ON DELETE CASCADE,
+    CONSTRAINT lab_package_extra_category_pkey PRIMARY KEY (package_id, category_id)
 );
 
 CREATE TABLE app.lab_package_test_item (
@@ -1102,8 +1242,20 @@ CREATE TABLE app.lab_profile (
     parameters integer NOT NULL DEFAULT 0,
     is_extra boolean NOT NULL DEFAULT false,
     sort integer NOT NULL DEFAULT 0,
+    test_id bigint,
+    short_name text NOT NULL DEFAULT ''::text,
     CONSTRAINT lab_profile_lab_package_id_fkey FOREIGN KEY (lab_package_id) REFERENCES app.lab_package(id) ON DELETE CASCADE,
+    CONSTRAINT lab_profile_test_id_fkey FOREIGN KEY (test_id) REFERENCES app.lab_test(id) ON DELETE SET NULL,
     CONSTRAINT lab_profile_pkey PRIMARY KEY (id)
+);
+
+CREATE TABLE app.lab_test_field_option (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    field_key text NOT NULL,
+    value text NOT NULL,
+    sort integer NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT lab_test_field_option_pkey PRIMARY KEY (id)
 );
 
 CREATE TABLE app.lab_test_group_item (
@@ -1130,6 +1282,17 @@ CREATE TABLE app.lab_test_special_rate (
     CONSTRAINT lab_test_special_rate_test_id_fkey FOREIGN KEY (test_id) REFERENCES app.lab_test(id) ON DELETE CASCADE,
     CONSTRAINT lab_test_special_rate_pkey PRIMARY KEY (id),
     CONSTRAINT lab_test_special_rate_unique UNIQUE (test_id, ref_lab)
+);
+
+CREATE TABLE app.ledger_period (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    entity_id bigint NOT NULL,
+    period date NOT NULL,
+    closed_at timestamptz,
+    closed_by text,
+    CONSTRAINT ledger_period_entity_id_fkey FOREIGN KEY (entity_id) REFERENCES app.legal_entity(id),
+    CONSTRAINT ledger_period_pkey PRIMARY KEY (id),
+    CONSTRAINT ledger_period_entity_id_period_key UNIQUE (entity_id, period)
 );
 
 CREATE TABLE app.lsgd (
@@ -1220,6 +1383,18 @@ CREATE TABLE app.order_track_step (
     CONSTRAINT order_track_step_pkey PRIMARY KEY (id)
 );
 
+CREATE TABLE app.posting_rule (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    event text NOT NULL,
+    line_role text NOT NULL,
+    account_code text NOT NULL,
+    is_provisional boolean NOT NULL DEFAULT true,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT posting_rule_account_code_fkey FOREIGN KEY (account_code) REFERENCES app.chart_of_account(code),
+    CONSTRAINT posting_rule_pkey PRIMARY KEY (id),
+    CONSTRAINT posting_rule_event_line_role_key UNIQUE (event, line_role)
+);
+
 CREATE TABLE app.prescription_image (
     id bigint GENERATED ALWAYS AS IDENTITY,
     prescription_id bigint NOT NULL,
@@ -1291,6 +1466,16 @@ CREATE TABLE app.product_faq (
     CONSTRAINT product_faq_pkey PRIMARY KEY (id)
 );
 
+CREATE TABLE app.product_image (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    product_id bigint NOT NULL,
+    image text NOT NULL,
+    sort integer NOT NULL DEFAULT 0,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT product_image_product_id_fkey FOREIGN KEY (product_id) REFERENCES app.product(id) ON DELETE CASCADE,
+    CONSTRAINT product_image_pkey PRIMARY KEY (id)
+);
+
 CREATE TABLE app.promo (
     id bigint GENERATED ALWAYS AS IDENTITY,
     title_top text,
@@ -1352,6 +1537,25 @@ CREATE TABLE app.reward_point_transaction (
     CONSTRAINT reward_point_transaction_pkey PRIMARY KEY (id)
 );
 
+CREATE TABLE app.staff_audit_log (
+    id bigint GENERATED ALWAYS AS IDENTITY,
+    staff_id bigint,
+    staff_login_id text NOT NULL,
+    staff_name text NOT NULL,
+    staff_role text NOT NULL,
+    store_id bigint,
+    action text NOT NULL,
+    method text NOT NULL,
+    path text NOT NULL,
+    status_code integer NOT NULL,
+    request_body jsonb,
+    ip text,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT staff_audit_log_staff_id_fkey FOREIGN KEY (staff_id) REFERENCES app.admin_user(id) ON DELETE SET NULL,
+    CONSTRAINT staff_audit_log_store_id_fkey FOREIGN KEY (store_id) REFERENCES app.shield_store(id) ON DELETE SET NULL,
+    CONSTRAINT staff_audit_log_pkey PRIMARY KEY (id)
+);
+
 CREATE TABLE app.ward (
     id uuid NOT NULL DEFAULT uuidv7(),
     lsgd_id uuid NOT NULL,
@@ -1408,17 +1612,38 @@ DECLARE
     v_sold_by_agent_id   bigint;
     v_seller_id          bigint;
     v_seller_level       app.agent_level;
-    v_pool               numeric(12,2);
-    v_direct_share       numeric(12,2);
-    v_distributed        numeric(12,2) := 0;
-    v_ancestor_id        bigint;
-    v_credit_id          bigint;
-    v_hop_share          numeric(12,2);
-    v_hop_rates          numeric[] := ARRAY[0.10, 0.06, 0.05, 0.04, 0.03, 0.02];
-    v_hop                int;
-    v_reserve            numeric(12,2);
-    v_referrer_id        bigint;
-    v_company_share      numeric(12,2);
+    v_pool                numeric(12,2);
+    v_direct_share        numeric(12,2);
+    v_distributed          numeric(12,2) := 0;
+    v_ancestor_id         bigint;
+    v_credit_id           bigint;
+    v_hop_share           numeric(12,2);
+    v_hop_rates           numeric[] := ARRAY[0.10, 0.06, 0.05, 0.04, 0.03, 0.02];
+    v_hop                 int;
+    v_reserve             numeric(12,2);
+    v_referrer_id         bigint;
+    v_referral_commission numeric(12,2);
+    v_referrer_wallet_id  bigint;
+    v_referral_id         bigint;
+    v_company_share       numeric(12,2);
+    -- ledger posting (migration 0075)
+    v_received            numeric(12,2);
+    v_entity_id            bigint;
+    v_entry_id             uuid;
+    v_acct_cash            bigint;
+    v_acct_due             bigint;
+    -- ledger posting (migration 0076; provisional) — Head Office side
+    v_hq_entity_id         bigint;
+    v_hq_entry_id          uuid;
+    v_acct_due_from        bigint;
+    v_acct_wallet          bigint;
+    v_acct_agent_payable   bigint;
+    v_acct_reserve_company bigint;
+    v_acct_reserve_pool    bigint;
+    v_acct_bonus_expense   bigint;
+    v_acct_commission_exp  bigint;
+    v_acct_suspense        bigint;
+    v_plug                 numeric(12,2);
 BEGIN
     UPDATE app.wallet_card
        SET status = 'APPROVED', reviewed_at = now()
@@ -1455,13 +1680,7 @@ BEGIN
     FROM app.agent_customer ac
     WHERE ac.member_id = v_member_id;
 
-    -- Who this is: an agent-sold activation (sold_by_agent_id at submission,
-    -- or a matching app.agent_customer direct-sale link — either the agent's
-    -- own SHD-… code or, since this migration, their permanent Member ID)
-    -- XOR a plain member-to-member referral. Never both — recordSignup /
-    -- applySignupCode refuse to create the member-referral edge for a code
-    -- whose owner is a current agent, so at most one of v_seller_level /
-    -- v_referrer_id is ever set for the same buyer.
+    -- Agent commission split.
     SELECT COALESCE(
         v_sold_by_agent_id,
         (SELECT ac.agent_id FROM app.agent_customer ac WHERE ac.member_id = v_member_id LIMIT 1)
@@ -1473,15 +1692,6 @@ BEGIN
         WHERE id = v_seller_id AND approval_status = 'APPROVED';
     END IF;
 
-    SELECT referred_by_member_id INTO v_referrer_id FROM app.users WHERE id = v_member_id;
-    IF v_referrer_id IS NULL THEN
-        SELECT inviter_member_id INTO v_referrer_id
-        FROM app.referral
-        WHERE invitee_member_id = v_member_id
-        ORDER BY id DESC LIMIT 1;
-    END IF;
-
-    -- ---- Agent commission structure: 60% direct + hop overrides + leftover ----
     IF v_seller_level IS NOT NULL THEN
         v_pool := v_amount * 0.10;
         v_direct_share := ROUND(v_pool * 0.60, 2);
@@ -1490,6 +1700,10 @@ BEGIN
            SET earned         = earned + v_direct_share,
                personal_sales = personal_sales + v_amount
          WHERE id = v_seller_id;
+
+        -- migration 0079: the direct seller's own row (hop 0).
+        INSERT INTO app.agent_commission (wallet_card_id, agent_id, hop, rate, amount)
+        VALUES (p_card_id, v_seller_id, 0, 0.60, v_direct_share);
 
         v_distributed := v_direct_share;
 
@@ -1505,6 +1719,11 @@ BEGIN
             IF v_credit_id IS NOT NULL THEN
                 v_hop_share := ROUND(v_pool * v_hop_rates[v_hop], 2);
                 UPDATE app.agent SET earned = earned + v_hop_share WHERE id = v_credit_id;
+
+                -- migration 0079: this ancestor's own row (hop = v_hop).
+                INSERT INTO app.agent_commission (wallet_card_id, agent_id, hop, rate, amount)
+                VALUES (p_card_id, v_credit_id, v_hop, v_hop_rates[v_hop], v_hop_share);
+
                 v_distributed := v_distributed + v_hop_share;
             END IF;
         END LOOP;
@@ -1514,25 +1733,235 @@ BEGIN
             INSERT INTO app.commission_reserve_entry (wallet_card_id, amount, source)
             VALUES (p_card_id, v_reserve, 'POOL_LEFTOVER');
         END IF;
-
-    -- ---- Plain member-referral structure: 2% to the referrer + 8% reserved ----
-    ELSIF v_referrer_id IS NOT NULL THEN
-        v_company_share := ROUND(v_amount * 0.08, 2);
-        IF v_company_share > 0 THEN
-            INSERT INTO app.commission_reserve_entry (wallet_card_id, amount, source)
-            VALUES (p_card_id, v_company_share, 'COMPANY_SHARE');
-        END IF;
-        -- The 2% itself is paid below, by app.pay_referral_commission, the
-        -- same call every approval path already goes through.
     END IF;
-    -- Neither an agent nor a referrer: nothing is reserved — there is no
-    -- commission relationship on this activation for a share to be a share of.
+
+    -- The company's own 8% of the load, on EVERY approved activation -- whether
+    -- or not an agent sold it, and whether or not the member was referred.
+    -- Company money: it only lands in the Reserved ledger, never in a member's
+    -- or an agent's wallet. Independent of the leftover entry above, which is
+    -- the unspent part of the agent pool and exists only for agent sales.
+    v_company_share := ROUND(v_amount * 0.08, 2);
+    IF v_company_share > 0 THEN
+        INSERT INTO app.commission_reserve_entry (wallet_card_id, amount, source)
+        VALUES (p_card_id, v_company_share, 'COMPANY_SHARE');
+    END IF;
+
+    -- Member-to-member referral commission -- every plan this member
+    -- activates, not just their first, pays whoever referred them (if
+    -- anyone did) 2% of the load. Independent of the agent split above.
+    SELECT referred_by_member_id INTO v_referrer_id FROM app.users WHERE id = v_member_id;
 
     IF v_referrer_id IS NOT NULL THEN
-        PERFORM app.pay_referral_commission(p_card_id, v_referrer_id);
+        v_referral_commission := ROUND(v_amount * 0.02, 2);
+
+        SELECT id INTO v_referrer_wallet_id FROM app.wallet WHERE member_id = v_referrer_id;
+        IF v_referrer_wallet_id IS NULL THEN
+            INSERT INTO app.wallet (member_id) VALUES (v_referrer_id) RETURNING id INTO v_referrer_wallet_id;
+        END IF;
+
+        INSERT INTO app.wallet_entry (wallet_id, kind, label, amount, occurred_on, wallet_card_id)
+        VALUES (v_referrer_wallet_id, 'REFERRAL_EARNINGS', 'Referral commission', v_referral_commission, current_date, p_card_id);
+
+        UPDATE app.wallet
+           SET balance = balance + v_referral_commission, updated_at = now()
+         WHERE id = v_referrer_wallet_id;
+
+        -- The most recent edge for this exact pair, if one already exists
+        -- (from apply-code REGISTERED, or an earlier order's TRANSACTED) --
+        -- this activation is otherwise the first evidence of the edge.
+        SELECT id INTO v_referral_id
+        FROM app.referral
+        WHERE inviter_member_id = v_referrer_id AND invitee_member_id = v_member_id
+        ORDER BY id DESC
+        LIMIT 1;
+
+        IF v_referral_id IS NOT NULL THEN
+            UPDATE app.referral
+               SET status = 'PLAN_ACTIVATED',
+                   plan_amount = v_amount,
+                   commission_amount = commission_amount + v_referral_commission,
+                   plan_activated_at = now()
+             WHERE id = v_referral_id;
+        ELSE
+            INSERT INTO app.referral (inviter_member_id, invitee_member_id, status, plan_amount, commission_amount, plan_activated_at)
+            VALUES (v_referrer_id, v_member_id, 'PLAN_ACTIVATED', v_amount, v_referral_commission, now());
+        END IF;
+
+        PERFORM app.award_referral_level_points(v_referrer_id);
     END IF;
 
+    -- ---- ledger posting (migration 0075; provisional) --------------------
+    -- Only the store's own cash receipt: Dr Cash — store, Cr Due to Head
+    -- Office, for whatever was actually received (received_amount, falling
+    -- back to the load amount when no receipt figure was recorded). See
+    -- this migration's header for why nothing else from this function is
+    -- posted yet.
+    BEGIN
+        SELECT s.entity_id, COALESCE(wc.received_amount, v_amount)
+          INTO v_entity_id, v_received
+          FROM app.wallet_card wc
+          JOIN app.shield_store s ON s.id = wc.store_id
+         WHERE wc.id = p_card_id;
+
+        IF v_entity_id IS NOT NULL AND v_received > 0 THEN
+            v_acct_cash := app.ledger_account('activation_received', 'cash_in');
+            v_acct_due  := app.ledger_account('activation_received', 'due_to_head_office');
+
+            IF v_acct_cash IS NOT NULL AND v_acct_due IS NOT NULL THEN
+                PERFORM app.assert_ledger_period_open(v_entity_id, current_date);
+
+                INSERT INTO app.journal_entry (entity_id, posted_on, source_table, source_id, event, description)
+                VALUES (v_entity_id, current_date, 'wallet_card', p_card_id::text, 'activation_received',
+                        'Health Pass activation received at store')
+                RETURNING id INTO v_entry_id;
+
+                INSERT INTO app.journal_line (entry_id, account_id, debit, credit) VALUES
+                    (v_entry_id, v_acct_cash, v_received, 0),
+                    (v_entry_id, v_acct_due, 0, v_received);
+
+                PERFORM app.assert_journal_entry_balanced(v_entry_id);
+            END IF;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Ledger posting skipped for wallet_card %: %', p_card_id, SQLERRM;
+    END;
+
+    -- ---- ledger posting (migration 0076; provisional) ----------------------
+    -- The Head Office side deferred in migration 0075: the member wallet
+    -- credit, the bonus, the agent commissions and the reserves this
+    -- activation creates — none of them tied to one shop (see that
+    -- migration's own header). Whatever is left after those known pieces
+    -- and the store's own cash receipt (v_received) is posted to Suspense,
+    -- not guessed at: that gap is exactly the revenue-recognition question
+    -- (is the bonus/commission a day-1 cost, or funded from margin earned
+    -- later when the member spends their wallet?) that needs the
+    -- accountant's answer before this account can be reclassified. Never
+    -- blocks the real approval — see migration 0075's header for why.
+    BEGIN
+        SELECT id INTO v_hq_entity_id FROM app.legal_entity WHERE code = 'HQ';
+        -- Independent of the store block above: known from the card alone,
+        -- so this still posts even when the card has no store/entity.
+        SELECT COALESCE(received_amount, v_amount) INTO v_received FROM app.wallet_card WHERE id = p_card_id;
+
+        IF v_hq_entity_id IS NOT NULL THEN
+            v_acct_due_from        := app.ledger_account('activation_received', 'due_from_store');
+            v_acct_wallet          := app.ledger_account('activation_received', 'member_wallet');
+            v_acct_agent_payable   := app.ledger_account('activation_received', 'agent_commission');
+            v_acct_reserve_company := app.ledger_account('activation_received', 'reserve_company');
+            v_acct_reserve_pool    := app.ledger_account('activation_received', 'reserve_pool');
+            v_acct_bonus_expense   := app.ledger_account('activation_received', 'bonus_expense');
+            v_acct_commission_exp  := app.ledger_account('activation_received', 'agent_commission_expense');
+            v_acct_suspense        := app.ledger_account('activation_received', 'suspense');
+
+            IF v_acct_due_from IS NOT NULL AND v_acct_wallet IS NOT NULL AND v_acct_suspense IS NOT NULL THEN
+                PERFORM app.assert_ledger_period_open(v_hq_entity_id, current_date);
+
+                INSERT INTO app.journal_entry (entity_id, posted_on, source_table, source_id, event, description)
+                VALUES (v_hq_entity_id, current_date, 'wallet_card', p_card_id::text, 'activation_received',
+                        'Health Pass activation booked at Head Office — provisional, pending revenue-recognition review')
+                RETURNING id INTO v_hq_entry_id;
+
+                INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                VALUES (v_hq_entry_id, v_acct_due_from, v_received, 0);
+
+                IF v_bonus > 0 AND v_acct_bonus_expense IS NOT NULL THEN
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                    VALUES (v_hq_entry_id, v_acct_bonus_expense, v_bonus, 0);
+                END IF;
+
+                IF v_distributed > 0 AND v_acct_commission_exp IS NOT NULL THEN
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                    VALUES (v_hq_entry_id, v_acct_commission_exp, v_distributed, 0);
+                END IF;
+
+                INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                VALUES (v_hq_entry_id, v_acct_wallet, 0, v_amount + v_bonus);
+
+                IF v_referral_commission > 0 THEN
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                    VALUES (v_hq_entry_id, v_acct_wallet, 0, v_referral_commission);
+                END IF;
+
+                IF v_distributed > 0 AND v_acct_agent_payable IS NOT NULL THEN
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                    VALUES (v_hq_entry_id, v_acct_agent_payable, 0, v_distributed);
+
+                    -- migration 0079: every agent_commission row this
+                    -- activation created now traces to the journal entry
+                    -- whose 'agent_commission' line actually carries their
+                    -- total — so "who got paid from this entry" is a join,
+                    -- not a guess, going forward.
+                    UPDATE app.agent_commission
+                       SET journal_entry_id = v_hq_entry_id
+                     WHERE wallet_card_id = p_card_id AND journal_entry_id IS NULL;
+                END IF;
+
+                IF v_company_share > 0 AND v_acct_reserve_company IS NOT NULL THEN
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                    VALUES (v_hq_entry_id, v_acct_reserve_company, 0, v_company_share);
+                END IF;
+
+                IF v_reserve > 0 AND v_acct_reserve_pool IS NOT NULL THEN
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                    VALUES (v_hq_entry_id, v_acct_reserve_pool, 0, v_reserve);
+                END IF;
+
+                SELECT COALESCE(SUM(credit), 0) - COALESCE(SUM(debit), 0) INTO v_plug
+                  FROM app.journal_line WHERE entry_id = v_hq_entry_id;
+
+                IF v_plug > 0 THEN
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                    VALUES (v_hq_entry_id, v_acct_suspense, v_plug, 0);
+                ELSIF v_plug < 0 THEN
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit)
+                    VALUES (v_hq_entry_id, v_acct_suspense, 0, -v_plug);
+                END IF;
+
+                PERFORM app.assert_journal_entry_balanced(v_hq_entry_id);
+            END IF;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Head Office ledger posting skipped for wallet_card %: %', p_card_id, SQLERRM;
+    END;
+
     RETURN QUERY SELECT p_card_id;
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION app.assert_journal_entry_balanced(p_entry_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+    v_debit  numeric(12,2);
+    v_credit numeric(12,2);
+BEGIN
+    SELECT COALESCE(SUM(debit), 0), COALESCE(SUM(credit), 0)
+      INTO v_debit, v_credit
+      FROM app.journal_line WHERE entry_id = p_entry_id;
+
+    IF v_debit <> v_credit THEN
+        RAISE EXCEPTION 'Journal entry % does not balance: debit % <> credit %',
+            p_entry_id, v_debit, v_credit;
+    END IF;
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION app.assert_ledger_period_open(p_entity_id bigint, p_on date)
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM app.ledger_period
+        WHERE entity_id = p_entity_id
+          AND period = date_trunc('month', p_on)::date
+          AND closed_at IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'The ledger period for entity % covering % is closed', p_entity_id, p_on;
+    END IF;
 END;
 $function$
 ;
@@ -1546,6 +1975,13 @@ DECLARE
     v_already_awarded  integer;
     v_new_points       integer;
     v_new_level        integer;
+    -- ledger posting (migration 0077; provisional)
+    v_reward_txn_id    bigint;
+    v_hq_entity_id     bigint;
+    v_entry_id         uuid;
+    v_acct_expense     bigint;
+    v_acct_liability   bigint;
+    v_rupees           numeric(12,2);
 BEGIN
     SELECT COUNT(*) INTO v_direct_referrals
     FROM app.referral
@@ -1562,12 +1998,40 @@ BEGIN
 
     IF v_new_points > 0 THEN
         INSERT INTO app.reward_point_transaction (member_id, points, reason, note)
-        VALUES (p_inviter_id, v_new_points, 'REFERRAL_LEVEL', 'Referral ladder — level ' || v_new_level);
+        VALUES (p_inviter_id, v_new_points, 'REFERRAL_LEVEL', 'Referral ladder — level ' || v_new_level)
+        RETURNING id INTO v_reward_txn_id;
 
         UPDATE app.users
            SET reward_points = reward_points + v_new_points,
                referral_level_awarded = v_new_level
          WHERE id = p_inviter_id;
+
+        -- ---- ledger posting (migration 0077; provisional) --------------------
+        BEGIN
+            SELECT id INTO v_hq_entity_id FROM app.legal_entity WHERE code = 'HQ';
+            IF v_hq_entity_id IS NOT NULL THEN
+                v_acct_expense   := app.ledger_account('reward_points_issued', 'expense');
+                v_acct_liability := app.ledger_account('reward_points_issued', 'liability');
+
+                IF v_acct_expense IS NOT NULL AND v_acct_liability IS NOT NULL THEN
+                    PERFORM app.assert_ledger_period_open(v_hq_entity_id, current_date);
+                    v_rupees := ROUND(v_new_points / 100.0, 2);
+
+                    INSERT INTO app.journal_entry (entity_id, posted_on, source_table, source_id, event, description)
+                    VALUES (v_hq_entity_id, current_date, 'reward_point_transaction', v_reward_txn_id::text, 'reward_points_issued',
+                            v_new_points || ' reward points awarded — referral ladder level ' || v_new_level)
+                    RETURNING id INTO v_entry_id;
+
+                    INSERT INTO app.journal_line (entry_id, account_id, debit, credit) VALUES
+                        (v_entry_id, v_acct_expense, v_rupees, 0),
+                        (v_entry_id, v_acct_liability, 0, v_rupees);
+
+                    PERFORM app.assert_journal_entry_balanced(v_entry_id);
+                END IF;
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Ledger posting skipped for reward_point_transaction %: %', v_reward_txn_id, SQLERRM;
+        END;
     END IF;
 END;
 $function$
@@ -1596,6 +2060,93 @@ BEGIN
     RETURN v_code;
 END;
 $function$
+;
+
+CREATE OR REPLACE FUNCTION app.ledger_account(p_event text, p_line_role text)
+ RETURNS bigint
+ LANGUAGE sql
+ STABLE
+AS $function$
+    SELECT ca.id FROM app.posting_rule pr
+    JOIN app.chart_of_account ca ON ca.code = pr.account_code
+    WHERE pr.event = p_event AND pr.line_role = p_line_role;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION app.move_agent_earnings_to_wallet(p_agent_id bigint, p_amount numeric)
+ RETURNS numeric
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  a app.agent%ROWTYPE;
+  held numeric;
+  v_wallet_id bigint;
+  v_balance numeric;
+  v_wallet_entry_id bigint;
+  v_hq_entity_id bigint;
+  v_entry_id uuid;
+  v_acct_payable bigint;
+  v_acct_wallet bigint;
+BEGIN
+  SELECT * INTO a FROM app.agent WHERE id = p_agent_id FOR UPDATE;
+  IF NOT FOUND OR a.approval_status <> 'APPROVED' OR NOT a.active THEN
+    RAISE EXCEPTION 'Only an active approved agent can add earnings to a wallet';
+  END IF;
+  IF a.member_id IS NULL THEN
+    RAISE EXCEPTION 'This agent has no member account to hold a wallet';
+  END IF;
+  IF p_amount IS NULL OR p_amount <= 0 OR p_amount <> round(p_amount, 2) THEN
+    RAISE EXCEPTION 'Enter a valid amount to add';
+  END IF;
+  SELECT coalesce(sum(amount), 0) INTO held FROM app.agent_withdrawal
+    WHERE agent_id = a.id AND status = 'PENDING';
+  IF p_amount > a.earned - a.redeemed - held THEN
+    RAISE EXCEPTION 'Amount exceeds your available earnings after pending withdrawals';
+  END IF;
+
+  SELECT id INTO v_wallet_id FROM app.wallet WHERE member_id = a.member_id FOR UPDATE;
+  IF v_wallet_id IS NULL THEN
+    INSERT INTO app.wallet (member_id) VALUES (a.member_id) RETURNING id INTO v_wallet_id;
+  END IF;
+
+  UPDATE app.agent SET redeemed = redeemed + p_amount WHERE id = a.id;
+  INSERT INTO app.wallet_entry (wallet_id, kind, label, amount, occurred_on)
+    VALUES (v_wallet_id, 'AGENT_EARNINGS', 'Agent commission · ' || a.code, p_amount, current_date)
+    RETURNING id INTO v_wallet_entry_id;
+  UPDATE app.wallet SET balance = balance + p_amount, updated_at = now()
+    WHERE id = v_wallet_id RETURNING balance INTO v_balance;
+
+  -- ---- ledger posting (migration 0075; provisional) ------------------------
+  BEGIN
+      SELECT id INTO v_hq_entity_id FROM app.legal_entity WHERE code = 'HQ';
+      IF v_hq_entity_id IS NOT NULL THEN
+          v_acct_payable := app.ledger_account('wallet_transfer', 'payable');
+          v_acct_wallet := app.ledger_account('wallet_transfer', 'member_wallet');
+          IF v_acct_payable IS NOT NULL AND v_acct_wallet IS NOT NULL THEN
+              PERFORM app.assert_ledger_period_open(v_hq_entity_id, current_date);
+
+              INSERT INTO app.journal_entry (entity_id, posted_on, source_table, source_id, event, description)
+              VALUES (v_hq_entity_id, current_date, 'wallet_entry', v_wallet_entry_id::text, 'wallet_transfer',
+                      'Agent earnings moved to wallet - ' || a.code)
+              RETURNING id INTO v_entry_id;
+
+              -- subject_type/subject_id added (migration 0091): same
+              -- underlying person, two different roles on the two lines —
+              -- the payable side is them as an agent, the wallet side is
+              -- them as a member.
+              INSERT INTO app.journal_line (entry_id, account_id, debit, credit, subject_type, subject_id) VALUES
+                  (v_entry_id, v_acct_payable, p_amount, 0, 'agent', a.id),
+                  (v_entry_id, v_acct_wallet, 0, p_amount, 'member', a.member_id);
+
+              PERFORM app.assert_journal_entry_balanced(v_entry_id);
+          END IF;
+      END IF;
+  EXCEPTION WHEN OTHERS THEN
+      RAISE WARNING 'Ledger posting skipped for wallet_entry %: %', v_wallet_entry_id, SQLERRM;
+  END;
+
+  RETURN v_balance;
+END $function$
 ;
 
 CREATE OR REPLACE FUNCTION app.request_agent_withdrawal(p_agent_id bigint, p_amount numeric)
@@ -1629,7 +2180,14 @@ CREATE OR REPLACE FUNCTION app.review_agent_withdrawal(p_id bigint, p_action tex
  RETURNS void
  LANGUAGE plpgsql
 AS $function$
-DECLARE r app.agent_withdrawal%ROWTYPE; a app.agent%ROWTYPE; held numeric;
+DECLARE
+  r app.agent_withdrawal%ROWTYPE;
+  a app.agent%ROWTYPE;
+  held numeric;
+  v_hq_entity_id bigint;
+  v_entry_id uuid;
+  v_acct_payable bigint;
+  v_acct_cash_out bigint;
 BEGIN
   SELECT * INTO r FROM app.agent_withdrawal WHERE id = p_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Withdrawal request not found'; END IF;
@@ -1668,6 +2226,33 @@ BEGIN
     UPDATE app.agent SET redeemed = redeemed + r.amount WHERE id = a.id;
     UPDATE app.agent_withdrawal SET status = 'PAID', processed_on = current_date,
       processed_by = p_reviewer, payment_reference = trim(p_payment_reference) WHERE id = p_id;
+
+    -- ---- ledger posting (migration 0075; provisional) ----------------------
+    BEGIN
+        SELECT id INTO v_hq_entity_id FROM app.legal_entity WHERE code = 'HQ';
+        IF v_hq_entity_id IS NOT NULL THEN
+            v_acct_payable := app.ledger_account('withdrawal_paid', 'payable');
+            v_acct_cash_out := app.ledger_account('withdrawal_paid', 'cash_out');
+            IF v_acct_payable IS NOT NULL AND v_acct_cash_out IS NOT NULL THEN
+                PERFORM app.assert_ledger_period_open(v_hq_entity_id, current_date);
+
+                INSERT INTO app.journal_entry (entity_id, posted_on, source_table, source_id, event, description)
+                VALUES (v_hq_entity_id, current_date, 'agent_withdrawal', p_id::text, 'withdrawal_paid',
+                        'Agent withdrawal paid - ' || a.code)
+                RETURNING id INTO v_entry_id;
+
+                -- subject_type/subject_id added (migration 0091): this
+                -- payable line is this one withdrawal's own agent.
+                INSERT INTO app.journal_line (entry_id, account_id, debit, credit, subject_type, subject_id) VALUES
+                    (v_entry_id, v_acct_payable, r.amount, 0, 'agent', a.id),
+                    (v_entry_id, v_acct_cash_out, 0, r.amount, NULL, NULL);
+
+                PERFORM app.assert_journal_entry_balanced(v_entry_id);
+            END IF;
+        END IF;
+    EXCEPTION WHEN OTHERS THEN
+        RAISE WARNING 'Ledger posting skipped for agent_withdrawal %: %', p_id, SQLERRM;
+    END;
   END IF;
 END $function$
 ;
@@ -1732,6 +2317,8 @@ CREATE TRIGGER ward_touch BEFORE UPDATE ON app.ward FOR EACH ROW EXECUTE FUNCTIO
 
 -- ---- Indexes -----------------------------------------------------------------
 CREATE INDEX agent_approval_status_idx ON app.agent USING btree (approval_status, created_at DESC);
+CREATE INDEX agent_commission_agent_idx ON app.agent_commission USING btree (agent_id);
+CREATE INDEX agent_commission_card_idx ON app.agent_commission USING btree (wallet_card_id);
 CREATE INDEX agent_customer_agent_idx ON app.agent_customer USING btree (agent_id);
 CREATE INDEX agent_parent_idx ON app.agent USING btree (parent_id);
 CREATE INDEX agent_phone_idx ON app.agent USING btree (phone);
@@ -1748,12 +2335,18 @@ CREATE INDEX commission_reserve_entry_card_idx ON app.commission_reserve_entry U
 CREATE INDEX customer_review_video_media_incomplete_idx ON app.customer_review_video_media USING btree (created_at) WHERE (upload_complete = false);
 CREATE INDEX customer_review_video_sort_idx ON app.customer_review_video USING btree (sort);
 CREATE INDEX district_state_idx ON app.district USING btree (state_id);
+CREATE INDEX home_banner_placement_idx ON app.home_banner USING btree (placement, sort);
 CREATE INDEX investor_phone_idx ON app.investor USING btree (phone);
+CREATE INDEX journal_entry_entity_idx ON app.journal_entry USING btree (entity_id, posted_on);
+CREATE INDEX journal_line_account_idx ON app.journal_line USING btree (account_id);
+CREATE INDEX journal_line_entry_idx ON app.journal_line USING btree (entry_id);
+CREATE INDEX journal_line_subject_idx ON app.journal_line USING btree (subject_type, subject_id, account_id);
 CREATE INDEX lab_bill_line_bill_idx ON app.lab_bill_line USING btree (lab_bill_id);
 CREATE INDEX lab_booking_member_idx ON app.lab_booking USING btree (member_id, created_at DESC);
 CREATE INDEX lab_booking_report_booking_idx ON app.lab_booking_report USING btree (lab_booking_id, sort, id);
 CREATE INDEX lab_booking_store_idx ON app.lab_booking USING btree (store_id);
 CREATE INDEX lab_package_category_idx ON app.lab_package USING btree (category_id);
+CREATE INDEX lab_package_extra_category_category_idx ON app.lab_package_extra_category USING btree (category_id);
 CREATE INDEX lab_package_test_item_test_idx ON app.lab_package_test_item USING btree (test_id);
 CREATE INDEX lab_test_category_idx ON app.lab_test USING btree (category_id);
 CREATE INDEX lab_test_group_item_test_idx ON app.lab_test_group_item USING btree (test_id);
@@ -1771,10 +2364,13 @@ CREATE INDEX prescription_member_idx ON app.prescription USING btree (member_id)
 CREATE INDEX prescription_store_idx ON app.prescription USING btree (store_id);
 CREATE INDEX product_category_idx ON app.product USING btree (category_id);
 CREATE INDEX product_home_section_idx ON app.product USING btree (is_popular, is_deal, is_offer_of_day) WHERE (is_popular OR is_deal OR is_offer_of_day);
+CREATE INDEX product_image_product_idx ON app.product_image USING btree (product_id, sort);
 CREATE INDEX product_name_trgm ON app.product USING gin (lower(name) app.gin_trgm_ops);
 CREATE INDEX referral_inviter_idx ON app.referral USING btree (inviter_member_id);
 CREATE INDEX region_national_agent_idx ON app.region USING btree (national_agent_id);
 CREATE INDEX reward_point_member_idx ON app.reward_point_transaction USING btree (member_id, created_at DESC);
+CREATE INDEX staff_audit_log_created_idx ON app.staff_audit_log USING btree (created_at DESC);
+CREATE INDEX staff_audit_log_staff_idx ON app.staff_audit_log USING btree (staff_id, created_at DESC);
 CREATE INDEX state_region_idx ON app.state USING btree (region_id);
 CREATE INDEX wallet_card_status_idx ON app.wallet_card USING btree (status, submitted_at DESC);
 CREATE INDEX wallet_card_wallet_idx ON app.wallet_card USING btree (wallet_id);
