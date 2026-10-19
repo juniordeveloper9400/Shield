@@ -360,6 +360,27 @@ describe('Care Services (e2e)', () => {
     expect(detail.body.patients).toHaveLength(2);
   });
 
+  it('stores the fulfillmentType the member actually chose, not just the default', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/v1/member/lab-bookings')
+      .set('Authorization', `Bearer ${memberAccessToken}`)
+      .send({ labPackageId, patients: [{ patientId: ownedPatientId }], fulfillmentType: 'STORE_VISIT' })
+      .expect(201);
+    expect(res.body.fulfillmentType).toBe('STORE_VISIT');
+
+    const staffList = await request(app.getHttpServer())
+      .get('/v1/staff/lab-bookings')
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .expect(200);
+    const saved = staffList.body.find((row: { id: number }) => row.id === res.body.id);
+    expect(saved.fulfillmentType).toBe('STORE_VISIT');
+
+    // A one-off fixture, not the shared labBookingId the tests below build on
+    // — removed so it doesn't show up in that member's own booking list.
+    await db.delete(labBookingPatient).where(eq(labBookingPatient.labBookingId, res.body.id));
+    await db.delete(labBooking).where(eq(labBooking.id, res.body.id));
+  });
+
   it('refuses to confirm a home-collection booking until someone is assigned, lists lab staff, then confirms once assigned', async () => {
     const refused = await request(app.getHttpServer())
       .patch(`/v1/staff/lab-bookings/${labBookingId}/status`)
