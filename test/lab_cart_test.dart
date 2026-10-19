@@ -664,8 +664,12 @@ void main() {
       expect(find.text('2 patients'), findsOneWidget);
       expect(find.text('₹2,598'), findsWidgets);
       expect(find.text('₹1,299 × 2'), findsOneWidget);
-      expect(find.text('For 2 patients'), findsOneWidget);
-      expect(find.text('FREE'), findsOneWidget);
+      // No bill summary on the cart — the lab shows the total bill.
+      expect(find.text('Bill summary'), findsNothing);
+      expect(
+        find.text('The total bill for your lab tests will be shown by the lab.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('who the booking is for can be changed from the basket', (
@@ -699,12 +703,6 @@ void main() {
 
       expect(LabCartService.instance.bookings.single.patients.length, 4);
       expect(find.text('₹5,196'), findsWidgets);
-      // The bill card itself — not just the booking's own line — reflects
-      // the new count: a regression check for a canonicalized `const
-      // _BillCard()` silently going stale on this exact kind of edit (the
-      // booking count does not change, only its patient count).
-      expect(find.text('- ₹7,796'), findsOneWidget);
-      expect(find.text('For 4 patients'), findsOneWidget);
     });
 
     testWidgets('a booking can be removed', (tester) async {
