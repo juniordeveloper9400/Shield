@@ -10,6 +10,7 @@ import {
   labPackageExtraCategory,
   labProfile,
   labTest,
+  labTestGroupItem,
 } from '../../db/schema';
 import { CacheService } from '../../cache/cache.service';
 import type { CreateLabCategoryDto, UpdateLabCategoryDto } from './dto';
@@ -160,6 +161,14 @@ export class CareService {
     return this.cache.getOrSet(`care:lab-test:${id}`, TTL, async () => {
       const [found] = await this.db.select().from(labTest).where(eq(labTest.id, id)).limit(1);
       if (!found || !found.isActive) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Test not found' } });
+      // For a group test or package: the tests it is made of, in the order the
+      // admin set them (the "Set Grouptest" tab). A plain test has none.
+      const members = await this.db
+        .select({ name: labTest.name, isSubhead: labTestGroupItem.isSubhead })
+        .from(labTestGroupItem)
+        .innerJoin(labTest, eq(labTest.id, labTestGroupItem.testId))
+        .where(eq(labTestGroupItem.groupId, id))
+        .orderBy(asc(labTestGroupItem.setOrder), asc(labTestGroupItem.id));
       return {
         id: found.id,
         name: found.name,
@@ -175,6 +184,7 @@ export class CareService {
         symptoms: found.symptoms,
         about: (found.description ?? '').trim() || (found.specification1 ?? '').trim(),
         whyThisTest: (found.specification2 ?? '').trim(),
+        includedTests: members,
       };
     });
   }

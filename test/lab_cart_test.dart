@@ -565,6 +565,51 @@ void main() {
     );
   });
 
+  group('the package screen — included tests', () {
+    tearDown(() => CareRepository.labTestDetailOverride = null);
+
+    testWidgets('tapping an included test lists what is inside it, ticked', (
+      tester,
+    ) async {
+      CareRepository.labTestDetailOverride = (id) async => const LabTestDetail(
+        id: '5',
+        name: 'CBC (Complete Blood Count)',
+        about: 'Anaemia, infection and immunity markers',
+        includedTests: [
+          LabIncludedTest('Hemoglobin Hb'),
+          LabIncludedTest('MCV'),
+        ],
+      );
+      const package = LabPackage(
+        id: '9',
+        name: 'Full Body',
+        testCount: 1,
+        profileCount: 1,
+        price: '999',
+        mrp: '2,498',
+        profiles: [LabProfile('', 'CBC (Complete Blood Count)', 2, testId: '5')],
+      );
+      await pump(
+        tester,
+        const LabPackageScreen(package: package),
+        size: const Size(400, 1800),
+      );
+
+      expect(find.text('Included in this package'), findsOneWidget);
+      expect(find.text('Includes these tests'), findsNothing);
+
+      await tester.tap(find.text('CBC (Complete Blood Count)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('2'), findsWidgets);
+      expect(find.text('TESTS'), findsOneWidget);
+      expect(find.text('Anaemia, infection and immunity markers'), findsOneWidget);
+      expect(find.text('Hemoglobin Hb'), findsOneWidget);
+      expect(find.text('MCV'), findsOneWidget);
+      expect(find.byIcon(Icons.check_rounded), findsNWidgets(2));
+    });
+  });
+
   group('the package screen', () {
     testWidgets('shows the facts the reference calls for', (tester) async {
       await pump(
