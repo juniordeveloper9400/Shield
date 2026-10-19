@@ -64,9 +64,16 @@ export class LabTestService {
    *  / `listLabCategories`) are cached for 5 minutes — a write here that
    *  changes what either would return has to bust them itself, or a just
    *  -activated package / just-edited test sits invisible in the app for
-   *  up to that long. */
+   *  up to that long. The per-item reads (`getLabPackage`, and
+   *  `getLabTestDetail` — the page that shows a test's About / Why this test
+   *  / Symptoms) are keyed by id, so they are cleared by pattern. */
   private async invalidatePublicCatalogueCache(): Promise<void> {
-    await this.cache.invalidate('care:lab-packages', 'care:lab-categories');
+    await this.cache.invalidate(
+      'care:lab-packages',
+      'care:lab-categories',
+      'care:lab-package:*',
+      'care:lab-test:*',
+    );
   }
 
   // ---- Test Master --------------------------------------------------------
@@ -473,6 +480,7 @@ export class LabTestService {
         name: labTest.name,
         shortName: labTest.shortName,
         description: labTest.description,
+        specification1: labTest.specification1,
         specification2: labTest.specification2,
         symptoms: labTest.symptoms,
         rate: labTest.rate,
@@ -515,7 +523,7 @@ export class LabTestService {
       .values({
         slug,
         name: t.name,
-        about: t.description,
+        about: t.description.trim() || t.specification1,
         categoryId: t.categoryId,
         testCount,
         profileCount: 1,
@@ -537,7 +545,7 @@ export class LabTestService {
         set: {
           slug,
           name: t.name,
-          about: t.description,
+          about: t.description.trim() || t.specification1,
           categoryId: t.categoryId,
           testCount,
           profileCount: 1,
