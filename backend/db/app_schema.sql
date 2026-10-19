@@ -1,6 +1,6 @@
 -- ============================================================================
 --  app schema — regenerated from the live database by
---  `dart run backend/db/dump_app_schema.dart --write` on 2026-10-19.
+aadhaar--  `dart run backend/db/dump_app_schema.dart --write` on 2026-10-19.
 --
 --  Machine-generated — do not hand-edit. The prose explaining *why* each
 --  table/column exists lives in backend/db/APP_SCHEMA.md instead, which

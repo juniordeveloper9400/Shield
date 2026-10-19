@@ -169,8 +169,8 @@ export class CareService {
         reportingTime: found.reportingTime,
         fasting: found.fasting,
         symptoms: found.symptoms,
-        about: found.specification1,
-        whyThisTest: found.specification2,
+        about: (found.description ?? '').trim() || (found.specification1 ?? '').trim(),
+        whyThisTest: (found.specification2 ?? '').trim(),
       };
     });
   }

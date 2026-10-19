@@ -123,9 +123,11 @@ class _LabTestScreenState extends State<LabTestScreen> {
       backgroundColor: AppColors.pageTint,
       body: SafeArea(
         bottom: false,
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: ListView(
+            padding: EdgeInsets.zero,
+            children: [
             Container(
               color: AppColors.white,
               padding: const EdgeInsets.fromLTRB(16, 10, 12, 16),
@@ -264,7 +266,8 @@ class _LabTestScreenState extends State<LabTestScreen> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

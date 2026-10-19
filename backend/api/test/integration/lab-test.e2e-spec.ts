@@ -12,7 +12,7 @@ import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { adminUser, labCategory, labPackage, labTest } from '../../src/db/schema';
+import { adminUser, labCategory, labPackage, labProfile, labTest } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
 import { FakeFirebaseVerifier } from './fake-firebase-verifier';
@@ -262,6 +262,51 @@ describe('Lab Test Master & Package builder (e2e)', () => {
       .expect(200);
     expect(readAfter.body.groupItems).toEqual([expect.objectContaining({ name: 'Member Test B' })]);
     expect(readAfter.body.specialRates).toEqual([]);
+  });
+
+  it('updates member listing with profileCount and propagates child test name/shortName edits', async () => {
+    const member = await request(app.getHttpServer())
+      .post('/v1/staff/lab-tests')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({
+        input: { ...BLANK_INPUT, name: 'Original Child Test', shortName: 'OCT', showInApp: true, description: '' },
+        groupItems: [],
+        specialRates: [],
+      })
+      .expect(201);
+    const memberId = member.body.id;
+
+    const pkg = await request(app.getHttpServer())
+      .post('/v1/staff/lab-tests')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({
+        input: { ...BLANK_INPUT, name: 'Package With Child', testType: 'PACKAGE', showInApp: true, description: '' },
+        groupItems: [{ testId: memberId, amount: 200, setOrder: 0, isSubhead: false }],
+        specialRates: [],
+      })
+      .expect(201);
+    const pkgId = pkg.body.id;
+
+    // Check package profile count
+    const [pkgListing] = await db.select().from(labPackage).where(eq(labPackage.sourceTestId, pkgId));
+    expect(pkgListing.profileCount).toBe(1);
+
+    // Edit child test name & shortName, leaving description empty/null
+    await request(app.getHttpServer())
+      .post(`/v1/staff/lab-tests/${memberId}`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .send({
+        input: { ...BLANK_INPUT, name: 'Renamed Child Test', shortName: 'RCT', showInApp: true, description: '' },
+        groupItems: [],
+        specialRates: [],
+      })
+      .expect(201);
+
+    // Verify parent's profiles reflect the child's new name and shortName
+    const profiles = await db.select().from(labProfile).where(eq(labProfile.labPackageId, pkgListing.id));
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].name).toBe('Renamed Child Test');
+    expect(profiles[0].shortName).toBe('RCT');
   });
 
   it('refuses deleting a test still used inside a group, then deletes one with nothing referencing it', async () => {

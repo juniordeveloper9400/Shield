@@ -456,7 +456,7 @@ export class LabTestService {
   // ---- Member-facing listing sync (migration 0056) -------------------------
 
   /** Every saved test, group test and package — re-synced best-effort. */
-  private async syncAllActiveLabTests(): Promise<void> {
+  async syncAllActiveLabTests(): Promise<void> {
     const activeTests = await this.db.select({ id: labTest.id }).from(labTest).where(and(eq(labTest.isActive, true), eq(labTest.showInApp, true)));
     for (const row of activeTests) {
       await this.syncLabTestListing(row.id).catch(() => {});
@@ -504,11 +504,16 @@ export class LabTestService {
       return;
     }
 
-    const [{ count: itemCount }] = await this.db
-      .select({ count: sql<number>`count(*)::int` })
+    const member = alias(labTest, 'member_test');
+    const memberItems = await this.db
+      .select({ id: member.id, name: member.name, shortName: member.shortName })
       .from(labTestGroupItem)
-      .where(eq(labTestGroupItem.groupId, testId));
-    const testCount = t.testType === 'GROUP' || t.testType === 'PACKAGE' ? Math.max(itemCount, 1) : 1;
+      .innerJoin(member, eq(member.id, labTestGroupItem.testId))
+      .where(eq(labTestGroupItem.groupId, testId))
+      .orderBy(asc(labTestGroupItem.setOrder), asc(labTestGroupItem.id));
+
+    const testCount = t.testType === 'GROUP' || t.testType === 'PACKAGE' ? Math.max(memberItems.length, 1) : 1;
+    const profileCount = t.testType === 'GROUP' || t.testType === 'PACKAGE' ? Math.max(memberItems.length, 1) : 1;
     const price = Number(t.amount);
     const mrp = Math.max(Number(t.rate), price);
 
@@ -518,15 +523,18 @@ export class LabTestService {
     `);
     const slug = takenResult.rows[0]?.taken ? `${base}-${testId}` : base;
 
+    const aboutText = (t.description ?? '').trim() || (t.specification1 ?? '').trim();
+    const whyThisTestText = (t.specification2 ?? '').trim();
+
     const [saved] = await this.db
       .insert(labPackage)
       .values({
         slug,
         name: t.name,
-        about: t.description.trim() || t.specification1,
+        about: aboutText,
         categoryId: t.categoryId,
         testCount,
-        profileCount: 1,
+        profileCount,
         price: price.toString(),
         mrp: mrp.toString(),
         saved: Math.max(mrp - price, 0).toString(),
@@ -536,19 +544,19 @@ export class LabTestService {
         sourceTestId: testId,
         isMostCommon: t.isMostCommon,
         fasting: t.fasting,
-        shortName: t.shortName,
-        whyThisTest: t.specification2,
-        symptoms: t.symptoms,
+        shortName: t.shortName ?? '',
+        whyThisTest: whyThisTestText,
+        symptoms: t.symptoms ?? [],
       })
       .onConflictDoUpdate({
         target: labPackage.sourceTestId,
         set: {
           slug,
           name: t.name,
-          about: t.description.trim() || t.specification1,
+          about: aboutText,
           categoryId: t.categoryId,
           testCount,
-          profileCount: 1,
+          profileCount,
           price: price.toString(),
           mrp: mrp.toString(),
           saved: Math.max(mrp - price, 0).toString(),
@@ -557,21 +565,13 @@ export class LabTestService {
           isActive: true,
           isMostCommon: t.isMostCommon,
           fasting: t.fasting,
-          shortName: t.shortName,
-          whyThisTest: t.specification2,
-          symptoms: t.symptoms,
+          shortName: t.shortName ?? '',
+          whyThisTest: whyThisTestText,
+          symptoms: t.symptoms ?? [],
         },
       })
       .returning({ id: labPackage.id });
     const packageId = saved.id;
-
-    const member = alias(labTest, 'member_test');
-    const memberItems = await this.db
-      .select({ id: member.id, name: member.name, shortName: member.shortName })
-      .from(labTestGroupItem)
-      .innerJoin(member, eq(member.id, labTestGroupItem.testId))
-      .where(eq(labTestGroupItem.groupId, testId))
-      .orderBy(asc(labTestGroupItem.setOrder), asc(labTestGroupItem.id));
 
     await this.db.delete(labProfile).where(eq(labProfile.labPackageId, packageId));
     if (memberItems.length > 0) {
@@ -582,11 +582,38 @@ export class LabTestService {
           parameters: 1,
           sort: idx,
           testId: item.id,
-          shortName: item.shortName,
+          shortName: item.shortName ?? '',
         })),
       );
     } else {
-      await this.db.insert(labProfile).values({ labPackageId: packageId, name: t.name, parameters: testCount, sort: 0 });
+      await this.db.insert(labProfile).values({
+        labPackageId: packageId,
+        name: t.name,
+        parameters: testCount,
+        sort: 0,
+        testId: t.id,
+        shortName: t.shortName ?? '',
+      });
+    }
+
+    // Keep name & shortName in step across any other package/group where this test is included
+    await this.db
+      .update(labProfile)
+      .set({
+        name: t.name,
+        shortName: t.shortName ?? '',
+      })
+      .where(eq(labProfile.testId, testId));
+
+    // Re-sync any parent group tests or packages that include this test
+    const parentGroups = await this.db
+      .select({ groupId: labTestGroupItem.groupId })
+      .from(labTestGroupItem)
+      .where(eq(labTestGroupItem.testId, testId));
+    for (const p of parentGroups) {
+      if (p.groupId !== testId) {
+        await this.syncLabTestListing(p.groupId).catch(() => {});
+      }
     }
   }
 
