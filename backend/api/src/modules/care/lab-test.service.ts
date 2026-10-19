@@ -603,6 +603,19 @@ export class LabTestService {
       .orderBy(asc(labPackage.sort), asc(labPackage.name));
   }
 
+  /** Deletes a package built in the old package builder (`source_test_id`
+   *  null). Its profiles and test links go with it (cascade); a member's
+   *  earlier bookings keep their own text copy. A test's own one-test
+   *  listing is never deleted here — it follows its test. */
+  async deleteLabPackage(id: number): Promise<void> {
+    const [deleted] = await this.db
+      .delete(labPackage)
+      .where(and(eq(labPackage.id, id), sql`${labPackage.sourceTestId} IS NULL`))
+      .returning({ id: labPackage.id });
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab package not found' } });
+    await this.invalidatePublicCatalogueCache();
+  }
+
   async setLabPackageActive(id: number, isActive: boolean) {
     const [updated] = await this.db.update(labPackage).set({ isActive }).where(eq(labPackage.id, id)).returning({ id: labPackage.id });
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Lab package not found' } });

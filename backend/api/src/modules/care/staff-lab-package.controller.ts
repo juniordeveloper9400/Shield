@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
 import { LabTestService } from './lab-test.service';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -43,6 +43,11 @@ export class StaffLabPackageController {
   @Patch(':id')
   update(@Param('id', ParseIntPipe) id: number, @Body(new ZodValidationPipe(updateLabPackageBuildSchema)) dto: UpdateLabPackageBuildDto) {
     return this.labTests.updateLabPackageBuild(id, dto);
+  }
+
+  @Delete(':id')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.labTests.deleteLabPackage(id);
   }
 
   @Patch(':id/active')
