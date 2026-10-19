@@ -27,7 +27,7 @@ import {
 } from '../../db/schema';
 import { randomUUID } from 'node:crypto';
 import type { AdminRole } from '../auth/session.types';
-import { availablePlanAllowance, toIsoDate } from '../wallet/wallet-month';
+import { availablePlanAllowance, redeemableAllowance, redeemedThisMonth, toIsoDate } from '../wallet/wallet-month';
 import { assertLegalAppointmentTransition, assertLegalLabBookingTransition, type AppointmentStatus, type LabBookingStatus } from './care-status';
 import type {
   AddLabReportPagesDto,
@@ -502,10 +502,31 @@ export class BookingService {
    *  the order-side equivalent, joined through `app.lab_booking` instead.
    *  Lets the bill panel show what collecting would actually draw before
    *  committing to anything. */
+  /**
+   * The four Health Pass figures the lab-booking bill modal shows staff
+   * before they send the collection OTP — same shape and same pure
+   * functions `OrderService.getWalletPreview` uses, so a lab bill
+   * collection never disagrees with what this preview showed. `0` across
+   * the board for a member with no wallet row at all, same as
+   * `collectLabBillWithWallet` treats one.
+   */
   async getWalletBalanceForLabBooking(role: AdminRole, storeId: number | null, bookingId: number) {
     const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
-    const [row] = await this.db.select({ balance: wallet.balance }).from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
-    return { balance: Number(row?.balance ?? 0) };
+    const [theWallet] = await this.db.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
+    if (!theWallet) {
+      return { balance: 0, availableAllowance: 0, monthlyRedeemable: 0, redeemedThisMonth: 0 };
+    }
+
+    const balance = Number(theWallet.balance);
+    const { cards, entries } = await this.walletMonthInputs(this.db, theWallet.id);
+    const now = new Date();
+
+    return {
+      balance,
+      availableAllowance: cards.length === 0 ? balance : availablePlanAllowance(cards, entries, now, balance),
+      monthlyRedeemable: redeemableAllowance(cards, entries, now),
+      redeemedThisMonth: redeemedThisMonth(entries, now),
+    };
   }
 
   /** Correct this booking only; saved member/patient/address records remain unchanged. */
@@ -886,25 +907,33 @@ export class BookingService {
    * approved wallet card isn't on Health Pass, so nothing caps them beyond
    * their own balance.
    */
-  private async availableWalletCapForMember(tx: Database, walletId: number, balance: number): Promise<number> {
+  /**
+   * The cards/entries shape `wallet-month.ts`'s pure functions all take, for
+   * one member's wallet — shared by `availableWalletCapForMember` and
+   * `getWalletBalanceForLabBooking` so there is one query for it, not two.
+   */
+  private async walletMonthInputs(tx: Database, walletId: number) {
     const cards = await tx
       .select({ amount: walletCard.amount, bonus: walletCard.bonus, rechargedExtra: walletCard.rechargedExtra, issuedOn: walletCard.issuedOn })
       .from(walletCard)
       .where(and(eq(walletCard.walletId, walletId), eq(walletCard.status, 'APPROVED')));
-    if (cards.length === 0) {
-      return balance;
-    }
     const entries = await tx
       .select({ kind: walletEntry.kind, amount: walletEntry.amount, occurredOn: walletEntry.occurredOn, createdAt: walletEntry.createdAt })
       .from(walletEntry)
       .where(eq(walletEntry.walletId, walletId))
       .orderBy(walletEntry.createdAt, walletEntry.id);
-    return availablePlanAllowance(
-      cards.map((c) => ({ loaded: Number(c.amount) + Number(c.bonus) + Number(c.rechargedExtra), issuedOn: toIsoDate(c.issuedOn) })),
-      entries.map((e) => ({ kind: e.kind, amount: Number(e.amount), occurredOn: toIsoDate(e.occurredOn) })),
-      new Date(),
-      balance,
-    );
+    return {
+      cards: cards.map((c) => ({ loaded: Number(c.amount) + Number(c.bonus) + Number(c.rechargedExtra), issuedOn: toIsoDate(c.issuedOn) })),
+      entries: entries.map((e) => ({ kind: e.kind, amount: Number(e.amount), occurredOn: toIsoDate(e.occurredOn) })),
+    };
+  }
+
+  private async availableWalletCapForMember(tx: Database, walletId: number, balance: number): Promise<number> {
+    const { cards, entries } = await this.walletMonthInputs(tx, walletId);
+    if (cards.length === 0) {
+      return balance;
+    }
+    return availablePlanAllowance(cards, entries, new Date(), balance);
   }
 
   async collectLabBillWithWallet(role: AdminRole, storeId: number | null, bookingId: number) {
