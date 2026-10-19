@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart' show FaIcon, FontAwesomeIcons;
 import 'package:geolocator/geolocator.dart';
 
 import '../../phone.dart';
@@ -321,8 +322,7 @@ class _StoreOption extends StatelessWidget {
                   tooltip: 'Message ${store.name} on WhatsApp',
                   visualDensity: VisualDensity.compact,
                   onPressed: () => WhatsApp.open(context, store.phone),
-                  icon: const Icon(
-                    Icons.chat_rounded,
+                  icon: const FaIcon(FontAwesomeIcons.whatsapp,
                     color: AppColors.brandGreenDeep,
                     size: 20,
                   ),

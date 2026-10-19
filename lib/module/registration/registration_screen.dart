@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart' show FaIcon, FontAwesomeIcons;
 import 'package:flutter/services.dart';
 
 import '../../data/backend/contact_repository.dart';
@@ -618,8 +619,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                 IconButton(
                   tooltip: 'Message ${store.name} on WhatsApp',
                   onPressed: () => WhatsApp.open(context, store.phone),
-                  icon: const Icon(
-                    Icons.chat_rounded,
+                  icon: const FaIcon(FontAwesomeIcons.whatsapp,
                     color: AppColors.brandGreenDeep,
                   ),
                 ),
@@ -639,7 +639,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   WhatsAppOption(name: 'Sahakar 360 admin desk', number: _adminWhatsapp!),
                 ],
               ),
-              icon: const Icon(Icons.chat_rounded, color: AppColors.brandGreenDeep),
+              icon: const FaIcon(FontAwesomeIcons.whatsapp, color: AppColors.brandGreenDeep),
               label: const Text('Not sure which store? WhatsApp the admin desk'),
             ),
           ),
