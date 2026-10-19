@@ -583,8 +583,10 @@ void main() {
       expect(find.text('REPORT IN'), findsOneWidget);
       expect(find.text('ORGANS & SYSTEMS COVERED'), findsOneWidget);
       expect(find.text('Pancreas'), findsOneWidget);
-      expect(find.text('₹1,299'), findsOneWidget);
-      expect(find.text('60.01% off'), findsOneWidget);
+      // Shown twice: once in the top card, once in the not-added-yet bottom
+      // bar — the same two-places-at-once layout the reference uses.
+      expect(find.text('₹1,299'), findsNWidgets(2));
+      expect(find.text('60.01% off'), findsNWidgets(2));
       expect(find.text('Add'), findsOneWidget);
       expect(find.text('About this Package'), findsOneWidget);
     });
