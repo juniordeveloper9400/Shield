@@ -142,7 +142,7 @@ void main() {
     testWidgets('says so when there are no bookings', (tester) async {
       await pump(tester, MyLabBookingsScreen(source: source(bookings: [])));
 
-      expect(find.text('No lab bookings yet'), findsOneWidget);
+      expect(find.text('No lab orders yet'), findsOneWidget);
     });
 
     testWidgets('a failed load says so and can be retried', (tester) async {
@@ -153,7 +153,7 @@ void main() {
       );
       await pump(tester, MyLabBookingsScreen(source: retrying));
 
-      expect(find.text('Could not load your bookings'), findsOneWidget);
+      expect(find.text('Could not load your orders'), findsOneWidget);
 
       await tester.tap(find.text('Try again'));
       await tester.pumpAndSettle();
@@ -162,7 +162,7 @@ void main() {
     });
 
     testWidgets(
-      'shows the booking summary on the list, with full detail behind Track booking',
+      'shows the booking summary on the list, with full detail behind View order',
       (tester) async {
         await pump(
           tester,
@@ -190,17 +190,52 @@ void main() {
         expect(find.textContaining('Scheduled'), findsNothing);
         expect(find.text('Please come fasting for 10 hours.'), findsNothing);
 
-        await tester.tap(find.text('Track booking'));
+        await tester.tap(find.text('View order'));
         await tester.pumpAndSettle();
 
         expect(find.byType(LabBookingDetailScreen), findsOneWidget);
         // The chip and the progress bar both name the stage.
         expect(find.text('Confirmed'), findsNWidgets(2));
-        expect(find.text('SCHEDULED'), findsOneWidget);
+        expect(find.text('Scheduled'), findsOneWidget);
         expect(find.text('25 Sep 2026, 09:30 AM'), findsOneWidget);
         expect(find.text('Please come fasting for 10 hours.'), findsOneWidget);
       },
     );
+
+    testWidgets('the order page shows who, how and where from the lab', (
+      tester,
+    ) async {
+      final record = LabBookingRecord.fromJson({
+        'id': 12,
+        'packageName': 'Full Body Checkup',
+        'patientsCount': 2,
+        'unitPrice': '999',
+        'totalPrice': '1998',
+        'status': 'CONFIRMED',
+        'fulfillmentType': 'HOME_COLLECTION',
+        'storeName': 'Sahakar 360 Pharmacy Tirur',
+        'collectorName': 'Ravi',
+        'address': 'House 4, Tirur, 676101',
+        'patientList': [
+          {'name': 'Asha', 'age': 34},
+          {'name': 'Meera', 'age': null},
+        ],
+      });
+      await pump(
+        tester,
+        MyLabBookingsScreen(source: source(bookings: [record])),
+      );
+      await tester.tap(find.text('View order'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Asha · 34 yrs'), findsOneWidget);
+      expect(find.text('Meera'), findsOneWidget);
+      expect(find.text('Tests · ₹999 × 2 patients'), findsOneWidget);
+      expect(find.text('Home collection'), findsOneWidget);
+      expect(find.text('Sahakar 360 Pharmacy Tirur'), findsOneWidget);
+      expect(find.text('House 4, Tirur, 676101'), findsOneWidget);
+      expect(find.text('Ravi'), findsOneWidget);
+    });
 
     testWidgets('shows bill summary when the bill is verified', (
       tester,
@@ -221,12 +256,12 @@ void main() {
         ),
       );
 
-      expect(find.text('Bill Summary'), findsNothing);
-      await tester.tap(find.text('Track booking'));
+      expect(find.text('Order summary'), findsNothing);
+      await tester.tap(find.text('View order'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Bill Summary'), findsOneWidget);
-      expect(find.text('Verified'), findsOneWidget);
+      expect(find.text('Order summary'), findsOneWidget);
+      expect(find.text('Verified by lab'), findsOneWidget);
       expect(find.text('Fuel distance charge'), findsOneWidget);
       expect(find.text('+₹50'), findsOneWidget);
       expect(find.text('Technician visit fee'), findsOneWidget);
@@ -254,7 +289,7 @@ void main() {
 
       expect(find.text('Cancelled'), findsOneWidget);
 
-      await tester.tap(find.text('Track booking'));
+      await tester.tap(find.text('View order'));
       await tester.pumpAndSettle();
 
       expect(find.text('Sample collected'), findsNothing);

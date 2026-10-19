@@ -33,6 +33,16 @@ enum LabStage {
   }
 }
 
+/// One patient named on a lab order.
+class LabPatientLine {
+  final String name;
+  final int? age;
+
+  const LabPatientLine({required this.name, this.age});
+
+  String get label => age == null ? name : '$name · $age yrs';
+}
+
 /// One of the member's lab bookings, as the My Lab Bookings screen shows it.
 class LabBookingRecord {
   final int id;
@@ -55,6 +65,26 @@ class LabBookingRecord {
   final double techFee;
   final bool isVerified;
 
+  /// Price per patient, before any visit charges — what the order summary
+  /// multiplies by [patients].
+  final double unitPrice;
+
+  /// True for a home collection, false when the member visits the branch.
+  final bool homeCollection;
+
+  /// The branch the booking is routed to; '' when none is recorded.
+  final String storeName;
+
+  /// Who the lab assigned to collect the sample; '' until it assigns one.
+  final String collectorName;
+
+  /// Where the sample is collected — an admin's correction wins over the
+  /// member's saved address; '' for a store visit or when none is recorded.
+  final String address;
+
+  /// Who the booking is for, as named on the order.
+  final List<LabPatientLine> patientList;
+
   const LabBookingRecord({
     required this.id,
     required this.packageName,
@@ -68,6 +98,12 @@ class LabBookingRecord {
     this.fuelCharge = 0,
     this.techFee = 0,
     this.isVerified = false,
+    this.unitPrice = 0,
+    this.homeCollection = true,
+    this.storeName = '',
+    this.collectorName = '',
+    this.address = '',
+    this.patientList = const [],
   });
 
   /// The label the console shows for the same booking — `LB-0007`.
@@ -104,6 +140,20 @@ class LabBookingRecord {
       fuelCharge: fuel,
       techFee: tech,
       isVerified: verified,
+      unitPrice: _num(json['unitPrice']),
+      homeCollection:
+          _text(json['fulfillmentType']).toUpperCase() != 'STORE_VISIT',
+      storeName: _text(json['storeName']),
+      collectorName: _text(json['collectorName']),
+      address: _text(json['address']),
+      patientList: [
+        for (final row in (json['patientList'] as List<dynamic>? ?? const []))
+          if (row is Map<String, dynamic>)
+            LabPatientLine(
+              name: _text(row['name'], fallback: 'Patient'),
+              age: row['age'] is num ? (row['age'] as num).toInt() : null,
+            ),
+      ],
     );
   }
 

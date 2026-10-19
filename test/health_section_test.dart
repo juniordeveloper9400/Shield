@@ -255,7 +255,7 @@ void main() {
     for (final label in const [
       'Home',
       'Labs Tests',
-      'Lab Bookings',
+      'Lab Orders',
       'Top Packages',
       'Dietitian',
     ]) {
@@ -270,7 +270,7 @@ void main() {
     }
   });
 
-  testWidgets('Lab Bookings has its own tab, reached by switching, not pushing', (
+  testWidgets('Lab Orders has its own tab, reached by switching, not pushing', (
     tester,
   ) async {
     await pumpShell(tester);
@@ -283,7 +283,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: find.byType(HealthBottomBar),
-        matching: find.text('Lab Bookings'),
+        matching: find.text('Lab Orders'),
       ),
     );
     await tester.pumpAndSettle();

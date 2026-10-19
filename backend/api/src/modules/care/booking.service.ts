@@ -189,28 +189,71 @@ export class BookingService {
    */
   async listLabBookingsForMember(memberId: number) {
     const rows = await this.db
-      .select({ ...getTableColumns(labBooking), packageName: labPackage.name })
+      .select({
+        ...getTableColumns(labBooking),
+        packageName: labPackage.name,
+        storeName: shieldStore.name,
+        collectorName: adminUser.name,
+        house: memberAddress.house,
+        area: memberAddress.area,
+        landmark: memberAddress.landmark,
+        city: memberAddress.city,
+        state: memberAddress.state,
+        pincode: memberAddress.pincode,
+      })
       .from(labBooking)
       .leftJoin(labPackage, eq(labPackage.id, labBooking.labPackageId))
+      .leftJoin(shieldStore, eq(shieldStore.id, labBooking.storeId))
+      .leftJoin(adminUser, eq(adminUser.id, labBooking.assignedStaffId))
+      .leftJoin(memberAddress, eq(memberAddress.id, labBooking.addressId))
       .where(eq(labBooking.memberId, memberId))
       .orderBy(desc(labBooking.createdAt));
     if (rows.length === 0) return [];
 
+    const ids = rows.map((r) => r.id);
     const counts = await this.db
       .select({ labBookingId: labBookingReport.labBookingId, n: sql<number>`count(*)::int` })
       .from(labBookingReport)
-      .where(inArray(labBookingReport.labBookingId, rows.map((r) => r.id)))
+      .where(inArray(labBookingReport.labBookingId, ids))
       .groupBy(labBookingReport.labBookingId);
     const pagesById = new Map(counts.map((c) => [c.labBookingId, c.n]));
+
+    // Who the booking is for — names (and ages where known) for the order
+    // summary; the full patient record stays a staff-only read.
+    const patientRows = await this.db
+      .select({
+        labBookingId: labBookingPatient.labBookingId,
+        ownName: labBookingPatient.name,
+        ownAge: labBookingPatient.age,
+        patientName: patient.name,
+      })
+      .from(labBookingPatient)
+      .leftJoin(patient, eq(patient.id, labBookingPatient.patientId))
+      .where(inArray(labBookingPatient.labBookingId, ids))
+      .orderBy(asc(labBookingPatient.id));
+    const patientsById = new Map<number, { name: string; age: number | null }[]>();
+    for (const p of patientRows) {
+      const bucket = patientsById.get(p.labBookingId) ?? [];
+      bucket.push({ name: p.ownName?.trim() || p.patientName || 'Patient', age: p.ownAge ?? null });
+      patientsById.set(p.labBookingId, bucket);
+    }
+
     return rows.map((r) => {
+      const { house, area, landmark, city, state, pincode, ...rest } = r;
       const meta = parseBillMeta(r.note);
       return {
-        ...r,
+        ...rest,
         note: meta.cleanNote,
         fuelCharge: meta.fuelCharge,
         techFee: meta.techFee,
         isVerified: meta.isVerified,
         reportPages: pagesById.get(r.id) ?? 0,
+        // The collection address an admin may have corrected wins over the
+        // member's own saved one, same precedence the console uses.
+        address:
+          r.addressOverride?.trim() ||
+          [house, area, landmark, city, state, pincode].map((part) => (part ?? '').trim()).filter(Boolean).join(', '),
+        patientList: patientsById.get(r.id) ?? [],
       };
     });
   }
