@@ -68,10 +68,25 @@ export class CareService {
         else extraCategoriesByPackage.set(row.packageId, [row.categoryId]);
       }
 
+      // A listing kept for a Test Master row (source_test_id set) is a one-test
+      // "profile" in the apps — except when that row's Test Type is Package,
+      // which the apps must show as a real package under "Top Packages".
+      // `sourceTestType` carries that so the apps need not guess.
+      const sourceIds = packages.map((p) => p.sourceTestId).filter((id): id is number => id != null);
+      const typeByTest = new Map<number, string>();
+      if (sourceIds.length > 0) {
+        const types = await this.db
+          .select({ id: labTest.id, testType: labTest.testType })
+          .from(labTest)
+          .where(inArray(labTest.id, sourceIds));
+        for (const t of types) typeByTest.set(t.id, t.testType);
+      }
+
       return packages.map((pkg) => ({
         ...pkg,
         profiles: byPackage.get(pkg.id) ?? [],
         extraCategoryIds: extraCategoriesByPackage.get(pkg.id) ?? [],
+        sourceTestType: pkg.sourceTestId == null ? null : (typeByTest.get(pkg.sourceTestId) ?? null),
       }));
     });
   }
