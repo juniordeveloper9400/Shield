@@ -155,16 +155,16 @@ export class LabTestService {
   }
 
   /** Names of the group tests / packages that list [testId] as a member. */
-  private async groupsUsing(testId: number): Promise<string[]> {
+  private async groupsUsing(testId: number): Promise<{ name: string; testType: string }[]> {
     const group = alias(labTest, 'owning_group');
     const rows = await this.db
-      .selectDistinct({ name: group.name })
+      .selectDistinct({ name: group.name, testType: group.testType })
       .from(labTestGroupItem)
       .innerJoin(group, eq(group.id, labTestGroupItem.groupId))
       .where(eq(labTestGroupItem.testId, testId))
       .orderBy(asc(group.name))
       .limit(5);
-    return rows.map((r) => r.name);
+    return rows;
   }
 
   /** Creates ([id] null) or updates a test together with its group members
@@ -181,15 +181,28 @@ export class LabTestService {
     const [caller] = await this.db.select({ name: adminUser.name }).from(adminUser).where(eq(adminUser.id, staffId)).limit(1);
     const userName = caller?.name ?? `Staff #${staffId}`;
 
-    if (id && input.testType !== 'TEST') {
+    if (id) {
       const usedIn = await this.groupsUsing(id);
       if (usedIn.length > 0) {
-        throw new ForbiddenException({
-          error: {
-            code: 'FORBIDDEN',
-            message: `"${input.name}" is used inside ${quotedList(usedIn)}, so it has to stay a single Test. Remove it from there first.`,
-          },
-        });
+        // If it's used inside a GROUP test, it must stay a TEST (groups cannot nest groups)
+        const insideGroup = usedIn.find((u) => u.testType === 'GROUP');
+        if (insideGroup && input.testType !== 'TEST') {
+          throw new ForbiddenException({
+            error: {
+              code: 'FORBIDDEN',
+              message: `"${input.name}" is used inside Group test "${insideGroup.name}", so it has to stay a single Test. Remove it from there first.`,
+            },
+          });
+        }
+        // If it's used inside a PACKAGE, it can be a TEST or a GROUP, but cannot become a PACKAGE
+        if (input.testType === 'PACKAGE') {
+          throw new ForbiddenException({
+            error: {
+              code: 'FORBIDDEN',
+              message: `"${input.name}" is used inside ${quotedList(usedIn.map((u) => u.name))}, so it cannot be converted into a Package. Remove it from there first.`,
+            },
+          });
+        }
       }
     }
 
@@ -354,7 +367,7 @@ export class LabTestService {
     const usedIn = await this.groupsUsing(id);
     if (usedIn.length > 0) {
       throw new ForbiddenException({
-        error: { code: 'FORBIDDEN', message: `"${name}" is used inside ${quotedList(usedIn)}. Remove it from there before deleting it.` },
+        error: { code: 'FORBIDDEN', message: `"${name}" is used inside ${quotedList(usedIn.map((u) => u.name))}. Remove it from there before deleting it.` },
       });
     }
     try {
@@ -506,14 +519,32 @@ export class LabTestService {
 
     const member = alias(labTest, 'member_test');
     const memberItems = await this.db
-      .select({ id: member.id, name: member.name, shortName: member.shortName })
+      .select({ id: member.id, name: member.name, shortName: member.shortName, testType: member.testType })
       .from(labTestGroupItem)
       .innerJoin(member, eq(member.id, labTestGroupItem.testId))
       .where(eq(labTestGroupItem.groupId, testId))
       .orderBy(asc(labTestGroupItem.setOrder), asc(labTestGroupItem.id));
 
-    const testCount = t.testType === 'GROUP' || t.testType === 'PACKAGE' ? Math.max(memberItems.length, 1) : 1;
-    const profileCount = t.testType === 'GROUP' || t.testType === 'PACKAGE' ? Math.max(memberItems.length, 1) : 1;
+    const groupMemberIds = memberItems.filter((m) => m.testType === 'GROUP').map((m) => m.id);
+    let subCounts = new Map<number, number>();
+    if (groupMemberIds.length > 0) {
+      const counts = await this.db
+        .select({ groupId: labTestGroupItem.groupId, count: sql<number>`count(*)::int` })
+        .from(labTestGroupItem)
+        .where(inArray(labTestGroupItem.groupId, groupMemberIds))
+        .groupBy(labTestGroupItem.groupId);
+      subCounts = new Map(counts.map((c) => [c.groupId, c.count]));
+    }
+
+    let testCount = 0;
+    if (memberItems.length > 0) {
+      for (const m of memberItems) {
+        testCount += m.testType === 'GROUP' ? Math.max(subCounts.get(m.id) ?? 1, 1) : 1;
+      }
+    } else {
+      testCount = 1;
+    }
+    const profileCount = memberItems.length > 0 ? memberItems.length : 1;
     const price = Number(t.amount);
     const mrp = Math.max(Number(t.rate), price);
 
@@ -579,7 +610,7 @@ export class LabTestService {
         memberItems.map((item, idx) => ({
           labPackageId: packageId,
           name: item.name,
-          parameters: 1,
+          parameters: item.testType === 'GROUP' ? Math.max(subCounts.get(item.id) ?? 1, 1) : 1,
           sort: idx,
           testId: item.id,
           shortName: item.shortName ?? '',
