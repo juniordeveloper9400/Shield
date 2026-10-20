@@ -377,12 +377,16 @@ export const labBill = appSchema.table('lab_bill', {
   uuid: uuid('uuid').notNull().defaultRandom(),
   labBookingId: bigint('lab_booking_id', { mode: 'number' }).notNull(),
   image: text('image').notNull(),
+  /** migration 0110 — the counter's own receipt-book / POS number. */
+  billNumber: text('bill_number'),
   amount: numeric('amount', { precision: 12, scale: 2 }).notNull().default('0'),
   discountAmount: numeric('discount_amount', { precision: 12, scale: 2 }).notNull().default('0'),
   status: orderPaymentStatusEnum('status').notNull().default('PENDING'),
   paidAt: timestamp('paid_at', { withTimezone: true }),
   walletCollected: numeric('wallet_collected', { precision: 12, scale: 2 }).notNull().default('0'),
   cashCollected: numeric('cash_collected', { precision: 12, scale: 2 }).notNull().default('0'),
+  /** migration 0110 — received at the counter as GPay (cash is [cashCollected]). */
+  gpayCollected: numeric('gpay_collected', { precision: 12, scale: 2 }).notNull().default('0'),
   sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

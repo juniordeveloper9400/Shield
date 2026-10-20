@@ -34,6 +34,7 @@ import type {
   AssignLabStaffDto,
   BookAppointmentDto,
   BookLabTestDto,
+  ReceiveLabBillPaymentDto,
   SendLabBillDto,
   UpdateAppointmentStatusDto,
   UpdateLabBookingDetailsDto,
@@ -360,6 +361,8 @@ export class BookingService {
         state: memberAddress.state,
         pincode: memberAddress.pincode,
         billImage: labBill.image,
+        billNumber: labBill.billNumber,
+        billGpayCollected: labBill.gpayCollected,
         billAmount: labBill.amount,
         billDiscount: labBill.discountAmount,
         billStatus: labBill.status,
@@ -484,11 +487,13 @@ export class BookingService {
         // No app.lab_bill row yet (bill not sent) left-joins to all-null —
         // reads the same as a freshly-sent, unpaid bill rather than a
         // separate "no bill at all" state the console doesn't distinguish.
+        billNumber: r.billNumber ?? '',
         billStatus: r.billStatus ?? 'PENDING',
         billAmount: r.billAmount ?? '0',
         billDiscount: r.billDiscount ?? '0',
         billWalletCollected: r.billWalletCollected ?? '0',
         billCashCollected: r.billCashCollected ?? '0',
+        billGpayCollected: r.billGpayCollected ?? '0',
       };
     });
   }
@@ -806,12 +811,18 @@ export class BookingService {
       const amount = Math.max(Number(found.totalPrice) - dto.discountAmount, 0);
       const [existing] = await tx.select().from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1).for('update');
       if (existing?.status === 'PAID') throw new ConflictException({ error: { code: 'BILL_PAID', message: 'A collected bill cannot be repriced.' } });
+      // A blank value keeps whatever is already on record, so converting to a
+      // bill from Lab Orders (no picture or number yet) and filling them in on
+      // Lab Bills later both work. They are enforced when payment is collected.
+      const image = dto.image || existing?.image || '';
+      const billNumber = dto.billNumber.trim() || existing?.billNumber || null;
       let billId: number;
       if (existing) {
         await tx
           .update(labBill)
           .set({
-            image: dto.image,
+            image,
+            billNumber,
             amount: amount.toString(),
             discountAmount: dto.discountAmount.toString(),
             sentAt: new Date(),
@@ -825,7 +836,8 @@ export class BookingService {
           .insert(labBill)
           .values({
             labBookingId: bookingId,
-            image: dto.image,
+            image,
+            billNumber,
             amount: amount.toString(),
             discountAmount: dto.discountAmount.toString(),
           })
@@ -906,7 +918,9 @@ export class BookingService {
           entityId: store.entityId,
           postedOn: new Date().toISOString().slice(0, 10),
           sourceTable: 'lab_bill',
-          sourceId: String(params.bookingId),
+          // One entry per collection step (wallet, then each cash/GPay receipt) —
+          // the same suffix a standard order's collections use.
+          sourceId: `${params.bookingId}-${randomUUID().slice(0, 8)}`,
           event: 'lab_bill_collected',
           description: `Lab booking LB-${params.bookingId.toString().padStart(4, '0')} collected`,
         })
@@ -981,10 +995,26 @@ export class BookingService {
     if (theBill.status === 'PAID') {
       return { ok: false as const, reason: 'This bill is already paid.' };
     }
+    // The paper bill's photo and number are mandatory before any money moves
+    // (Lab Bills' own form enforces the same; this is the server-side gate).
+    if (!theBill.image) {
+      return { ok: false as const, reason: 'Upload a picture of the bill first.' };
+    }
+    if (!theBill.billNumber) {
+      return { ok: false as const, reason: 'Enter the bill number first.' };
+    }
     const billAmount = Number(theBill.amount);
     if (billAmount <= 0) {
       return { ok: false as const, reason: 'This bill has not been priced yet.' };
     }
+
+      const alreadyWallet = Number(theBill.walletCollected);
+      // The wallet step runs once. A repeat (the counter reopened the dialog
+      // after the wallet was already debited) only reports what is still owed.
+      if (alreadyWallet > 0) {
+        const owed = billAmount - alreadyWallet - Number(theBill.cashCollected) - Number(theBill.gpayCollected);
+        return { ok: true as const, walletAmount: alreadyWallet, cashAmount: Math.max(owed, 0), settled: owed <= 0 };
+      }
 
       const [theWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1).for('update');
       const balance = theWallet ? Number(theWallet.balance) : 0;
@@ -1011,26 +1041,93 @@ export class BookingService {
         });
       }
 
+      // Same split a standard order's bill gets: the wallet is debited here,
+      // and the bill is paid only when that covered everything. Whatever the
+      // wallet could not cover is still owed and is received afterwards as
+      // GPay / cash through receiveLabBillPayment — never assumed collected.
+      const settled = cashAmount <= 0;
+      if (walletAmount > 0 || settled) {
+        await tx
+          .update(labBill)
+          .set({
+            ...(settled ? { status: 'PAID' as const, paidAt: new Date() } : {}),
+            walletCollected: walletAmount.toString(),
+            updatedAt: new Date(),
+          })
+          .where(eq(labBill.id, theBill.id));
+      }
+
+      if (walletAmount > 0) {
+        await this.postLabBillCollection(tx, {
+          bookingId: found.id,
+          storeId: found.storeId,
+          memberId: found.memberId,
+          cash: 0,
+          wallet: walletAmount,
+        });
+      }
+
+      return { ok: true as const, walletAmount, cashAmount, settled };
+    });
+  }
+
+  /**
+   * Records GPay and/or cash the counter takes against a lab bill after the
+   * wallet step — the lab twin of OrderService.receiveBillPayment. Refuses
+   * more than is still owed; marks the bill PAID once it is covered. GPay is
+   * posted to the ledger with cash (the lab posting rule has one cash account).
+   */
+  async receiveLabBillPayment(role: AdminRole, storeId: number | null, bookingId: number, dto: ReceiveLabBillPaymentDto) {
+    const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+
+    return this.db.transaction(async (tx) => {
+      const [current] = await tx.select().from(labBill).where(eq(labBill.labBookingId, bookingId)).limit(1).for('update');
+      if (!current) return { ok: false as const, reason: 'No bill has been sent for this booking yet.' };
+      if (current.status === 'PAID') return { ok: false as const, reason: 'This bill is already paid.' };
+      if (Number(current.amount) <= 0) return { ok: false as const, reason: 'This bill has not been priced yet.' };
+
+      const toPaise = (rupees: number) => Math.round(rupees * 100);
+      const fromPaise = (paise: number) => (paise / 100).toFixed(2);
+      const owedPaise =
+        toPaise(Number(current.amount)) -
+        toPaise(Number(current.walletCollected)) -
+        toPaise(Number(current.cashCollected)) -
+        toPaise(Number(current.gpayCollected));
+      const cashPaise = toPaise(dto.cash);
+      const gpayPaise = toPaise(dto.gpay);
+      const receivingPaise = cashPaise + gpayPaise;
+
+      if (owedPaise <= 0) return { ok: false as const, reason: 'Nothing is left to receive on this bill.' };
+      if (receivingPaise > owedPaise) {
+        return { ok: false as const, reason: `Only ₹${(owedPaise / 100).toFixed(2)} is still owed on this bill.` };
+      }
+
+      const settled = receivingPaise === owedPaise;
       await tx
         .update(labBill)
         .set({
-          status: 'PAID',
-          paidAt: new Date(),
-          walletCollected: walletAmount.toString(),
-          cashCollected: cashAmount.toString(),
+          cashCollected: fromPaise(toPaise(Number(current.cashCollected)) + cashPaise),
+          gpayCollected: fromPaise(toPaise(Number(current.gpayCollected)) + gpayPaise),
+          ...(settled ? { status: 'PAID' as const, paidAt: new Date() } : {}),
           updatedAt: new Date(),
         })
-        .where(eq(labBill.id, theBill.id));
+        .where(eq(labBill.id, current.id));
 
       await this.postLabBillCollection(tx, {
         bookingId: found.id,
         storeId: found.storeId,
         memberId: found.memberId,
-        cash: cashAmount,
-        wallet: walletAmount,
+        cash: receivingPaise / 100,
+        wallet: 0,
       });
 
-      return { ok: true as const, walletAmount, cashAmount };
+      return {
+        ok: true as const,
+        receivedCash: fromPaise(cashPaise),
+        receivedGpay: fromPaise(gpayPaise),
+        remaining: fromPaise(owedPaise - receivingPaise),
+        settled,
+      };
     });
   }
 

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, like } from 'drizzle-orm';
 import { createTestDb, type TestDb } from './create-test-db';
 import { BookingService } from '../../src/modules/care/booking.service';
 import {
@@ -38,7 +38,7 @@ describe('Lab bill collection posts to the ledger (e2e)', () => {
       .insert(labBooking)
       .values({ memberId: member.id, labPackageId: pkg.id, storeId, totalPrice, unitPrice: totalPrice })
       .returning();
-    await db.insert(labBill).values({ labBookingId: booking.id, image: 'x', amount: totalPrice });
+    await db.insert(labBill).values({ labBookingId: booking.id, image: 'x', billNumber: 'B-1', amount: totalPrice });
     return { memberId: member.id, bookingId: booking.id };
   }
 
@@ -75,13 +75,18 @@ describe('Lab bill collection posts to the ledger (e2e)', () => {
       .select({ debit: journalLine.debit, credit: journalLine.credit, accountId: journalLine.accountId })
       .from(journalEntry)
       .innerJoin(journalLine, eq(journalLine.entryId, journalEntry.id))
-      .where(eq(journalEntry.sourceId, String(bookingId)));
+      .where(like(journalEntry.sourceId, `${bookingId}-%`));
   }
 
   it('posts an all-cash settlement: Dr cash / Cr lab revenue', async () => {
     const { bookingId } = await seedBooking('1000');
     const result = await bookings.collectLabBillWithWallet('LAB', storeId, bookingId);
     expect(result.ok).toBe(true);
+    // Nothing in the wallet: the bill is still owed, and nothing is posted yet.
+    expect(await journalRowsFor(bookingId)).toHaveLength(0);
+
+    const received = await bookings.receiveLabBillPayment('LAB', storeId, bookingId, { cash: 1000, gpay: 0 });
+    expect(received.ok && received.settled).toBe(true);
 
     const lines = await journalRowsFor(bookingId);
     expect(lines).toHaveLength(2);
@@ -97,21 +102,49 @@ describe('Lab bill collection posts to the ledger (e2e)', () => {
     if (!result.ok) throw new Error(result.reason);
     expect(result.walletAmount).toBe(400);
     expect(result.cashAmount).toBe(600);
+    expect(result.settled).toBe(false);
+
+    // The wallet part is posted at the wallet step; the rest when it is received.
+    const afterWallet = await journalRowsFor(bookingId);
+    expect(afterWallet).toHaveLength(2);
+    expect(Number(afterWallet.find((l) => l.accountId === walletAcct)!.debit)).toBe(400);
+
+    const received = await bookings.receiveLabBillPayment('LAB', storeId, bookingId, { cash: 200, gpay: 400 });
+    expect(received.ok && received.settled).toBe(true);
 
     const lines = await journalRowsFor(bookingId);
-    expect(lines).toHaveLength(3);
-    expect(Number(lines.find((l) => l.accountId === walletAcct)!.debit)).toBe(400);
-    expect(Number(lines.find((l) => l.accountId === cashAcct)!.debit)).toBe(600);
-    expect(Number(lines.find((l) => l.accountId === revenueAcct)!.credit)).toBe(1000);
+    expect(lines).toHaveLength(4);
+    expect(lines.filter((l) => l.accountId === cashAcct).reduce((sum, l) => sum + Number(l.debit), 0)).toBe(600);
+    expect(lines.filter((l) => l.accountId === revenueAcct).reduce((sum, l) => sum + Number(l.credit), 0)).toBe(1000);
   });
 
   it('posts nothing a second time once the bill is already paid', async () => {
     const { bookingId } = await seedBooking('500');
     await bookings.collectLabBillWithWallet('LAB', storeId, bookingId);
+    await bookings.receiveLabBillPayment('LAB', storeId, bookingId, { cash: 500, gpay: 0 });
     const second = await bookings.collectLabBillWithWallet('LAB', storeId, bookingId);
     expect(second.ok).toBe(false);
+    const again = await bookings.receiveLabBillPayment('LAB', storeId, bookingId, { cash: 1, gpay: 0 });
+    expect(again.ok).toBe(false);
 
-    const entries = await db.select().from(journalEntry).where(eq(journalEntry.sourceId, String(bookingId)));
+    const entries = await db.select().from(journalEntry).where(like(journalEntry.sourceId, `${bookingId}-%`));
     expect(entries).toHaveLength(1);
+  });
+  it('refuses to collect until the bill has a picture and a bill number', async () => {
+    const { bookingId } = await seedBooking('500');
+
+    await db.update(labBill).set({ billNumber: null }).where(eq(labBill.labBookingId, bookingId));
+    const noNumber = await bookings.collectLabBillWithWallet('LAB', storeId, bookingId);
+    expect(noNumber.ok).toBe(false);
+
+    await db.update(labBill).set({ billNumber: 'B-9', image: '' }).where(eq(labBill.labBookingId, bookingId));
+    const noImage = await bookings.collectLabBillWithWallet('LAB', storeId, bookingId);
+    expect(noImage.ok).toBe(false);
+
+    await db.update(labBill).set({ image: 'x' }).where(eq(labBill.labBookingId, bookingId));
+    const ok = await bookings.collectLabBillWithWallet('LAB', storeId, bookingId);
+    expect(ok.ok).toBe(true);
+    // Nothing in the wallet, so the cash is still to be received.
+    expect(ok.ok && ok.settled).toBe(false);
   });
 });

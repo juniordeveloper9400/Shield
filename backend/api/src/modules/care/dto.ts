@@ -61,8 +61,18 @@ export const updateLabBookingStatusSchema = z.object({
 // discount.
 export const sendLabBillSchema = z.object({
   image: z.string().default(''),
+  billNumber: z.string().max(100).default(''),
   discountAmount: z.number().nonnegative().default(0),
 });
+
+/** Money the counter takes against a lab bill after the wallet step — GPay
+ *  and/or cash, the same shape as a standard order bill's receive. */
+export const receiveLabBillPaymentSchema = z
+  .object({
+    cash: z.number().nonnegative().max(10000000).default(0),
+    gpay: z.number().nonnegative().max(10000000).default(0),
+  })
+  .refine((v) => v.cash + v.gpay > 0, { message: 'Enter an amount to receive.' });
 
 export const bookAppointmentSchema = z.object({
   kind: z.enum(['CLINIC', 'TELE', 'DENTAL', 'DIETITIAN']),
@@ -256,6 +266,7 @@ export const updateLabPackageBuildSchema = z.object({
 export type BookLabTestDto = z.infer<typeof bookLabTestSchema>;
 export type UpdateLabBookingStatusDto = z.infer<typeof updateLabBookingStatusSchema>;
 export type SendLabBillDto = z.infer<typeof sendLabBillSchema>;
+export type ReceiveLabBillPaymentDto = z.infer<typeof receiveLabBillPaymentSchema>;
 export type BookAppointmentDto = z.infer<typeof bookAppointmentSchema>;
 export type UpdateAppointmentStatusDto = z.infer<typeof updateAppointmentStatusSchema>;
 export type CreateLabCategoryDto = z.infer<typeof createLabCategorySchema>;

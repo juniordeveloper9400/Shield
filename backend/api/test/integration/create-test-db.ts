@@ -946,12 +946,14 @@ export function createTestDb() {
       uuid uuid NOT NULL DEFAULT gen_random_uuid(),
       lab_booking_id bigint NOT NULL UNIQUE REFERENCES app.lab_booking(id) ON DELETE CASCADE,
       image text NOT NULL,
+      bill_number text,
       amount numeric(12,2) NOT NULL DEFAULT 0,
       discount_amount numeric(12,2) NOT NULL DEFAULT 0,
       status app.order_payment_status NOT NULL DEFAULT 'PENDING',
       paid_at timestamptz,
       wallet_collected numeric(12,2) NOT NULL DEFAULT 0,
       cash_collected numeric(12,2) NOT NULL DEFAULT 0,
+      gpay_collected numeric(12,2) NOT NULL DEFAULT 0,
       sent_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );

@@ -546,7 +546,7 @@ describe('Care Services (e2e)', () => {
     const sent = await request(app.getHttpServer())
       .put(`/v1/staff/lab-bookings/${labBookingId}/bill`)
       .set('Authorization', `Bearer ${staffAccessToken}`)
-      .send({ image: '', discountAmount: 98 })
+      .send({ image: 'data:image/png;base64,x', billNumber: 'LB-1', discountAmount: 98 })
       .expect(200);
     expect(Number(sent.body.amount)).toBe(1900);
     expect(sent.body.status).toBe('PENDING');
@@ -559,7 +559,7 @@ describe('Care Services (e2e)', () => {
       .patch(`/v1/staff/lab-bookings/${labBookingId}/collect-wallet`)
       .set('Authorization', `Bearer ${staffAccessToken}`)
       .expect(200);
-    expect(collected.body).toEqual({ ok: true, walletAmount: 500, cashAmount: 1400 });
+    expect(collected.body).toEqual({ ok: true, walletAmount: 500, cashAmount: 1400, settled: false });
 
     const [theWallet] = await db.select().from(wallet).where(eq(wallet.memberId, memberId));
     expect(Number(theWallet.balance)).toBe(0);
@@ -570,10 +570,32 @@ describe('Care Services (e2e)', () => {
     expect(Number(entries[0].amount)).toBe(-500);
     expect(entries[0].labBookingId).toBe(labBookingId);
 
+    // The wallet covered what it could; the rest is still owed until the
+    // counter receives it, the same as a standard order's bill.
+    const [afterWallet] = await db.select().from(labBill).where(eq(labBill.labBookingId, labBookingId));
+    expect(afterWallet.status).toBe('PENDING');
+    expect(Number(afterWallet.walletCollected)).toBe(500);
+    expect(Number(afterWallet.cashCollected)).toBe(0);
+
+    const tooMuch = await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/receive`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ cash: 1500, gpay: 0 })
+      .expect(200);
+    expect(tooMuch.body).toEqual({ ok: false, reason: 'Only ₹1400.00 is still owed on this bill.' });
+
+    const received = await request(app.getHttpServer())
+      .patch(`/v1/staff/lab-bookings/${labBookingId}/receive`)
+      .set('Authorization', `Bearer ${staffAccessToken}`)
+      .send({ cash: 900, gpay: 500 })
+      .expect(200);
+    expect(received.body).toMatchObject({ ok: true, settled: true, remaining: '0.00' });
+
     const [theBill] = await db.select().from(labBill).where(eq(labBill.labBookingId, labBookingId));
     expect(theBill.status).toBe('PAID');
     expect(Number(theBill.walletCollected)).toBe(500);
-    expect(Number(theBill.cashCollected)).toBe(1400);
+    expect(Number(theBill.cashCollected)).toBe(900);
+    expect(Number(theBill.gpayCollected)).toBe(500);
 
     // Collecting again is refused, the same as an order's already-paid bill.
     const again = await request(app.getHttpServer())
@@ -615,7 +637,7 @@ describe('Care Services (e2e)', () => {
       .insert(labBooking)
       .values({ memberId: freshMember.id, labPackageId, storeId: labStoreId, patientsCount: 1, unitPrice: '1000', totalPrice: '1000' })
       .returning();
-    await db.insert(labBill).values({ labBookingId: freshBooking.id, image: '', amount: '1000' });
+    await db.insert(labBill).values({ labBookingId: freshBooking.id, image: 'x', billNumber: 'B-2', amount: '1000' });
 
     const res = await request(app.getHttpServer())
       .patch(`/v1/staff/lab-bookings/${freshBooking.id}/collect-wallet`)
@@ -624,7 +646,7 @@ describe('Care Services (e2e)', () => {
 
     // Allowance is exhausted — nothing comes from the wallet despite its
     // ₹54,034 balance; the whole bill is left owed in cash instead.
-    expect(res.body).toEqual({ ok: true, walletAmount: 0, cashAmount: 1000 });
+    expect(res.body).toEqual({ ok: true, walletAmount: 0, cashAmount: 1000, settled: false });
     const [theBill] = await db.select().from(labBill).where(eq(labBill.labBookingId, freshBooking.id));
     expect(Number(theBill.walletCollected)).toBe(0);
     expect(await db.select().from(walletEntry).where(eq(walletEntry.labBookingId, freshBooking.id))).toEqual([]);

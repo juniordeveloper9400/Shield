@@ -7,12 +7,14 @@ import type { RequestSubject } from '../auth/session.types';
 import {
   addLabReportPagesSchema,
   assignLabStaffSchema,
+  receiveLabBillPaymentSchema,
   sendLabBillSchema,
   updateAppointmentStatusSchema,
   updateLabBookingDetailsSchema,
   updateLabBookingStatusSchema,
   type AddLabReportPagesDto,
   type AssignLabStaffDto,
+  type ReceiveLabBillPaymentDto,
   type SendLabBillDto,
   type UpdateAppointmentStatusDto,
   type UpdateLabBookingDetailsDto,
@@ -57,6 +59,17 @@ export class StaffBookingController {
   @Patch('lab-bookings/:id/collect-wallet')
   collectLabBillWithWallet(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
     return this.bookings.collectLabBillWithWallet(user.role!, user.storeId ?? null, id);
+  }
+
+  /** The counter's GPay / cash against a lab bill, after the wallet step. */
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB', 'LAB_TECHNICIAN')
+  @Patch('lab-bookings/:id/receive')
+  receiveLabBillPayment(
+    @CurrentUser() user: RequestSubject,
+    @Param('id', ParseIntPipe) id: number,
+    @Body(new ZodValidationPipe(receiveLabBillPaymentSchema)) dto: ReceiveLabBillPaymentDto,
+  ) {
+    return this.bookings.receiveLabBillPayment(user.role!, user.storeId ?? null, id, dto);
   }
 
   @RequireRole('SUPERADMIN', 'ADMIN', 'LAB', 'LAB_TECHNICIAN')
