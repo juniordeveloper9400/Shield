@@ -62,6 +62,11 @@ export const wallet = appSchema.table('wallet', {
   balance: numeric('balance', { precision: 12, scale: 2 }).notNull().default('0'),
   rewardPoints: integer('reward_points').notNull().default(0),
   redeemedThisMonth: numeric('redeemed_this_month', { precision: 12, scale: 2 }).notNull().default('0'),
+  // Lifetime count of Platinum's 6 complimentary lab home-collection visits
+  // used so far (migration 0111) — not per card, a renewed Platinum card
+  // does not reset it. Silver/Gold need no counter: their home-care rate is
+  // a flat ₹50/₹20 every visit, never free.
+  platinumHomecareUsed: integer('platinum_homecare_used').notNull().default(0),
   openedAt: timestamp('opened_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

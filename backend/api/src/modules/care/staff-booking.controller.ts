@@ -79,6 +79,12 @@ export class StaffBookingController {
   }
 
   @RequireRole('SUPERADMIN', 'ADMIN', 'LAB', 'LAB_TECHNICIAN')
+  @Get('lab-bookings/:id/health-pass-charge')
+  getHealthPassChargeForLabBooking(@CurrentUser() user: RequestSubject, @Param('id', ParseIntPipe) id: number) {
+    return this.bookings.getHealthPassChargeForLabBooking(user.role!, user.storeId ?? null, id);
+  }
+
+  @RequireRole('SUPERADMIN', 'ADMIN', 'LAB', 'LAB_TECHNICIAN')
   @Patch('lab-bookings/:id/details')
   updateLabBookingDetails(
     @CurrentUser() user: RequestSubject,

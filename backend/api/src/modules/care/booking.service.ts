@@ -564,6 +564,78 @@ export class BookingService {
     };
   }
 
+  /**
+   * What a Health Pass plan's home-collection charge costs the member, per
+   * tier — Silver and Gold are flat rates that never change; Platinum is
+   * free for its first [PLATINUM_HOMECARE_FREE_VISITS] lifetime visits,
+   * tracked on `wallet.platinum_homecare_used` (migration 0111), and falls
+   * through to the ordinary fuel/technician-charge flow once that runs out.
+   * See privilege_tier.dart's own `benefits` getter — this is the backend's
+   * copy of the same rates quoted there.
+   */
+  static readonly PLATINUM_HOMECARE_FREE_VISITS = 6;
+
+  /**
+   * [healthPassTier] on a booking is the member's own card name as
+   * privilege_tier.dart prints it — "Silver Shield", "Gold Shield",
+   * "Platinum Shield" — not the bare tier word, so this matches by
+   * substring rather than equality. Returns null for anything that does
+   * not contain one of the three.
+   */
+  private healthPassTierKind(tier: string): 'silver' | 'gold' | 'platinum' | null {
+    const lower = tier.toLowerCase();
+    if (lower.includes('silver')) return 'silver';
+    if (lower.includes('gold')) return 'gold';
+    if (lower.includes('platinum')) return 'platinum';
+    return null;
+  }
+
+  private healthPassHomeCareRate(kind: 'silver' | 'gold' | 'platinum'): number {
+    switch (kind) {
+      case 'silver':
+        return 50;
+      case 'gold':
+        return 20;
+      case 'platinum':
+        return 0;
+    }
+  }
+
+  /**
+   * The fixed home-collection charge the lab order editor preloads (and
+   * locks fuel/technician fields against) when the member applied their
+   * Health Pass coupon at checkout — `locked: false` means there is nothing
+   * to preload, either because no coupon was applied, the tier is
+   * unrecognised, or (Platinum only) the member's free visits have run out,
+   * and the editor falls back to its normal fuel/technician-charge inputs.
+   */
+  async getHealthPassChargeForLabBooking(role: AdminRole, storeId: number | null, bookingId: number) {
+    const found = await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
+    if (!found.healthPassApplied || !found.healthPassTier) {
+      return { applied: false, tier: null, locked: false, fixedCharge: 0, platinumUsed: null, platinumRemaining: null, platinumTotal: null };
+    }
+    const kind = this.healthPassTierKind(found.healthPassTier);
+    if (kind === null) {
+      return { applied: true, tier: found.healthPassTier, locked: false, fixedCharge: 0, platinumUsed: null, platinumRemaining: null, platinumTotal: null };
+    }
+    if (kind !== 'platinum') {
+      return { applied: true, tier: kind, locked: true, fixedCharge: this.healthPassHomeCareRate(kind), platinumUsed: null, platinumRemaining: null, platinumTotal: null };
+    }
+    const [theWallet] = await this.db.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1);
+    const used = theWallet ? theWallet.platinumHomecareUsed : 0;
+    const total = BookingService.PLATINUM_HOMECARE_FREE_VISITS;
+    const remaining = Math.max(0, total - used);
+    return {
+      applied: true,
+      tier: kind,
+      locked: remaining > 0,
+      fixedCharge: 0,
+      platinumUsed: used,
+      platinumRemaining: remaining,
+      platinumTotal: total,
+    };
+  }
+
   /** Correct this booking only; saved member/patient/address records remain unchanged. */
   async updateLabBookingDetails(role: AdminRole, storeId: number | null, bookingId: number, dto: UpdateLabBookingDetailsDto) {
     await this.getLabBookingOwnedByStaffOrThrow(bookingId, role, storeId);
@@ -698,6 +770,27 @@ export class BookingService {
         const amount = Math.max(nextTotal - Number(bill.discountAmount), 0).toFixed(2);
         await tx.update(labBill).set({ amount, updatedAt: new Date() }).where(eq(labBill.id, bill.id));
         await tx.update(labBillLine).set({ unitPrice: nextUnitPrice.toFixed(2), qty: nextCount, ...(nextPackageName ? { name: nextPackageName } : {}) }).where(eq(labBillLine.labBillId, bill.id));
+      }
+
+      // One of Platinum's 6 lifetime complimentary home-care visits is
+      // spent the moment the lab order editor's "Verify Bill" button first
+      // marks this booking verified — the transition this note's own
+      // [BILL_VERIFIED: ...] tag carries, not every later edit: a plain
+      // field correction after verifying (contact phone, schedule, …)
+      // reaches here too and must never charge a second visit for the same
+      // booking. Re-verifying after changing the charges themselves
+      // (`verifiedChargesChanged` client-side) also skips this, since
+      // `wasVerified` is already true by then.
+      const wasVerified = parseBillMeta(found.note).isVerified;
+      const willBeVerified = parseBillMeta(dto.note).isVerified;
+      if (!wasVerified && willBeVerified && found.healthPassApplied && found.healthPassTier && this.healthPassTierKind(found.healthPassTier) === 'platinum') {
+        const [theWallet] = await tx.select().from(wallet).where(eq(wallet.memberId, found.memberId)).limit(1).for('update');
+        if (theWallet && theWallet.platinumHomecareUsed < BookingService.PLATINUM_HOMECARE_FREE_VISITS) {
+          await tx
+            .update(wallet)
+            .set({ platinumHomecareUsed: theWallet.platinumHomecareUsed + 1, updatedAt: new Date() })
+            .where(eq(wallet.id, theWallet.id));
+        }
       }
     });
   }

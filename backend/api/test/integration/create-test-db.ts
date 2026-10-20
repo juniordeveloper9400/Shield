@@ -598,6 +598,7 @@ export function createTestDb() {
       balance numeric(12,2) NOT NULL DEFAULT 0,
       reward_points integer NOT NULL DEFAULT 0,
       redeemed_this_month numeric(12,2) NOT NULL DEFAULT 0,
+      platinum_homecare_used integer NOT NULL DEFAULT 0,
       opened_at timestamptz,
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()

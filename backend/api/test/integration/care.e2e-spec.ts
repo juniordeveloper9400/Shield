@@ -789,6 +789,61 @@ describe('Care Services (e2e)', () => {
       expect(typeof res.body.balance).toBe('number');
     });
 
+    it('reads no Health Pass charge for a booking the coupon was never applied to', async () => {
+      const res = await request(app.getHttpServer())
+        .get(`/v1/staff/lab-bookings/${freshBookingId}/health-pass-charge`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(res.body).toMatchObject({ applied: false, locked: false, fixedCharge: 0 });
+    });
+
+    it('locks the Health Pass charge at the Silver tier\'s flat ₹50 rate — "Silver Shield", not bare "Silver"', async () => {
+      await db.update(labBooking).set({ healthPassApplied: true, healthPassTier: 'Silver Shield' }).where(eq(labBooking.id, freshBookingId));
+      const res = await request(app.getHttpServer())
+        .get(`/v1/staff/lab-bookings/${freshBookingId}/health-pass-charge`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(res.body).toMatchObject({ applied: true, tier: 'silver', locked: true, fixedCharge: 50 });
+    });
+
+    it("spends one of a Platinum member's 6 complimentary visits only on the booking's first verify, never on a later re-save", async () => {
+      await db.update(labBooking).set({ healthPassApplied: true, healthPassTier: 'Platinum Shield', note: '' }).where(eq(labBooking.id, freshBookingId));
+
+      const before = await request(app.getHttpServer())
+        .get(`/v1/staff/lab-bookings/${freshBookingId}/health-pass-charge`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(before.body).toMatchObject({ applied: true, tier: 'platinum', locked: true, fixedCharge: 0, platinumUsed: 0, platinumRemaining: 6, platinumTotal: 6 });
+
+      // First verify — the lab order editor's "Verify Bill" button, which
+      // just calls this same details PATCH with a [BILL_VERIFIED: ...] note.
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/details`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ scheduledFor: null, note: '[BILL_VERIFIED: fuel=0, tech=0]', fixCharge: 0 })
+        .expect(200);
+
+      const afterFirstVerify = await request(app.getHttpServer())
+        .get(`/v1/staff/lab-bookings/${freshBookingId}/health-pass-charge`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(afterFirstVerify.body).toMatchObject({ platinumUsed: 1, platinumRemaining: 5 });
+
+      // A later, unrelated re-save (still carrying the same verified note)
+      // must not spend a second visit for the one booking.
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${freshBookingId}/details`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .send({ scheduledFor: null, note: '[BILL_VERIFIED: fuel=0, tech=0]', fixCharge: 0 })
+        .expect(200);
+
+      const afterResave = await request(app.getHttpServer())
+        .get(`/v1/staff/lab-bookings/${freshBookingId}/health-pass-charge`)
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      expect(afterResave.body.platinumUsed).toBe(1);
+    });
+
     it('updates the schedule and note, but leaves them alone once Report ready', async () => {
       const when = new Date(Date.now() + 86400000).toISOString();
       await request(app.getHttpServer())
