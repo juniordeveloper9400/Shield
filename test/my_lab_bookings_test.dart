@@ -62,6 +62,7 @@ void main() {
     test('reads the backend JSON, with the same code the console shows', () {
       final record = LabBookingRecord.fromJson({
         'id': 7,
+        'stage': 'COMPLETED',
         'packageName': 'Full Body Checkup',
         'patientsCount': 2,
         'totalPrice': '1998.00',
@@ -74,7 +75,7 @@ void main() {
 
       expect(record.code, 'LB-0007');
       expect(record.total, 1998);
-      expect(record.stage, LabStage.reportReady);
+      expect(record.stage, LabStage.completed);
       expect(record.note, 'Come fasting');
       expect(record.reportPages, 3);
       expect(record.scheduledFor, isNotNull);
@@ -82,22 +83,25 @@ void main() {
     });
 
     test('a report is available only when ready and pages are attached', () {
-      expect(_booking(stage: LabStage.reportReady).reportAvailable, isFalse);
+      expect(_booking(stage: LabStage.completed).reportAvailable, isFalse);
       expect(
-        _booking(stage: LabStage.sampleCollected, reportPages: 2).reportAvailable,
+        _booking(stage: LabStage.billed, reportPages: 2).reportAvailable,
         isFalse,
       );
       expect(
-        _booking(stage: LabStage.reportReady, reportPages: 1).reportAvailable,
+        _booking(stage: LabStage.completed, reportPages: 1).reportAvailable,
         isTrue,
       );
     });
 
     test('every status value maps, and an unknown one reads as requested', () {
       expect(LabStage.parse('REQUESTED'), LabStage.requested);
-      expect(LabStage.parse('CONFIRMED'), LabStage.confirmed);
-      expect(LabStage.parse('SAMPLE_COLLECTED'), LabStage.sampleCollected);
-      expect(LabStage.parse('REPORT_READY'), LabStage.reportReady);
+      expect(LabStage.parse('VERIFIED'), LabStage.verified);
+      expect(LabStage.parse('BILLED'), LabStage.billed);
+      expect(LabStage.parse('COMPLETED'), LabStage.completed);
+      // An older backend that sends only the raw booking status.
+      expect(LabStage.parse('CONFIRMED'), LabStage.verified);
+      expect(LabStage.parse('REPORT_READY'), LabStage.completed);
       expect(LabStage.parse('CANCELLED'), LabStage.cancelled);
       expect(LabStage.parse('something new'), LabStage.requested);
       expect(LabStage.parse(null), LabStage.requested);
@@ -170,7 +174,7 @@ void main() {
             source: source(
               bookings: [
                 _booking(
-                  stage: LabStage.confirmed,
+                  stage: LabStage.verified,
                   note: 'Please come fasting for 10 hours.',
                   scheduledFor: DateTime(2026, 9, 25, 9, 30),
                 ),
@@ -184,7 +188,7 @@ void main() {
           find.textContaining('LB-0007 · 2 patients · ₹1,998'),
           findsOneWidget,
         );
-        expect(find.text('Confirmed'), findsOneWidget);
+        expect(find.text('Verified'), findsOneWidget);
         expect(find.textContaining('View report'), findsNothing);
         // The schedule and note sit on the detail screen, not the list card.
         expect(find.textContaining('Scheduled'), findsNothing);
@@ -195,7 +199,7 @@ void main() {
 
         expect(find.byType(LabBookingDetailScreen), findsOneWidget);
         // The chip and the progress bar both name the stage.
-        expect(find.text('Confirmed'), findsNWidgets(2));
+        expect(find.text('Verified'), findsNWidgets(2));
         expect(find.text('Scheduled'), findsOneWidget);
         expect(find.text('25 Sep 2026, 09:30 AM'), findsOneWidget);
         expect(find.text('Please come fasting for 10 hours.'), findsOneWidget);
@@ -292,7 +296,7 @@ void main() {
       await tester.tap(find.text('View order'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Sample collected'), findsNothing);
+      expect(find.text('Billed'), findsNothing);
       expect(find.textContaining('Scheduled'), findsNothing);
     });
 
@@ -304,7 +308,7 @@ void main() {
         tester,
         MyLabBookingsScreen(
           source: source(
-            bookings: [_booking(stage: LabStage.reportReady, reportPages: 2)],
+            bookings: [_booking(stage: LabStage.completed, reportPages: 2)],
             pages: [_png, _png],
             askedReportFor: asked,
           ),
@@ -333,7 +337,7 @@ void main() {
         tester,
         MyLabBookingsScreen(
           source: source(
-            bookings: [_booking(stage: LabStage.reportReady, reportPages: 1)],
+            bookings: [_booking(stage: LabStage.completed, reportPages: 1)],
             pages: [_png],
           ),
         ),
@@ -364,16 +368,16 @@ void main() {
         tester.binding.handleAppLifecycleStateChanged(
           AppLifecycleState.resumed,
         );
-        stage = LabStage.confirmed;
+        stage = LabStage.verified;
         await tester.pump(const Duration(seconds: 16));
         await tester.pumpAndSettle();
-        expect(find.text('Confirmed'), findsOneWidget);
+        expect(find.text('Verified'), findsOneWidget);
         expect(find.text('Requested'), findsNothing);
 
         // Leaving the screen stops the polling — advancing well past
         // another interval afterwards must not throw.
         await tester.pumpWidget(const SizedBox.shrink());
-        stage = LabStage.reportReady;
+        stage = LabStage.completed;
         await tester.pump(const Duration(seconds: 31));
         expect(tester.takeException(), isNull);
       },
@@ -385,7 +389,7 @@ void main() {
       await pump(
         tester,
         LabReportScreen(
-          booking: _booking(stage: LabStage.reportReady, reportPages: 1),
+          booking: _booking(stage: LabStage.completed, reportPages: 1),
           source: source(pages: const []),
         ),
       );
@@ -402,7 +406,7 @@ void main() {
       await pump(
         tester,
         LabReportScreen(
-          booking: _booking(stage: LabStage.reportReady, reportPages: 1),
+          booking: _booking(stage: LabStage.completed, reportPages: 1),
           source: retrying,
         ),
       );

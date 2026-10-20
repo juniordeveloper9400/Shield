@@ -84,6 +84,26 @@ function parseBillMeta(note: string | null | undefined) {
   return { cleanNote: note, fuelCharge: 0, techFee: 0, isVerified: false };
 }
 
+/**
+ * Where a lab order is as the member reads it: Requested → Verified → Billed →
+ * Completed (or Cancelled). Worked out from what the admin has actually done,
+ * not stored: verifying the bill on Lab Orders makes it Verified, converting
+ * it to a bill (an app.lab_bill row) makes it Billed, and collecting the
+ * payment — or the lab marking the report ready — makes it Completed.
+ */
+export function memberLabStage(input: {
+  status: string;
+  isVerified: boolean;
+  billExists: boolean;
+  billStatus: string | null;
+}): 'REQUESTED' | 'VERIFIED' | 'BILLED' | 'COMPLETED' | 'CANCELLED' {
+  if (input.status === 'CANCELLED') return 'CANCELLED';
+  if (input.status === 'REPORT_READY' || input.billStatus === 'PAID') return 'COMPLETED';
+  if (input.billExists) return 'BILLED';
+  if (input.isVerified) return 'VERIFIED';
+  return 'REQUESTED';
+}
+
 @Injectable()
 export class BookingService {
   constructor(@Inject(DRIZZLE) private readonly db: Database) {}
@@ -196,6 +216,8 @@ export class BookingService {
         packageName: labPackage.name,
         storeName: shieldStore.name,
         collectorName: adminUser.name,
+        billId: labBill.id,
+        billStatus: labBill.status,
         house: memberAddress.house,
         area: memberAddress.area,
         landmark: memberAddress.landmark,
@@ -208,6 +230,7 @@ export class BookingService {
       .leftJoin(shieldStore, eq(shieldStore.id, labBooking.storeId))
       .leftJoin(adminUser, eq(adminUser.id, labBooking.assignedStaffId))
       .leftJoin(memberAddress, eq(memberAddress.id, labBooking.addressId))
+      .leftJoin(labBill, eq(labBill.labBookingId, labBooking.id))
       .where(eq(labBooking.memberId, memberId))
       .orderBy(desc(labBooking.createdAt));
     if (rows.length === 0) return [];
@@ -241,7 +264,7 @@ export class BookingService {
     }
 
     return rows.map((r) => {
-      const { house, area, landmark, city, state, pincode, ...rest } = r;
+      const { house, area, landmark, city, state, pincode, billId, billStatus, ...rest } = r;
       const meta = parseBillMeta(r.note);
       return {
         ...rest,
@@ -249,6 +272,7 @@ export class BookingService {
         fuelCharge: meta.fuelCharge,
         techFee: meta.techFee,
         isVerified: meta.isVerified,
+        stage: memberLabStage({ status: r.status, isVerified: meta.isVerified, billExists: billId != null, billStatus }),
         reportPages: pagesById.get(r.id) ?? 0,
         // The collection address an admin may have corrected wins over the
         // member's own saved one, same precedence the console uses.
@@ -269,12 +293,18 @@ export class BookingService {
       .from(labBookingReport)
       .where(eq(labBookingReport.labBookingId, id));
     const meta = parseBillMeta(found.note);
+    const [bill] = await this.db
+      .select({ id: labBill.id, status: labBill.status })
+      .from(labBill)
+      .where(eq(labBill.labBookingId, id))
+      .limit(1);
     return {
       ...found,
       note: meta.cleanNote,
       fuelCharge: meta.fuelCharge,
       techFee: meta.techFee,
       isVerified: meta.isVerified,
+      stage: memberLabStage({ status: found.status, isVerified: meta.isVerified, billExists: !!bill, billStatus: bill?.status ?? null }),
       patients,
       packageName: pkg?.name ?? null,
       reportPages: pages?.n ?? 0,
