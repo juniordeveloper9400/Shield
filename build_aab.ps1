@@ -19,8 +19,20 @@ $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
 $BackendApiBaseUrl = 'https://shieldbackend.vercel.app'
-$Msg91WidgetId = '366a696a446a343235393238'
-$Msg91TokenAuth = '579930TU1QZriuNLU6ac9d73bP1'
+# The MSG91 widget pair is read from the git-ignored msg91.local.json (keys
+# MSG91_WIDGET_ID / MSG91_WIDGET_TOKEN_AUTH) or, failing that, from environment
+# variables of the same names — never from this tracked file, so it is not
+# published with the repository.
+$Msg91WidgetId = $env:MSG91_WIDGET_ID
+$Msg91TokenAuth = $env:MSG91_WIDGET_TOKEN_AUTH
+if (Test-Path 'msg91.local.json') {
+    $local = Get-Content 'msg91.local.json' -Raw | ConvertFrom-Json
+    if (-not $Msg91WidgetId) { $Msg91WidgetId = $local.MSG91_WIDGET_ID }
+    if (-not $Msg91TokenAuth) { $Msg91TokenAuth = $local.MSG91_WIDGET_TOKEN_AUTH }
+}
+if (-not $Msg91WidgetId -or -not $Msg91TokenAuth) {
+    throw 'MSG91_WIDGET_ID / MSG91_WIDGET_TOKEN_AUTH not found. Put them in msg91.local.json (git-ignored) or set them as environment variables; no release was produced.'
+}
 
 $SentryDsn = ''
 if (Test-Path '.env') {

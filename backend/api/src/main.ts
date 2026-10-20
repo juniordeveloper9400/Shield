@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import type { Env } from './config/env';
+import { isOriginAllowed, parseAllowedOrigins } from './common/cors';
 
 async function bootstrap() {
   // bodyParser: false — Nest's own default (Express's body-parser) caps a
@@ -30,9 +31,19 @@ async function bootstrap() {
 
   // Every client (Flutter web build, shieldweb, shield agent_invester) is a
   // browser or app origin calling this API over HTTPS — see
-  // backend/docs/migration-plan.md. Tighten to an explicit allowlist once
-  // those origins are finalized for production.
-  app.enableCors({ origin: true, credentials: true });
+  // backend/docs/migration-plan.md. Browser origins must be on the allowlist
+  // (src/common/cors.ts; add more with CORS_ALLOWED_ORIGINS); native apps send
+  // no Origin and are unaffected.
+  const allowedOrigins = parseAllowedOrigins(config.get('CORS_ALLOWED_ORIGINS', { infer: true }));
+  const isProduction = config.get('NODE_ENV', { infer: true }) === 'production';
+  app.enableCors({
+    origin: (origin, callback) => {
+      const ok = isOriginAllowed(origin, allowedOrigins, isProduction);
+      if (!ok) Logger.warn(`CORS: blocked origin ${origin} (add it to CORS_ALLOWED_ORIGINS if it is yours)`, 'Bootstrap');
+      callback(null, ok);
+    },
+    credentials: true,
+  });
 
   const port = config.get('PORT', { infer: true });
   await app.listen(port);

@@ -72,6 +72,10 @@ const envSchema = z
     // before it's load-bearing enough to fail a production boot over.
     MSG91_WIDGET_ID: z.string().trim().optional(),
     MSG91_WIDGET_TOKEN_AUTH: z.string().trim().optional(),
+    // Extra browser origins allowed to call this API, comma-separated exact
+    // origins (e.g. a custom domain) — on top of the built-in list in
+    // common/cors.ts. Blank is fine.
+    CORS_ALLOWED_ORIGINS: z.string().trim().optional(),
   })
   .superRefine((val, ctx) => {
     if (val.NODE_ENV === 'production') {

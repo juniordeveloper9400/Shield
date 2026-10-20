@@ -3,3 +3,12 @@ allowBuilds:
   '@nestjs/core': true
   esbuild: true
   protobufjs: true
+
+# Same overrides as package.json's pnpm.overrides (older pnpm reads that one,
+# pnpm 10+ reads this one) - keep the two identical so every pnpm version
+# resolves, and locks, the same patched versions.
+overrides:
+  multer: '>=2.3.0'
+  proxy-addr: '>=2.0.8'
+  lodash: '>=4.18.1'
+  '@grpc/grpc-js': '>=1.14.5'
