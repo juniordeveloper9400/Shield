@@ -256,12 +256,20 @@ void main() {
       expect(find.textContaining('every 6 hours'), findsOneWidget);
     });
 
+    test('every FAQ question reads as a question', () {
+      expect(const ProductFaq('Use', 'a').displayQuestion, 'Use?');
+      expect(const ProductFaq('  How to take it  ', 'a').displayQuestion, 'How to take it?');
+      expect(const ProductFaq('Is it safe?', 'a').displayQuestion, 'Is it safe?');
+      expect(const ProductFaq('', 'a').displayQuestion, '');
+    });
+
     testWidgets('a FAQ row opens its answer', (tester) async {
       BackendProductRepository.detailOverride = (_) async => adminContent;
 
       await pumpDetail(tester, idProduct);
 
-      final question = adminContent.faqs.first.question;
+      final question = adminContent.faqs.first.displayQuestion;
+      expect(question.endsWith('?'), isTrue);
       expect(find.text(question), findsOneWidget);
 
       await tester.tap(find.text(question));
