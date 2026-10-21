@@ -36,6 +36,29 @@ class LabBookingRepository {
     }
   }
 
+  /// The picture of the bill the admin attached to one of the member's own
+  /// bookings (`GET /v1/member/lab-bookings/:id`, `billImage`) — fetched when
+  /// the order is opened rather than carried on every row of the list. Null
+  /// when there is none or it could not be loaded.
+  Future<String?> fetchBillImage({required int bookingId}) async {
+    if (!BackendHttp.isConfigured) {
+      return null;
+    }
+    try {
+      final body =
+          await BackendHttp.instance.request(
+                'GET',
+                '/v1/member/lab-bookings/$bookingId',
+              )
+              as Map<String, dynamic>;
+      final image = (body['billImage'] ?? '').toString().trim();
+      return image.isEmpty ? null : image;
+    } catch (error) {
+      BackendHttp.log('LabBookingRepository.fetchBillImage failed', error: error);
+      return null;
+    }
+  }
+
   /// The report pages (`data:` URIs) of one of the member's own bookings, in
   /// order — `GET /v1/member/lab-bookings/:id/report`
   /// (`BookingService.getLabReportForMember`). The route itself is the

@@ -241,6 +241,41 @@ void main() {
       expect(find.text('Ravi'), findsOneWidget);
     });
 
+    testWidgets('the order page shows the bill number and opens the bill picture', (
+      tester,
+    ) async {
+      final record = LabBookingRecord.fromJson({
+        'id': 31,
+        'packageName': 'Full Body Checkup',
+        'patientsCount': 1,
+        'totalPrice': '999',
+        'status': 'REQUESTED',
+        'stage': 'BILLED',
+        'billNumber': 'RB-2342',
+        'hasBillImage': true,
+      });
+      final asked = <int>[];
+      final src = LabBookingSource(
+        loadBookings: () async => [record],
+        loadReportPages: (_) async => null,
+        loadBill: (id) async {
+          asked.add(id);
+          return null;
+        },
+      );
+      await pump(tester, MyLabBookingsScreen(source: src));
+      await tester.tap(find.text('View order'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bill from the lab'), findsOneWidget);
+      expect(find.text('RB-2342'), findsOneWidget);
+      // The picture is only fetched when asked for.
+      expect(asked, isEmpty);
+      await tester.tap(find.text('View bill'));
+      await tester.pumpAndSettle();
+      expect(asked, [31]);
+    });
+
     testWidgets('shows bill summary when the bill is verified', (
       tester,
     ) async {

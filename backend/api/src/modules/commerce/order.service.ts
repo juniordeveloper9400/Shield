@@ -320,6 +320,7 @@ export class OrderService {
         billStatus: bill.status,
         billDiscount: bill.discountAmount,
         billImage: bill.image,
+        billNumber: bill.billNumber,
         billedAt: bill.sentAt,
       })
       .from(order)

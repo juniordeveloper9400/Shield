@@ -132,6 +132,10 @@ class Purchase {
   /// When [billImage] was attached. Null until a bill has been sent.
   final DateTime? billedAt;
 
+  /// The counter's own number for the paper bill (receipt book / POS), typed
+  /// in by the admin with the bill. Null until one is entered.
+  final String? billNumber;
+
   /// How this order reaches the member. Defaults to [FulfillmentType.homeDelivery]
   /// so every existing call site and stored line keeps its meaning.
   final FulfillmentType fulfillmentType;
@@ -192,6 +196,7 @@ class Purchase {
     this.kind = OrderKind.standard,
     this.billImage,
     this.billedAt,
+    this.billNumber,
     this.fulfillmentType = FulfillmentType.homeDelivery,
     this.paymentStatus = OrderPaymentStatus.pending,
     this.billAmount,
@@ -242,6 +247,7 @@ class Purchase {
     kind: kind,
     billImage: billImage,
     billedAt: billedAt,
+    billNumber: billNumber,
     fulfillmentType: fulfillmentType,
     paymentStatus: paymentStatus ?? this.paymentStatus,
     billAmount: billAmount,

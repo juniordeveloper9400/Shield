@@ -219,6 +219,11 @@ export class BookingService {
         collectorName: adminUser.name,
         billId: labBill.id,
         billStatus: labBill.status,
+        // The counter's bill number is small and shown on the list; the bill
+        // picture is not (it is a large data URI) — only whether one exists is
+        // sent here, and the picture itself is fetched when the order is opened.
+        billNumber: labBill.billNumber,
+        hasBillImage: sql<boolean>`coalesce(${labBill.image} <> '', false)`,
         house: memberAddress.house,
         area: memberAddress.area,
         landmark: memberAddress.landmark,
@@ -295,7 +300,7 @@ export class BookingService {
       .where(eq(labBookingReport.labBookingId, id));
     const meta = parseBillMeta(found.note);
     const [bill] = await this.db
-      .select({ id: labBill.id, status: labBill.status })
+      .select({ id: labBill.id, status: labBill.status, image: labBill.image, billNumber: labBill.billNumber })
       .from(labBill)
       .where(eq(labBill.labBookingId, id))
       .limit(1);
@@ -306,6 +311,9 @@ export class BookingService {
       techFee: meta.techFee,
       isVerified: meta.isVerified,
       stage: memberLabStage({ status: found.status, isVerified: meta.isVerified, billExists: !!bill, billStatus: bill?.status ?? null }),
+      // What the admin attached on Lab Bills: the paper bill's number and photo.
+      billNumber: bill?.billNumber ?? '',
+      billImage: bill?.image ?? '',
       patients,
       packageName: pkg?.name ?? null,
       reportPages: pages?.n ?? 0,

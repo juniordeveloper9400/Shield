@@ -773,6 +773,7 @@ class BackendOrderRepository {
     final placedAt =
         DateTime.tryParse((row['placedAt'] ?? '').toString()) ?? DateTime.now();
     final billImage = (row['billImage'] as String?)?.trim();
+    final billNumber = (row['billNumber'] as String?)?.trim();
     return Purchase(
       id: (row['code'] ?? '').toString(),
       backendId: (row['id'] as num?)?.toInt(),
@@ -791,6 +792,7 @@ class BackendOrderRepository {
           ? OrderPaymentStatus.paid
           : OrderPaymentStatus.pending,
       billImage: billImage == null || billImage.isEmpty ? null : billImage,
+      billNumber: billNumber == null || billNumber.isEmpty ? null : billNumber,
       billedAt: DateTime.tryParse((row['billedAt'] ?? '').toString()),
       billAmount: row['billAmount'] == null
           ? null
