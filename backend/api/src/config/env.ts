@@ -72,6 +72,13 @@ const envSchema = z
     // before it's load-bearing enough to fail a production boot over.
     MSG91_WIDGET_ID: z.string().trim().optional(),
     MSG91_WIDGET_TOKEN_AUTH: z.string().trim().optional(),
+    // Local testing only: accept the Flutter debug build's fixed
+    // `dev-bypass` token instead of checking it with MSG91. Ignored when
+    // NODE_ENV is production — see OtpService.verifyMsg91AccessToken.
+    OTP_DEV_BYPASS: z
+      .string()
+      .optional()
+      .transform((v) => v === 'true'),
     // Extra browser origins allowed to call this API, comma-separated exact
     // origins (e.g. a custom domain) — on top of the built-in list in
     // common/cors.ts. Blank is fine.

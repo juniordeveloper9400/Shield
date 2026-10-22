@@ -631,11 +631,21 @@ class WidgetMemberOtpTransport implements MemberOtpTransport {
   final Future<void> Function(String) _sendOtp;
   final Future<String> Function(String) _verifyOtp;
 
+  /// Local-testing escape hatch: `flutter run --dart-define=OTP_DEV_BYPASS=true`
+  /// skips the MSG91 widget and sends a fixed token the backend accepts only
+  /// when its own `OTP_DEV_BYPASS=true` is set outside production. Debug
+  /// builds only — a release build ignores the define.
+  static const bool _devBypass = kDebugMode && bool.fromEnvironment('OTP_DEV_BYPASS');
+  static const String _devBypassToken = 'dev-bypass';
+
   /// MSG91 identifiers are plain digits, country-code-prefixed, no `+`.
   String _identifierFor(String phone) => '91$phone';
 
   @override
   Future<MemberOtpOutcome> sendCode(String phone) async {
+    if (_devBypass) {
+      return const MemberOtpOutcome.success();
+    }
     try {
       await _sendOtp(_identifierFor(phone));
       return const MemberOtpOutcome.success();
@@ -655,7 +665,7 @@ class WidgetMemberOtpTransport implements MemberOtpTransport {
   Future<MemberOtpOutcome> confirmCode(String phone, String code, {String? name}) async {
     final String accessToken;
     try {
-      accessToken = await _verifyOtp(code);
+      accessToken = _devBypass ? _devBypassToken : await _verifyOtp(code);
     } on TimeoutException {
       return const MemberOtpOutcome.failed(OtpError.timeout);
     } on UnsupportedError catch (error) {

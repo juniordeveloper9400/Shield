@@ -43,6 +43,14 @@ export class OtpService {
   constructor(private readonly config: ConfigService<Env, true>) {}
 
   async verifyMsg91AccessToken(accessToken: string, expectedPhone: string): Promise<VerifyMsg91Result> {
+    if (
+      accessToken === 'dev-bypass' &&
+      this.config.get('OTP_DEV_BYPASS', { infer: true }) &&
+      this.config.get('NODE_ENV', { infer: true }) !== 'production'
+    ) {
+      this.logger.warn(`OTP_DEV_BYPASS: accepting sign-in for ${expectedPhone} without MSG91`);
+      return { ok: true };
+    }
     const authkey = this.config.get('MSG91_AUTH_KEY', { infer: true });
     if (!authkey) {
       return { ok: false, reason: 'OTP verification is not configured on the server yet.' };
