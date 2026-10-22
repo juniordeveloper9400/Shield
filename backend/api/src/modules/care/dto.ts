@@ -44,6 +44,11 @@ export const bookLabTestSchema = z.object({
    *  see app-care.ts's own doc on labBooking.healthPassApplied. */
   healthPassApplied: z.boolean().default(false),
   healthPassTier: z.string().max(100).optional(),
+  /** One uuid the app generates per "Place lab test" tap and sends on every
+   *  test from that cart — see app-care.ts's own doc on
+   *  labBooking.orderGroupId. Omitted (a client that predates this, or a
+   *  genuinely one-off booking) leaves it null. */
+  orderGroupId: z.string().uuid().optional(),
 });
 
 export const updateLabBookingStatusSchema = z.object({

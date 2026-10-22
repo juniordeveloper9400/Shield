@@ -336,6 +336,12 @@ export const labBooking = appSchema.table('lab_booking', {
    *  applied, for the admin's own display; null when [healthPassApplied]
    *  is false. */
   healthPassTier: text('health_pass_tier'),
+  /** migration 0112 — one uuid shared by every test the member placed in the
+   *  same "Place lab test" checkout, so My Lab Bookings / Lab Orders can show
+   *  them as a single order ("2 tests") while each row keeps its own status,
+   *  report and bill. Null for a booking placed before this existed, or a
+   *  single-test checkout the client chose not to tag. */
+  orderGroupId: uuid('order_group_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

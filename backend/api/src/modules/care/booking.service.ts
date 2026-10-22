@@ -194,6 +194,7 @@ export class BookingService {
           scheduledFor: dto.scheduledFor ? new Date(dto.scheduledFor) : undefined,
           healthPassApplied: dto.healthPassApplied,
           healthPassTier: dto.healthPassApplied ? dto.healthPassTier : undefined,
+          orderGroupId: dto.orderGroupId,
         })
         .returning();
 

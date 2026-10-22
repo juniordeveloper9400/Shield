@@ -1015,6 +1015,42 @@ describe('Care Services (e2e)', () => {
         .set('Authorization', `Bearer ${staffAccessToken}`)
         .expect(409);
     });
+
+    it('carries the same orderGroupId across every test placed in one checkout, so they group as a single order', async () => {
+      const orderGroupId = '11111111-1111-4111-8111-111111111111';
+      const first = await request(app.getHttpServer())
+        .post('/v1/member/lab-bookings')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .send({ labPackageId, patients: [{ patientId: ownedPatientId }], orderGroupId })
+        .expect(201);
+      const second = await request(app.getHttpServer())
+        .post('/v1/member/lab-bookings')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .send({ labPackageId, patients: [{ name: 'Grandma', age: 70 }], orderGroupId })
+        .expect(201);
+
+      expect(first.body.orderGroupId).toBe(orderGroupId);
+      expect(second.body.orderGroupId).toBe(orderGroupId);
+
+      const staffList = await request(app.getHttpServer())
+        .get('/v1/staff/lab-bookings')
+        .set('Authorization', `Bearer ${staffAccessToken}`)
+        .expect(200);
+      const grouped = staffList.body.filter((b: { orderGroupId: string | null }) => b.orderGroupId === orderGroupId);
+      expect(grouped).toHaveLength(2);
+      // Each test keeps its own id and status independently trackable — the
+      // grouping is a display tag, not a merge.
+      expect(new Set(grouped.map((b: { id: number }) => b.id)).size).toBe(2);
+    });
+
+    it('a booking placed with no orderGroupId reads back null, same as before this existed', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/member/lab-bookings')
+        .set('Authorization', `Bearer ${memberAccessToken}`)
+        .send({ labPackageId, patients: [{ patientId: ownedPatientId }] })
+        .expect(201);
+      expect(res.body.orderGroupId ?? null).toBeNull();
+    });
   });
 
   it('auto-populates fee from the dietitian record for a DIETITIAN appointment', async () => {
