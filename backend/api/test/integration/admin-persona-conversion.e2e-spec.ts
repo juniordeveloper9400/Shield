@@ -12,11 +12,9 @@ import { and, eq, sql } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser, agent, district, investor, region, state, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 /**
  * The Users page's own "Make agent" / "Make investor" / "Revoke" actions —
@@ -29,7 +27,6 @@ import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 describe('Admin persona conversion (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let superAdminToken: string;
   let pharmacyToken: string;
 
@@ -55,15 +52,12 @@ describe('Admin persona conversion (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
       .compile();
 
     app = moduleRef.createNestApplication();

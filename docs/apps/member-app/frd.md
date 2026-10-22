@@ -4,7 +4,7 @@
 
 | ID | Requirement | Evidence |
 | --- | --- | --- |
-| MEM-AUTH-01 | Initialize Firebase and restore a member session before normal shell access | `lib/main.dart`, `module/auth/` |
+| MEM-AUTH-01 | Restore a member session before normal shell access | `lib/main.dart`, `module/auth/` |
 | MEM-AUTH-02 | Verify member phone OTP and persist identity in `app.users` | auth service and Neon repositories |
 | MEM-REG-01 | Complete member registration and assign a home branch | `module/registration/`, `shield_store` |
 | MEM-CAT-01 | Browse home content, categories, products, search, details, FAQs, and reviews | catalogue modules |

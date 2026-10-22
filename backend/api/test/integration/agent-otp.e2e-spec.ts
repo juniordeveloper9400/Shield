@@ -6,50 +6,46 @@ process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-please-ignore-00000';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
+import { randomUUID } from 'node:crypto';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
-import { users } from '../../src/db/schema';
+import { authSession, users } from '../../src/db/schema';
+import { TokenService } from '../../src/modules/auth/token.service';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 describe('Agent-registration OTP (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let memberAccessToken: string;
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
       .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();
 
-    await db.insert(users).values({
-      phone: '9876500000',
-      name: 'Recruiting Agent',
-      firebaseUid: 'agent-otp-uid',
-      registrationCompletedAt: new Date(),
-    });
-    firebase.register('token-agent-otp-uid', { uid: 'agent-otp-uid' });
+    const [member] = await db
+      .insert(users)
+      .values({ phone: '9876500000', name: 'Recruiting Agent', registrationCompletedAt: new Date() })
+      .returning();
+    // Minted directly: this suite keeps the real OtpService (it tests the
+    // unconfigured-MSG91 responses), so it cannot sign in through OTP.
+    const [session] = await db
+      .insert(authSession)
+      .values({ id: randomUUID(), subjectType: 'MEMBER', subjectId: String(member.id), expiresAt: new Date(Date.now() + 60_000) })
+      .returning();
     memberAccessToken = (
-      await request(app.getHttpServer())
-        .post('/v1/member/auth/session')
-        .send({ idToken: 'token-agent-otp-uid' })
-        .expect(200)
-    ).body.accessToken;
+      await app.get(TokenService).issueAccessToken({ sessionId: session.id, subjectType: 'MEMBER', subjectId: String(member.id) })
+    ).token;
   });
 
   afterAll(async () => {

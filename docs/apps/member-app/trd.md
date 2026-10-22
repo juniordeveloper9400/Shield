@@ -3,7 +3,7 @@
 ## Runtime
 
 - Flutter/Dart application with Material 3.
-- Firebase Core and Firebase Phone Auth.
+- MSG91 phone OTP through `backend/api`.
 - `NeonHttp` over HTTPS for member sign-in/registration writes.
 - `NeonDatabase` via `postgres` for native repository operations.
 - `shared_preferences` for local OTP throttling/session-adjacent persistence.
@@ -15,7 +15,7 @@
 
 ## Reliability rules
 
-Firebase restore, persona resolution, catalogue warmup, review warmup, and Neon ping must not make the app white-screen on failure. Member writes must surface enough status to distinguish unconfigured, unreachable, and successful states.
+Session restore, persona resolution, catalogue warmup, review warmup, and Neon ping must not make the app white-screen on failure. Member writes must surface enough status to distinguish unconfigured, unreachable, and successful states.
 
 ## Data rules
 
@@ -23,4 +23,4 @@ Use the `app` schema; preserve `numeric(12,2)` monetary values, enum workflow st
 
 ## Release gates
 
-Verify Firebase Android config and signing fingerprints, replace the debug release key, generate the ignored Neon secret from `.env`, run Flutter analysis/tests, and validate platform support for every plugin used by the release.
+Verify MSG91 configuration and signing fingerprints, replace the debug release key, generate the ignored Neon secret from `.env`, run Flutter analysis/tests, and validate platform support for every plugin used by the release.

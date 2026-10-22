@@ -626,8 +626,9 @@ export class OrderService {
    * never draw the same rupee twice.
    *
    * Triggered from the admin console only, after staff has read an OTP back
-   * to the member over Firebase Phone Auth (shieldweb's own
-   * `src/lib/deliveryOtp.ts`) — that check is client-side today; this
+   * from the member via MSG91 (shieldweb's own `src/lib/msg91Otp.ts`,
+   * re-checked by POST /v1/staff/otp/verify-msg91) — that check is not
+   * tied to this call today; this
    * endpoint's own trust boundary is "a valid staff session with the right
    * role", not an independent server-side OTP check.
    */

@@ -12,7 +12,6 @@ import { and, eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import {
   adminUser,
   agent,
@@ -30,12 +29,12 @@ import {
 import { TokenService } from '../../src/modules/auth/token.service';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 describe('Wallet & Rewards (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let tokens: TokenService;
   let memberAccessToken: string;
   let pharmacyStaffToken: string;
@@ -47,7 +46,7 @@ describe('Wallet & Rewards (e2e)', () => {
 
   /**
    * A real, valid member access token minted directly rather than through a
-   * real Firebase sign-in over POST /v1/member/auth/session — this file
+   * real OTP sign-in over POST /v1/member/auth/otp/verify — this file
    * already runs exactly 10 genuine sign-ins (one per member/staff needing
    * a fresh session), which is AuthThrottle's own 10/60s ceiling on that
    * route; one more real sign-in tips a later test into a 429. See
@@ -91,15 +90,14 @@ describe('Wallet & Rewards (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -118,7 +116,6 @@ describe('Wallet & Rewards (e2e)', () => {
       .values({ phone: '9000000003', name: 'Wallet Member', firebaseUid: 'member-wallet-1', registrationCompletedAt: new Date() })
       .returning();
     memberId = member.id;
-    firebase.register('member-token', { uid: 'member-wallet-1' });
 
     const [sellingAgent] = await db
       .insert(agent)
@@ -150,7 +147,7 @@ describe('Wallet & Rewards (e2e)', () => {
     });
 
     memberAccessToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
+      await memberLogin(app, '9000000003').expect(200)
     ).body.accessToken;
     pharmacyStaffToken = (
       await request(app.getHttpServer())
@@ -334,9 +331,8 @@ describe('Wallet & Rewards (e2e)', () => {
     // here would shift the balance later tests assert an exact figure
     // against.
     await db.insert(users).values({ phone: '9000000004', name: 'Another Member', firebaseUid: 'member-wallet-2', registrationCompletedAt: new Date() });
-    firebase.register('member-2-token', { uid: 'member-wallet-2' });
     const otherMemberToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-2-token' }).expect(200)
+      await memberLogin(app, '9000000004').expect(200)
     ).body.accessToken;
 
     const submitted = await request(app.getHttpServer())
@@ -523,9 +519,8 @@ describe('Wallet & Rewards (e2e)', () => {
       .returning();
 
     await db.insert(users).values({ phone: '9000000005', name: 'Third Member', firebaseUid: 'member-wallet-3', registrationCompletedAt: new Date() });
-    firebase.register('member-3-token', { uid: 'member-wallet-3' });
     const thirdMemberToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-3-token' }).expect(200)
+      await memberLogin(app, '9000000005').expect(200)
     ).body.accessToken;
 
     // agentId (NATIONAL) already earned 600 from the earlier direct-sale
@@ -584,9 +579,8 @@ describe('Wallet & Rewards (e2e)', () => {
       .returning();
 
     await db.insert(users).values({ phone: '9000000006', name: 'Fourth Member', firebaseUid: 'member-wallet-4', registrationCompletedAt: new Date() });
-    firebase.register('member-4-token', { uid: 'member-wallet-4' });
     const fourthMemberToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-4-token' }).expect(200)
+      await memberLogin(app, '9000000006').expect(200)
     ).body.accessToken;
 
     // agentId (NATIONAL) has already earned from earlier tests in this file
@@ -649,9 +643,8 @@ describe('Wallet & Rewards (e2e)', () => {
       .returning();
 
     await db.insert(users).values({ phone: '9000000007', name: 'Fifth Member', firebaseUid: 'member-wallet-5', registrationCompletedAt: new Date() });
-    firebase.register('member-5-token', { uid: 'member-wallet-5' });
     const fifthMemberToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-5-token' }).expect(200)
+      await memberLogin(app, '9000000007').expect(200)
     ).body.accessToken;
 
     // agentId (NATIONAL) has already earned from earlier tests in this file
@@ -720,9 +713,8 @@ describe('Wallet & Rewards (e2e)', () => {
       .returning();
 
     await db.insert(users).values({ phone: '9000000008', name: 'Sixth Member', firebaseUid: 'member-wallet-6', registrationCompletedAt: new Date() });
-    firebase.register('member-6-token', { uid: 'member-wallet-6' });
     const sixthMemberToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-6-token' }).expect(200)
+      await memberLogin(app, '9000000008').expect(200)
     ).body.accessToken;
 
     // agentId (NATIONAL) has already earned from earlier tests in this file
@@ -798,9 +790,8 @@ describe('Wallet & Rewards (e2e)', () => {
       .returning();
 
     await db.insert(users).values({ phone: '9000000009', name: 'Seventh Member', firebaseUid: 'member-wallet-7', registrationCompletedAt: new Date() });
-    firebase.register('member-7-token', { uid: 'member-wallet-7' });
     const seventhMemberToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-7-token' }).expect(200)
+      await memberLogin(app, '9000000009').expect(200)
     ).body.accessToken;
 
     // agentId (NATIONAL) has already earned from earlier tests in this file
@@ -883,9 +874,8 @@ describe('Wallet & Rewards (e2e)', () => {
       .returning();
 
     await db.insert(users).values({ phone: '9000000077', name: 'Eighth Member', firebaseUid: 'member-wallet-8', registrationCompletedAt: new Date() });
-    firebase.register('member-8-token', { uid: 'member-wallet-8' });
     const eighthMemberToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-8-token' }).expect(200)
+      await memberLogin(app, '9000000077').expect(200)
     ).body.accessToken;
 
     // agentId (NATIONAL) has already earned from earlier tests in this file
@@ -1068,10 +1058,7 @@ describe('Wallet & Rewards (e2e)', () => {
       transactedAt: new Date(),
     });
 
-    firebase.register('invitee-progress-token', { uid: 'member-referred-invitee' });
-    const inviteeLogin = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'invitee-progress-token' })
+    const inviteeLogin = await memberLogin(app, '9000000010')
       .expect(200);
     const inviteeToken = inviteeLogin.body.accessToken as string;
 
@@ -1124,9 +1111,8 @@ describe('Wallet & Rewards (e2e)', () => {
     const inviterCode = codeRes.body.code as string;
 
     await db.insert(users).values({ phone: '9000000013', name: 'New Signup', firebaseUid: 'member-signup-code-member', registrationCompletedAt: new Date() });
-    firebase.register('signup-code-member-token', { uid: 'member-signup-code-member' });
     const inviteeToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'signup-code-member-token' }).expect(200)
+      await memberLogin(app, '9000000013').expect(200)
     ).body.accessToken;
 
     const res = await request(app.getHttpServer())

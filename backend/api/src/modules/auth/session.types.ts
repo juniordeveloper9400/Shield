@@ -15,18 +15,3 @@ export interface IssuedTokens {
   refreshToken: string;
   expiresIn: number; // seconds
 }
-
-export interface VerifiedFirebaseToken {
-  uid: string;
-  email?: string;
-  phoneNumber?: string;
-  /** Unix seconds of the sign-in that minted this token (Firebase `auth_time`). */
-  authTime?: number;
-}
-
-/** Injection token for the Firebase verifier — real impl vs. test fake. */
-export const FIREBASE_VERIFIER = Symbol('FIREBASE_VERIFIER');
-
-export interface FirebaseVerifier {
-  verifyIdToken(idToken: string): Promise<VerifiedFirebaseToken>;
-}

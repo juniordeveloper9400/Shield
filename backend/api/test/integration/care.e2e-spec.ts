@@ -11,7 +11,6 @@ import { AppModule } from '../../src/app.module';
 import { BookingService } from '../../src/modules/care/booking.service';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import {
@@ -36,12 +35,12 @@ import {
 } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 describe('Care Services (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let memberAccessToken: string;
   let otherMemberAccessToken: string;
   let staffAccessToken: string;
@@ -58,15 +57,14 @@ describe('Care Services (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -125,7 +123,6 @@ describe('Care Services (e2e)', () => {
       .values({ phone: '9000000004', name: 'Care Member', firebaseUid: 'member-care-1', registrationCompletedAt: new Date(), homeStoreId: labStoreId })
       .returning();
     memberId = member.id;
-    firebase.register('member-token', { uid: 'member-care-1' });
 
     const [seededPatient] = await db
       .insert(patient)
@@ -151,13 +148,12 @@ describe('Care Services (e2e)', () => {
     await db
       .insert(users)
       .values({ phone: '9000000005', name: 'Other Care Member', firebaseUid: 'member-care-2', registrationCompletedAt: new Date() });
-    firebase.register('other-member-token', { uid: 'member-care-2' });
 
     memberAccessToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
+      await memberLogin(app, '9000000004').expect(200)
     ).body.accessToken;
     otherMemberAccessToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'other-member-token' }).expect(200)
+      await memberLogin(app, '9000000005').expect(200)
     ).body.accessToken;
     staffAccessToken = (
       await request(app.getHttpServer())

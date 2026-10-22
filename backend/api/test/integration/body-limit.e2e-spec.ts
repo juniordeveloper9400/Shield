@@ -11,11 +11,11 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { patient, prescriptionImage, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 /**
  * A synthetic ~190KB base64 payload with a real `data:image/jpeg;base64,`
@@ -47,21 +47,19 @@ const LARGE_DATA_URI = `data:image/jpeg;base64,${'A'.repeat(190_000)}`;
 describe('Request body size limit (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let memberAccessToken: string;
   let patientId: number;
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication<NestExpressApplication>({ bodyParser: false });
@@ -73,7 +71,6 @@ describe('Request body size limit (e2e)', () => {
       .insert(users)
       .values({ phone: '9000000030', name: 'Body Limit Member', firebaseUid: 'member-body-limit-1', registrationCompletedAt: new Date() })
       .returning();
-    firebase.register('member-token', { uid: 'member-body-limit-1' });
 
     const [seededPatient] = await db
       .insert(patient)
@@ -82,7 +79,7 @@ describe('Request body size limit (e2e)', () => {
     patientId = seededPatient.id;
 
     memberAccessToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
+      await memberLogin(app, '9000000030').expect(200)
     ).body.accessToken;
   });
 

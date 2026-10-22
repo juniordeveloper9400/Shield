@@ -11,7 +11,7 @@ that is currently missing or only enforced client-side.
 `notification`, `admin_user`, plus new `auth_session` / `refresh_token`
 (see [erd.md](erd.md)).
 
-- Exchange a verified Firebase ID token for a backend session (member/agent).
+- Verify a member/agent phone OTP (MSG91) and issue a backend session.
 - Email + password login for staff, returning a backend session (admin).
 - Session refresh and revocation (logout, "log out all devices").
 - CRUD for member addresses and patients (dependants), scoped to the owning

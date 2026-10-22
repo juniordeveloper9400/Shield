@@ -10,12 +10,12 @@ import { hash } from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { eq } from 'drizzle-orm';
 import { adminUser, order, patient, prescription, prescriptionImage, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 // A real (tiny, valid) 1x1 transparent PNG.
 const PNG_DATA_URI =
@@ -24,7 +24,6 @@ const PNG_DATA_URI =
 describe('Prescription (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let memberAccessToken: string;
   let storeAStaffToken: string;
   let storeBStaffToken: string;
@@ -33,15 +32,14 @@ describe('Prescription (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -60,7 +58,6 @@ describe('Prescription (e2e)', () => {
       .insert(users)
       .values({ phone: '9000000002', name: 'Rx Member', firebaseUid: 'member-rx-1', homeStoreId: storeA.id, registrationCompletedAt: new Date() })
       .returning();
-    firebase.register('member-token', { uid: 'member-rx-1' });
 
     const [seededPatient] = await db
       .insert(patient)
@@ -98,7 +95,7 @@ describe('Prescription (e2e)', () => {
     });
 
     memberAccessToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
+      await memberLogin(app, '9000000002').expect(200)
     ).body.accessToken;
     storeAStaffToken = (
       await request(app.getHttpServer())

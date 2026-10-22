@@ -122,12 +122,13 @@ commission after paid and pending withdrawals are deducted. Approval requires
 the reviewer to cross-check identity, the registered bank account, earnings,
 previous payouts and other pending requests, re-enter the matching bank account
 and leave an audit note. Approval is also gated on an **OTP to the agent's
-registered phone**: the reviewer taps "Send OTP to agent", the agent reads out
-the SMS code, and the reviewer enters it (Firebase phone auth, the same helper
-as bill collection — `src/lib/deliveryOtp.ts`). The resulting Firebase ID token
-is sent with the approval and **verified by `backend/api`**
-(`withdrawal-otp.ts`): it must be a phone-auth token for that agent's number,
-signed in within the last 5 minutes; otherwise the approval is refused (403).
+registered phone**: the reviewer taps "Send OTP to agent"
+(`POST /v1/staff/agent-withdrawals/:id/otp`), `backend/api` texts an MSG91
+code to the phone on the agent's own record (never a number from the browser),
+the agent reads it out, and the reviewer enters it. The code is sent with the
+approval as `otpCode` and **verified by `backend/api` with MSG91**; a missing
+or wrong code refuses the approval (403). This needs `MSG91_WIDGET_ID` and
+`MSG91_WIDGET_TOKEN_AUTH` on the backend.
 `otp_verified_at`/`otp_verified_phone` on `app.agent_withdrawal` record it
 (migration `0072`). Recording payment and rejecting need no code. Approval
 reserves the request but does not mark money as paid. After completing the bank transfer, the reviewer records its UTR or
@@ -297,20 +298,13 @@ Each `shieldweb/src/api/*.ts` module is a thin query layer over Neon. Pages call
 
 ### Bill collection OTP
 
-The Bills and Orders invoice modal sends member SMS codes through Firebase
-Phone Authentication in project `shield-zabnix`, separately from staff login.
-The exact admin website hostname must be registered under Firebase Console →
-Authentication → Settings → Authorized domains. Each production, custom, or
-preview hostname used for collection must be registered individually. A
-`Hostname match not found (auth/captcha-check-failed)` response rejects the
-website before an SMS is sent; changing frontend code or Android fingerprints
-does not authorize a missing web hostname.
-
-After adding the hostname, reload the admin page and send a new code. The modal
-accepts six-digit SMS codes, resets the verification when resending, and cleans
-up reCAPTCHA after each send attempt and when closing. Local Indian numbers and
-numbers already prefixed with `+91` are normalized to one recipient format.
-Wallet collection is invoked by the UI only after Firebase confirms the code;
+The Bills and Orders invoice modal sends member SMS codes through the MSG91
+OTP widget (`src/lib/msg91Otp.ts`, configured by `VITE_MSG91_WIDGET_ID` and
+`VITE_MSG91_TOKEN_AUTH`). The widget's access token is re-checked by
+`POST /v1/staff/otp/verify-msg91` before the code counts as verified. Local
+Indian numbers and numbers already prefixed with `+91` are normalized to one
+recipient format.
+Wallet collection is invoked by the UI only after that check succeeds;
 an unsuccessful collection after verification requires a fresh code. This is
 still a client-side gate over the existing direct database API, not server-side
 OTP enforcement; the existing security limitations above remain.

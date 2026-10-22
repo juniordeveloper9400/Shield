@@ -26,7 +26,7 @@ scaffold.
 
 ## M1 — Identity & Auth
 
-- Implement `/v1/member/auth/*` (Firebase token exchange) and
+- Implement `/v1/member/auth/*` (MSG91 phone OTP) and
   `/v1/staff/auth/*` (email+password), per [frd.md](frd.md) §1 and
   [security.md](security.md).
 - Implement the shared guards (`common/guards/`): session resolution,
@@ -38,7 +38,7 @@ scaffold.
   structural DB change).
 - Member address and patient CRUD, scoped to owner.
 
-**Done when:** a member can exchange a Firebase token for a session and
+**Done when:** a member can verify a phone OTP for a session and
 fetch their own profile; a staff user can log in and is rejected from a
 route requiring a role they don't have; no route is reachable without
 passing through a guard.

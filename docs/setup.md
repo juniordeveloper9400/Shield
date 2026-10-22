@@ -6,7 +6,6 @@
 - Android SDK and a configured emulator or device
 - Node.js 20+ and npm for `shieldweb`
 - A running `backend/api` instance (local or deployed) for member writes
-- Firebase CLI and FlutterFire CLI when changing Firebase configuration
 
 ## Root environment
 
@@ -88,7 +87,7 @@ Open the Vite URL shown by the command, normally `http://localhost:5173`.
 
 1. Install Flutter dependencies.
 2. Configure `.env` with `BACKEND_API_BASE_URL`.
-3. Verify Firebase Android configuration.
+3. Verify the MSG91 settings on the backend.
 4. Run the Flutter tests and app.
 5. Install and typecheck the admin console separately.
 6. Apply or seed database schema only after reviewing [Database](database.md).

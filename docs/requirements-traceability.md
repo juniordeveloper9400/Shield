@@ -4,7 +4,7 @@
 
 | Requirement family | Primary implementation | Data surface | Test/evidence | Current status |
 | --- | --- | --- | --- | --- |
-| AUTH | `lib/module/auth/`, `lib/screens/root_screen.dart` | `users`, Firebase identity | `test/auth_test.dart`, `test/persona_gate_test.dart` | Member auth implemented; admin auth blocker |
+| AUTH | `lib/module/auth/`, `lib/screens/root_screen.dart` | `users` (phone identity) | `test/auth_test.dart`, `test/persona_gate_test.dart` | Member auth implemented; admin auth blocker |
 | REG | `lib/module/registration/` | `users`, `shield_store`, addresses | registration/location tests | Implemented |
 | CAT | catalogue/category/product/search modules | product/category/content tables | catalogue/category/product/search tests | Implemented |
 | COM | cart/checkout/orders modules | cart/order/payment/tracking tables | cart/checkout/order tests | Implemented |

@@ -18,7 +18,7 @@ flowchart LR
 
   DB[(Neon Postgres<br/>app schema, pooled)]
   Obj[(Object storage<br/>prescription/media)]
-  FB[Firebase Admin<br/>token verification]
+  FB[MSG91<br/>OTP send/verify]
 
   A -- HTTPS --> API
   W -- HTTPS --> API
@@ -74,10 +74,10 @@ of this API, and continues to be the source of truth for schema changes.
 Full detail in [security.md](security.md). Summary:
 
 - No client ever holds a Neon credential after migration completes.
-- Member identity: Firebase ID token verified server-side → backend session.
-- Staff identity: Firebase (email/password) verified the same way as member
-  tokens → backend session; replaces the static credential list in
-  `shieldweb/src/config/admins.ts`. No password hash lives in Postgres.
+- Member identity: MSG91 phone OTP verified server-side → backend session.
+- Staff identity: login id + bcrypt password hash in `app.admin_user` →
+  backend session; replaces the static credential list in
+  `shieldweb/src/config/admins.ts`.
 - Authorization: role + branch/store scope checked on every route via guards,
   not left to client-side conditionals.
 - Rate limiting: Redis-backed, applied to auth, OTP, and financial mutation
@@ -104,8 +104,8 @@ Full detail in [security.md](security.md). Summary:
 
 BullMQ (Redis-backed) queues for anything that shouldn't block a request:
 
-- OTP dispatch (if the backend ever originates OTP sends server-side, rather
-  than purely verifying Firebase tokens).
+- OTP dispatch (the backend already originates MSG91 OTP sends; a queue
+  would only matter if those need retries off the request path).
 - Push notification fan-out (`device_push_token`, `notification`).
 - Reward-point accrual/expiry sweeps.
 - Agent-approval side effects (e.g. notifying the recruit once approved).
@@ -144,8 +144,9 @@ All secrets via environment variables, never committed:
 ```
 DATABASE_URL=              # Neon pooled connection string, this service only
 REDIS_URL=
-FIREBASE_PROJECT_ID=
-FIREBASE_ADMIN_CREDENTIALS=  # service-account JSON, secret-store only, never in repo
+MSG91_AUTH_KEY=            # server-only master key, verifies widget access tokens
+MSG91_WIDGET_ID=
+MSG91_WIDGET_TOKEN_AUTH=   # server-side OTP send/verify (member login, withdrawal approval)
 JWT_ACCESS_SECRET=
 JWT_REFRESH_SECRET=
 OBJECT_STORAGE_ENDPOINT=

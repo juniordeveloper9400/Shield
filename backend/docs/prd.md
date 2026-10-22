@@ -38,7 +38,7 @@ enforcement, rate limiting, and audit logging for the shared `app` schema.
 
 | Actor | Client(s) | Current access | Target access |
 | --- | --- | --- | --- |
-| Member | Root Flutter app | Firebase phone auth + direct Neon (HTTP for writes, socket for reads) | Firebase phone auth → backend-issued session → backend API only |
+| Member | Root Flutter app | Firebase phone auth + direct Neon (HTTP for writes, socket for reads) | MSG91 phone OTP → backend-issued session → backend API only |
 | Staff / admin / pharmacy / lab operator | `shieldweb` | Static credential list, `localStorage`, direct browser→Neon | Backend-issued session (email+password, server-hashed), backend API only |
 | Agent / investor | `shield agent_invester/`, and agent/investor modules in the root app | Same as member, plus agent-specific tables | Same target as member, with role claims for agent/investor scope |
 | System (this repo's own tooling) | `backend/db/*` Dart scripts | Direct Neon connection via `.env` | **Unchanged** — schema/migration tooling keeps its direct connection; it is not a client of the new API |

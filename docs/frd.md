@@ -7,8 +7,8 @@
 
 | ID | Requirement | Acceptance criteria | Status |
 | --- | --- | --- | --- |
-| AUTH-01 | Initialize Firebase before rendering the app | App remains reachable when Firebase is unavailable and reports auth unavailability instead of white-screening | Implemented |
-| AUTH-02 | Authenticate members with phone OTP | Valid phone receives OTP; valid code creates/restores a Firebase session | Implemented |
+| AUTH-01 | Restore the member session before rendering the app | App remains reachable when the backend or MSG91 is unavailable and reports auth unavailability instead of white-screening | Implemented |
+| AUTH-02 | Authenticate members with phone OTP | Valid phone receives OTP; valid code (verified by `backend/api` with MSG91) creates/restores a backend session | Implemented |
 | AUTH-03 | Persist member identity | Member data is upserted/touched in `app.users` without blocking launch on a transient write failure | Implemented |
 | AUTH-04 | Resolve member personas | Agent/investor status is checked after session restoration and routes to the appropriate web-only state | Implemented/transitional |
 | AUTH-05 | Enforce staff authentication server-side | Credentials, sessions, role checks, and branch checks are not recoverable from browser JavaScript | Not implemented; release blocker |

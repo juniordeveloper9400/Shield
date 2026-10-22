@@ -11,11 +11,9 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 /**
  * The Super Admin's own audit trail — every staff login (success/failure)
@@ -26,7 +24,6 @@ import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 describe('Staff audit log (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let superAdminToken: string;
   let adminToken: string;
 
@@ -40,15 +37,12 @@ describe('Staff audit log (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
       .compile();
 
     app = moduleRef.createNestApplication();

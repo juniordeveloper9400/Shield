@@ -10,10 +10,10 @@ import { hash } from 'bcryptjs';
 import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin, memberRegister } from './fake-otp';
 
 const STAFF_LOGIN_ID = 'pharmacist@example.com';
 const STAFF_PASSWORD = 'correct-horse-battery-staple';
@@ -21,17 +21,15 @@ const STAFF_PASSWORD = 'correct-horse-battery-staple';
 describe('Auth flow (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -45,7 +43,6 @@ describe('Auth flow (e2e)', () => {
       role: 'PHARMACY',
     });
 
-    firebase.register('valid-member-token', { uid: 'member-uid-1' });
   });
 
   afterAll(async () => {
@@ -56,10 +53,8 @@ describe('Auth flow (e2e)', () => {
     await request(app.getHttpServer()).get('/v1/member/me').expect(401);
   });
 
-  it('logs a member in via a verified Firebase token and reads their own profile', async () => {
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'valid-member-token' })
+  it('logs a member in via a verified OTP and reads their own profile', async () => {
+    const login = await memberLogin(app, '9999999999')
       .expect(200);
 
     expect(login.body.accessToken).toBeDefined();
@@ -83,9 +78,7 @@ describe('Auth flow (e2e)', () => {
       pincode: '100000',
     }).returning();
 
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'valid-member-token' })
+    const login = await memberLogin(app, '9999999999')
       .expect(200);
     const token = login.body.accessToken as string;
 
@@ -117,9 +110,7 @@ describe('Auth flow (e2e)', () => {
   });
 
   it('rejects a registration save naming an unknown or inactive home store', async () => {
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'valid-member-token' })
+    const login = await memberLogin(app, '9999999999')
       .expect(200);
 
     await request(app.getHttpServer())
@@ -129,12 +120,8 @@ describe('Auth flow (e2e)', () => {
       .expect(403);
   });
 
-  it('does not silently create a member for an unrecognized Firebase identity', async () => {
-    firebase.register('stranger-token', { uid: 'no-such-user' });
-    await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'stranger-token' })
-      .expect(404);
+  it('does not silently create a member for an unregistered phone', async () => {
+    await memberLogin(app, '9888888888').expect(404);
   });
 
   it('logs a staff user in with login id + password and exposes their role for server-side RBAC', async () => {
@@ -165,9 +152,7 @@ describe('Auth flow (e2e)', () => {
   });
 
   it('rejects a member session on a staff-only route', async () => {
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'valid-member-token' })
+    const login = await memberLogin(app, '9999999999')
       .expect(200);
 
     await request(app.getHttpServer())
@@ -189,9 +174,7 @@ describe('Auth flow (e2e)', () => {
   });
 
   it('revokes a session immediately on logout — not just when the access token would naturally expire', async () => {
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'valid-member-token' })
+    const login = await memberLogin(app, '9999999999')
       .expect(200);
 
     await request(app.getHttpServer())
@@ -206,9 +189,7 @@ describe('Auth flow (e2e)', () => {
   });
 
   it('rotates refresh tokens and rejects reuse of an already-used one', async () => {
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'valid-member-token' })
+    const login = await memberLogin(app, '9999999999')
       .expect(200);
 
     const refreshed = await request(app.getHttpServer())
@@ -225,15 +206,11 @@ describe('Auth flow (e2e)', () => {
   });
 
   it('rejects a request body that fails validation instead of reaching the database', async () => {
-    await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'x' }).expect(400);
+    await request(app.getHttpServer()).post('/v1/member/auth/otp/verify').send({ phone: '12', code: 'x' }).expect(400);
   });
 
-  it('registers a brand-new member from a verified Firebase identity with no app.users row yet', async () => {
-    firebase.register('new-member-token', { uid: 'brand-new-uid', phoneNumber: '+919812345678' });
-
-    const register = await request(app.getHttpServer())
-      .post('/v1/member/auth/register')
-      .send({ idToken: 'new-member-token', name: 'Brand New Member' })
+  it('registers a brand-new member from a verified phone with no app.users row yet', async () => {
+    const register = await memberRegister(app, '9812345678', 'Brand New Member')
       .expect(200);
 
     expect(register.body.accessToken).toBeDefined();
@@ -247,23 +224,17 @@ describe('Auth flow (e2e)', () => {
     expect(me.body.name).toBe('Brand New Member');
   });
 
-  it('backfills firebase_uid onto an existing phone-only row instead of creating a duplicate account', async () => {
+  it('reuses an existing phone-only row instead of creating a duplicate account', async () => {
     await db.insert(users).values({ phone: '9700000001', name: 'Legacy Phone Member' });
-    firebase.register('legacy-member-token', { uid: 'legacy-uid-1', phoneNumber: '+919700000001' });
 
-    await request(app.getHttpServer())
-      .post('/v1/member/auth/register')
-      .send({ idToken: 'legacy-member-token', name: 'Legacy Phone Member' })
+    await memberRegister(app, '9700000001', 'Legacy Phone Member')
       .expect(200);
 
     const rows = await db.select().from(users).where(eq(users.phone, '9700000001'));
     expect(rows).toHaveLength(1);
-    expect(rows[0].firebaseUid).toBe('legacy-uid-1');
 
-    // A second sign-in for the same identity is now a plain session exchange, not a re-registration.
-    const session = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'legacy-member-token' })
+    // A second sign-in for the same phone is now a plain session exchange, not a re-registration.
+    const session = await memberLogin(app, '9700000001')
       .expect(200);
     expect(session.body.accessToken).toBeDefined();
   });

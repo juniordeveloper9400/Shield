@@ -16,7 +16,7 @@ Converted Sahakar 360 members need access to agent and investor status, earnings
 
 ## Current behavior
 
-The app restores Firebase phone sessions, resolves persona rows from Neon, applies agent/investor services, and on Android shows a web-access screen for converted users. On web, converted users retain the app and receive persona cards. Most member commerce and care modules are also present because this project is currently a parallel full-app tree.
+The app restores backend member sessions (MSG91 phone OTP sign-in), resolves persona rows from Neon, applies agent/investor services, and on Android shows a web-access screen for converted users. On web, converted users retain the app and receive persona cards. Most member commerce and care modules are also present because this project is currently a parallel full-app tree.
 
 ## Required product decisions
 

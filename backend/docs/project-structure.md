@@ -38,7 +38,7 @@ backend/
         migrations/             # drizzle-kit output, reviewed before apply
       modules/
         auth/
-          member/                # Firebase token exchange, session issuance
+          member/                # MSG91 phone OTP, session issuance
           staff/                 # email+password login
         identity/                # users, addresses, patients, push tokens
         catalogue/

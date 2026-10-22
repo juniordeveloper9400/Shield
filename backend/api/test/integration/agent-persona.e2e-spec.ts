@@ -10,11 +10,11 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { agent, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 /**
  * GET /v1/agent/me — the "is this signed-in member also an agent" check a
@@ -25,19 +25,17 @@ import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 describe('Agent self-profile (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -50,11 +48,7 @@ describe('Agent self-profile (e2e)', () => {
 
   async function tokenFor(phone: string, firebaseUid: string) {
     await db.insert(users).values({ phone, name: 'Persona Member', firebaseUid, registrationCompletedAt: new Date() });
-    firebase.register(`${firebaseUid}-token`, { uid: firebaseUid });
-    const res = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: `${firebaseUid}-token` })
-      .expect(200);
+    const res = await memberLogin(app, phone).expect(200);
     return { accessToken: res.body.accessToken as string, phone };
   }
 

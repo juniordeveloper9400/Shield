@@ -9,11 +9,9 @@ import request from 'supertest';
 import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { OtpService } from '../../src/modules/otp/otp.service';
 import { users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 /** Stands in for the real MSG91 call so the sign-in/registration *logic*
  *  (not MSG91 itself) can be exercised deterministically: [acceptedCode] is
@@ -62,8 +60,6 @@ describe('Member login via MSG91 OTP (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(new FakeFirebaseVerifier())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -137,8 +133,6 @@ describe('Member login via MSG91 OTP — with MSG91 faked (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(new FakeFirebaseVerifier())
       .overrideProvider(OtpService)
       .useValue(otp)
       .compile();
@@ -204,8 +198,7 @@ describe('Member login via MSG91 OTP — with MSG91 faked (e2e)', () => {
 
   it('reactivates a soft-deleted member on register, taking the freshly typed-in name', async () => {
     // A reactivated account takes the incoming name rather than whatever the
-    // deleted row carried — see registerMemberByPhone's own doc (same rule
-    // registerMember applies for the Firebase path).
+    // deleted row carried — see registerMemberByPhone's own doc.
     await request(app.getHttpServer()).post('/v1/member/auth/otp/send').send({ phone: '9876500002' }).expect(200);
     const res = await request(app.getHttpServer())
       .post('/v1/member/auth/otp/register')

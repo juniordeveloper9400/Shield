@@ -11,12 +11,12 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { TokenService } from '../../src/modules/auth/token.service';
 import { adminUser, agent, agentCustomer, bill, order, shieldStore, users, wallet } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberRegister } from './fake-otp';
 
 /**
  * Cross-tenant / IDOR probes: for every protected route that takes an id,
@@ -31,7 +31,6 @@ import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 describe('Access control / cross-tenant probes (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let tokens: TokenService;
 
   let memberAToken: string;
@@ -47,15 +46,14 @@ describe('Access control / cross-tenant probes (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -64,18 +62,12 @@ describe('Access control / cross-tenant probes (e2e)', () => {
 
     // Two ordinary members, two stores, two pharmacy staff (one per store),
     // one superadmin — the minimum tenant set every probe below needs.
-    firebase.register('member-a-token', { uid: 'member-a-uid', phoneNumber: '+919700001001' });
-    const regA = await request(app.getHttpServer())
-      .post('/v1/member/auth/register')
-      .send({ idToken: 'member-a-token', name: 'Member A' })
+    const regA = await memberRegister(app, '9700001001', 'Member A')
       .expect(200);
     memberAToken = regA.body.accessToken;
     memberAId = (await db.select().from(users).where(eq(users.phone, '9700001001')))[0].id;
 
-    firebase.register('member-b-token', { uid: 'member-b-uid', phoneNumber: '+919700001002' });
-    const regB = await request(app.getHttpServer())
-      .post('/v1/member/auth/register')
-      .send({ idToken: 'member-b-token', name: 'Member B' })
+    const regB = await memberRegister(app, '9700001002', 'Member B')
       .expect(200);
     memberBToken = regB.body.accessToken;
     memberBId = (await db.select().from(users).where(eq(users.phone, '9700001002')))[0].id;
@@ -138,23 +130,14 @@ describe('Access control / cross-tenant probes (e2e)', () => {
   });
 
   // ---------------------------------------------------------------------
-  // 1. Firebase identity validation
+  // 1. Member identity validation
   // ---------------------------------------------------------------------
-  describe('Firebase identity validation', () => {
-    it('rejects a token Firebase never issued — the verifier is called, not trusted', async () => {
-      // FakeFirebaseVerifier.verifyIdToken throws a plain Error for anything
-      // it wasn't explicitly told to accept (fake-firebase-verifier.ts) — a
-      // token string alone proves nothing without that call succeeding. The
-      // real FirebaseAdminVerifier (firebase.service.ts) wraps this same
-      // failure in its own try/catch and converts it to 401; the fake
-      // double doesn't replicate that translation, so this call surfaces as
-      // HttpExceptionFilter's generic 500 instead — expected here, not a
-      // false "rejects with 401" that this test double can't actually prove.
-      // What this test does prove: the request never silently succeeds.
+  describe('Member identity validation', () => {
+    it('rejects a wrong OTP code for a registered phone — the code is verified, not trusted', async () => {
       await request(app.getHttpServer())
-        .post('/v1/member/auth/session')
-        .send({ idToken: 'never-registered-with-firebase' })
-        .expect(500);
+        .post('/v1/member/auth/otp/verify')
+        .send({ phone: '9700001001', code: '000000' })
+        .expect(401);
     });
 
     it("member A's own access token cannot be swapped in to read member B's profile — the subject comes from the token's own claims, not a header the caller sets", async () => {

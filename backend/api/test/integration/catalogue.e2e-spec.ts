@@ -11,7 +11,6 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import {
   adminUser,
   homeBanner,
@@ -24,12 +23,12 @@ import {
 } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberRegister } from './fake-otp';
 
 describe('Catalogue (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let categoryId: number;
   let productId: number;
   let staffAccessToken: string;
@@ -37,15 +36,14 @@ describe('Catalogue (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -482,10 +480,7 @@ describe('Catalogue (e2e)', () => {
     let memberAccessToken: string;
 
     beforeAll(async () => {
-      firebase.register('catalogue-member-token', { uid: 'catalogue-member-uid', phoneNumber: '+919700000055' });
-      const register = await request(app.getHttpServer())
-        .post('/v1/member/auth/register')
-        .send({ idToken: 'catalogue-member-token', name: 'Catalogue Member' })
+      const register = await memberRegister(app, '9700000055', 'Catalogue Member')
         .expect(200);
       memberAccessToken = register.body.accessToken;
     });

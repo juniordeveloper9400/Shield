@@ -53,7 +53,10 @@ exists; this table is the scope, not the schema.
 
 | Method & path | Auth | Description |
 | --- | --- | --- |
-| `POST /v1/member/auth/session` | Firebase ID token in body | Exchange verified Firebase token for backend session |
+| `POST /v1/member/auth/otp/send` | none | Text an MSG91 login code to a phone |
+| `POST /v1/member/auth/otp/verify` | phone + code in body | Verify the code and issue a session for an existing member |
+| `POST /v1/member/auth/otp/register` | phone + code + name in body | Verify the code and create or reactivate the member |
+| `POST /v1/member/auth/widget/{verify,register}` | MSG91 widget access token | Same, for clients that ran the MSG91 widget themselves |
 | `POST /v1/staff/auth/session` | email + password in body | Staff login |
 | `POST /v1/{member,staff}/auth/refresh` | refresh token | Rotate access token |
 | `DELETE /v1/{member,staff}/auth/session` | session | Logout (current device) |

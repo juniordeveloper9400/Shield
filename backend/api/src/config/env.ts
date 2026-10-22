@@ -3,8 +3,8 @@ import { z } from 'zod';
 /**
  * Fails fast on missing/malformed config instead of surfacing a confusing
  * error three layers deep the first time a route touches the missing value.
- * Firebase is optional in non-production so a dev without credentials yet
- * can still boot the service and work on everything else.
+ * Third-party integrations are optional in non-production so a dev without
+ * credentials yet can still boot the service and work on everything else.
  */
 const envSchema = z
   .object({
@@ -13,9 +13,6 @@ const envSchema = z
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
     JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET must be at least 32 characters'),
     JWT_REFRESH_SECRET: z.string().min(32, 'JWT_REFRESH_SECRET must be at least 32 characters'),
-    FIREBASE_PROJECT_ID: z.string().optional(),
-    FIREBASE_ADMIN_CREDENTIALS: z.string().optional(),
-    FIREBASE_ADMIN_CREDENTIALS_FILE: z.string().optional(),
     // Optional outside production: CacheService degrades to "always miss,
     // always hit the DB" if Redis is unreachable — see cache/cache.service.ts.
     REDIS_URL: z.string().default('redis://localhost:6379'),
@@ -54,7 +51,7 @@ const envSchema = z
     // MSG91's master Auth Key — server-only, never the browser-safe
     // `tokenAuth` widget token (see modules/otp/otp.service.ts). Used to
     // confirm a widget access-token server-side before anything trusts it.
-    // Optional in dev/test the same way Firebase is; required in production
+    // Optional in dev/test; required in production
     // below, since the staff-side wallet-collection OTP depends on it.
     // .trim() — a stray leading/trailing newline or space pasted into
     // Vercel's env var UI (easy to do from a terminal/file copy) would
@@ -86,16 +83,6 @@ const envSchema = z
   })
   .superRefine((val, ctx) => {
     if (val.NODE_ENV === 'production') {
-      if (!val.FIREBASE_PROJECT_ID) {
-        ctx.addIssue({ code: 'custom', path: ['FIREBASE_PROJECT_ID'], message: 'required in production' });
-      }
-      if (!val.FIREBASE_ADMIN_CREDENTIALS && !val.FIREBASE_ADMIN_CREDENTIALS_FILE) {
-        ctx.addIssue({
-          code: 'custom',
-          path: ['FIREBASE_ADMIN_CREDENTIALS'],
-          message: 'FIREBASE_ADMIN_CREDENTIALS or FIREBASE_ADMIN_CREDENTIALS_FILE is required in production',
-        });
-      }
       if (!val.MSG91_AUTH_KEY) {
         ctx.addIssue({ code: 'custom', path: ['MSG91_AUTH_KEY'], message: 'required in production' });
       }

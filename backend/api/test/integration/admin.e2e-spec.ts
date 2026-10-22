@@ -11,11 +11,11 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser, agentRequest, membershipTier, shieldStore, users, wallet, walletCard } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 const STAFF_PASSWORD = 'correct-horse-battery-staple';
 const testPasswordHash = () => hash(STAFF_PASSWORD, 4); // low cost factor — this is a test, not production
@@ -23,22 +23,20 @@ const testPasswordHash = () => hash(STAFF_PASSWORD, 4); // low cost factor — t
 describe('Admin/Ops (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let superAdminToken: string;
   let pharmacyToken: string;
   let adminToken: string;
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -258,13 +256,9 @@ describe('Admin/Ops (e2e)', () => {
   });
 
   it('actually throttles the auth endpoint after its tighter per-route limit — not just the global default', async () => {
-    firebase.register('throttle-test-token', { uid: 'no-such-user-throttle-test' });
-
     const results: number[] = [];
     for (let i = 0; i < 12; i++) {
-      const res = await request(app.getHttpServer())
-        .post('/v1/member/auth/session')
-        .send({ idToken: 'throttle-test-token' });
+      const res = await memberLogin(app, '9799999999');
       results.push(res.status);
     }
 
@@ -272,6 +266,6 @@ describe('Admin/Ops (e2e)', () => {
     // same window must be rejected with 429, well before the global 120/60s
     // default would ever kick in.
     expect(results.filter((s) => s === 429).length).toBeGreaterThan(0);
-    expect(results.slice(0, 10).every((s) => s === 404)).toBe(true); // unregistered identity, but not yet throttled
+    expect(results.slice(0, 10).every((s) => s === 404)).toBe(true); // unregistered phone, but not yet throttled
   });
 });

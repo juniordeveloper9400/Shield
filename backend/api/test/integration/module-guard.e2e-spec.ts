@@ -10,11 +10,9 @@ import { hash } from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 const STAFF_PASSWORD = 'correct-horse-battery-staple';
 const testPasswordHash = () => hash(STAFF_PASSWORD, 4); // low cost factor — this is a test, not production
@@ -31,19 +29,15 @@ const testPasswordHash = () => hash(STAFF_PASSWORD, 4); // low cost factor — t
 describe('ModuleGuard — per-account module restriction (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
       .compile();
 
     app = moduleRef.createNestApplication();

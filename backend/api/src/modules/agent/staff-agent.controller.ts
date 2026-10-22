@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
 import { AgentService } from './agent.service';
+import { AuthThrottle } from '../../common/throttle';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { RequestSubject } from '../auth/session.types';
 import { RequireRole } from '../../common/decorators/require-role.decorator';
@@ -100,6 +101,14 @@ export class StaffAgentController {
   @Get('agent-withdrawals')
   listWithdrawals() {
     return this.agents.listWithdrawalsForStaff();
+  }
+
+  /** Texts the approval OTP to the agent's registered phone. */
+  @AuthThrottle()
+  @HttpCode(HttpStatus.OK)
+  @Post('agent-withdrawals/:id/otp')
+  sendWithdrawalOtp(@Param('id', ParseIntPipe) id: number) {
+    return this.agents.sendApprovalOtp(id);
   }
 
   @Post('agent-withdrawals/:id/resolve')

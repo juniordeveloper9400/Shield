@@ -16,10 +16,10 @@ Members need one mobile-first place to obtain health products and services throu
 
 ## Goals
 
-- Reliable Firebase phone sign-in and session restoration.
+- Reliable phone OTP sign-in (MSG91) and session restoration.
 - Complete product, prescription, lab, appointment, wallet, rewards, and referral journeys.
 - Clear branch selection and order/service status.
-- Resilient launch when Firebase, Neon, or warmup requests are unavailable.
+- Resilient launch when the backend, Neon, or warmup requests are unavailable.
 
 ## In scope
 

@@ -9,11 +9,9 @@ import { hash } from 'bcryptjs';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser } from '../../src/db/schema';
 import { createTestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 describe('Lab Charges settings', () => {
   let app: INestApplication;
@@ -22,7 +20,7 @@ describe('Lab Charges settings', () => {
   beforeAll(async () => {
     const db = createTestDb();
     const module = await Test.createTestingModule({ imports: [AppModule] }).overrideProvider(DRIZZLE).useValue(db)
-      .overrideProvider(REDIS_CLIENT).useValue(createTestRedis()).overrideProvider(FIREBASE_VERIFIER).useValue(new FakeFirebaseVerifier()).compile();
+      .overrideProvider(REDIS_CLIENT).useValue(createTestRedis()).compile();
     app = module.createNestApplication();
     await app.init();
     for (const role of ['ADMIN', 'LAB_TECHNICIAN'] as const) {

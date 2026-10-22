@@ -7,13 +7,13 @@
 | Layer | Technology | Repository evidence |
 | --- | --- | --- |
 | Member client | Flutter, Dart 3.10 range, Material 3 | `pubspec.yaml`, `lib/main.dart` |
-| Android | Gradle Kotlin DSL, Firebase Android plugin | `android/` |
+| Android | Gradle Kotlin DSL | `android/` |
 | Web client | Flutter web | `web/`, Flutter configuration |
 | Operations client | React 18, TypeScript, Vite | `shieldweb/package.json` |
 | Routing | React Router 6 | `shieldweb/src/App.tsx` |
 | Styling | Tailwind CSS 3, PostCSS, Autoprefixer | `shieldweb/package.json`, `shieldweb/src/index.css` |
 | Database | Neon PostgreSQL | `backend/README.md`, `backend/db/` |
-| Member auth | Firebase Phone Auth | `firebase_options.dart`, auth module |
+| Member auth | MSG91 phone OTP via `backend/api` | `lib/module/auth/` |
 | Map/location | `flutter_map`, OpenStreetMap tiles, `geolocator` | root `pubspec.yaml` |
 | Media | `image_picker`, `image`, `video_player` | root `pubspec.yaml` |
 | Sharing/external actions | `share_plus`, `url_launcher` | root `pubspec.yaml` |

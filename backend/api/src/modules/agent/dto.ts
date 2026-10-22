@@ -55,9 +55,10 @@ export const resolveWithdrawalSchema = z.object({
   earningsVerified: z.boolean().default(false),
   note: z.string().trim().max(2000).default(''),
   paymentReference: z.string().trim().max(200).default(''),
-  // Firebase ID token from confirming the SMS code sent to the agent's
-  // registered phone. Required (and checked server-side) for APPROVED only.
-  otpIdToken: z.string().trim().max(8192).optional(),
+  // The MSG91 code texted to the agent's registered phone by
+  // POST agent-withdrawals/:id/otp. Required (and checked server-side) for
+  // APPROVED only.
+  otpCode: z.string().trim().regex(/^\d{4,6}$/, 'otpCode must be 4-6 digits').optional(),
 });
 
 export const moveEarningsToWalletSchema = z.object({

@@ -68,7 +68,7 @@ erDiagram
 
 ## 4. Integrity rules
 
-- `users.phone` is the member identity key; `firebase_uid` links Firebase identity.
+- `users.phone` is the member identity key; `firebase_uid` is a legacy column from the old Firebase login and is no longer read.
 - `users.home_store_id` assigns a default branch.
 - Pharmacy operations require a store scope; server-side enforcement is still required.
 - `agent.parent_id` is self-referencing and supports the configured hierarchy.

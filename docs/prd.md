@@ -46,7 +46,7 @@ These measures are product targets, not currently instrumented metrics:
 
 ### In scope and implemented
 
-- Firebase phone authentication and session restoration.
+- Phone OTP authentication (MSG91 via `backend/api`) and session restoration.
 - Member profile, branch, address, and patient management.
 - Product catalogue, categories, search, cart, checkout, orders, and tracking.
 - Prescription image upload and pharmacy review workflow.
@@ -67,7 +67,7 @@ These measures are product targets, not currently instrumented metrics:
 ### Out of scope for this baseline
 
 - A new backend service not represented in the repository.
-- iOS release readiness; Firebase setup marks it as pending.
+- iOS release readiness.
 - Public deployment of the current browser-direct admin console.
 - Replacing the Prisma-managed `public` schema.
 
@@ -77,7 +77,7 @@ These measures are product targets, not currently instrumented metrics:
 - A member can upload a prescription tied to a patient and branch and see its lifecycle.
 - A staff operator can update the queues allowed by their role, with pharmacy rows restricted to its branch.
 - A destructive database operation cannot be treated as a normal development command.
-- A release build has documented Firebase configuration, Neon configuration, and production signing controls.
+- A release build has documented MSG91 configuration, Neon configuration, and production signing controls.
 
 ## 7. Product risks
 

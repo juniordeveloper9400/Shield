@@ -2,7 +2,7 @@
 
 Sentry is wired into all four applications, each reporting to its own DSN so an issue in one never gets mixed into another's stream. Every wiring follows the same rule the rest of this repo already uses for optional integrations: leaving the DSN unset simply leaves Sentry disabled — it is never a build or boot failure.
 
-A DSN is not a secret. It only identifies which Sentry project events go to; it grants no read access to anything and is meant to travel in client-side code (the same way a Firebase web config does). It is fine in `.env.example` placeholders, build scripts, and the shipped JS/APK.
+A DSN is not a secret. It only identifies which Sentry project events go to; it grants no read access to anything and is meant to travel in client-side code (the same way the MSG91 widget id does). It is fine in `.env.example` placeholders, build scripts, and the shipped JS/APK.
 
 ## 1. Create the account and projects
 

@@ -18,8 +18,7 @@ import {
   users,
   ward,
 } from '../../db/schema';
-import { FIREBASE_VERIFIER, type FirebaseVerifier } from '../auth/session.types';
-import { assertApprovalOtp } from './withdrawal-otp';
+import { OtpService } from '../otp/otp.service';
 import type { AgentLevel } from './session-types';
 import type {
   AdminConvertToAgentDto,
@@ -40,7 +39,7 @@ type GeoLevel = Exclude<AgentLevel, 'NATIONAL'>;
 export class AgentService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
-    @Inject(FIREBASE_VERIFIER) private readonly firebase: FirebaseVerifier,
+    private readonly otp: OtpService,
   ) {}
 
   /**
@@ -944,7 +943,7 @@ export class AgentService {
     // Approval alone is gated on the agent's phone OTP; recording payment and
     // rejecting act on a request that was already approved (or is being turned
     // down), so they need no code.
-    const otp = dto.status === 'APPROVED' ? await this.verifyApprovalOtp(withdrawalId, dto.otpIdToken) : null;
+    const otp = dto.status === 'APPROVED' ? await this.verifyApprovalOtp(withdrawalId, dto.otpCode) : null;
     return this.withdrawalCommand(async () => {
       const action = dto.status === 'APPROVED' ? 'APPROVE' : dto.status === 'PAID' ? 'PAY' : 'REJECT';
       // One transaction: if the review function refuses the approval, the OTP
@@ -961,22 +960,38 @@ export class AgentService {
     });
   }
 
-  /** The agent's own phone confirmed a fresh SMS code — see withdrawal-otp.ts. */
-  private async verifyApprovalOtp(withdrawalId: number, idToken: string | undefined) {
+  /**
+   * Texts an MSG91 code to the agent's registered phone for approving
+   * [withdrawalId]. The number is always read from app.agent here, never
+   * taken from the request, so staff cannot redirect the code elsewhere.
+   */
+  async sendApprovalOtp(withdrawalId: number) {
+    const phone = await this.withdrawalAgentPhone(withdrawalId);
+    const result = await this.otp.sendMsg91Otp(phone);
+    if (!result.ok) throw new ForbiddenException(result.reason ?? 'Could not send the code. Try again in a moment.');
+    return { ok: true };
+  }
+
+  /** The agent read back the code [sendApprovalOtp] texted to their phone. */
+  private async verifyApprovalOtp(withdrawalId: number, code: string | undefined) {
+    const phone = await this.withdrawalAgentPhone(withdrawalId);
+    if (!code) {
+      throw new ForbiddenException(
+        'OTP verification is required: send a code to the agent’s registered phone and enter it before approving.',
+      );
+    }
+    const result = await this.otp.verifyMsg91Otp(phone, code);
+    // Not a 401: the admin's own session is fine, only the code proof is not.
+    if (!result.ok) throw new ForbiddenException(result.reason ?? 'That code is not right or has expired — send a new code to the agent.');
+    return { phone };
+  }
+
+  private async withdrawalAgentPhone(withdrawalId: number): Promise<string> {
     const result = await this.db.execute(sql`select a.phone from app.agent_withdrawal w
       join app.agent a on a.id = w.agent_id where w.id = ${withdrawalId}`);
     const phone = (result.rows[0] as { phone?: string } | undefined)?.phone;
     if (!phone) throw new NotFoundException('Withdrawal request not found');
-    if (!idToken) assertApprovalOtp({ uid: '' }, phone); // always throws: no verified code supplied
-    let verified;
-    try {
-      verified = await this.firebase.verifyIdToken(idToken as string);
-    } catch {
-      // Not a 401: the admin's own session is fine, only the code proof is not.
-      throw new ForbiddenException('That OTP verification is invalid or has expired — send a new code to the agent.');
-    }
-    assertApprovalOtp(verified, phone);
-    return { phone };
+    return phone;
   }
 
   async moveEarningsToWallet(memberId: number, dto: MoveEarningsToWalletDto) {

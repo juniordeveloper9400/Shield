@@ -11,11 +11,9 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { adminUser, labCategory, labPackage, labProfile, labTest } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 const BLANK_INPUT = {
   testType: 'TEST' as const,
@@ -71,7 +69,6 @@ const BLANK_INPUT = {
 describe('Lab Test Master & Package builder (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let superAdminToken: string;
 
   it('lists every test with its category and saves description/category edits to its member listing', async () => {
@@ -95,15 +92,12 @@ describe('Lab Test Master & Package builder (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
       .compile();
 
     app = moduleRef.createNestApplication();

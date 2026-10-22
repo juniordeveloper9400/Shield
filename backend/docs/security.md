@@ -17,22 +17,17 @@ Every item below exists specifically to close one of these.
 
 ## Authentication
 
-- **Member/agent/investor:** client authenticates with Firebase phone auth
-  (unchanged — this part is legitimate). Client sends the Firebase ID token
-  to `POST /v1/member/auth/session`; backend verifies it with the Firebase
-  Admin SDK (server-side, using a service-account credential that itself
-  never leaves the backend's secret store) and issues its own short-lived
+- **Member/agent/investor:** phone OTP through MSG91. The backend texts the
+  code (`POST /v1/member/auth/otp/send`) and checks it (`/otp/verify`,
+  `/otp/register`); clients that ran the MSG91 widget themselves send its
+  access token to `/widget/verify` or `/widget/register`, which the backend
+  re-checks with MSG91 using `MSG91_AUTH_KEY` (never leaves the backend's
+  secret store). On success the backend issues its own short-lived
   access token (15 min) + longer-lived refresh token (30 days, rotated on
   use, stored hashed in `backend.refresh_token`).
-- **Staff:** `app.admin_user.firebase_uid` already exists in the live schema —
-  staff authenticate through Firebase (email/password sign-in) the same way
-  members authenticate through Firebase (phone), and the backend verifies
-  their token through the identical Firebase Admin path. No password hash is
-  stored in Postgres at all; Firebase owns credential security for both
-  client types. Staff accounts must be created in Firebase Auth once, out of
-  band (Firebase console or Admin SDK `createUser`), before this works for
-  them — see backend/docs/migration-plan.md Phase 1. First successful login
-  links `firebase_uid` by matching `email`. Login issues a backend session
+- **Staff:** login id + password, checked against the bcrypt hash in
+  `app.admin_user.password_hash` (`POST /v1/staff/auth/session`). The legacy
+  `firebase_uid` column is no longer read. Login issues a backend session
   (httpOnly, `SameSite=Strict`, `Secure` cookie) instead of the current
   `localStorage` id. Consider TOTP as a second factor for `SUPERADMIN`
   specifically, given the blast radius of that role.
@@ -57,7 +52,7 @@ Every item below exists specifically to close one of these.
 
 ## Secrets management
 
-- No secret (`DATABASE_URL`, Firebase service-account JSON, JWT signing
+- No secret (`DATABASE_URL`, MSG91 auth key, JWT signing
   keys, object-storage keys) is ever committed, logged, or included in a
   response body.
 - Secrets live in the hosting platform's secret store (Fly.io secrets /

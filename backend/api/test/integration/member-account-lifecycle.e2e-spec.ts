@@ -9,11 +9,11 @@ import request from 'supertest';
 import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { IdentityService } from '../../src/modules/identity/identity.service';
 import { users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin, memberRegister } from './fake-otp';
 
 // A separate app/spec from auth-flow.e2e-spec.ts — that file's own tests
 // already sit close to AuthThrottle's 10/min ceiling on
@@ -23,17 +23,15 @@ import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 describe('Member account lifecycle (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -94,13 +92,8 @@ describe('Member account lifecycle (e2e)', () => {
         .set({ name: 'Deleted user', firebaseUid: null, deletedAt: new Date() })
         .where(eq(users.id, created.id));
 
-      // The member comes back and re-verifies the same phone number under a
-      // *new* Firebase identity (a real re-verification mints a new uid).
-      firebase.register('reactivation-token', { uid: 'reactivated-uid', phoneNumber: '+919199999099' });
-
-      const register = await request(app.getHttpServer())
-        .post('/v1/member/auth/register')
-        .send({ idToken: 'reactivation-token', name: 'Reactivated Member' })
+      // The member comes back and re-verifies the same phone number.
+      const register = await memberRegister(app, '9199999099', 'Reactivated Member')
         .expect(200);
 
       const rows = await db.select().from(users).where(eq(users.phone, '9199999099'));
@@ -108,7 +101,6 @@ describe('Member account lifecycle (e2e)', () => {
       expect(rows[0].id).toBe(created.id);
       expect(rows[0].deletedAt).toBeNull();
       expect(rows[0].name).toBe('Reactivated Member');
-      expect(rows[0].firebaseUid).toBe('reactivated-uid');
 
       const me = await request(app.getHttpServer())
         .get('/v1/member/me')
@@ -117,13 +109,10 @@ describe('Member account lifecycle (e2e)', () => {
       expect(me.body.name).toBe('Reactivated Member');
     });
 
-    it("keeps a live account's stored name on a plain firebase_uid backfill — reactivation-only behavior does not leak into the ordinary case", async () => {
+    it("keeps a live account's stored name on a plain re-registration — reactivation-only behavior does not leak into the ordinary case", async () => {
       await db.insert(users).values({ phone: '9199999098', name: 'Kept Name' });
-      firebase.register('backfill-token', { uid: 'backfill-uid', phoneNumber: '+919199999098' });
 
-      await request(app.getHttpServer())
-        .post('/v1/member/auth/register')
-        .send({ idToken: 'backfill-token', name: 'Typed Over It' })
+      await memberRegister(app, '9199999098', 'Typed Over It')
         .expect(200);
 
       const [row] = await db.select().from(users).where(eq(users.phone, '9199999098'));
@@ -134,14 +123,11 @@ describe('Member account lifecycle (e2e)', () => {
 
   describe('DELETE /v1/member/me', () => {
     it("clears the member's personal fields, keeps the phone, and revokes the session that deleted it", async () => {
-      firebase.register('delete-me-token', { uid: 'delete-me-uid', phoneNumber: '+919199999077' });
       await db
         .insert(users)
         .values({ phone: '9199999077', name: 'Delete Me', firebaseUid: 'delete-me-uid', email: 'delete@example.com' });
 
-      const login = await request(app.getHttpServer())
-        .post('/v1/member/auth/session')
-        .send({ idToken: 'delete-me-token' })
+      const login = await memberLogin(app, '9199999077')
         .expect(200);
       const token = login.body.accessToken as string;
 
@@ -159,19 +145,16 @@ describe('Member account lifecycle (e2e)', () => {
     });
 
     it('404s deleting an account that is already deleted', async () => {
-      firebase.register('delete-twice-token', { uid: 'delete-twice-uid', phoneNumber: '+919199999078' });
       await db.insert(users).values({ phone: '9199999078', name: 'Delete Twice', firebaseUid: 'delete-twice-uid' });
 
-      const login = await request(app.getHttpServer())
-        .post('/v1/member/auth/session')
-        .send({ idToken: 'delete-twice-token' })
+      const login = await memberLogin(app, '9199999078')
         .expect(200);
       await request(app.getHttpServer())
         .delete('/v1/member/me')
         .set('Authorization', `Bearer ${login.body.accessToken}`)
         .expect(204);
 
-      // Re-login is impossible post-delete (exchangeMemberToken itself
+      // Re-login is impossible post-delete (exchangeMemberPhone itself
       // filters deletedAt), so exercise the idempotency guard directly on
       // the already-wired IdentityService this app instance holds.
       const identity = app.get(IdentityService);
@@ -186,14 +169,11 @@ describe('Member account lifecycle (e2e)', () => {
 
   describe('POST /v1/member/me/touch-login', () => {
     it('bumps last_login_at for the signed-in member', async () => {
-      firebase.register('touch-login-token', { uid: 'touch-login-uid', phoneNumber: '+919199999090' });
       await db
         .insert(users)
         .values({ phone: '9199999090', name: 'Touch Login', firebaseUid: 'touch-login-uid', lastLoginAt: null });
 
-      const login = await request(app.getHttpServer())
-        .post('/v1/member/auth/session')
-        .send({ idToken: 'touch-login-token' })
+      const login = await memberLogin(app, '9199999090')
         .expect(200);
       const token = login.body.accessToken as string;
 

@@ -53,6 +53,6 @@ Manual smoke checks should cover login/logout, role landing pages, protected rou
 
 ## Test hygiene
 
-Do not use production credentials or live destructive database commands in tests. Prefer fakes and isolated data. When a test depends on Firebase or Neon, document the required configuration and keep secrets outside the repository.
+Do not use production credentials or live destructive database commands in tests. Prefer fakes and isolated data. When a test depends on MSG91 or Neon, document the required configuration and keep secrets outside the repository.
 
 Historical test counts in `log.md` are not a substitute for a fresh run; report the command and result from the current checkout.

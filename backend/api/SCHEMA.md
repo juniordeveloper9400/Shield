@@ -42,7 +42,7 @@ audiences exist for that domain.
 | Module | Member controller | Staff controller | Other files | Covers |
 | --- | --- | --- | --- | --- |
 | `identity` | `member.controller.ts` | `staff.controller.ts` | — | Member profile, addresses, patients; staff "who am I" |
-| `auth` | `member-auth.controller.ts` | `staff-auth.controller.ts` | `auth.service.ts`, `token.service.ts`, `firebase.service.ts`, `session.types.ts` | Firebase phone login (member), password login (staff), access/refresh token issuance and rotation |
+| `auth` | `member-auth.controller.ts` | `staff-auth.controller.ts` | `auth.service.ts`, `token.service.ts`, `session.types.ts` | MSG91 phone OTP login (member), password login (staff), access/refresh token issuance and rotation |
 | `admin` | — | `admin.controller.ts`, `dashboard.controller.ts` | `admin.service.ts`, `dashboard.service.ts` | Staff account CRUD (SUPERADMIN-only), dashboard summary metrics |
 | `catalogue` | — (public) | `catalogue-admin.controller.ts` | `catalogue.controller.ts` (public, unauthenticated reads), `catalogue.service.ts`, `review-video-media.service.ts`, `review-video-range.ts` | Stores, categories, products, banners, promos, review videos (chunked upload) |
 | `commerce` | `member-commerce.controller.ts` | `staff-commerce.controller.ts` | `cart.service.ts`, `order.service.ts`, `order-status.ts`, `dto.ts` | Cart, checkout, order lifecycle, bills, wallet collection on pickup |

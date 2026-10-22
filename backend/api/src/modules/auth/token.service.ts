@@ -18,7 +18,7 @@ interface AccessTokenPayload {
 }
 
 /**
- * Issues this service's OWN tokens — separate from the Firebase ID token a
+ * Issues this service's OWN tokens — separate from the MSG91 OTP proof a
  * client used to authenticate. Access tokens are short-lived by design so a
  * leaked one has a small exploitation window; refresh tokens are opaque,
  * stored only as a hash, and are what actually gets revoked on logout.

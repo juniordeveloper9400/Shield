@@ -7,19 +7,15 @@ import { RequireMember } from '../../common/decorators/require-role.decorator';
 import { AuthThrottle } from '../../common/throttle';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
-  idTokenSchema,
   phoneLookupSchema,
   refreshTokenSchema,
   registerMemberOtpSchema,
-  registerMemberSchema,
   registerMemberWidgetSchema,
   sendMemberOtpSchema,
   verifyMemberOtpSchema,
   verifyMemberWidgetSchema,
-  type IdTokenDto,
   type PhoneLookupDto,
   type RefreshTokenDto,
-  type RegisterMemberDto,
   type RegisterMemberOtpDto,
   type RegisterMemberWidgetDto,
   type SendMemberOtpDto,
@@ -42,22 +38,6 @@ export class MemberAuthController {
 
   @Public()
   @AuthThrottle()
-  @Post('session')
-  @HttpCode(HttpStatus.OK)
-  async createSession(@Body(new ZodValidationPipe(idTokenSchema)) body: IdTokenDto, @Req() req: Request) {
-    return this.auth.exchangeMemberToken(body.idToken, { userAgent: req.headers['user-agent'], ip: req.ip });
-  }
-
-  @Public()
-  @AuthThrottle()
-  @Post('register')
-  @HttpCode(HttpStatus.OK)
-  async register(@Body(new ZodValidationPipe(registerMemberSchema)) body: RegisterMemberDto, @Req() req: Request) {
-    return this.auth.registerMember(body.idToken, body.name, { userAgent: req.headers['user-agent'], ip: req.ip });
-  }
-
-  @Public()
-  @AuthThrottle()
   @Post('otp/send')
   @HttpCode(HttpStatus.OK)
   async sendOtp(@Body(new ZodValidationPipe(sendMemberOtpSchema)) body: SendMemberOtpDto) {
@@ -65,8 +45,7 @@ export class MemberAuthController {
   }
 
   /** Sign-in path — the client's own `phone-lookup` check decides this vs.
-   *  `otp/register` *before* the OTP is even sent; see AuthService's doc on
-   *  why there is no idToken-style retry fallback between the two here. */
+   *  `otp/register` *before* the OTP is even sent. */
   @Public()
   @AuthThrottle()
   @Post('otp/verify')

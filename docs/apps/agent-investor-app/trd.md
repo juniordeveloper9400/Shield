@@ -2,7 +2,7 @@
 
 ## Runtime
 
-The project is a second Flutter/Dart app with Firebase Core/Phone Auth, Neon HTTP and PostgreSQL integrations, location/map plugins, image processing, and the same broad feature module set as the root app.
+The project is a second Flutter/Dart app with MSG91 phone OTP sign-in through `backend/api`, Neon HTTP and PostgreSQL integrations, location/map plugins, image processing, and the same broad feature module set as the root app.
 
 ## Persona resolution
 

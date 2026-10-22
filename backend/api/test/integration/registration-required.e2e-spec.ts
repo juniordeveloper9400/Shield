@@ -10,16 +10,15 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { product, productCategory, shieldStore, users } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 describe('Registration is required to act, and is read back reliably (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let activeStoreId: number;
   let inactiveStoreId: number;
   let productId: number;
@@ -27,14 +26,13 @@ describe('Registration is required to act, and is read back reliably (e2e)', () 
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();
@@ -76,11 +74,7 @@ describe('Registration is required to act, and is read back reliably (e2e)', () 
         registrationCompletedAt: opts.registered ? new Date() : undefined,
       })
       .returning();
-    firebase.register(`token-${phone}`, { uid });
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: `token-${phone}` })
-      .expect(200);
+    const login = await memberLogin(app, phone).expect(200);
     return { id: row.id, token: login.body.accessToken as string };
   }
 

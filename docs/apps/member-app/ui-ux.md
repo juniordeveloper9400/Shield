@@ -26,4 +26,4 @@ badges and plus/minus controls are removed. This layout also applies to the
 agent/investor webapp. Existing installed apps require a new build and websites
 require deployment before the layout appears for users.
 
-Splash, signed out, Firebase unavailable, loading, empty catalogue/cart/order, validation failure, retryable database failure, successful submission, and converted-persona web-access states must be designed and tested.
+Splash, signed out, OTP unavailable, loading, empty catalogue/cart/order, validation failure, retryable database failure, successful submission, and converted-persona web-access states must be designed and tested.

@@ -12,10 +12,8 @@ import { AppModule } from '../../src/app.module';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
 import { DRIZZLE } from '../../src/db/client';
 import { adminUser } from '../../src/db/schema';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
 
 const binary = (response: Response, callback: (error: Error | null, body: Buffer) => void) => {
   const chunks: Buffer[] = [];
@@ -41,7 +39,6 @@ describe('Neon customer review video upload and playback (e2e)', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE).useValue(db)
       .overrideProvider(REDIS_CLIENT).useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER).useValue(new FakeFirebaseVerifier())
       .compile();
     app = moduleRef.createNestApplication();
     await app.init();

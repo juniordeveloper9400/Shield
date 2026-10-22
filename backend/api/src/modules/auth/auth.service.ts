@@ -6,7 +6,7 @@ import { DRIZZLE, type Database } from '../../db/client';
 import { adminUser, users } from '../../db/schema';
 import { authSession, refreshToken } from '../../db/schema/backend-auth';
 import { TokenService, REFRESH_TOKEN_TTL_MS } from './token.service';
-import { FIREBASE_VERIFIER, type FirebaseVerifier, type IssuedTokens, type RequestSubject } from './session.types';
+import type { IssuedTokens, RequestSubject } from './session.types';
 import { OtpService, type VerifyMsg91Result } from '../otp/otp.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -15,34 +15,20 @@ export interface RequestContext {
   ip?: string;
 }
 
-/**
- * Firebase phone-auth tokens carry E.164 (`+919876543210`); every existing
- * app.users.phone row is the bare 10-digit number. Returns null rather than
- * a wrong guess when the claim isn't a recognizable Indian mobile number, so
- * callers can fall back to a phone-less row instead of storing garbage.
- */
-function normalizeIndianPhone(phoneNumber: string | undefined): string | null {
-  if (!phoneNumber) return null;
-  const digits = phoneNumber.replace(/\D/g, '');
-  const last10 = digits.slice(-10);
-  return last10.length === 10 ? last10 : null;
-}
-
 @Injectable()
 export class AuthService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
-    @Inject(FIREBASE_VERIFIER) private readonly firebase: FirebaseVerifier,
     private readonly tokens: TokenService,
     private readonly otp: OtpService,
     private readonly audit: AuditService,
   ) {}
 
   /**
-   * Whether [phone] already has a live `app.users` row — a pre-Firebase-
-   * verification check so the client can decide "sign in" vs. "create
+   * Whether [phone] already has a live `app.users` row — a pre-OTP
+   * check so the client can decide "sign in" vs. "create
    * account" UI before it ever sends an OTP (the login screen's own doc on
-   * `AuthService.hasAccount`). Deliberately not gated behind Firebase
+   * `AuthService.hasAccount`). Deliberately not gated behind OTP
    * verification — that's the whole point, it runs *before* an OTP is
    * even requested — so this is the one auth route that hands back a yes/no
    * about phone numbers to an unauthenticated caller. `AuthThrottle` on the
@@ -61,99 +47,7 @@ export class AuthService {
   }
 
   /**
-   * Member login: the client already completed Firebase phone auth. We only
-   * verify the resulting token and issue our own session — we do NOT create
-   * app.users rows here. A token with no matching member row means the
-   * member hasn't finished registration; that's the caller's job to handle,
-   * not something this endpoint silently papers over.
-   */
-  async exchangeMemberToken(idToken: string, ctx: RequestContext): Promise<IssuedTokens> {
-    const decoded = await this.firebase.verifyIdToken(idToken);
-
-    const [member] = await this.db
-      .select()
-      .from(users)
-      .where(and(eq(users.firebaseUid, decoded.uid), isNull(users.deletedAt)))
-      .limit(1);
-
-    if (!member) {
-      throw new NotFoundException({
-        error: { code: 'NOT_FOUND', message: 'No member registered for this identity yet' },
-      });
-    }
-
-    return this.createSession('MEMBER', String(member.id), undefined, undefined, ctx);
-  }
-
-  /**
-   * Member self-registration: the one place that DOES create an app.users
-   * row from a verified Firebase identity, completing what
-   * exchangeMemberToken deliberately leaves undone. Looked up by
-   * firebaseUid first; if not found, falls back to the bare 10-digit phone
-   * so a row created by an unmigrated client (still writing app.users
-   * directly, keyed on phone only) gets its firebase_uid backfilled instead
-   * of a duplicate account being created for the same person.
-   */
-  async registerMember(idToken: string, name: string, ctx: RequestContext): Promise<IssuedTokens> {
-    const decoded = await this.firebase.verifyIdToken(idToken);
-    const phone = normalizeIndianPhone(decoded.phoneNumber);
-
-    const [byUid] = await this.db
-      .select()
-      .from(users)
-      .where(and(eq(users.firebaseUid, decoded.uid), isNull(users.deletedAt)))
-      .limit(1);
-
-    let memberId: number;
-    if (byUid) {
-      memberId = byUid.id;
-    } else if (phone) {
-      // Deliberately not filtered to isNull(deletedAt): phone carries a
-      // UNIQUE constraint (member_phone_key), so a deleted account's row is
-      // still the one occupying that phone — an unfiltered lookup finding
-      // it and reactivating is what lets a member who deleted their account
-      // sign up again on the same number, the same reactivation
-      // upsertOnSignIn's ON CONFLICT (phone) DO UPDATE already does on the
-      // Neon-direct path. Filtering here would instead fall through to the
-      // insert below and hit that constraint as a raw, unhandled 500.
-      const [byPhone] = await this.db.select().from(users).where(eq(users.phone, phone)).limit(1);
-
-      if (byPhone) {
-        const wasDeleted = byPhone.deletedAt !== null;
-        // A live account keeps the name it already has — signing in again
-        // must never silently rename the member. Only a reactivated deleted
-        // account, or a row with no usable name, takes the incoming one.
-        const hasUsableName = !wasDeleted && byPhone.name.trim() !== '';
-        await this.db
-          .update(users)
-          .set({
-            firebaseUid: decoded.uid,
-            deletedAt: null,
-            name: hasUsableName ? byPhone.name : name,
-          })
-          .where(eq(users.id, byPhone.id));
-        memberId = byPhone.id;
-      } else {
-        const [created] = await this.db
-          .insert(users)
-          .values({ phone, name, firebaseUid: decoded.uid })
-          .returning();
-        memberId = created.id;
-      }
-    } else {
-      const [created] = await this.db
-        .insert(users)
-        .values({ phone: '', name, firebaseUid: decoded.uid })
-        .returning();
-      memberId = created.id;
-    }
-
-    return this.createSession('MEMBER', String(memberId), undefined, undefined, ctx);
-  }
-
-  /**
-   * Sends the member-login OTP via MSG91 — the replacement for the client
-   * driving Firebase Phone Auth on its own. See OtpService.sendMsg91Otp for
+   * Sends the member-login OTP via MSG91. See OtpService.sendMsg91Otp for
    * the MSG91 side; this exists mainly so the controller has a thin,
    * unauthenticated route to call before any login decision is made.
    */
@@ -164,11 +58,11 @@ export class AuthService {
   /**
    * Member login, MSG91-backed: verifies [code] against the last
    * [sendMemberOtp] for [phone] via MSG91, then issues a session for the
-   * matching app.users row — same "we do NOT create rows here" contract as
-   * [exchangeMemberToken]. Keyed on the bare phone number instead of a
-   * Firebase UID: MSG91 has no notion of a stable per-identity id the way
-   * Firebase does, and `users.phone` is already the real unique identity
-   * (`member_phone_key`) every Firebase row was normalized down to anyway.
+   * matching app.users row. We do NOT create rows here: a verified phone
+   * with no member row means the member hasn't registered yet, which is the
+   * caller's job to handle. Keyed on the bare phone number, the real unique
+   * identity (`member_phone_key`); the legacy `firebase_uid` column is not
+   * read.
    *
    * Throws the same 401 shape whether the code was wrong/expired *or*
    * MSG91 itself is unreachable/unconfigured — deliberately not
@@ -201,10 +95,9 @@ export class AuthService {
   /**
    * Member self-registration, MSG91-backed: verifies [code] the same way
    * [exchangeMemberPhone] does, then finds-or-creates the app.users row by
-   * [phone] — the same reactivation rules [registerMember] applies (a live
-   * account keeps its own name; a reactivated deleted one, or a row with no
-   * usable name, takes the incoming [name]), just keyed on phone alone
-   * since there is no firebaseUid to look up by on this path.
+   * [phone]. A live account keeps its own name — signing in again must
+   * never silently rename the member; a reactivated deleted one, or a row
+   * with no usable name, takes the incoming [name].
    */
   async registerMemberByPhone(phone: string, code: string, name: string, ctx: RequestContext): Promise<IssuedTokens> {
     const result = await this.otp.verifyMsg91Otp(phone, code);
@@ -214,9 +107,11 @@ export class AuthService {
       });
     }
 
-    // Not filtered to isNull(deletedAt) — see registerMember's own doc on
-    // why a deleted account's row (still holding the UNIQUE phone) must be
-    // reactivated here rather than hit as a raw insert conflict.
+    // Deliberately not filtered to isNull(deletedAt): phone carries a UNIQUE
+    // constraint (member_phone_key), so a deleted account's row still
+    // occupies that phone. Reactivating it is what lets a member who
+    // deleted their account sign up again on the same number; filtering
+    // would fall through to the insert and hit that constraint as a 500.
     const [byPhone] = await this.db.select().from(users).where(eq(users.phone, phone)).limit(1);
 
     let memberId: number;
@@ -311,8 +206,7 @@ export class AuthService {
 
   /**
    * Staff login: login id + password, checked directly against the bcrypt
-   * hash on app.admin_user — no Firebase involved (that's member-only, see
-   * exchangeMemberToken). Deliberately the same generic error for "no such
+   * hash on app.admin_user. Deliberately the same generic error for "no such
    * account" and "wrong password" — distinguishing them lets an attacker
    * enumerate valid staff login ids.
    */

@@ -8,42 +8,34 @@ import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import { createTestDb, type TestDb } from './create-test-db';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberRegister } from './fake-otp';
 
 describe('Member addresses (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let token: string;
   let otherMemberToken: string;
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
     await app.init();
 
-    firebase.register('address-member-token', { uid: 'address-member-uid', phoneNumber: '+919700000060' });
-    const register = await request(app.getHttpServer())
-      .post('/v1/member/auth/register')
-      .send({ idToken: 'address-member-token', name: 'Address Member' })
+    const register = await memberRegister(app, '9700000060', 'Address Member')
       .expect(200);
     token = register.body.accessToken;
 
-    firebase.register('other-member-token', { uid: 'other-member-uid', phoneNumber: '+919700000061' });
-    const otherRegister = await request(app.getHttpServer())
-      .post('/v1/member/auth/register')
-      .send({ idToken: 'other-member-token', name: 'Other Member' })
+    const otherRegister = await memberRegister(app, '9700000061', 'Other Member')
       .expect(200);
     otherMemberToken = otherRegister.body.accessToken;
   });

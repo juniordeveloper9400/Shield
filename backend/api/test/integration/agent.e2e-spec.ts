@@ -12,7 +12,6 @@ import { eq } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import {
   adminUser,
   agent,
@@ -34,13 +33,14 @@ import { TokenService } from '../../src/modules/auth/token.service';
 import { AgentService } from '../../src/modules/agent/agent.service';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 describe('Agent & Geography (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let tokens: TokenService;
+  const otp = new FakeOtpService();
   let superAdminToken: string;
   let wardId: string;
 
@@ -51,19 +51,15 @@ describe('Agent & Geography (e2e)', () => {
     // is exercising the agent flow itself, not that gate, which has its
     // own dedicated test below.
     await db.insert(users).values({ phone, name, firebaseUid, registrationCompletedAt: new Date() });
-    firebase.register(`token-${firebaseUid}`, { uid: firebaseUid });
-    const res = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: `token-${firebaseUid}` })
-      .expect(200);
+    const res = await memberLogin(app, phone).expect(200);
     return res.body.accessToken as string;
   }
 
   /**
    * A real, valid member access token — same shape AuthGuard checks
    * (verified JWT + a live app.backend.auth_session row) — minted directly
-   * rather than through a real Firebase sign-in over
-   * POST /v1/member/auth/session. Every spec in this file shares one
+   * rather than through a real OTP sign-in over
+   * POST /v1/member/auth/otp/verify. Every spec in this file shares one
    * in-memory throttle bucket on that route (10/60s — see AuthThrottle),
    * and this file now runs enough genuinely-necessary sign-ins that one
    * more tips a later, unrelated test into a 429. Use this instead
@@ -97,15 +93,14 @@ describe('Agent & Geography (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(otp)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -358,13 +353,9 @@ describe('Agent & Geography (e2e)', () => {
   });
 
   it('builds the team tree from the national agent down to the ward agent', async () => {
-    // Same Firebase identity that submitted the NATIONAL request earlier —
-    // a fresh login just issues a new session, it doesn't create a new user.
-    firebase.register('team-token', { uid: 'member-agent-national-1' });
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'team-token' })
-      .expect(200);
+    // Same member that submitted the NATIONAL request earlier — a fresh
+    // login just issues a new session, it doesn't create a new user.
+    const login = await memberLogin(app, '9100000001').expect(200);
 
     const team = await request(app.getHttpServer())
       .get('/v1/agent/team')
@@ -376,12 +367,8 @@ describe('Agent & Geography (e2e)', () => {
   });
 
   it('lists PENDING requests recruited directly under the caller, distinct from the requests the caller filed themself', async () => {
-    // Same Firebase identity as the national agent — a fresh login, not a new user.
-    firebase.register('national-agent-pending-check', { uid: 'member-agent-national-1' });
-    const recruiterLogin = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'national-agent-pending-check' })
-      .expect(200);
+    // Same member as the national agent — a fresh login, not a new user.
+    const recruiterLogin = await memberLogin(app, '9100000001').expect(200);
     const recruiterToken = recruiterLogin.body.accessToken as string;
 
     const recruitToken = await memberToken('9100000007', 'member-agent-recruit-1', 'Recruit One');
@@ -463,11 +450,7 @@ describe('Agent & Geography (e2e)', () => {
   });
 
   it('links a customer to an agent and rejects linking the same member twice', async () => {
-    firebase.register('ward-agent-token', { uid: 'member-agent-goodslot' });
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'ward-agent-token' })
-      .expect(200);
+    const login = await memberLogin(app, '9100000005').expect(200);
 
     const [customerMember] = await db
       .insert(users)
@@ -817,11 +800,7 @@ describe('Agent & Geography (e2e)', () => {
   // dev database as part of this change.
 
   it('rejects a withdrawal request below the ₹3,000 minimum before it ever reaches the database', async () => {
-    firebase.register('ward-agent-token-2', { uid: 'member-agent-goodslot' });
-    const login = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'ward-agent-token-2' })
-      .expect(200);
+    const login = await memberLogin(app, '9100000005').expect(200);
 
     await request(app.getHttpServer())
       .post('/v1/agent/withdrawals')
@@ -858,6 +837,35 @@ describe('Agent & Geography (e2e)', () => {
       .set('Authorization', `Bearer ${pharmacyToken}`)
       .send({ status: 'REJECTED', note: 'n/a' })
       .expect(403);
+  });
+
+  it("texts the approval OTP to the agent's registered phone and refuses approval without the right code", async () => {
+    const [withdrawal] = await db
+      .insert(agentWithdrawal)
+      .values({ agentId: wardAgentId, amount: '3000', status: 'PENDING', requestedOn: '2026-10-22' })
+      .returning();
+    const [agentRow] = await db.select().from(agent).where(eq(agent.id, wardAgentId));
+
+    await request(app.getHttpServer())
+      .post(`/v1/staff/agent-withdrawals/${withdrawal.id}/otp`)
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(200);
+    expect(otp.sent.at(-1)).toBe(agentRow.phone);
+
+    const approve = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post(`/v1/staff/agent-withdrawals/${withdrawal.id}/resolve`)
+        .set('Authorization', `Bearer ${superAdminToken}`)
+        .send({ status: 'APPROVED', accountNumber: 'x', identityVerified: true, earningsVerified: true, note: 'ok', ...body });
+    await approve({}).expect(403);
+    await approve({ otpCode: '000000' }).expect(403);
+  });
+
+  it('404s sending an approval OTP for a withdrawal that does not exist', async () => {
+    await request(app.getHttpServer())
+      .post('/v1/staff/agent-withdrawals/999999/otp')
+      .set('Authorization', `Bearer ${superAdminToken}`)
+      .expect(404);
   });
 
   it('rejects a resolve status outside APPROVED/PAID/REJECTED before it reaches the database', async () => {

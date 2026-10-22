@@ -4,7 +4,7 @@
 | --- | --- |
 | Client | Flutter, Dart SDK `^3.10.0` |
 | UI | Material 3, shared widgets, `lib/theme/` |
-| Auth | Firebase Core and Firebase Phone Auth |
+| Auth | MSG91 phone OTP via `backend/api` |
 | Database | Neon PostgreSQL through `postgres`, `http`, and repository wrappers |
 | Local state/persistence | Dart services, `ChangeNotifier` patterns, `shared_preferences` |
 | Location/map | `geolocator`, `flutter_map`, `latlong2`, OpenStreetMap |

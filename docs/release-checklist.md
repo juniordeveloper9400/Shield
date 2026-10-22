@@ -31,7 +31,7 @@
 
 ## Release artifact
 
-- [ ] Firebase package/config and release fingerprints are verified.
+- [ ] MSG91 configuration (backend and admin console) and release fingerprints are verified.
 - [ ] Neon endpoint and schema compatibility are verified.
 - [ ] Version/build number is updated.
 - [ ] APK/web/admin artifact is inspected in the target environment.

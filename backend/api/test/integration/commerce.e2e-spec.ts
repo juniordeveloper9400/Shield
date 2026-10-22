@@ -12,7 +12,6 @@ import { eq, sql } from 'drizzle-orm';
 import { AppModule } from '../../src/app.module';
 import { DRIZZLE } from '../../src/db/client';
 import { REDIS_CLIENT } from '../../src/cache/redis.client';
-import { FIREBASE_VERIFIER } from '../../src/modules/auth/session.types';
 import {
   adminUser,
   bill,
@@ -32,12 +31,12 @@ import {
 } from '../../src/db/schema';
 import { createTestDb, type TestDb } from './create-test-db';
 import { createTestRedis } from './fake-redis';
-import { FakeFirebaseVerifier } from './fake-firebase-verifier';
+import { OtpService } from '../../src/modules/otp/otp.service';
+import { FakeOtpService, memberLogin } from './fake-otp';
 
 describe('Commerce (e2e)', () => {
   let app: INestApplication;
   let db: TestDb;
-  let firebase: FakeFirebaseVerifier;
   let memberAccessToken: string;
   let storeAStaffToken: string;
   let storeBStaffToken: string;
@@ -46,15 +45,14 @@ describe('Commerce (e2e)', () => {
 
   beforeAll(async () => {
     db = createTestDb();
-    firebase = new FakeFirebaseVerifier();
 
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DRIZZLE)
       .useValue(db)
       .overrideProvider(REDIS_CLIENT)
       .useValue(createTestRedis())
-      .overrideProvider(FIREBASE_VERIFIER)
-      .useValue(firebase)
+      .overrideProvider(OtpService)
+      .useValue(new FakeOtpService())
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -83,7 +81,6 @@ describe('Commerce (e2e)', () => {
       .insert(users)
       .values({ phone: '9000000001', name: 'Commerce Member', firebaseUid: 'member-commerce-1', homeStoreId: storeA.id, registrationCompletedAt: new Date() })
       .returning();
-    firebase.register('member-token', { uid: 'member-commerce-1' });
 
     const testPasswordHash = await hash('correct-horse-battery-staple', 4); // low cost factor — this is a test, not production
 
@@ -116,7 +113,7 @@ describe('Commerce (e2e)', () => {
     });
 
     memberAccessToken = (
-      await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'member-token' }).expect(200)
+      await memberLogin(app, '9000000001').expect(200)
     ).body.accessToken;
     storeAStaffToken = (
       await request(app.getHttpServer())
@@ -319,10 +316,7 @@ describe('Commerce (e2e)', () => {
 
   it("rejects a receipt claim against an order that isn't the caller's own", async () => {
     await db.insert(users).values({ phone: '9000000098', name: 'Other Member', firebaseUid: 'member-commerce-other' });
-    firebase.register('other-member-token', { uid: 'member-commerce-other' });
-    const otherLogin = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'other-member-token' })
+    const otherLogin = await memberLogin(app, '9000000098')
       .expect(200);
 
     await request(app.getHttpServer())
@@ -485,10 +479,7 @@ describe('Commerce (e2e)', () => {
       const { orderId: freshOrderId, memberId } = await freshBilledOrder(1000);
       walletOrderId = freshOrderId;
       const [memberRow] = await db.select().from(users).where(eq(users.id, memberId));
-      firebase.register('wallet-collect-token', { uid: memberRow.firebaseUid! });
-      walletMemberToken = (
-        await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'wallet-collect-token' }).expect(200)
-      ).body.accessToken;
+      walletMemberToken = (await memberLogin(app, memberRow.phone).expect(200)).body.accessToken;
 
       const testPasswordHash = await hash('correct-horse-battery-staple', 4); // low cost factor — this is a test, not production
       await db.insert(adminUser).values({ loginId: 'lab@example.com', name: 'Lab Staff', passwordHash: testPasswordHash, role: 'LAB' });
@@ -779,10 +770,7 @@ describe('Commerce (e2e)', () => {
         })
         .returning();
       cancelMemberId = m.id;
-      firebase.register('cancel-token', { uid: m.firebaseUid! });
-      cancelToken = (
-        await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'cancel-token' }).expect(200)
-      ).body.accessToken;
+      cancelToken = (await memberLogin(app, m.phone).expect(200)).body.accessToken;
     });
 
     async function placeOrder(touch: Partial<typeof order.$inferInsert> = {}) {
@@ -838,9 +826,7 @@ describe('Commerce (e2e)', () => {
   });
 
   it("does not show another member the bill or its invoice", async () => {
-    const otherLogin = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'other-member-token' })
+    const otherLogin = await memberLogin(app, '9000000098')
       .expect(200);
 
     await request(app.getHttpServer())
@@ -902,9 +888,7 @@ describe('Commerce (e2e)', () => {
   });
 
   it("does not show another member this order's items", async () => {
-    const otherLogin = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'other-member-token' })
+    const otherLogin = await memberLogin(app, '9000000098')
       .expect(200);
 
     await request(app.getHttpServer())
@@ -970,10 +954,7 @@ describe('Commerce (e2e)', () => {
       registeredAt: new Date(),
     });
 
-    firebase.register('invitee-token', { uid: 'member-commerce-invitee' });
-    const inviteeLogin = await request(app.getHttpServer())
-      .post('/v1/member/auth/session')
-      .send({ idToken: 'invitee-token' })
+    const inviteeLogin = await memberLogin(app, '9000000051')
       .expect(200);
     const inviteeToken = inviteeLogin.body.accessToken as string;
 
@@ -1007,10 +988,7 @@ describe('Commerce (e2e)', () => {
         .insert(users)
         .values({ phone: '9000000060', name: 'Wallet Checkout Member', firebaseUid: 'member-commerce-wallet', registrationCompletedAt: new Date() })
         .returning();
-      firebase.register('wallet-member-token', { uid: 'member-commerce-wallet' });
-      const login = await request(app.getHttpServer())
-        .post('/v1/member/auth/session')
-        .send({ idToken: 'wallet-member-token' })
+      const login = await memberLogin(app, '9000000060')
         .expect(200);
       walletMemberToken = login.body.accessToken;
 
@@ -1068,9 +1046,8 @@ describe('Commerce (e2e)', () => {
         status: 'REGISTERED',
         registeredAt: new Date(),
       });
-      firebase.register('wallet-invitee-token', { uid: 'member-commerce-wallet-invitee' });
       const token = (
-        await request(app.getHttpServer()).post('/v1/member/auth/session').send({ idToken: 'wallet-invitee-token' }).expect(200)
+        await memberLogin(app, '9000000071').expect(200)
       ).body.accessToken as string;
 
       await request(app.getHttpServer())

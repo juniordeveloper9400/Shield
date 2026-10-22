@@ -24,7 +24,7 @@ export interface AuditEntryInput {
  *  deep — matched case-insensitively against the bare key name, not the
  *  full path, since a credential field is a credential field regardless
  *  of which object it's nested in. */
-const REDACT_KEYS = new Set(['password', 'passwordhash', 'otpidtoken', 'token', 'accesstoken', 'refreshtoken']);
+const REDACT_KEYS = new Set(['password', 'passwordhash', 'otpcode', 'token', 'accesstoken', 'refreshtoken']);
 
 /**
  * The Super Admin's own audit trail — see app-audit.ts's own doc on the

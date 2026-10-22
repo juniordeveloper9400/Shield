@@ -5,10 +5,11 @@
 Keep these local and git-ignored:
 
 - root `.env` and `shieldweb/.env.local`
-- Firebase service-account credentials
+- MSG91 auth key (`MSG91_AUTH_KEY`)
+- Any old Firebase service-account files
 - release keystores and passwords
 
-Firebase client configuration is not equivalent to a service-account secret. Never add Admin SDK credentials to Flutter or the browser app.
+The MSG91 widget id and scoped `tokenAuth` are browser-safe; the master `MSG91_AUTH_KEY` is not. Never add it to Flutter or the browser app.
 
 ## Current high-risk limitations
 

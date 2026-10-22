@@ -7,7 +7,7 @@
 
 ```text
 Flutter mobile/web client
-  Firebase Phone Auth
+  backend/api + MSG91 phone OTP
   NeonHttp over HTTPS for member writes
   NeonDatabase PostgreSQL socket for native repository reads/writes
 
@@ -43,7 +43,7 @@ Neon PostgreSQL
 | Availability | Member write path must use HTTPS and fail visibly enough to diagnose | Neon health check and error-state tests |
 | Accessibility | Controls need labels, readable contrast, keyboard/tap reachability, and meaningful error text | Manual UI review |
 | Maintainability | Every schema, route, or role change updates traceability and docs | PR checklist |
-| Reproducibility | Builds use pinned critical Firebase package versions and documented environment inputs | Clean-machine build |
+| Reproducibility | Builds use pinned critical package versions and documented environment inputs | Clean-machine build |
 
 ## 4. Security architecture target
 
@@ -72,7 +72,7 @@ The current app has launch-level Neon diagnostics. The target is structured, red
 
 - Android package id: `com.zabnix.shield`.
 - Flutter web support must be checked per plugin; PostgreSQL socket access is native-only.
-- iOS is not release-ready until Firebase plist/APNs setup is complete.
+- iOS is not release-ready until APNs and signing setup is complete.
 - Android is not release-ready until a protected production keystore replaces the debug key.
 - Admin console is not public-release-ready until auth and database access move server-side.
 

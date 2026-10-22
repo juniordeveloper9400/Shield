@@ -79,7 +79,7 @@ in a future `app_schema.sql` recreation.
 `app.admin_user` stays as the staff identity/role record (per
 `docs/erd.md`'s stated intent for that table). `backend.auth_session` is the
 ephemeral session layer on top of it — same relationship as `app.users` to
-Firebase identity today, just applied consistently to both member and staff
+the member's verified phone, just applied consistently to both member and staff
 login instead of only to members.
 
 ## 4. Integrity rules this service must add

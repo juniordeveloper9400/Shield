@@ -3,7 +3,7 @@
 | Concern | Choice |
 | --- | --- |
 | Client | Flutter, Dart SDK `^3.10.0` |
-| Auth | Firebase Phone Auth |
+| Auth | MSG91 phone OTP via `backend/api` |
 | Data | Neon PostgreSQL via HTTP and native `postgres` paths |
 | Persona | `PersonaService`, `PersonaRepository`, agent/investor services |
 | Location | `geolocator`, `flutter_map`, `latlong2` |

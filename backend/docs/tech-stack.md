@@ -40,8 +40,8 @@ existing code.
 
 | Concern | Choice | Why |
 | --- | --- | --- |
-| Member auth | Firebase Admin SDK verifies the existing Firebase phone-auth ID token; backend issues its own short-lived access token + refresh token | Keeps Firebase phone auth as-is (it's legitimate); backend becomes the only thing that talks to Postgres with member identity |
-| Staff/admin auth | Firebase (email/password sign-in), same Firebase Admin verification path as members; backend issues its own session | `app.admin_user.firebase_uid` already exists in the schema for exactly this — no new password-storage code needed. Staff accounts are bootstrapped in Firebase Auth once, out of band; first login links `firebase_uid` by matching `email`. Replaces the static credential list in `shieldweb/src/config/admins.ts` and the `localStorage` session |
+| Member auth | MSG91 phone OTP, sent and verified by the backend; backend issues its own short-lived access token + refresh token | Backend is the only thing that talks to Postgres with member identity |
+| Staff/admin auth | Login id + bcrypt password hash in `app.admin_user`; backend issues its own session | Replaces the static credential list the admin console used to ship |
 | Authorization | Custom NestJS guards (role + branch/store scope), modeled on `casl` ability rules | Enforces `shieldweb/src/config/permissions.ts`-style rules server-side, where they currently aren't enforced at all |
 | Secrets | Environment variables via the platform's secret store (Fly.io secrets / Render env groups), never checked in, never shipped to a client bundle | The one credential-exposure fix this whole project exists for |
 

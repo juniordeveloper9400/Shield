@@ -17,7 +17,7 @@ Publish the updated app and web build for the new sharing behavior to be live.
 Flutter member app (root)
   lib/main.dart -> RootScreen -> AppShell -> feature modules
   lib/data/neon -> Neon HTTP and PostgreSQL repositories
-  Firebase -> member phone authentication
+  backend/api + MSG91 -> member phone OTP authentication
   Neon app schema -> member data and content
 
 React operations console (shieldweb/)
@@ -30,13 +30,13 @@ The root Flutter app and `shieldweb` are separate applications but share the Neo
 
 ## Flutter startup
 
-`lib/main.dart` initializes Flutter and Firebase, restores the member session, starts persona checking, attaches rewards and referral services, warms catalogue and review data, checks the Neon HTTP endpoint, and then renders `ShieldApp` with `RootScreen`.
+`lib/main.dart` initializes Flutter, restores the member session, starts persona checking, attaches rewards and referral services, warms catalogue and review data, checks the Neon HTTP endpoint, and then renders `ShieldApp` with `RootScreen`.
 
 `RootScreen` decides among splash, phone sign-in, web-only agent/investor routing, and the authenticated `AppShell`. The shell exposes the member-facing home, health/labs, clinics, orders, and account areas.
 
 ## Flutter source ownership
 
-- `lib/module/auth/`: Firebase phone auth, session, persona gate, and registration auth flows.
+- `lib/module/auth/`: MSG91 phone OTP auth (via `backend/api`), session, persona gate, and registration auth flows.
 - `lib/module/catalogue/`, `categories/`, `product/`, `search/`: catalogue browsing.
 - `lib/module/cart/`, `checkout/`, `orders/`: purchase workflow.
 - `lib/module/prescription/`: prescription upload and prescription checkout.
