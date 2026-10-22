@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -268,6 +269,43 @@ export class CatalogueService {
     if (!updated) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Branch not found' } });
     await this.cache.invalidate('catalogue:stores');
     return updated;
+  }
+
+  /** Permanently removes a branch. Refused while any member or order still
+   *  points at it (or any other row holds a foreign key to it) — those
+   *  branches should be deactivated instead, so no history is orphaned. */
+  async deleteStore(id: number) {
+    const [{ members }] = await this.db
+      .select({ members: sql<number>`count(*)::int` })
+      .from(users)
+      .where(eq(users.homeStoreId, id));
+    const [{ orders }] = await this.db
+      .select({ orders: sql<number>`count(*)::int` })
+      .from(order)
+      .where(eq(order.storeId, id));
+    if (members > 0 || orders > 0) {
+      throw new ConflictException({
+        error: {
+          code: 'STORE_IN_USE',
+          message: `This branch still has ${members} member(s) and ${orders} order(s) linked to it. Deactivate it instead.`,
+        },
+      });
+    }
+
+    let deleted;
+    try {
+      [deleted] = await this.db.delete(shieldStore).where(eq(shieldStore.id, id)).returning();
+    } catch (error) {
+      const dbError = error as { code?: string; cause?: { code?: string } };
+      if ((dbError?.code ?? dbError?.cause?.code) === '23503') {
+        throw new ConflictException({
+          error: { code: 'STORE_IN_USE', message: 'This branch is still linked to other records (wallets, prescriptions or investors). Deactivate it instead.' },
+        });
+      }
+      throw error;
+    }
+    if (!deleted) throw new NotFoundException({ error: { code: 'NOT_FOUND', message: 'Branch not found' } });
+    await this.cache.invalidate('catalogue:stores');
   }
 
   /** Migration 0057 — off drops the branch from the lab checkout's own

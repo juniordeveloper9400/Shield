@@ -105,6 +105,12 @@ export class CatalogueAdminController {
     return this.catalogue.setStoreActive(id, dto.isActive);
   }
 
+  @RequireRole('SUPERADMIN', 'ADMIN')
+  @Delete('stores/:id')
+  deleteStore(@Param('id', ParseIntPipe) id: number) {
+    return this.catalogue.deleteStore(id);
+  }
+
   @RequireRole('SUPERADMIN', 'ADMIN', 'LAB')
   @Patch('stores/:id/offers-lab')
   setStoreOffersLab(
