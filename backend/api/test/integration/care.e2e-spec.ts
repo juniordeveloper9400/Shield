@@ -130,17 +130,17 @@ describe('Care Services (e2e)', () => {
       .returning();
     ownedPatientId = seededPatient.id;
 
-    // LAB, not APPOINTMENTS: this token manages both lab bookings (now role-
-    // gated, see staff-booking.controller.ts) and appointments (still open
-    // to any staff role) below — LAB can do both; APPOINTMENTS could only
-    // ever do the latter.
+    // SUPERADMIN: this token manages lab bookings (role-gated, see
+    // staff-booking.controller.ts) including the booked test, which only
+    // SUPERADMIN and LAB_TECHNICIAN may see, plus appointments (open to any
+    // staff role).
     const [careStaff] = await db
       .insert(adminUser)
       .values({
         loginId: 'care-staff@example.com',
         name: 'Care Staff',
         passwordHash: await hash('correct-horse-battery-staple', 4), // low cost factor — this is a test, not production
-        role: 'LAB',
+        role: 'SUPERADMIN',
       })
       .returning();
     careStaffId = careStaff.id;
@@ -1192,6 +1192,42 @@ describe('Care Services (e2e)', () => {
         .delete('/v1/staff/lab-categories/999999')
         .set('Authorization', `Bearer ${staffAccessToken}`)
         .expect(404);
+    });
+  });
+
+  describe('booked test visibility', () => {
+    async function tokenFor(role: 'ADMIN' | 'LAB') {
+      const loginId = `test-visibility-${role.toLowerCase()}@example.com`;
+      await db.insert(adminUser).values({ loginId, name: role, passwordHash: await hash('correct-horse-battery-staple', 4), role });
+      return (
+        await request(app.getHttpServer())
+          .post('/v1/staff/auth/session')
+          .send({ loginId, password: 'correct-horse-battery-staple' })
+          .expect(200)
+      ).body.accessToken as string;
+    }
+
+    it.each(['ADMIN', 'LAB'] as const)('withholds the test name and id from %s, who still sees the booking', async (role) => {
+      const token = await tokenFor(role);
+      const list = await request(app.getHttpServer()).get('/v1/staff/lab-bookings').set('Authorization', `Bearer ${token}`).expect(200);
+      expect(list.body.length).toBeGreaterThan(0);
+      for (const row of list.body) {
+        expect(row).toMatchObject({ testHidden: true, packageName: null, labPackageId: null });
+        expect(row.memberName).toBeTruthy();
+      }
+
+      const [other] = await db.insert(labPackage).values({ slug: `visibility-${role.toLowerCase()}`, name: 'Other test', price: '10', mrp: '10' }).returning();
+      await request(app.getHttpServer())
+        .patch(`/v1/staff/lab-bookings/${list.body[0].id}/details`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ scheduledFor: null, labPackageId: other.id })
+        .expect(403);
+    });
+
+    it('shows the test to SUPERADMIN', async () => {
+      const list = await request(app.getHttpServer()).get('/v1/staff/lab-bookings').set('Authorization', `Bearer ${staffAccessToken}`).expect(200);
+      expect(list.body[0]).toMatchObject({ testHidden: false });
+      expect(list.body[0].packageName).toBeTruthy();
     });
   });
 });

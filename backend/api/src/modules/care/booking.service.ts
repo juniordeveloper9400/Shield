@@ -64,6 +64,13 @@ async function listLabStores(db: Database) {
     .orderBy(asc(shieldStore.sort), asc(shieldStore.name));
 }
 
+/** Which test a member booked is medical detail: only the Super Admin and
+ *  the lab technician doing the work see it. Every other staff role still
+ *  sees the booking itself, with the test withheld. */
+export function canSeeLabTest(role: AdminRole): boolean {
+  return role === 'SUPERADMIN' || role === 'LAB_TECHNICIAN';
+}
+
 function ageFromDob(dob: string | null): number | null {
   if (!dob) return null;
   const born = new Date(dob);
@@ -470,12 +477,18 @@ export class BookingService {
       .where(inArray(labBookingReport.labBookingId, ids))
       .groupBy(labBookingReport.labBookingId);
     const reportCountByBooking = new Map(reportCounts.map((r) => [r.labBookingId, r.n]));
+    const testHidden = !canSeeLabTest(role);
 
     return rows.map((r) => {
       const { house, area, landmark, city, state, pincode, ...rest } = r;
       const meta = parseBillMeta(r.note);
       return {
         ...rest,
+        // The id is withheld too: it maps straight back to a name through
+        // the Lab Tests list.
+        labPackageId: testHidden ? null : r.labPackageId,
+        packageName: testHidden ? null : r.packageName,
+        testHidden,
         note: meta.cleanNote,
         fuelCharge: meta.fuelCharge,
         techFee: meta.techFee,
@@ -656,6 +669,9 @@ export class BookingService {
       const advancedEdit = ['contactName', 'contactPhone', 'addressPhone', 'labPackageId', 'fulfillmentType', 'assignedStaffId', 'unitPrice'].some((key) => key in dto);
       if (advancedEdit && !fullEditor) {
         throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Only a lab administrator can edit these order fields.' } });
+      }
+      if (!canSeeLabTest(role) && dto.labPackageId !== undefined && dto.labPackageId !== found.labPackageId) {
+        throw new ForbiddenException({ error: { code: 'FORBIDDEN', message: 'Only the Super Admin can change the booked test.' } });
       }
       if (found.status === 'CANCELLED' && !fullEditor) return found;
 
