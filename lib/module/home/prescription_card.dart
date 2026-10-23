@@ -252,10 +252,18 @@ class _WhatsAppChip extends StatelessWidget {
           child: const SizedBox(
             width: 46,
             height: 42,
-            child: FaIcon(
-              FontAwesomeIcons.whatsapp,
-              size: 21,
-              color: AppColors.white,
+            // FaIcon (unlike Icon) renders unboxed — font_awesome_flutter's
+            // own doc on FaIcon explains it drops the Center/SizedBox Icon
+            // normally wraps a glyph in, so a non-square brand mark isn't
+            // squeezed into a square. That leaves it unpositioned in any box
+            // bigger than the glyph itself, which read as pinned toward the
+            // top-left here. Center puts it back in the middle of the chip.
+            child: Center(
+              child: FaIcon(
+                FontAwesomeIcons.whatsapp,
+                size: 21,
+                color: AppColors.white,
+              ),
             ),
           ),
         ),
